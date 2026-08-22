@@ -18,6 +18,7 @@ package net.jircd.capabilities.messagetags;
 import java.util.Map;
 import net.jircd.core.extension.AbstractCapabilityExtension;
 import net.jircd.core.session.OutboundMessage;
+import net.jircd.protocol.CapabilityName;
 
 /**
  * The {@code message-tags} capability (FR-025): contributes the {@code msgid} tag unconditionally —
@@ -27,7 +28,7 @@ import net.jircd.core.session.OutboundMessage;
  */
 public final class MessageTagsExtension extends AbstractCapabilityExtension {
 
-  public static final String ID = "message-tags";
+  public static final String ID = CapabilityName.MESSAGE_TAGS;
 
   public MessageTagsExtension() {
     super(ID);

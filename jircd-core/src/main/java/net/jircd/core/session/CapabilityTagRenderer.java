@@ -19,6 +19,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import net.jircd.core.extension.CapabilityExtension;
 import net.jircd.core.extension.ExtensionRegistry;
+import net.jircd.protocol.CapabilityName;
 
 /**
  * The real {@link TagRenderer}: for each currently-{@code ENABLED} {@link CapabilityExtension},
@@ -27,16 +28,6 @@ import net.jircd.core.extension.ExtensionRegistry;
  * CapabilityNegotiator} already has (FR-007/FR-035).
  */
 public final class CapabilityTagRenderer implements TagRenderer {
-
-  /**
-   * The IRCv3 capability name gating client-tag forwarding — a wire-protocol constant, not an
-   * internal implementation detail (the same {@code jircd-core}-can't-depend-on-{@code
-   * jircd-capabilities} reasoning {@code TagmsgCommandHandler}'s own copy of this constant
-   * documents). A recipient with nothing negotiated has no way to parse a tag section at all, so it
-   * must never appear on the wire for them (005-fix-batch-conformance FR-010, oragono/Ergo issue
-   * 754 regression).
-   */
-  private static final String MESSAGE_TAGS_CAPABILITY = "message-tags";
 
   private final ExtensionRegistry extensionRegistry;
 
@@ -55,7 +46,7 @@ public final class CapabilityTagRenderer implements TagRenderer {
     // Either way, nothing is forwarded unless the recipient negotiated message-tags itself — a
     // recipient with nothing negotiated has no way to parse a tag section on the wire.
     Map<String, String> tags = new LinkedHashMap<>();
-    if (recipient.negotiatedCapabilities().contains(MESSAGE_TAGS_CAPABILITY)) {
+    if (recipient.negotiatedCapabilities().contains(CapabilityName.MESSAGE_TAGS)) {
       for (var entry : message.clientTags().entrySet()) {
         if (entry.getKey().startsWith("+")) {
           tags.put(entry.getKey(), entry.getValue());

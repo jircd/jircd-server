@@ -17,6 +17,7 @@ package net.jircd.capabilities.echomessage;
 
 import net.jircd.core.extension.AbstractCapabilityExtension;
 import net.jircd.core.session.ClientSession;
+import net.jircd.protocol.CapabilityName;
 
 /**
  * The {@code echo-message} capability (FR-025): unlike {@code message-tags}/{@code server-time},
@@ -26,7 +27,7 @@ import net.jircd.core.session.ClientSession;
  */
 public final class EchoMessageExtension extends AbstractCapabilityExtension {
 
-  public static final String ID = "echo-message";
+  public static final String ID = CapabilityName.ECHO_MESSAGE;
 
   public EchoMessageExtension() {
     super(ID);

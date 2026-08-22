@@ -20,6 +20,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.Map;
 import net.jircd.core.extension.AbstractCapabilityExtension;
 import net.jircd.core.session.OutboundMessage;
+import net.jircd.protocol.CapabilityName;
 
 /**
  * The {@code server-time} capability (FR-025): contributes the {@code time} tag from {@link
@@ -28,7 +29,7 @@ import net.jircd.core.session.OutboundMessage;
  */
 public final class ServerTimeExtension extends AbstractCapabilityExtension {
 
-  public static final String ID = "server-time";
+  public static final String ID = CapabilityName.SERVER_TIME;
 
   /** IRCv3 server-time's required format: millisecond-precision, UTC, {@code Z}-suffixed. */
   private static final DateTimeFormatter TIME_FORMAT =
