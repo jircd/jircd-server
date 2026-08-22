@@ -18,6 +18,8 @@ dependencies {
     runtimeOnly(project(":jircd-capabilities:message-tags"))
     runtimeOnly(project(":jircd-capabilities:server-time"))
     runtimeOnly(project(":jircd-capabilities:echo-message"))
+    runtimeOnly(project(":jircd-capabilities:away-notify"))
+    runtimeOnly(project(":jircd-capabilities:batch"))
     runtimeOnly(project(":jircd-server-extensions:cloak"))
     runtimeOnly(project(":jircd-server-extensions:admin"))
 }

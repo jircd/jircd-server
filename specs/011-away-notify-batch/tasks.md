@@ -43,7 +43,7 @@ Existing multi-module Gradle project (plan.md "Project Structure") — two new l
 
 **Purpose**: Confirm a clean baseline before touching any source.
 
-- [ ] T001 Run `./gradlew build` from the repo root and confirm it succeeds with no source
+- [X] T001 Run `./gradlew build` from the repo root and confirm it succeeds with no source
       changes yet, establishing the pre-feature baseline.
 
 ---
@@ -71,7 +71,7 @@ channel receives nothing — per quickstart.md Scenarios 1-5.
 
 ### Tests for User Story 1
 
-- [ ] T002 [P] [US1] Write integration tests in
+- [X] T002 [P] [US1] Write integration tests in
       `jircd-integration-tests/src/test/java/net/jircd/integration/AwayNotifyTest.java`
       covering: (a) an opted-in, channel-sharing recipient receives `:nick!user@host AWAY
       :<reason>` when the sender goes away, and `:nick!user@host AWAY` (no trailing param) when
@@ -85,7 +85,7 @@ channel receives nothing — per quickstart.md Scenarios 1-5.
 
 ### Implementation for User Story 1
 
-- [ ] T003 [P] [US1] Create the `jircd-capabilities/away-notify` module:
+- [X] T003 [P] [US1] Create the `jircd-capabilities/away-notify` module:
       `build.gradle.kts` (mirror `jircd-capabilities/echo-message/build.gradle.kts` exactly —
       `implementation(project(":jircd-protocol"))` and `implementation(project(":jircd-core"))`),
       `src/main/java/net/jircd/capabilities/awaynotify/AwayNotifyExtension.java` (extends
@@ -94,25 +94,28 @@ channel receives nothing — per quickstart.md Scenarios 1-5.
       Decision 1), and
       `src/main/resources/META-INF/services/net.jircd.core.extension.CapabilityExtension`
       (containing the one line `net.jircd.capabilities.awaynotify.AwayNotifyExtension`).
-- [ ] T004 [US1] Register the new module: add `"jircd-capabilities:away-notify"` to
+- [X] T004 [US1] Register the new module: add `"jircd-capabilities:away-notify"` to
       `settings.gradle.kts`'s `include(...)` block, and add
       `runtimeOnly(project(":jircd-capabilities:away-notify"))` to
       `jircd-server/build.gradle.kts` alongside the three existing capability `runtimeOnly`
       lines. (depends on T003)
-- [ ] T005 [US1] Modify
+- [X] T005 [US1] Modify
       `jircd-core/src/main/java/net/jircd/core/session/command/AwayCommandHandler.java`: after
       the existing set-reason/clear-reason logic (both branches), build a
       `Set<ClientSession>` by iterating `session.channelMemberships()` and each channel's
       `members()` (deduplicating by session identity, unlike `NickCommandHandler`'s undeduplicated
       double-loop — research.md Decision 1, FR-004), excluding the sender itself, filter to
-      sessions whose `negotiatedCapabilities()` contains the string literal `"away-notify"`
-      (hardcoded locally, matching `CapabilityTagRenderer`'s existing
-      jircd-core-can't-depend-on-jircd-capabilities precedent for `"message-tags"`), and send
-      each a `Command.AWAY` raw `Message` via `writer().enqueueRaw(...)` — prefix
-      `Hostmask.format(session.nickname(), session.ident(), session.realHostname())`, params
-      `List.of(reason)` when going away/changing reason or `List.of()` when clearing (contracts/
-      away-notify-and-batch.md "away-notify capability"; data-model.md "Away-Status Change
-      Notice").
+      sessions whose `negotiatedCapabilities()` contains `CapabilityName.AWAY_NOTIFY`
+      (`net.jircd.protocol.CapabilityName`, the shared constant both `jircd-core` and every
+      `jircd-capabilities/*` module reference — no more per-file hardcoded string literals), and
+      send each a `Command.AWAY` raw `Message` via `writer().enqueueRaw(...)` — prefix
+      `PresentedIdentity.presentedForm(session, extensionRegistry)` (cloak-aware; `AwayCommandHandler`
+      now takes `ExtensionRegistry` as a constructor dependency — a raw
+      `Hostmask.format(..., session.realHostname())` was caught in review as leaking the real
+      hostname past an enabled `cloak` extension, since `AWAY` requires no privilege at all),
+      params `List.of(reason)` when going away/changing reason or `List.of()` when clearing
+      (contracts/away-notify-and-batch.md "away-notify capability"; data-model.md "Away-Status
+      Change Notice").
 
 **Checkpoint**: User Story 1 is fully functional and independently testable — run T002's tests
 against T003-T005; all should pass. Deliverable on its own without User Story 2 existing.
@@ -136,7 +139,7 @@ on User Story 1.
 
 ### Tests for User Story 2
 
-- [ ] T006 [P] [US2] Write a unit test — e.g.
+- [X] T006 [P] [US2] Write a unit test — e.g.
       `jircd-core/src/test/java/net/jircd/core/session/SessionWriterBatchTest.java` — following
       `LivenessMonitorTest.java`'s pattern of constructing `SessionWriter` directly against a
       captured `OutputStream` and a `ClientSession` with capabilities added directly to
@@ -151,7 +154,7 @@ on User Story 1.
 
 ### Implementation for User Story 2
 
-- [ ] T007 [P] [US2] Create the `jircd-capabilities/batch` module:
+- [X] T007 [P] [US2] Create the `jircd-capabilities/batch` module:
       `build.gradle.kts` (mirror `jircd-capabilities/echo-message/build.gradle.kts`),
       `src/main/java/net/jircd/capabilities/batch/BatchExtension.java` (extends
       `AbstractCapabilityExtension`, `public static final String ID = "batch"`, no hook
@@ -159,11 +162,11 @@ on User Story 1.
       research.md Decision 2), and
       `src/main/resources/META-INF/services/net.jircd.core.extension.CapabilityExtension`
       (containing the one line `net.jircd.capabilities.batch.BatchExtension`).
-- [ ] T008 [US2] Register the new module: add `"jircd-capabilities:batch"` to
+- [X] T008 [US2] Register the new module: add `"jircd-capabilities:batch"` to
       `settings.gradle.kts`'s `include(...)` block, and add
       `runtimeOnly(project(":jircd-capabilities:batch"))` to `jircd-server/build.gradle.kts`.
       (depends on T007)
-- [ ] T009 [US2] Add `enqueueBatch(String type, List<String> typeParams, List<Message> members)`
+- [X] T009 [US2] Add `enqueueBatch(String type, List<String> typeParams, List<Message> members)`
       to `jircd-core/src/main/java/net/jircd/core/session/SessionWriter.java`: check
       `session.negotiatedCapabilities().contains("batch") &&
       session.negotiatedCapabilities().contains("message-tags")` (both string literals hardcoded
@@ -184,19 +187,19 @@ against T007-T009; all should pass. Deliverable on its own without User Story 1 
 
 **Purpose**: Final checks spanning both stories.
 
-- [ ] T010 [P] Re-read `specs/011-away-notify-batch/contracts/away-notify-and-batch.md` against
+- [X] T010 [P] Re-read `specs/011-away-notify-batch/contracts/away-notify-and-batch.md` against
       the finished `AwayCommandHandler`/`SessionWriter`/extension changes and correct any
       wording that has drifted from the actual implementation (no source-code change expected —
       this is a documentation-accuracy pass).
-- [ ] T011 Walk through every scenario in `specs/011-away-notify-batch/quickstart.md`
+- [X] T011 Walk through every scenario in `specs/011-away-notify-batch/quickstart.md`
       end-to-end (manually or by confirming the corresponding T002/T006 test methods cover it)
       and check off any scenario not already exercised by an automated test.
-- [ ] T012 [P] Update `specs/001-ircv3-server/contracts/server-configuration.md`'s example
+- [X] T012 [P] Update `specs/001-ircv3-server/contracts/server-configuration.md`'s example
       `extensions:` block to include `away-notify: enabled` / `batch: enabled` as documented
       examples, alongside the three pre-existing capabilities (documentation-accuracy pass,
       same convention `010-wallops-notices` used for its own doc updates — no schema change,
       since any `CapabilityExtension` id is already generically accepted there).
-- [ ] T013 [P] Run `./gradlew check` to execute the full test suite plus
+- [X] T013 [P] Run `./gradlew check` to execute the full test suite plus
       Spotless/SpotBugs/PMD across `jircd-core`, the two new capability modules, and
       `jircd-integration-tests`, satisfying the Constitution's Quality Gates before this
       feature is considered mergeable.

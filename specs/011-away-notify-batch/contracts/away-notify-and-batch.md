@@ -41,6 +41,10 @@ client→server in this direction):
 - A recipient that disconnects between the fan-out's recipient snapshot and its own
   `writer().enqueueRaw(...)` call is simply skipped, the same tolerance every other
   multi-recipient send in this codebase already has for a mid-send disconnect.
+- The notice's `nick!user@host` prefix is cloak-aware (`PresentedIdentity.presentedForm`) — a
+  recipient never sees a changed user's real hostname if that user is presented as cloaked
+  elsewhere. `AWAY` requires no privilege, so every connected user can trigger this broadcast;
+  cloak-awareness here is a correctness requirement, not an optional nicety.
 
 ## `batch` capability
 
@@ -52,11 +56,16 @@ client→server in this direction):
 client-issued form of `BATCH` in this release:
 
 ```text
-:<server-name> BATCH +<reference-tag> <type> [<type-param> ...]
+BATCH +<reference-tag> <type> [<type-param> ...]
 @batch=<reference-tag> <member message, unchanged otherwise>
 @batch=<reference-tag> <member message, unchanged otherwise>
-:<server-name> BATCH -<reference-tag>
+BATCH -<reference-tag>
 ```
+
+The open/close `BATCH` lines carry no prefix — `SessionWriter`, which owns `enqueueBatch`, has
+no server-name dependency to draw one from, and a prefix-less framing line has established
+precedent in this codebase (`KillCommandHandler`'s `ERROR` line uses the same `null` prefix for
+the same reason: a server-framing line with no natural sender identity).
 
 | Field | Description |
 |---|---|

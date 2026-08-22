@@ -149,16 +149,20 @@ settings.gradle.kts                         # include the two new module paths
 
 jircd-integration-tests/
 └── src/test/java/net/jircd/integration/
-    ├── AwayNotifyTest.java                 # NEW — end-to-end: opted-in channel-mate receives
-    │                                       # away/back/reason-change notices; non-opted-in
-    │                                       # receives none; one notice regardless of shared-
-    │                                       # channel count; no notice across non-shared channels
-    └── BatchTest.java                      # NEW — end-to-end: opted-in recipient sees correct
-                                             # BATCH +/-ref framing and per-member batch= tag
-                                             # around two concurrent batches; non-opted-in
-                                             # recipient sees unwrapped messages only; a
-                                             # batch-only-no-message-tags recipient also gets
-                                             # unwrapped delivery (research.md, decision 2)
+    └── AwayNotifyTest.java                 # NEW — end-to-end: opted-in channel-mate receives
+                                             # away/back/reason-change notices; non-opted-in
+                                             # receives none; one notice regardless of shared-
+                                             # channel count; no notice across non-shared channels
+
+jircd-core/
+└── src/test/java/net/jircd/core/session/
+    └── SessionWriterBatchTest.java         # NEW — unit test (research.md Decision 4 — no
+                                             # production consumer exists to trigger this
+                                             # end-to-end): two concurrent enqueueBatch calls
+                                             # produce correctly matched BATCH +/-ref framing and
+                                             # distinct per-member batch= tags; a session lacking
+                                             # batch and/or message-tags gets members completely
+                                             # unwrapped
 ```
 
 **Structure Decision**: No changes to existing modules' public shape beyond the two additions

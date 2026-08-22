@@ -9,7 +9,7 @@ Entities section; consistent with how `WALLOPS` notices already work).
 
 | Field | Description |
 |---|---|
-| Sender identity | The changed user's `nick!user@host` hostmask, the same presented form every other channel-mate broadcast (`NICK`, `WALLOPS`) already uses. |
+| Sender identity | The changed user's `nick!user@host` hostmask, built via `PresentedIdentity.presentedForm` — the same cloak-aware presentation `NICK`'s own channel-mate broadcast already uses, so a recipient never sees the real hostname of a user with `cloak` enabled. `AWAY` requires no privilege at all, unlike `WALLOPS` (administrator-only, and not itself cloak-aware) — cloak-awareness here is not optional. |
 | New state | Either "away, with a reason" or "no longer away." |
 | Reason | Present only when the new state is "away" — the exact text the sender's own `AWAY <text>` call supplied. Absent (no trailing parameter) when the new state is "no longer away." |
 
@@ -78,11 +78,14 @@ is supported in this release, per spec.md's User Story 2, which describes only s
 groups):
 
 ```text
-:server.name BATCH +8fcb6...  <type> [typeParams...]
-@batch=8fcb6...    :sender PRIVMSG #chan :first member message
-@batch=8fcb6...    :sender PRIVMSG #chan :second member message
-:server.name BATCH -8fcb6...
+BATCH +8fcb6...  <type> [typeParams...]
+@batch=8fcb6...  :sender PRIVMSG #chan :first member message
+@batch=8fcb6...  :sender PRIVMSG #chan :second member message
+BATCH -8fcb6...
 ```
+
+(No prefix on the open/close lines — `SessionWriter` has no server-name dependency to draw one
+from; see `contracts/away-notify-and-batch.md` for the precedent this follows.)
 
 For a recipient who declined `batch` and/or `message-tags`, the same delivery instead produces
 just the two member lines, untagged, with no `BATCH` framing at all.
