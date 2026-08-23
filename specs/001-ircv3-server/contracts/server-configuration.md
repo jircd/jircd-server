@@ -65,6 +65,8 @@ capabilities:            # CapabilityExtension states only (jircd-capabilities/)
   message-tags: enabled  # client-negotiable via CAP LS. A ServerExtension id
   server-time: enabled   # (e.g., cloak, admin) listed here is a configuration error.
   echo-message: enabled
+  away-notify: enabled   # 011-away-notify-batch
+  batch: enabled          # 011-away-notify-batch
 
 server-extensions:      # ServerExtension states only (jircd-server-extensions/) —
   cloak: disabled        # never CAP-negotiated, administrator-only. A

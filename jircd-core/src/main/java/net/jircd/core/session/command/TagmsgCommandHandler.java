@@ -23,6 +23,7 @@ import net.jircd.core.session.ClientSession;
 import net.jircd.core.session.NicknameRegistry;
 import net.jircd.core.session.OutboundMessage;
 import net.jircd.core.session.PresentedIdentity;
+import net.jircd.protocol.CapabilityName;
 import net.jircd.protocol.Message;
 import net.jircd.protocol.NumericReply;
 
@@ -33,14 +34,6 @@ import net.jircd.protocol.NumericReply;
  * a client without it has nothing to render from a message with no body.
  */
 public final class TagmsgCommandHandler implements CommandHandler {
-
-  /**
-   * The IRCv3 capability name gating any tag delivery at all — a wire-protocol constant, not an
-   * internal implementation detail (the same way {@code msgid}/{@code time} are reserved tag names
-   * elsewhere); {@code jircd-core} cannot depend on the {@code jircd-capabilities} module that
-   * defines {@code MessageTagsExtension.ID} (research.md "Protocol/server boundary").
-   */
-  private static final String MESSAGE_TAGS_CAPABILITY = "message-tags";
 
   private final ChannelRegistry channelRegistry;
   private final NicknameRegistry nicknameRegistry;
@@ -100,7 +93,7 @@ public final class TagmsgCommandHandler implements CommandHandler {
       if (recipient == session && !echoToSender) {
         continue;
       }
-      if (!recipient.negotiatedCapabilities().contains(MESSAGE_TAGS_CAPABILITY)) {
+      if (!recipient.negotiatedCapabilities().contains(CapabilityName.MESSAGE_TAGS)) {
         continue; // FR-021: nothing to render for a client without message-tags negotiated
       }
       if (recipient.writer() != null) {

@@ -19,9 +19,14 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
+import net.jircd.protocol.CapabilityName;
 import net.jircd.protocol.Command;
 import net.jircd.protocol.Message;
 import net.jircd.protocol.MessageSerializer;
@@ -92,6 +97,42 @@ public final class SessionWriter implements AutoCloseable {
     if (!offered) {
       handleOverflow();
     }
+  }
+
+  private static final String BATCH_TAG_KEY = "batch";
+
+  /**
+   * Wraps {@code members} in {@code BATCH +ref}/{@code BATCH -ref} framing with a {@code batch=ref}
+   * tag merged onto each member, but only if this session negotiated both {@code batch} and {@code
+   * message-tags} — otherwise every member is sent via {@link #enqueueRaw} completely unmodified
+   * (011-away-notify-batch FR-007 through FR-011, research.md Decision 2). {@code ref} is a fresh
+   * {@link UUID} generated per call — collision-safe without any shared/synchronized state
+   * (research.md Decision 3). The open/close {@code BATCH} lines carry no prefix, the same
+   * precedent {@code KillCommandHandler}'s {@code ERROR} line already establishes for a
+   * server-framing line with no natural sender identity.
+   */
+  public void enqueueBatch(String type, List<String> typeParams, List<Message> members) {
+    if (!session.negotiatedCapabilities().contains(CapabilityName.BATCH)
+        || !session.negotiatedCapabilities().contains(CapabilityName.MESSAGE_TAGS)) {
+      for (Message member : members) {
+        enqueueRaw(member);
+      }
+      return;
+    }
+    String ref = UUID.randomUUID().toString();
+    List<String> openParams = new ArrayList<>();
+    openParams.add("+" + ref);
+    openParams.add(type);
+    openParams.addAll(typeParams);
+    enqueueRaw(new Message(Map.of(), null, null, "BATCH", List.copyOf(openParams)));
+    for (Message member : members) {
+      Map<String, String> tags = new LinkedHashMap<>(member.tags());
+      tags.put(BATCH_TAG_KEY, ref);
+      enqueueRaw(
+          new Message(
+              tags, member.prefix(), member.command(), member.rawCommand(), member.params()));
+    }
+    enqueueRaw(new Message(Map.of(), null, null, "BATCH", List.of("-" + ref)));
   }
 
   private void handleOverflow() {

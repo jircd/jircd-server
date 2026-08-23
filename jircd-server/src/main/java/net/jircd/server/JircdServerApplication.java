@@ -243,7 +243,8 @@ public final class JircdServerApplication {
     connectionHandler.registerHandler(
         Command.LUSERS,
         new LusersCommandHandler(nicknameRegistry, channelRegistry, () -> serverName));
-    connectionHandler.registerHandler(Command.AWAY, new AwayCommandHandler(() -> serverName));
+    connectionHandler.registerHandler(
+        Command.AWAY, new AwayCommandHandler(() -> serverName, extensionRegistry));
     connectionHandler.registerHandler(
         Command.WHOWAS, new WhowasCommandHandler(whowasHistory, () -> serverName));
     connectionHandler.registerHandler(

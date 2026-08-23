@@ -13,6 +13,8 @@ include(
     "jircd-capabilities:message-tags",
     "jircd-capabilities:server-time",
     "jircd-capabilities:echo-message",
+    "jircd-capabilities:away-notify",
+    "jircd-capabilities:batch",
     "jircd-server-extensions",
     "jircd-server-extensions:cloak",
     "jircd-server-extensions:admin",

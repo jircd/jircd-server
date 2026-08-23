@@ -7,3 +7,6 @@ feature.json
 
 # Per-machine extension config overrides.
 extensions/*/local-config.yml
+
+# Extension catalog fetch cache — regenerated on demand, not shared state.
+extensions/.cache/
