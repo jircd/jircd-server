@@ -56,7 +56,11 @@ This means:
    formatting or refactoring should be a separate PR.
 6. **Open a PR against `main`**, describing what changed and why (not
    just what). Link the issue and, if relevant, the spec/plan section the
-   change implements.
+   change implements. If the PR fully resolves the issue, use a closing
+   keyword (e.g. `Closes #4`) so it closes automatically on merge, and
+   remove any now-stale planning labels (`deferred`, `roadmap`, etc.)
+   from the issue as part of the same PR — don't leave sync-up as a
+   separate manual pass after the fact.
 
 ## Code style
 

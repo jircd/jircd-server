@@ -1,6 +1,11 @@
 ## What changed and why
 
-<!-- Describe the change. Link the issue/spec section it implements. -->
+<!--
+Describe the change. Link the issue/spec section it implements. If this
+PR fully resolves a tracked issue, use a closing keyword (e.g. "Closes
+#4") so merging closes it automatically — don't just reference the
+number.
+-->
 
 ## Spec/plan traceability
 
@@ -27,3 +32,5 @@ deterministic (no flaky timing-based assertions).
 - [ ] I've read [CONTRIBUTING.md](../CONTRIBUTING.md)
 - [ ] This change is scoped to one logical unit of work
 - [ ] I've updated relevant docs (`spec.md`/`plan.md`/`README.md`) if behavior changed
+- [ ] If this resolves a tracked issue, I've removed any now-stale planning labels
+      (e.g. `deferred`, `roadmap`) from it
