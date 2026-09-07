@@ -24,3 +24,6 @@ jircd-server/jircd.yaml
 .project
 .classpath
 .settings/
+
+# Graphify output
+graphify-out/
