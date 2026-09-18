@@ -18,6 +18,7 @@ package net.jircd.core.session.command;
 import java.util.List;
 import java.util.Map;
 import net.jircd.core.extension.ExtensionRegistry;
+import net.jircd.core.session.CaseMapping;
 import net.jircd.core.session.ClientSession;
 import net.jircd.core.session.NicknameRegistry;
 import net.jircd.core.session.PresentedIdentity;
@@ -85,7 +86,9 @@ public final class NickCommandHandler implements CommandHandler {
     }
 
     String previous = session.nickname();
-    if (previous != null && !previous.equals(requested)) {
+    // A case-only (or otherwise RFC1459-equivalent) change keeps the same registry key. Releasing
+    // the previous spelling in that case would remove this session's newly-confirmed claim.
+    if (previous != null && !CaseMapping.fold(previous).equals(CaseMapping.fold(requested))) {
       nicknameRegistry.release(previous, session);
     }
     // The prefix on a NICK change notification is the identity recipients already know the

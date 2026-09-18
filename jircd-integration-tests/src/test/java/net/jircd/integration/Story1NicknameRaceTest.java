@@ -53,4 +53,19 @@ class Story1NicknameRaceTest {
       assertThat(reply).contains("433");
     }
   }
+
+  @Test
+  void caseOnlyNicknameChangeKeepsTheOriginalClaim() throws Exception {
+    try (TestServer server = TestServer.start();
+        RawIrcClient first = RawIrcClient.connectPlaintext(server.plaintextPort());
+        RawIrcClient second = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+      first.registerAndAwaitWelcome("Alice", "first");
+
+      first.send("NICK alice");
+      assertThat(first.readUntil("NICK alice", Duration.ofSeconds(5))).contains("Alice!");
+
+      second.send("NICK Alice");
+      assertThat(second.readUntil("433", Duration.ofSeconds(5))).contains("433");
+    }
+  }
 }
