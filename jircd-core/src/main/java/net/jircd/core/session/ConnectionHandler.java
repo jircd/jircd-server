@@ -71,6 +71,16 @@ public final class ConnectionHandler {
 
   private static final int MAX_COMMAND_SECTION_BYTES = 512;
 
+  /**
+   * Hard cap on bytes buffered per line while reading, before any validation runs: the two section
+   * limits combined. Anything longer cannot be valid, so the excess is discarded unread into memory
+   * rather than accumulated.
+   */
+  private static final int MAX_LINE_BYTES = MAX_TAG_SECTION_BYTES + MAX_COMMAND_SECTION_BYTES;
+
+  /** Returned by {@link #readLineBytes} for a line that exceeded {@link #MAX_LINE_BYTES}. */
+  static final byte[] OVERSIZED_LINE = new byte[0];
+
   /** Commands valid before registration completes (FR-001, FR-060, FR-039, FR-006). */
   private static final java.util.Set<Command> PRE_REGISTRATION_COMMANDS =
       java.util.Set.of(
@@ -164,7 +174,12 @@ public final class ConnectionHandler {
         if (session.lifecycle().isClosing()) {
           break;
         }
-        processLine(session, lineBytes);
+        if (lineBytes == OVERSIZED_LINE) {
+          Replies.send(
+              session, serverName.get(), NumericReply.ERR_INPUTTOOLONG, "Input line was too long");
+        } else {
+          processLine(session, lineBytes);
+        }
         if (session.lifecycle().isClosing()) {
           break;
         }
@@ -215,15 +230,26 @@ public final class ConnectionHandler {
    * returning them without decoding. Returns {@code null} only at end-of-stream with no bytes read
    * at all — a final, unterminated line at EOF is still returned, the same as {@code
    * BufferedReader#readLine()} would.
+   *
+   * <p>Buffering is bounded by {@link #MAX_LINE_BYTES}: once a line exceeds it, further bytes up to
+   * the next {@code \n} are discarded without being stored and {@link #OVERSIZED_LINE} is returned.
    */
-  private static byte[] readLineBytes(InputStream in) throws IOException {
+  static byte[] readLineBytes(InputStream in) throws IOException {
     ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+    boolean oversized = false;
     int b;
     while ((b = in.read()) != -1) {
       if (b == '\n') {
         break;
       }
-      buffer.write(b);
+      if (buffer.size() < MAX_LINE_BYTES) {
+        buffer.write(b);
+      } else {
+        oversized = true;
+      }
+    }
+    if (oversized) {
+      return OVERSIZED_LINE;
     }
     if (b == -1 && buffer.size() == 0) {
       return null;

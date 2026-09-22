@@ -14,17 +14,13 @@
       <ignored-keys>
          <ignored-key id="2161D72E7DCD4258" reason="Key couldn't be downloaded from any key server"/>
          <ignored-key id="2C7B12F2A511E325" reason="Key couldn't be downloaded from any key server"/>
-         <ignored-key id="56E73BA9A0B592D0" reason="Key couldn't be downloaded from any key server"/>
          <ignored-key id="66B50994442D2D40" reason="Key couldn't be downloaded from any key server"/>
          <ignored-key id="72475FD306B9CAB7" reason="Key couldn't be downloaded from any key server"/>
          <ignored-key id="79E193516BE7998F" reason="Key couldn't be downloaded from any key server"/>
          <ignored-key id="7EB97D110DFADD60" reason="Key couldn't be downloaded from any key server"/>
-         <ignored-key id="9AEE152CDCCEBFCB" reason="Key couldn't be downloaded from any key server"/>
          <ignored-key id="9EB80E92EB2135B1" reason="Key couldn't be downloaded from any key server"/>
          <ignored-key id="A929EA2321FDBF8F" reason="Key couldn't be downloaded from any key server"/>
          <ignored-key id="C7CA19B7B620D787" reason="Key couldn't be downloaded from any key server"/>
-         <ignored-key id="CB43338E060CF9FA" reason="Key couldn't be downloaded from any key server"/>
-         <ignored-key id="D364ABAA39A47320" reason="Key couldn't be downloaded from any key server"/>
       </ignored-keys>
       <trusted-keys>
          <trusted-key id="19BEAB2D799C020F17C69126B16698A4ADF4D638">
@@ -46,6 +42,7 @@
             <trusting group="ch.qos.logback"/>
             <trusting group="org.slf4j"/>
          </trusted-key>
+         <trusted-key id="077E8893A6DCC33DD4A4D5B256E73BA9A0B592D0" group="org.apache.logging.log4j"/>
          <trusted-key id="68AF82B99C3C9ADFE5CA661767AB3C2A8FC5C42E" group="com.github.oowekyala.ooxml" name="nice-xml-messages" version="3.1"/>
          <trusted-key id="694621A7227D8D5289699830ABE9F3126BB741C1" group="com.google.guava"/>
          <trusted-key id="6F538074CCEBF35F28AF9B066A0975F8B1127B83" group="org.jetbrains.kotlin"/>
@@ -56,6 +53,7 @@
          <trusted-key id="8FCD23073248F3C28EF9F80380EF47E549604C05" group="jaxen"/>
          <trusted-key id="9E3044071B758EBCB7E45673700E4F39BC05364B" group="org.eclipse.platform" name="org.eclipse.osgi" version="3.24.200"/>
          <trusted-key id="A31DDE881C3E3C4C985BD0D02C7F998F4272C851" group="com.diffplug.spotless"/>
+         <trusted-key id="A413F67D71BEEC23ADD0CE0ACB43338E060CF9FA" group="org.jacoco"/>
          <trusted-key id="A5BD02B93E7A40482EB1D66A5F69AD087600B22C" group="org.ow2.asm"/>
          <trusted-key id="A7892505CF1A58076453E52D7999BEFBA1039E8B" group="net.bytebuddy"/>
          <trusted-key id="BDB5FA4FE719D787FB3D3197F6D4A1D411E9D1AE" group="com.google.guava"/>
@@ -64,6 +62,9 @@
          <trusted-key id="D878D4A823EAE731B729D1A8D2151178A123C97F" group="^com[.]github[.]spotbugs($|([.].*))" regex="true"/>
          <trusted-key id="E0D98C5FD55A8AF232290E58DEE12B9896F97E34" group="org.pcollections" name="pcollections" version="4.0.2"/>
          <trusted-key id="E45564C52EC59FA6471B58BC0208F215AC34C17C" group="com.password4j" name="password4j" version="1.8.4"/>
+         <trusted-key id="E5138A8E9F2E7E42D38B14D99AEE152CDCCEBFCB" group="io.github.hakky54" name="sslcontext-kickstart" version="8.3.6"/>
+         <trusted-key id="EE0CA873074092F806F59B65D364ABAA39A47320" group="com.google.errorprone"/>
+         <trusted-key id="EE0CA873074092F806F59B65D364ABAA39A47320" group="com.google.googlejavaformat" name="google-java-format" version="1.30.0"/>
          <trusted-key id="F4DD59C90148BDC52BEB90A4530AA5F25C25011F">
             <trusting group="commons-codec"/>
             <trusting group="org.apache.bcel"/>
