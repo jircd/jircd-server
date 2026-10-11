@@ -19,7 +19,6 @@ import java.util.HashSet;
 import java.util.Set;
 import net.jircd.core.extension.ExtensionRegistry;
 import net.jircd.protocol.Command;
-import net.jircd.protocol.Hostmask;
 import net.jircd.protocol.Message;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -76,7 +75,7 @@ public final class DisconnectCleanup {
     neighbors.remove(session);
 
     if (session.nickname() != null && session.ident() != null && session.realHostname() != null) {
-      String prefix = Hostmask.format(session.nickname(), session.ident(), session.realHostname());
+      String prefix = PresentedIdentity.presentedForm(session, extensionRegistry);
       Message quit =
           new Message(java.util.Map.of(), prefix, Command.QUIT, "QUIT", java.util.List.of(reason));
       for (ClientSession neighbor : neighbors) {
