@@ -93,61 +93,22 @@ public final class JoinCommandHandler implements CommandHandler {
       return;
     }
 
-    Channel channel = channelRegistry.getOrCreate(name);
-
-    if (!passesBanGate(channel, session)) {
+    var failure = new java.util.concurrent.atomic.AtomicReference<AdmissionFailure>();
+    var joined =
+        channelRegistry.join(
+            name,
+            session,
+            channel -> {
+              failure.set(admissionFailure(channel, session, suppliedKey));
+              return failure.get() == null;
+            });
+    if (joined.isEmpty()) {
+      AdmissionFailure rejected = failure.get();
       Replies.send(
-          session,
-          serverName.get(),
-          NumericReply.ERR_BANNEDFROMCHAN,
-          channel.name(),
-          "Cannot join channel (+b)");
+          session, serverName.get(), rejected.reply(), rejected.channelName(), rejected.reason());
       return;
     }
-
-    // 006-complete-core-protocol FR-002/FR-005 (spec.md Clarifications) — a pending invitation
-    // exempts a join from +i, +l, and +k alike; peeked here (not consumed) so a channel with more
-    // than one of these active doesn't have its invitation consumed by the first gate checked and
-    // then incorrectly fail the second. Consumed exactly once, below, only once every applicable
-    // gate has passed.
-    boolean invited = channel.invited().contains(CaseMapping.fold(session.nickname()));
-
-    if (!invited && channel.activeModes().contains(CoreChannelModes.INVITE_ONLY)) {
-      Replies.send(
-          session,
-          serverName.get(),
-          NumericReply.ERR_INVITEONLYCHAN,
-          channel.name(),
-          "Cannot join channel (+i)");
-      return;
-    }
-    if (!invited
-        && channel.memberLimit() > 0
-        && channel.members().size() >= channel.memberLimit()) {
-      Replies.send(
-          session,
-          serverName.get(),
-          NumericReply.ERR_CHANNELISFULL,
-          channel.name(),
-          "Cannot join channel (+l)");
-      return;
-    }
-    if (!invited && channel.key() != null && !channel.key().equals(suppliedKey)) {
-      Replies.send(
-          session,
-          serverName.get(),
-          NumericReply.ERR_BADCHANNELKEY,
-          channel.name(),
-          "Cannot join channel (+k)");
-      return;
-    }
-
-    if (invited) {
-      channel.invited().remove(CaseMapping.fold(session.nickname()));
-    }
-
-    channel.addMember(session);
-    session.channelMemberships().add(channel);
+    Channel channel = joined.get();
 
     String presentedForm = PresentedIdentity.presentedForm(session, extensionRegistry);
     Message joinNotification =
@@ -166,6 +127,44 @@ public final class JoinCommandHandler implements CommandHandler {
     }
 
     sendNamesReply(session, channel, serverName.get());
+  }
+
+  private record AdmissionFailure(NumericReply reply, String channelName, String reason) {}
+
+  private AdmissionFailure admissionFailure(
+      Channel channel, ClientSession session, String suppliedKey) {
+    if (!passesBanGate(channel, session)) {
+      return new AdmissionFailure(
+          NumericReply.ERR_BANNEDFROMCHAN, channel.name(), "Cannot join channel (+b)");
+    }
+
+    // 006-complete-core-protocol FR-002/FR-005 (spec.md Clarifications) — a pending invitation
+    // exempts a join from +i, +l, and +k alike; peeked here (not consumed) so a channel with more
+    // than one of these active doesn't have its invitation consumed by the first gate checked and
+    // then incorrectly fail the second. Consumed exactly once, below, only once every applicable
+    // gate has passed.
+    boolean invited = channel.invited().contains(CaseMapping.fold(session.nickname()));
+
+    if (!invited && channel.activeModes().contains(CoreChannelModes.INVITE_ONLY)) {
+      return new AdmissionFailure(
+          NumericReply.ERR_INVITEONLYCHAN, channel.name(), "Cannot join channel (+i)");
+    }
+    if (!invited
+        && channel.memberLimit() > 0
+        && channel.members().size() >= channel.memberLimit()) {
+      return new AdmissionFailure(
+          NumericReply.ERR_CHANNELISFULL, channel.name(), "Cannot join channel (+l)");
+    }
+    if (!invited && channel.key() != null && !channel.key().equals(suppliedKey)) {
+      return new AdmissionFailure(
+          NumericReply.ERR_BADCHANNELKEY, channel.name(), "Cannot join channel (+k)");
+    }
+
+    if (invited) {
+      channel.invited().remove(CaseMapping.fold(session.nickname()));
+    }
+
+    return null;
   }
 
   public static void sendNamesReply(ClientSession requester, Channel channel, String serverName) {
