@@ -72,9 +72,7 @@ public final class SajoinCommandHandler implements CommandHandler {
       return;
     }
 
-    Channel channel = channelRegistry.getOrCreate(name);
-    channel.addMember(session);
-    session.channelMemberships().add(channel);
+    Channel channel = channelRegistry.join(name, session, ignored -> true).orElseThrow();
 
     String presentedForm = PresentedIdentity.presentedForm(session, extensionRegistry);
     Message joinNotification =

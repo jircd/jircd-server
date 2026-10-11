@@ -20,6 +20,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Predicate;
 
 /**
  * Server-wide channel-name uniqueness with create-on-first-join (FR-003), compared using the same
@@ -43,6 +44,21 @@ public final class ChannelRegistry {
     return byFoldedName.computeIfAbsent(folded, ignored -> new Channel(name));
   }
 
+  /**
+   * Checks admission and inserts membership while holding the registry lock, so empty-channel
+   * removal cannot detach the channel between lookup and insertion. Admission must not block.
+   */
+  public synchronized Optional<Channel> join(
+      String name, ClientSession session, Predicate<Channel> admission) {
+    Channel channel = getOrCreate(name);
+    if (!admission.test(channel)) {
+      return Optional.empty();
+    }
+    channel.addMember(session);
+    session.channelMemberships().add(channel);
+    return Optional.of(channel);
+  }
+
   public synchronized Optional<Channel> lookup(String name) {
     return Optional.ofNullable(byFoldedName.get(CaseMapping.fold(name)));
   }
@@ -55,7 +71,7 @@ public final class ChannelRegistry {
     byFoldedName.computeIfPresent(
         CaseMapping.fold(channel.name()),
         (key, existing) -> {
-          if (existing.equals(channel) && existing.isEmpty()) {
+          if (existing == channel && existing.isEmpty()) {
             return null;
           }
           return existing;
