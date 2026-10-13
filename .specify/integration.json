@@ -1,11 +1,16 @@
 {
-  "version": "0.16.3",
+  "version": "1.2.0",
   "integration_state_schema": 1,
   "installed_integrations": [
-    "claude"
+    "claude",
+    "codex"
   ],
   "integration_settings": {
     "claude": {
+      "script": "py",
+      "invoke_separator": "-"
+    },
+    "codex": {
       "script": "py",
       "invoke_separator": "-"
     }
