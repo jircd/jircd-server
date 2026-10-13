@@ -27,3 +27,9 @@ jircd-server/jircd.yaml
 
 # Graphify output
 graphify-out/
+
+# Codegraph
+.codegraph/
+
+# Local worktrees
+.worktrees/
