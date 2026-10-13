@@ -16,12 +16,95 @@
 package net.jircd.protocol;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class MessageSerializerTest {
+
+  @ParameterizedTest
+  @ValueSource(ints = {498, 499, 500})
+  void commandBudgetIncludesCrLf(int bodyLength) {
+    Message message = Message.of(Command.NOTICE, "bob", "x".repeat(bodyLength));
+    assertThat(MessageSerializer.commandBytes(message)).isEqualTo(bodyLength + 13);
+    if (bodyLength <= 499) {
+      assertThat(MessageSerializer.utf8Bytes(MessageSerializer.serialize(message)) + 2)
+          .isEqualTo(bodyLength + 13);
+    } else {
+      assertThatThrownBy(() -> MessageSerializer.serialize(message))
+          .isInstanceOf(MessageSerializer.MessageTooLongException.class);
+    }
+  }
+
+  @Test
+  void truncationPreservesFourByteCharactersAndAllStructuralFields() throws Exception {
+    Message message =
+        new Message(
+            Map.of("time", "123"),
+            "sender!ident@host.example",
+            Command.PRIVMSG,
+            "PRIVMSG",
+            List.of("bob", "😀".repeat(124) + "x"));
+    String wire = MessageSerializer.serializeText(message);
+    Message parsed = MessageParser.parse(wire);
+    assertThat(parsed.prefix()).isEqualTo(message.prefix());
+    assertThat(parsed.params().getFirst()).isEqualTo("bob");
+    assertThat(parsed.tags()).isEqualTo(message.tags());
+    String body = parsed.params().getLast();
+    assertThat(body).isEqualTo("😀".repeat(117));
+    assertThat(body).doesNotContain("\ufffd");
+    assertThat(MessageSerializer.commandBytes(parsed)).isEqualTo(509);
+  }
+
+  @Test
+  void truncationReservesTheColonEvenIfTheRemainingTextHasNoSpaces() throws Exception {
+    Message message = Message.of(Command.NOTICE, "bob", "x".repeat(499) + " tail");
+    String wire = MessageSerializer.serializeText(message);
+    assertThat(MessageSerializer.utf8Bytes(wire) + 2).isEqualTo(512);
+    assertThat(MessageParser.parse(wire).params().getLast()).isEqualTo("x".repeat(498));
+  }
+
+  @Test
+  void impossibleStructuralFieldsAndNonTextCommandsAreRejected() {
+    Message hugeTarget = Message.of(Command.PRIVMSG, "x".repeat(510), "hello");
+    assertThatThrownBy(() -> MessageSerializer.serializeText(hugeTarget))
+        .isInstanceOf(MessageSerializer.MessageTooLongException.class);
+    Message hugeJoin = Message.of(Command.JOIN, "#" + "x".repeat(510));
+    assertThatThrownBy(() -> MessageSerializer.serializeText(hugeJoin))
+        .isInstanceOf(MessageSerializer.MessageTooLongException.class);
+    Message noCharacterFits =
+        new Message(Map.of(), "x".repeat(497), Command.NOTICE, "NOTICE", List.of("b", "😀"));
+    assertThatThrownBy(() -> MessageSerializer.serializeText(noCharacterFits))
+        .isInstanceOf(MessageSerializer.MessageTooLongException.class);
+  }
+
+  @Test
+  void combinedTagsHave8191BytesIndependentOfThe512ByteCommand() {
+    Map<String, String> tags = Map.of("+c", "x".repeat(4091), "s", "y".repeat(4092));
+    Message message =
+        new Message(tags, null, Command.NOTICE, "NOTICE", List.of("bob", "x".repeat(499)));
+    assertThat(MessageSerializer.utf8Bytes(MessageSerializer.serializeText(message)) + 2)
+        .isEqualTo(8191 + 512);
+    Message oversizedTags =
+        new Message(
+            Map.of("+c", "x".repeat(4092), "s", "y".repeat(4092)),
+            null,
+            Command.NOTICE,
+            "NOTICE",
+            List.of("bob", "x".repeat(600)));
+    assertThatThrownBy(() -> MessageSerializer.serializeText(oversizedTags))
+        .isInstanceOf(MessageSerializer.MessageTooLongException.class)
+        .hasMessageContaining("tag section");
+  }
+
+  @Test
+  void tagDataAccountingUsesEscapedUtf8Bytes() {
+    assertThat(MessageSerializer.tagDataBytes(Map.of("+c", " 😀;"))).isEqualTo(11);
+  }
 
   @Test
   void serializesSimpleCommand() {

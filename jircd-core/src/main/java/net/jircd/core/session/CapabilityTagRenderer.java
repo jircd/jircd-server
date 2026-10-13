@@ -20,6 +20,7 @@ import java.util.Map;
 import net.jircd.core.extension.CapabilityExtension;
 import net.jircd.core.extension.ExtensionRegistry;
 import net.jircd.protocol.CapabilityName;
+import net.jircd.protocol.MessageSerializer;
 
 /**
  * The real {@link TagRenderer}: for each currently-{@code ENABLED} {@link CapabilityExtension},
@@ -53,12 +54,23 @@ public final class CapabilityTagRenderer implements TagRenderer {
         }
       }
     }
+    checkOriginBudget(tags);
+    Map<String, String> serverTags = new LinkedHashMap<>();
     for (var extension : extensionRegistry.enabled()) {
       if (extension instanceof CapabilityExtension capability
           && recipient.negotiatedCapabilities().contains(capability.providedCapability().name())) {
-        tags.putAll(capability.contributeTags(message));
+        serverTags.putAll(capability.contributeTags(message));
       }
     }
+    checkOriginBudget(serverTags);
+    tags.putAll(serverTags);
     return tags;
+  }
+
+  private static void checkOriginBudget(Map<String, String> tags) {
+    if (MessageSerializer.tagDataBytes(tags) > MessageSerializer.MAX_TAG_DATA_BYTES_PER_ORIGIN) {
+      throw new MessageSerializer.MessageTooLongException(
+          "Outbound tag origin exceeds 4094 data bytes");
+    }
   }
 }

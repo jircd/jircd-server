@@ -91,9 +91,10 @@ public final class SessionWriter implements AutoCloseable {
 
   /**
    * Enqueues a pre-built raw protocol line (numeric replies, echoes) — no tag decoration applied.
+   * Any pre-built tags are server-originated and share the 4094-byte escaped-data allowance.
    */
   public void enqueueRaw(Message rawMessage) {
-    boolean offered = queue.offer(() -> writeLine(MessageSerializer.serialize(rawMessage)));
+    boolean offered = queue.offer(() -> writeMessage(rawMessage, true));
     if (!offered) {
       handleOverflow();
     }
@@ -145,7 +146,16 @@ public final class SessionWriter implements AutoCloseable {
     // filtered) client tags before merging in capability-contributed ones (CapabilityTagRenderer,
     // 005-fix-batch-conformance FR-010), so this call must not re-seed unfiltered client tags on
     // top of it.
-    Map<String, String> tags = new java.util.LinkedHashMap<>(tagRenderer.render(session, message));
+    Map<String, String> tags;
+    try {
+      tags = new java.util.LinkedHashMap<>(tagRenderer.render(session, message));
+    } catch (MessageSerializer.MessageTooLongException e) {
+      LOG.warn(
+          "Dropping oversized outbound tags for connection {}: {}",
+          session.connectionId(),
+          e.getMessage());
+      return;
+    }
     java.util.List<String> params =
         message.body() != null
             ? java.util.List.of(message.target(), message.body())
@@ -157,7 +167,24 @@ public final class SessionWriter implements AutoCloseable {
             Command.fromToken(message.command()),
             message.command(),
             params);
-    writeLine(MessageSerializer.serialize(wireMessage));
+    writeMessage(wireMessage, false);
+  }
+
+  private void writeMessage(Message message, boolean serverOriginOnly) {
+    try {
+      if (serverOriginOnly
+          && MessageSerializer.tagDataBytes(message.tags())
+              > MessageSerializer.MAX_TAG_DATA_BYTES_PER_ORIGIN) {
+        throw new MessageSerializer.MessageTooLongException(
+            "Outbound server tags exceed 4094 data bytes");
+      }
+      writeLine(MessageSerializer.serializeText(message));
+    } catch (MessageSerializer.MessageTooLongException e) {
+      LOG.warn(
+          "Dropping oversized outbound message for connection {}: {}",
+          session.connectionId(),
+          e.getMessage());
+    }
   }
 
   private void writeLine(String line) {
