@@ -41,6 +41,14 @@ Planned for the first release:
 Authentication/accounts and server-to-server federation are deliberately
 out of scope for the first release — see the spec for the reasoning.
 
+Outgoing command sections are limited to 512 UTF-8 bytes including CRLF.
+NAMES replies split between complete nicknames. Oversized PRIVMSG and NOTICE
+text is shortened at a Unicode character boundary after reserving room for
+the sender prefix and target. Other oversized messages are logged and dropped;
+subsequent messages continue to be delivered. Tags have a separate 8191-byte
+wire allowance, with up to 4094 escaped data bytes from each client/server
+origin. Tags are never truncated.
+
 ## Project status
 
 This project is being built with a spec-driven workflow

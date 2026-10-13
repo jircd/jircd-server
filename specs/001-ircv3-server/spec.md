@@ -905,7 +905,7 @@ their presented (not real) hostname.
   MUST be rejected with a clear, specific error distinct from the
   "nickname in use"-style error FR-002 defines, not silently accepted as
   a new channel's identity.
-- **FR-049**: The server MUST enforce a maximum protocol line length of
+- **FR-049**: For incoming messages, the server MUST enforce a maximum protocol line length of
   512 bytes (including the trailing CR-LF) for a message's command and
   parameters, plus up to 4096 additional bytes for the message-tags
   section specifically, per the IRCv3 message-tags specification's
@@ -915,6 +915,20 @@ their presented (not real) hostname.
   from FR-015's other malformed-message cases — not silently truncated,
   partially processed, or lumped in with a generic "malformed command"
   response the sender would have to guess the actual cause of.
+  Outgoing messages MUST also fit a 512-byte command section, including
+  the sender prefix, separators, and CR-LF, measured in UTF-8 bytes.
+  NAMES replies MUST split between complete nickname tokens, preserving
+  membership, operator/voice prefixes, and existing end-of-list behavior.
+  When adding the sender prefix makes an accepted PRIVMSG or NOTICE too
+  long, only its text may be shortened, at a complete Unicode code-point
+  boundary; the prefix and target MUST remain intact. Other oversized
+  output, including text with no room for a complete character, MUST be
+  logged and dropped without stopping subsequent delivery. Outgoing tags
+  have a separate 8191-byte allowance, including their leading `@` and
+  trailing space, with at most 4094 escaped tag-data bytes from each
+  client/server origin. Pre-built raw reply tags are server-originated.
+  Tags exceeding these allowances MUST be logged and dropped with the
+  message, never truncated. This outbound policy addresses issue #14.
 - **FR-050**: The server MUST have an administrator-configurable name,
   used as the source of every server-originated protocol message
   (numeric replies, and any other message whose sender is the server

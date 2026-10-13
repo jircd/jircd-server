@@ -30,6 +30,7 @@ import net.jircd.protocol.ChannelName;
 import net.jircd.protocol.Command;
 import net.jircd.protocol.Hostmask;
 import net.jircd.protocol.Message;
+import net.jircd.protocol.MessageSerializer;
 import net.jircd.protocol.NickMask;
 import net.jircd.protocol.NumericReply;
 
@@ -180,19 +181,45 @@ public final class JoinCommandHandler implements CommandHandler {
    * one closing reply of its own afterward, instead of one per channel.
    */
   public static void sendNamesLine(ClientSession requester, Channel channel, String serverName) {
+    String visibility = visibilitySymbol(channel);
+    Message empty =
+        new Message(
+            Map.of(),
+            serverName,
+            null,
+            NumericReply.RPL_NAMREPLY.wireCode(),
+            List.of(Replies.target(requester), visibility, channel.name(), ""));
+    // Reserve the trailing colon even for a singleton reply, which may serialize without it.
+    int budget = MessageSerializer.MAX_COMMAND_BYTES - MessageSerializer.commandBytes(empty);
     StringBuilder names = new StringBuilder();
+    int used = 0;
     for (ClientSession member : channel.members()) {
+      String status = "";
+      if (channel.operators().contains(member)) {
+        status = "@";
+      } else if (channel.voiced().contains(member)) {
+        status = "+";
+      }
+      String token = status + member.nickname();
+      int bytes = MessageSerializer.utf8Bytes(token);
+      if (!names.isEmpty() && used + 1 + bytes > budget) {
+        Replies.send(
+            requester,
+            serverName,
+            NumericReply.RPL_NAMREPLY,
+            visibility,
+            channel.name(),
+            names.toString());
+        names.setLength(0);
+        used = 0;
+      }
       if (!names.isEmpty()) {
         names.append(' ');
+        used++;
       }
-      if (channel.operators().contains(member)) {
-        names.append('@');
-      } else if (channel.voiced().contains(member)) {
-        names.append('+');
-      }
-      names.append(member.nickname());
+      names.append(token);
+      used += bytes;
     }
-    String visibility = visibilitySymbol(channel);
     Replies.send(
         requester,
         serverName,
