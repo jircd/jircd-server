@@ -194,8 +194,12 @@ public final class JoinCommandHandler implements CommandHandler {
     StringBuilder names = new StringBuilder();
     int used = 0;
     for (ClientSession member : channel.members()) {
-      String status =
-          channel.operators().contains(member) ? "@" : channel.voiced().contains(member) ? "+" : "";
+      String status = "";
+      if (channel.operators().contains(member)) {
+        status = "@";
+      } else if (channel.voiced().contains(member)) {
+        status = "+";
+      }
       String token = status + member.nickname();
       int bytes = MessageSerializer.utf8Bytes(token);
       if (!names.isEmpty() && used + 1 + bytes > budget) {

@@ -55,8 +55,7 @@ class MessageSerializerTest {
     assertThat(parsed.params().getFirst()).isEqualTo("bob");
     assertThat(parsed.tags()).isEqualTo(message.tags());
     String body = parsed.params().getLast();
-    assertThat(body).isEqualTo("😀".repeat(117));
-    assertThat(body).doesNotContain("\ufffd");
+    assertThat(body).isEqualTo("😀".repeat(117)).doesNotContain("\ufffd");
     assertThat(MessageSerializer.commandBytes(parsed)).isEqualTo(509);
   }
 

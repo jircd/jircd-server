@@ -42,10 +42,14 @@ class CapabilityTagRendererBudgetTest {
           }
 
           @Override
-          public void start(ServerContext context) {}
+          public void start(ServerContext context) {
+            // This tag-only test extension has no resources to initialize.
+          }
 
           @Override
-          public void stop() {}
+          public void stop() {
+            // This tag-only test extension has no resources to release.
+          }
 
           @Override
           public Capability providedCapability() {

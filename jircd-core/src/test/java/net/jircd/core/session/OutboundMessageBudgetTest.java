@@ -153,8 +153,7 @@ class OutboundMessageBudgetTest {
     }
     String wire = out.toString(StandardCharsets.UTF_8);
     assertThat(out.size()).isGreaterThan(512);
-    assertThat(wire.substring(wire.indexOf(' ') + 1).getBytes(StandardCharsets.UTF_8).length)
-        .isEqualTo(512);
+    assertThat(wire.substring(wire.indexOf(' ') + 1).getBytes(StandardCharsets.UTF_8)).hasSize(512);
   }
 
   @Test
