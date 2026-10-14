@@ -50,4 +50,16 @@ class Story1UserModeTest {
       assertThat(usersDontMatch).contains("502");
     }
   }
+
+  @Test
+  void selfModeTargetIsComparedWithTheRfc1459CaseMapping() throws Exception {
+    try (TestServer server = TestServer.start();
+        RawIrcClient client = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+      client.registerAndAwaitWelcome("a[b\\c^", "abc");
+
+      client.send("MODE A{B|C~");
+      String umodeis = client.readUntil("221", Duration.ofSeconds(5));
+      assertThat(umodeis).contains("221");
+    }
+  }
 }
