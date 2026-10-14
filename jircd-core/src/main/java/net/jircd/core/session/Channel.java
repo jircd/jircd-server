@@ -149,9 +149,13 @@ public final class Channel {
     voiced.remove(session);
   }
 
-  /** Case-insensitive lookup of a current member by nickname (FR-064's `MEMBER`-kind targets). */
+  /**
+   * Lookup of a current member by nickname (FR-064's `MEMBER`-kind targets), folded with the same
+   * rfc1459 casemapping as {@link NicknameRegistry} (FR-052).
+   */
   public Optional<ClientSession> findMember(String nickname) {
-    return members.stream().filter(m -> m.nickname().equalsIgnoreCase(nickname)).findFirst();
+    String folded = CaseMapping.fold(nickname);
+    return members.stream().filter(m -> CaseMapping.fold(m.nickname()).equals(folded)).findFirst();
   }
 
   /**
