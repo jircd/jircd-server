@@ -21,7 +21,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Set;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 class ConfigurationLoaderTest {
 
@@ -35,6 +39,156 @@ class ConfigurationLoaderTest {
 
   private ServerConfiguration load(String yaml) throws ConfigurationException {
     return loader().load(new ByteArrayInputStream(yaml.getBytes(StandardCharsets.UTF_8)));
+  }
+
+  @ParameterizedTest
+  @MethodSource("malformedConfigurations")
+  void rejectsMalformedConfigurationWithKey(String yaml, String key) {
+    assertThatThrownBy(() -> load(yaml))
+        .isInstanceOf(ConfigurationException.class)
+        .hasMessageContaining(key);
+  }
+
+  @ParameterizedTest
+  @MethodSource("secretConfigurations")
+  void validationMessagesDoNotExposeSecrets(String yaml, String key, String expectedType) {
+    assertThatThrownBy(() -> load(yaml))
+        .isInstanceOf(ConfigurationException.class)
+        .hasMessageContaining(key)
+        .hasMessageContaining(expectedType)
+        .hasMessageNotContaining("987654321");
+  }
+
+  static Stream<Arguments> secretConfigurations() {
+    return Stream.of(
+        Arguments.of(
+            "listeners: [{port: 6667, keystorePassword: 987654321}]",
+            "listeners[0].keystorePassword",
+            "string"),
+        Arguments.of(
+            "administratorCredentials: [{username: admin, hashedPassword: 987654321}]",
+            "administratorCredentials[0].hashedPassword",
+            "string"),
+        Arguments.of("listeners: {keystorePassword: 987654321}", "listeners", "list"),
+        Arguments.of(
+            "listeners: &loop {self: *loop, keystorePassword: 987654321}", "listeners", "list"),
+        Arguments.of(
+            "[{administratorCredentials: [{hashedPassword: 987654321}]}]", "root", "mapping"),
+        Arguments.of("listeners: [{port: 6667, keystorePassword: 987654321]", "root", "YAML"));
+  }
+
+  @ParameterizedTest
+  @MethodSource("nonSecretConfigurations")
+  void nonSecretValidationMessagesIncludeValues(String yaml, String key, String value) {
+    assertThatThrownBy(() -> load(yaml))
+        .isInstanceOf(ConfigurationException.class)
+        .hasMessageContaining(key)
+        .hasMessageContaining("got: " + value);
+  }
+
+  static Stream<Arguments> nonSecretConfigurations() {
+    return Stream.of(
+        Arguments.of("rateLimit: {bucketSize: -7}", "rateLimit.bucketSize", "-7"),
+        Arguments.of(
+            "rateLimit: {refillRatePerSecond: nope}", "rateLimit.refillRatePerSecond", "nope"),
+        Arguments.of("keepAliveFrequencySeconds: 3601", "keepAliveFrequencySeconds", "3601"),
+        Arguments.of("listeners: [{port: 65536}]", "listeners[0].port", "65536"),
+        Arguments.of("capabilities: {message-tags: nope}", "capabilities.message-tags", "nope"),
+        Arguments.of("serverName: 42", "serverName", "42"),
+        Arguments.of("whoMaskEnabled: nope", "whoMaskEnabled", "nope"),
+        Arguments.of("listeners: nope", "listeners", "nope"),
+        Arguments.of("rateLimit: nope", "rateLimit", "nope"),
+        Arguments.of("{42: value}", "root", "42"));
+  }
+
+  @Test
+  void syntaxErrorsIncludeLocationWithoutSourceText() {
+    assertThatThrownBy(
+            () ->
+                load(
+                    "serverName: irc.example.net\nlisteners:\n  - keystorePassword: [987654321}\n"))
+        .isInstanceOf(ConfigurationException.class)
+        .hasMessageContaining("invalid YAML at line 3, column 33")
+        .hasMessageNotContaining("987654321")
+        .hasMessageNotContaining("keystorePassword");
+  }
+
+  static Stream<Arguments> malformedConfigurations() {
+    Stream.Builder<Arguments> cases = Stream.builder();
+    for (String root : new String[] {"[]", "42", "true", "hello", "{42: value}"}) {
+      cases.add(Arguments.of(root, "root"));
+    }
+    for (String section : new String[] {"listeners", "administratorCredentials"}) {
+      for (String shape : new String[] {"{}", "nope", "42", "[null]", "[nope]", "[{42: value}]"}) {
+        cases.add(Arguments.of(section + ": " + shape, section));
+      }
+    }
+    for (String section : new String[] {"rateLimit", "capabilities", "server-extensions"}) {
+      for (String shape : new String[] {"[]", "nope", "42", "{42: value}"}) {
+        cases.add(Arguments.of(section + ": " + shape, section));
+      }
+    }
+    for (String value : new String[] {"[]", "{}", "42", "true"}) {
+      cases.add(Arguments.of("serverName: " + value, "serverName"));
+      cases.add(
+          Arguments.of(
+              "administratorCredentials: [{username: " + value + ", hashedPassword: '$2b$hash'}]",
+              "administratorCredentials[0].username"));
+      cases.add(
+          Arguments.of(
+              "administratorCredentials: [{username: admin, hashedPassword: " + value + "}]",
+              "administratorCredentials[0].hashedPassword"));
+      for (String field :
+          new String[] {"certPath", "keyPath", "keystorePath", "keystorePassword"}) {
+        cases.add(
+            Arguments.of(
+                "listeners: [{port: 6667, " + field + ": " + value + "}]",
+                "listeners[0]." + field));
+      }
+    }
+    for (String value : new String[] {"[]", "{}", "nope", "1", "null", "'true'"}) {
+      cases.add(Arguments.of("whoMaskEnabled: " + value, "whoMaskEnabled"));
+      cases.add(Arguments.of("listeners: [{port: 6667, tls: " + value + "}]", "listeners[0].tls"));
+    }
+    for (String value :
+        new String[] {"nope", "null", "[]", "{}", "true", ".nan", ".inf", "-.inf", "0", "-1"}) {
+      cases.add(
+          Arguments.of(
+              "rateLimit: {refillRatePerSecond: " + value + "}", "rateLimit.refillRatePerSecond"));
+    }
+    for (String value :
+        new String[] {
+          "-1", "65536", "1.5", "'6667'", "null", "[]", "true", "999999999999999999999"
+        }) {
+      cases.add(Arguments.of("listeners: [{port: " + value + "}]", "listeners[0].port"));
+    }
+    for (String tls : new String[] {"false", "true"}) {
+      cases.add(
+          Arguments.of(
+              "listeners: [{port: 6667}, {port: 6667, tls: " + tls + "}]", "listeners[1].port"));
+    }
+    cases.add(
+        Arguments.of("administratorCredentials: [{}]", "administratorCredentials[0].username"));
+    cases.add(
+        Arguments.of(
+            "administratorCredentials: [{username: admin}]",
+            "administratorCredentials[0].hashedPassword"));
+    cases.add(Arguments.of("capabilities: {message-tags: []}", "capabilities.message-tags"));
+    cases.add(Arguments.of("server-extensions: {admin: true}", "server-extensions.admin"));
+    cases.add(Arguments.of("listeners: [", "root"));
+    return cases.build();
+  }
+
+  @Test
+  void acceptsListenerPortBoundariesAndFiniteRates() throws Exception {
+    ServerConfiguration config =
+        load(
+            "listeners: [{port: 0}, {port: 0}, {port: 1}, {port: 65535}]\n"
+                + "rateLimit: {bucketSize: 1, refillRatePerSecond: 0.5}");
+    assertThat(config.listeners())
+        .extracting(ServerConfiguration.Listener::port)
+        .containsExactly(0, 0, 1, 65535);
+    assertThat(config.rateLimit().refillRatePerSecond()).isEqualTo(0.5);
   }
 
   @Test

@@ -19,11 +19,15 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.security.GeneralSecurityException;
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.yaml.snakeyaml.Yaml;
+import org.yaml.snakeyaml.error.MarkedYAMLException;
+import org.yaml.snakeyaml.error.YAMLException;
 
 /**
  * Loads and validates the YAML Server Configuration file (contracts/server-configuration.md),
@@ -43,12 +47,21 @@ public final class ConfigurationLoader {
     this.knownServerExtensionIds = knownServerExtensionIds;
   }
 
-  @SuppressWarnings("unchecked")
   public ServerConfiguration load(InputStream yamlInput) throws ConfigurationException {
-    Object rootObj = new Yaml().load(yamlInput);
-    Map<String, Object> root = rootObj == null ? Map.of() : (Map<String, Object>) rootObj;
+    Object rootObj;
+    try {
+      rootObj = new Yaml().load(yamlInput);
+    } catch (YAMLException e) {
+      String location = "";
+      if (e instanceof MarkedYAMLException marked && marked.getProblemMark() != null) {
+        var mark = marked.getProblemMark();
+        location = " at line " + (mark.getLine() + 1) + ", column " + (mark.getColumn() + 1);
+      }
+      throw new ConfigurationException("root contains invalid YAML" + location);
+    }
+    Map<String, Object> root = rootObj == null ? Map.of() : asMap(rootObj, "root");
 
-    String serverName = asString(root.get("serverName"));
+    String serverName = asString(root.get("serverName"), "serverName");
     if (serverName != null && !serverName.contains(".")) {
       throw new ConfigurationException("serverName must contain a '.': " + serverName);
     }
@@ -97,7 +110,9 @@ public final class ConfigurationLoader {
             ServerConfiguration.KEEP_ALIVE_FREQUENCY_CEILING_SECONDS);
 
     boolean whoMaskEnabled =
-        root.containsKey("whoMaskEnabled") ? asBoolean(root.get("whoMaskEnabled")) : true;
+        root.containsKey("whoMaskEnabled")
+            ? asBoolean(root.get("whoMaskEnabled"), "whoMaskEnabled")
+            : true;
 
     List<ServerConfiguration.Listener> listeners = parseListeners(root.get("listeners"));
 
@@ -142,29 +157,39 @@ public final class ConfigurationLoader {
     Object raw = root.get(key);
     if (!(raw instanceof Integer value) || value <= 0 || value > ceiling) {
       throw new ConfigurationException(
-          key + " must be a positive integer no greater than " + ceiling + ", got: " + raw);
+          key
+              + " must be a positive integer no greater than "
+              + ceiling
+              + ", got: "
+              + redactSecrets(raw));
     }
     return value;
   }
 
-  @SuppressWarnings("unchecked")
   private static List<ServerConfiguration.Listener> parseListeners(Object raw)
       throws ConfigurationException {
     if (raw == null) {
       return List.of();
     }
     List<ServerConfiguration.Listener> listeners = new ArrayList<>();
-    for (Object entry : (List<Object>) raw) {
-      Map<String, Object> map = (Map<String, Object>) entry;
+    Set<Integer> ports = new HashSet<>();
+    for (Object entry : asList(raw, "listeners")) {
+      String path = "listeners[" + listeners.size() + "]";
+      Map<String, Object> map = asMap(entry, path);
       Object port = map.get("port");
-      if (!(port instanceof Integer)) {
-        throw new ConfigurationException("listeners entry missing a valid 'port': " + entry);
+      if (!(port instanceof Integer portValue) || portValue < 0 || portValue > 65535) {
+        throw new ConfigurationException(
+            path + ".port must be an integer from 0 to 65535, got: " + redactSecrets(port));
       }
-      boolean tls = map.containsKey("tls") && asBoolean(map.get("tls"));
-      String certPath = asString(map.get("certPath"));
-      String keyPath = asString(map.get("keyPath"));
-      String keystorePath = asString(map.get("keystorePath"));
-      String keystorePassword = asString(map.get("keystorePassword"));
+      // Port zero asks the OS for a distinct ephemeral port on each bind.
+      if (portValue != 0 && !ports.add(portValue)) {
+        throw new ConfigurationException(path + ".port conflicts with another listener: " + port);
+      }
+      boolean tls = map.containsKey("tls") && asBoolean(map.get("tls"), path + ".tls");
+      String certPath = asString(map.get("certPath"), path + ".certPath");
+      String keyPath = asString(map.get("keyPath"), path + ".keyPath");
+      String keystorePath = asString(map.get("keystorePath"), path + ".keystorePath");
+      String keystorePassword = asString(map.get("keystorePassword"), path + ".keystorePassword");
 
       ServerConfiguration.Listener listener =
           new ServerConfiguration.Listener(
@@ -228,7 +253,6 @@ public final class ConfigurationLoader {
     }
   }
 
-  @SuppressWarnings("unchecked")
   private static ServerConfiguration.RateLimit parseRateLimit(Object raw)
       throws ConfigurationException {
     if (raw == null) {
@@ -236,7 +260,7 @@ public final class ConfigurationLoader {
           ServerConfiguration.DEFAULT_RATE_LIMIT_BUCKET_SIZE,
           ServerConfiguration.DEFAULT_RATE_LIMIT_REFILL_PER_SECOND);
     }
-    Map<String, Object> map = (Map<String, Object>) raw;
+    Map<String, Object> map = asMap(raw, "rateLimit");
     Object bucketSize =
         map.getOrDefault("bucketSize", ServerConfiguration.DEFAULT_RATE_LIMIT_BUCKET_SIZE);
     Object refillRate =
@@ -244,17 +268,18 @@ public final class ConfigurationLoader {
             "refillRatePerSecond", ServerConfiguration.DEFAULT_RATE_LIMIT_REFILL_PER_SECOND);
     if (!(bucketSize instanceof Integer bucketSizeInt) || bucketSizeInt <= 0) {
       throw new ConfigurationException(
-          "rateLimit.bucketSize must be a positive integer, got: " + bucketSize);
+          "rateLimit.bucketSize must be a positive integer, got: " + redactSecrets(bucketSize));
     }
-    double refillRateValue = ((Number) refillRate).doubleValue();
-    if (refillRateValue <= 0) {
+    if (!(refillRate instanceof Number number)
+        || !Double.isFinite(number.doubleValue())
+        || number.doubleValue() <= 0) {
       throw new ConfigurationException(
-          "rateLimit.refillRatePerSecond must be positive, got: " + refillRate);
+          "rateLimit.refillRatePerSecond must be finite and positive, got: "
+              + redactSecrets(refillRate));
     }
-    return new ServerConfiguration.RateLimit(bucketSizeInt, refillRateValue);
+    return new ServerConfiguration.RateLimit(bucketSizeInt, number.doubleValue());
   }
 
-  @SuppressWarnings("unchecked")
   private static Map<String, Boolean> parseExtensionStates(
       Object raw, Set<String> ownKnownIds, Set<String> otherKindKnownIds, String sectionName)
       throws ConfigurationException {
@@ -262,7 +287,7 @@ public final class ConfigurationLoader {
     if (raw == null) {
       return states;
     }
-    Map<String, Object> map = (Map<String, Object>) raw;
+    Map<String, Object> map = asMap(raw, sectionName);
     for (Map.Entry<String, Object> entry : map.entrySet()) {
       String id = entry.getKey();
       if (otherKindKnownIds.contains(id)) {
@@ -279,28 +304,29 @@ public final class ConfigurationLoader {
       String value = String.valueOf(entry.getValue());
       if (!value.equals("enabled") && !value.equals("disabled")) {
         throw new ConfigurationException(
-            "'" + sectionName + "." + id + "' must be 'enabled' or 'disabled', got: " + value);
+            "'"
+                + sectionName
+                + "."
+                + id
+                + "' must be 'enabled' or 'disabled', got: "
+                + redactSecrets(entry.getValue()));
       }
       states.put(id, value.equals("enabled"));
     }
     return states;
   }
 
-  @SuppressWarnings("unchecked")
   private static List<ServerConfiguration.AdministratorCredential> parseCredentials(Object raw)
       throws ConfigurationException {
     if (raw == null) {
       return List.of();
     }
     List<ServerConfiguration.AdministratorCredential> credentials = new ArrayList<>();
-    for (Object entry : (List<Object>) raw) {
-      Map<String, Object> map = (Map<String, Object>) entry;
-      String username = asString(map.get("username"));
-      String hashedPassword = asString(map.get("hashedPassword"));
-      if (username == null || hashedPassword == null) {
-        throw new ConfigurationException(
-            "administratorCredentials entry missing username/hashedPassword");
-      }
+    for (Object entry : asList(raw, "administratorCredentials")) {
+      String path = "administratorCredentials[" + credentials.size() + "]";
+      Map<String, Object> map = asMap(entry, path);
+      String username = requiredString(map.get("username"), path + ".username");
+      String hashedPassword = requiredString(map.get("hashedPassword"), path + ".hashedPassword");
       if (BASE_64_HASH_PREFIXES.stream().noneMatch(hashedPassword::startsWith)) {
         throw new ConfigurationException(
             "administratorCredentials."
@@ -313,11 +339,83 @@ public final class ConfigurationLoader {
     return credentials;
   }
 
-  private static String asString(Object value) {
-    return value == null ? null : String.valueOf(value);
+  private static boolean isSecretKey(Object key) {
+    return "keystorePassword".equals(key) || "hashedPassword".equals(key);
   }
 
-  private static boolean asBoolean(Object value) {
-    return value instanceof Boolean b ? b : Boolean.parseBoolean(String.valueOf(value));
+  // Malformed containers may contain secrets even when their enclosing key is not secret.
+  private static Object redactSecrets(Object value) {
+    return redactSecrets(value, new IdentityHashMap<>());
+  }
+
+  private static Object redactSecrets(Object value, Map<Object, Boolean> visiting) {
+    if (!(value instanceof Map<?, ?>) && !(value instanceof List<?>)) {
+      return value;
+    }
+    if (visiting.put(value, Boolean.TRUE) != null) {
+      return "[recursive]";
+    }
+    try {
+      if (value instanceof Map<?, ?> map) {
+        Map<Object, Object> redacted = new LinkedHashMap<>();
+        for (var entry : map.entrySet()) {
+          redacted.put(
+              redactSecrets(entry.getKey(), visiting),
+              isSecretKey(entry.getKey())
+                  ? "[redacted]"
+                  : redactSecrets(entry.getValue(), visiting));
+        }
+        return redacted;
+      }
+      return ((List<?>) value).stream().map(entry -> redactSecrets(entry, visiting)).toList();
+    } finally {
+      visiting.remove(value);
+    }
+  }
+
+  private static Map<String, Object> asMap(Object value, String path)
+      throws ConfigurationException {
+    if (!(value instanceof Map<?, ?> map)) {
+      throw new ConfigurationException(path + " must be a mapping, got: " + redactSecrets(value));
+    }
+    Map<String, Object> result = new LinkedHashMap<>();
+    for (var entry : map.entrySet()) {
+      if (!(entry.getKey() instanceof String key)) {
+        throw new ConfigurationException(
+            path + " must have string keys, got: " + redactSecrets(entry.getKey()));
+      }
+      result.put(key, entry.getValue());
+    }
+    return result;
+  }
+
+  private static List<?> asList(Object value, String path) throws ConfigurationException {
+    if (!(value instanceof List<?> list)) {
+      throw new ConfigurationException(path + " must be a list, got: " + redactSecrets(value));
+    }
+    return list;
+  }
+
+  private static String asString(Object value, String path) throws ConfigurationException {
+    return value == null ? null : requiredString(value, path);
+  }
+
+  private static String requiredString(Object value, String path) throws ConfigurationException {
+    if (!(value instanceof String string)) {
+      throw new ConfigurationException(
+          path
+              + " must be a string"
+              + (isSecretKey(path.substring(path.lastIndexOf('.') + 1))
+                  ? ""
+                  : ", got: " + redactSecrets(value)));
+    }
+    return string;
+  }
+
+  private static boolean asBoolean(Object value, String path) throws ConfigurationException {
+    if (!(value instanceof Boolean bool)) {
+      throw new ConfigurationException(path + " must be a boolean, got: " + redactSecrets(value));
+    }
+    return bool;
   }
 }
