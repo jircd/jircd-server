@@ -19,6 +19,7 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.net.Socket;
 import java.time.Duration;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,7 +35,7 @@ abstract class AbstractListener<S extends Closeable> implements Closeable {
   private final String threadName;
   private final Duration closeTimeout;
   private volatile boolean running = true;
-  private volatile Thread listenerThread;
+  private final AtomicReference<Thread> listenerThread = new AtomicReference<>();
 
   AbstractListener(S serverSocket, Consumer<Socket> connectionHandler, String threadName) {
     this(serverSocket, connectionHandler, threadName, CLOSE_TIMEOUT);
@@ -53,7 +54,7 @@ abstract class AbstractListener<S extends Closeable> implements Closeable {
 
   /** Starts the virtual thread that accepts incoming connections. */
   public final void start() {
-    listenerThread = Thread.ofVirtual().name(threadName).start(this::acceptLoop);
+    listenerThread.set(Thread.ofVirtual().name(threadName).start(this::acceptLoop));
   }
 
   /** Returns the actual bound port, including an automatically assigned ephemeral port. */
@@ -78,8 +79,32 @@ abstract class AbstractListener<S extends Closeable> implements Closeable {
   @Override
   public final void close() throws IOException {
     running = false;
-    serverSocket.close();
-    Thread thread = listenerThread;
+    Exception failure = null;
+    try {
+      serverSocket.close();
+    } catch (IOException | RuntimeException closeFailure) {
+      failure = closeFailure;
+    } finally {
+      try {
+        joinAcceptThread();
+      } catch (IOException | RuntimeException joinFailure) {
+        if (failure == null) {
+          failure = joinFailure;
+        } else if (failure != joinFailure) {
+          failure.addSuppressed(joinFailure);
+        }
+      }
+    }
+    if (failure instanceof IOException ioFailure) {
+      throw ioFailure;
+    }
+    if (failure instanceof RuntimeException runtimeFailure) {
+      throw runtimeFailure;
+    }
+  }
+
+  private void joinAcceptThread() throws IOException {
+    Thread thread = listenerThread.get();
     if (thread != null) {
       try {
         if (!thread.join(closeTimeout)) {

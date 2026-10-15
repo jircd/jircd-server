@@ -25,7 +25,12 @@ import java.net.BindException;
 import java.net.ServerSocket;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import net.jircd.server.JircdServerApplication;
 import org.junit.jupiter.api.Test;
@@ -81,56 +86,191 @@ class ListenerLifecycleTest {
   }
 
   @Test
-  void stopContinuesAfterCloseFailuresAndDoesNotCloseResourcesTwice() throws Exception {
+  void stopRetriesFailedListenersButNeverClosesSuccessfulListenersTwice() throws Exception {
     var application = application(listener(0, false));
     var firstFailure = new IOException("first close failure");
     var secondFailure = new IOException("second close failure");
-    AtomicInteger attempts = new AtomicInteger();
+    var firstAttempts = new AtomicInteger();
+    var secondAttempts = new AtomicInteger();
+    var successfulAttempts = new AtomicInteger();
     ownedListeners(application)
         .add(
             () -> {
-              attempts.incrementAndGet();
+              if (firstAttempts.incrementAndGet() == 1) {
+                throw firstFailure;
+              }
+            });
+    ownedListeners(application)
+        .add(
+            () -> {
+              if (secondAttempts.incrementAndGet() == 1) {
+                throw secondFailure;
+              }
+            });
+    ownedListeners(application).add(successfulAttempts::incrementAndGet);
+
+    assertThatThrownBy(application::stop)
+        .isSameAs(firstFailure)
+        .satisfies(failure -> assertThat(failure.getSuppressed()).containsExactly(secondFailure));
+    assertThat(successfulAttempts.get()).isEqualTo(1);
+    assertThat(ownedListeners(application)).hasSize(2);
+    assertThatCode(application::stop).doesNotThrowAnyException();
+    assertThat(firstAttempts.get()).isEqualTo(2);
+    assertThat(secondAttempts.get()).isEqualTo(2);
+    assertThat(ownedListeners(application)).isEmpty();
+    application.stop();
+    assertThat(successfulAttempts.get()).isEqualTo(1);
+  }
+
+  @Test
+  void stopPrefersIOExceptionAndContinuesAfterRuntimeFailures() throws Exception {
+    var application = application(listener(0, false));
+    var runtimeFailure = new IllegalStateException("runtime close failure");
+    var ioFailure = new IOException("IO close failure");
+    var laterFailure = new IllegalArgumentException("later runtime failure");
+    var attempts = new AtomicInteger();
+    ownedListeners(application)
+        .add(
+            () -> {
+              throw runtimeFailure;
+            });
+    ownedListeners(application)
+        .add(
+            () -> {
+              throw ioFailure;
+            });
+    ownedListeners(application)
+        .add(
+            () -> {
+              throw laterFailure;
+            });
+    ownedListeners(application).add(attempts::incrementAndGet);
+
+    assertThatThrownBy(application::stop)
+        .isSameAs(ioFailure)
+        .satisfies(
+            failure ->
+                assertThat(failure.getSuppressed()).containsExactly(runtimeFailure, laterFailure));
+    assertThat(attempts.get()).isEqualTo(1);
+    assertThat(ownedListeners(application)).hasSize(3);
+  }
+
+  @Test
+  void stopRethrowsRuntimeFailureWhenNoIOExceptionOccurs() throws Exception {
+    var application = application(listener(0, false));
+    var firstFailure = new IllegalStateException("first runtime failure");
+    var secondFailure = new IllegalArgumentException("second runtime failure");
+    var attempts = new AtomicInteger();
+    ownedListeners(application)
+        .add(
+            () -> {
               throw firstFailure;
             });
     ownedListeners(application)
         .add(
             () -> {
-              attempts.incrementAndGet();
               throw secondFailure;
             });
-    ownedListeners(application).add(() -> attempts.incrementAndGet());
+    ownedListeners(application).add(attempts::incrementAndGet);
 
     assertThatThrownBy(application::stop)
         .isSameAs(firstFailure)
         .satisfies(failure -> assertThat(failure.getSuppressed()).containsExactly(secondFailure));
-    assertThat(attempts.get()).isEqualTo(3);
-    assertThatCode(application::stop).doesNotThrowAnyException();
-    assertThat(attempts.get()).isEqualTo(3);
+    assertThat(attempts.get()).isEqualTo(1);
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void failedSecondStartPreservesListenersFromSuccessfulStart(boolean tls) throws Exception {
+    try (var reservation = new ServerSocket(0)) {
+      int port = reservation.getLocalPort();
+      var application = application(listener(0, tls) + listener(port, tls));
+      reservation.close();
+      try {
+        application.start();
+        var originalListeners = new ArrayList<>(ownedListeners(application));
+        assertThatThrownBy(application::start).isInstanceOf(BindException.class);
+        assertBound(port);
+        assertThat(ownedListeners(application)).containsExactlyElementsOf(originalListeners);
+        assertThat(tls ? application.tlsPort() : application.plaintextPort()).isEqualTo(port);
+      } finally {
+        application.stop();
+      }
+      assertAvailable(port);
+    }
   }
 
   @Test
-  void rollbackPreservesStartupFailureWhenCleanupFails() throws Exception {
-    try (ServerSocket occupied = new ServerSocket(0)) {
+  void rollbackLeavesResourcesOwnedBeforeTheAttemptUntouched() throws Exception {
+    try (var occupied = new ServerSocket(0)) {
       var application = application(listener(occupied.getLocalPort(), false));
-      var cleanupFailure = new IOException("rollback close failure");
-      ownedListeners(application)
-          .add(
-              () -> {
-                throw cleanupFailure;
-              });
-      assertThatThrownBy(application::start)
-          .isInstanceOf(BindException.class)
-          .satisfies(
-              failure -> assertThat(failure.getSuppressed()).containsExactly(cleanupFailure));
-      assertThatCode(application::stop).doesNotThrowAnyException();
+      var attempts = new AtomicInteger();
+      ownedListeners(application).add(attempts::incrementAndGet);
+      assertThatThrownBy(application::start).isInstanceOf(BindException.class);
+      assertThat(attempts.get()).isZero();
+      application.stop();
+      assertThat(attempts.get()).isEqualTo(1);
+    }
+  }
+
+  @Test
+  void startWaitsForAnInProgressStop() throws Exception {
+    var application = application(listener(0, false));
+    var closing = new CountDownLatch(1);
+    var release = new CountDownLatch(1);
+    var starting = new CountDownLatch(1);
+    application.start();
+    ownedListeners(application)
+        .add(
+            () -> {
+              closing.countDown();
+              try {
+                release.await();
+              } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IOException(e);
+              }
+            });
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      try {
+        var stopping =
+            executor.submit(
+                () -> {
+                  application.stop();
+                  return null;
+                });
+        assertThat(closing.await(1, TimeUnit.SECONDS)).isTrue();
+        var restarting =
+            executor.submit(
+                () -> {
+                  starting.countDown();
+                  application.start();
+                  return null;
+                });
+        assertThat(starting.await(1, TimeUnit.SECONDS)).isTrue();
+        assertThatThrownBy(() -> restarting.get(100, TimeUnit.MILLISECONDS))
+            .isInstanceOf(TimeoutException.class);
+        release.countDown();
+        stopping.get(1, TimeUnit.SECONDS);
+        restarting.get(1, TimeUnit.SECONDS);
+        assertBound(application.plaintextPort());
+      } finally {
+        release.countDown();
+      }
+    } finally {
+      application.stop();
     }
   }
 
   @Test
   void stopBeforeStartIsHarmless() throws Exception {
     var application = application(listener(0, false));
-    application.stop();
-    application.stop();
+    assertThatCode(
+            () -> {
+              application.stop();
+              application.stop();
+            })
+        .doesNotThrowAnyException();
   }
 
   private JircdServerApplication application(String listeners) throws Exception {

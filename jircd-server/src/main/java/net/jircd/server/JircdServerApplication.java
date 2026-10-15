@@ -286,7 +286,7 @@ public final class JircdServerApplication {
         });
   }
 
-  public void start() throws IOException, GeneralSecurityException {
+  public synchronized void start() throws IOException, GeneralSecurityException {
     // No TLS entry in the zero-config default (004-fix-tls-certificate, research.md "The
     // zero-config default listener list") — a TLS listener with no certificate configured now
     // refuses to start, so defaulting to one here would break the simplest possible quickstart.
@@ -294,6 +294,12 @@ public final class JircdServerApplication {
         configuration.listeners().isEmpty()
             ? List.of(new ServerConfiguration.Listener(6667, false))
             : configuration.listeners();
+    int previousListenerCount = ownedListeners.size();
+    // These aliases remain owned by ownedListeners; rollback must not close them.
+    @SuppressWarnings("PMD.CloseResource")
+    PlaintextListener previousPlaintextListener = plaintextListener;
+    @SuppressWarnings("PMD.CloseResource")
+    TlsListener previousTlsListener = tlsListener;
     try {
       for (ServerConfiguration.Listener listener : listeners) {
         if (listener.tls()) {
@@ -310,33 +316,54 @@ public final class JircdServerApplication {
       }
     } catch (IOException | GeneralSecurityException | RuntimeException failure) {
       try {
-        stop();
-      } catch (IOException cleanupFailure) {
-        failure.addSuppressed(cleanupFailure);
+        closeListeners(ownedListeners.subList(previousListenerCount, ownedListeners.size()));
+      } catch (IOException | RuntimeException cleanupFailure) {
+        if (failure != cleanupFailure) {
+          failure.addSuppressed(cleanupFailure);
+        }
+      } finally {
+        plaintextListener = previousPlaintextListener;
+        tlsListener = previousTlsListener;
       }
       throw failure;
     }
   }
 
-  // Each owned resource is explicitly closed below; failures are collected so cleanup continues.
+  public synchronized void stop() throws IOException {
+    closeListeners(ownedListeners);
+  }
+
+  // Successful closes relinquish ownership; failed resources remain available for a retry.
   @SuppressWarnings("PMD.CloseResource")
-  public void stop() throws IOException {
-    IOException failure = null;
-    for (Closeable listener : ownedListeners) {
+  private static void closeListeners(List<Closeable> listeners) throws IOException {
+    List<Exception> failures = new ArrayList<>();
+    var iterator = listeners.iterator();
+    while (iterator.hasNext()) {
+      Closeable listener = iterator.next();
       try {
         listener.close();
-      } catch (IOException closeFailure) {
-        if (failure == null) {
-          failure = closeFailure;
-        } else {
-          failure.addSuppressed(closeFailure);
-        }
+        iterator.remove();
+      } catch (IOException | RuntimeException closeFailure) {
+        failures.add(closeFailure);
       }
     }
-    ownedListeners.clear();
-    if (failure != null) {
-      throw failure;
+    if (failures.isEmpty()) {
+      return;
     }
+    Exception primary =
+        failures.stream()
+            .filter(IOException.class::isInstance)
+            .findFirst()
+            .orElse(failures.getFirst());
+    for (Exception failure : failures) {
+      if (failure != primary) {
+        primary.addSuppressed(failure);
+      }
+    }
+    if (primary instanceof IOException ioFailure) {
+      throw ioFailure;
+    }
+    throw (RuntimeException) primary;
   }
 
   public ConfigurationReloader reloader() {
