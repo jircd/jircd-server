@@ -17,55 +17,41 @@ package net.jircd.core.session;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.net.Socket;
 import java.nio.channels.ServerSocketChannel;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * Plaintext connection listener: a {@link ServerSocketChannel} accept loop, one virtual thread per
  * connection (research.md "Networking model").
  */
-public final class PlaintextListener implements AutoCloseable {
-
-  private static final Logger LOG = LoggerFactory.getLogger(PlaintextListener.class);
-
-  private final ServerSocketChannel serverChannel;
-  private final ConnectionHandler connectionHandler;
-  private volatile boolean running = true;
+public final class PlaintextListener extends AbstractListener<ServerSocketChannel> {
 
   public PlaintextListener(int port, ConnectionHandler connectionHandler) throws IOException {
-    this.connectionHandler = connectionHandler;
-    this.serverChannel = ServerSocketChannel.open();
-    this.serverChannel.bind(new InetSocketAddress(port));
+    super(openServerChannel(port), connectionHandler::accept, "plaintext-listener");
   }
 
-  public void start() {
-    Thread.ofVirtual().name("plaintext-listener").start(this::acceptLoop);
-  }
-
-  public int boundPort() {
-    return serverChannel.socket().getLocalPort();
-  }
-
-  private void acceptLoop() {
-    while (running) {
+  private static ServerSocketChannel openServerChannel(int port) throws IOException {
+    var channel = ServerSocketChannel.open();
+    try {
+      channel.bind(new InetSocketAddress(port));
+      return channel;
+    } catch (IOException | RuntimeException failure) {
       try {
-        // Ownership of the accepted connection transfers to ConnectionHandler,
-        // which closes it (closeQuietly) once that connection ends — not here.
-        @SuppressWarnings("PMD.CloseResource")
-        var channel = serverChannel.accept();
-        connectionHandler.accept(channel.socket());
-      } catch (IOException e) {
-        if (running) {
-          LOG.warn("Plaintext accept loop error", e);
-        }
+        channel.close();
+      } catch (IOException cleanupFailure) {
+        failure.addSuppressed(cleanupFailure);
       }
+      throw failure;
     }
   }
 
   @Override
-  public void close() throws IOException {
-    running = false;
-    serverChannel.close();
+  public int boundPort() {
+    return serverSocket.socket().getLocalPort();
+  }
+
+  @Override
+  protected Socket accept() throws IOException {
+    return serverSocket.accept().socket();
   }
 }
