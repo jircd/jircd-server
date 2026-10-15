@@ -94,6 +94,11 @@ public final class JoinCommandHandler implements CommandHandler {
       return;
     }
 
+    // Already a member: no gates, no insertion, no notification (issue #16).
+    if (channelRegistry.lookup(name).filter(c -> c.members().contains(session)).isPresent()) {
+      return;
+    }
+
     var failure = new java.util.concurrent.atomic.AtomicReference<AdmissionFailure>();
     var joined =
         channelRegistry.join(
