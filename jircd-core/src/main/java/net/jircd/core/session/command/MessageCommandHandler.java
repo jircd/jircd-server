@@ -114,18 +114,19 @@ public final class MessageCommandHandler implements CommandHandler {
     OutboundMessage outbound =
         OutboundMessage.now(presentedForm, commandName, target, body, message.tags());
     boolean echoToSender = includeSenderInFanOut(extensionRegistry, session);
+    boolean direct = !target.startsWith("#");
     for (ClientSession recipient : recipients) {
-      if (recipient == session && !echoToSender) {
-        continue; // echo-message (Story 2) decides whether the sender sees its own message
+      if (recipient == session && !direct && !echoToSender) {
+        continue; // echo-message (Story 2) decides whether the sender sees its own channel message
       }
       if (recipient.writer() != null) {
         recipient.writer().enqueue(outbound);
       }
     }
-    if (echoToSender && !target.startsWith("#") && session.writer() != null) {
+    if (echoToSender && direct && !recipients.contains(session) && session.writer() != null) {
       // 005-fix-batch-conformance FR-003 — a direct message's recipients set is Set.of(target),
-      // structurally never containing the sender (unlike a channel's own member set), so the
-      // loop above can never self-echo a DM on its own.
+      // so the loop above only reaches the sender when it targeted itself; that case is already
+      // delivered there as the DM itself (issue #18), so echoing it again would duplicate it.
       session.writer().enqueue(outbound);
     }
   }
