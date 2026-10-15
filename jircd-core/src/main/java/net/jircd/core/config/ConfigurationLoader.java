@@ -19,6 +19,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.security.GeneralSecurityException;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
@@ -35,6 +36,8 @@ import org.yaml.snakeyaml.error.YAMLException;
  * SC-008) — never a partially-applied result.
  */
 public final class ConfigurationLoader {
+
+  private static final String WHO_MASK_ENABLED_KEY = "whoMaskEnabled";
 
   private static final Set<String> BASE_64_HASH_PREFIXES =
       Set.of("$2a$", "$2b$", "$2y$", "$argon2id$");
@@ -110,9 +113,8 @@ public final class ConfigurationLoader {
             ServerConfiguration.KEEP_ALIVE_FREQUENCY_CEILING_SECONDS);
 
     boolean whoMaskEnabled =
-        root.containsKey("whoMaskEnabled")
-            ? asBoolean(root.get("whoMaskEnabled"), "whoMaskEnabled")
-            : true;
+        !root.containsKey(WHO_MASK_ENABLED_KEY)
+            || asBoolean(root.get(WHO_MASK_ENABLED_KEY), WHO_MASK_ENABLED_KEY);
 
     List<ServerConfiguration.Listener> listeners = parseListeners(root.get("listeners"));
 
@@ -349,7 +351,7 @@ public final class ConfigurationLoader {
   }
 
   private static Object redactSecrets(Object value, Map<Object, Boolean> visiting) {
-    if (!(value instanceof Map<?, ?>) && !(value instanceof List<?>)) {
+    if (!(value instanceof Map<?, ?>) && !(value instanceof Collection<?>)) {
       return value;
     }
     if (visiting.put(value, Boolean.TRUE) != null) {
@@ -367,7 +369,7 @@ public final class ConfigurationLoader {
         }
         return redacted;
       }
-      return ((List<?>) value).stream().map(entry -> redactSecrets(entry, visiting)).toList();
+      return ((Collection<?>) value).stream().map(entry -> redactSecrets(entry, visiting)).toList();
     } finally {
       visiting.remove(value);
     }

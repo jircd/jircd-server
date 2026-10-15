@@ -71,6 +71,9 @@ class ConfigurationLoaderTest {
             "string"),
         Arguments.of("listeners: {keystorePassword: 987654321}", "listeners", "list"),
         Arguments.of(
+            "listeners: !!set { ? {hashedPassword: 987654321} : null }", "listeners", "list"),
+        Arguments.of("!!set { ? {hashedPassword: 987654321} : null }", "root", "mapping"),
+        Arguments.of(
             "listeners: &loop {self: *loop, keystorePassword: 987654321}", "listeners", "list"),
         Arguments.of(
             "[{administratorCredentials: [{hashedPassword: 987654321}]}]", "root", "mapping"),
