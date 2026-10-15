@@ -89,10 +89,8 @@ public final class TagmsgCommandHandler implements CommandHandler {
     OutboundMessage outbound =
         OutboundMessage.now(presentedForm, "TAGMSG", target, null, message.tags());
     boolean echoToSender = MessageCommandHandler.includeSenderInFanOut(extensionRegistry, session);
-    for (ClientSession recipient : recipients) {
-      if (recipient == session && !echoToSender) {
-        continue;
-      }
+    for (ClientSession recipient :
+        MessageCommandHandler.deliveryTargets(recipients, session, target, echoToSender)) {
       if (!recipient.negotiatedCapabilities().contains(CapabilityName.MESSAGE_TAGS)) {
         continue; // FR-021: nothing to render for a client without message-tags negotiated
       }

@@ -15,6 +15,8 @@
  */
 package net.jircd.core.session.command;
 
+import java.util.Collection;
+import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.function.Supplier;
 import net.jircd.core.extension.ExtensionRegistry;
@@ -113,22 +115,32 @@ public final class MessageCommandHandler implements CommandHandler {
     // per-recipient rendered map alongside server-contributed ones (msgid/time).
     OutboundMessage outbound =
         OutboundMessage.now(presentedForm, commandName, target, body, message.tags());
-    boolean echoToSender = includeSenderInFanOut(extensionRegistry, session);
-    boolean direct = !target.startsWith("#");
-    for (ClientSession recipient : recipients) {
-      if (recipient == session && !direct && !echoToSender) {
-        continue; // echo-message (Story 2) decides whether the sender sees its own channel message
-      }
+    for (ClientSession recipient :
+        deliveryTargets(
+            recipients, session, target, includeSenderInFanOut(extensionRegistry, session))) {
       if (recipient.writer() != null) {
         recipient.writer().enqueue(outbound);
       }
     }
-    if (echoToSender && direct && !recipients.contains(session) && session.writer() != null) {
-      // 005-fix-batch-conformance FR-003 — a direct message's recipients set is Set.of(target),
-      // so the loop above only reaches the sender when it targeted itself; that case is already
-      // delivered there as the DM itself (issue #18), so echoing it again would duplicate it.
-      session.writer().enqueue(outbound);
+  }
+
+  /**
+   * Who receives a fan-out: a direct target always gets it (even when it is the sender itself,
+   * exactly once); a channel's own member set drops the sender unless {@code echo-message} wants it
+   * included; and a direct message to someone else additionally echoes to the sender only under
+   * {@code echo-message}. Shared by {@code PRIVMSG}/{@code NOTICE} and {@code TAGMSG}.
+   */
+  static Collection<ClientSession> deliveryTargets(
+      Set<ClientSession> recipients, ClientSession sender, String target, boolean echoToSender) {
+    Set<ClientSession> targets = new LinkedHashSet<>(recipients);
+    if (target.startsWith("#")) {
+      if (!echoToSender) {
+        targets.remove(sender);
+      }
+    } else if (echoToSender) {
+      targets.add(sender); // a direct recipients set is Set.of(target); no-op for a self-target
     }
+    return targets;
   }
 
   /**
