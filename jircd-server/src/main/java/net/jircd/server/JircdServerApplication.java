@@ -15,6 +15,7 @@
  */
 package net.jircd.server;
 
+import java.io.Closeable;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -23,6 +24,7 @@ import java.net.UnknownHostException;
 import java.nio.file.Path;
 import java.security.GeneralSecurityException;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
 import java.util.Set;
@@ -87,6 +89,7 @@ public final class JircdServerApplication {
 
   private PlaintextListener plaintextListener;
   private TlsListener tlsListener;
+  private final List<Closeable> ownedListeners = new ArrayList<>();
 
   public JircdServerApplication(Path configPath) throws ConfigurationException, IOException {
     extensionRegistry.discover(Thread.currentThread().getContextClassLoader());
@@ -283,7 +286,7 @@ public final class JircdServerApplication {
         });
   }
 
-  public void start() throws IOException, GeneralSecurityException {
+  public synchronized void start() throws IOException, GeneralSecurityException {
     // No TLS entry in the zero-config default (004-fix-tls-certificate, research.md "The
     // zero-config default listener list") — a TLS listener with no certificate configured now
     // refuses to start, so defaulting to one here would break the simplest possible quickstart.
@@ -291,26 +294,76 @@ public final class JircdServerApplication {
         configuration.listeners().isEmpty()
             ? List.of(new ServerConfiguration.Listener(6667, false))
             : configuration.listeners();
-    for (ServerConfiguration.Listener listener : listeners) {
-      if (listener.tls()) {
-        tlsListener = new TlsListener(listener, connectionHandler);
-        tlsListener.start();
-        LOG.info("TLS listener started on port {}", listener.port());
-      } else {
-        plaintextListener = new PlaintextListener(listener.port(), connectionHandler);
-        plaintextListener.start();
-        LOG.info("Plaintext listener started on port {}", listener.port());
+    int previousListenerCount = ownedListeners.size();
+    // These aliases remain owned by ownedListeners; rollback must not close them.
+    @SuppressWarnings("PMD.CloseResource")
+    PlaintextListener previousPlaintextListener = plaintextListener;
+    @SuppressWarnings("PMD.CloseResource")
+    TlsListener previousTlsListener = tlsListener;
+    try {
+      for (ServerConfiguration.Listener listener : listeners) {
+        if (listener.tls()) {
+          tlsListener = new TlsListener(listener, connectionHandler);
+          ownedListeners.add(tlsListener::close);
+          tlsListener.start();
+          LOG.info("TLS listener started on port {}", listener.port());
+        } else {
+          plaintextListener = new PlaintextListener(listener.port(), connectionHandler);
+          ownedListeners.add(plaintextListener::close);
+          plaintextListener.start();
+          LOG.info("Plaintext listener started on port {}", listener.port());
+        }
       }
+    } catch (IOException | GeneralSecurityException | RuntimeException failure) {
+      try {
+        closeListeners(ownedListeners.subList(previousListenerCount, ownedListeners.size()));
+      } catch (IOException | RuntimeException cleanupFailure) {
+        if (failure != cleanupFailure) {
+          failure.addSuppressed(cleanupFailure);
+        }
+      } finally {
+        plaintextListener = previousPlaintextListener;
+        tlsListener = previousTlsListener;
+      }
+      throw failure;
     }
   }
 
-  public void stop() throws IOException {
-    if (plaintextListener != null) {
-      plaintextListener.close();
+  public synchronized void stop() throws IOException {
+    closeListeners(ownedListeners);
+  }
+
+  // Successful closes relinquish ownership; failed resources remain available for a retry.
+  @SuppressWarnings("PMD.CloseResource")
+  private static void closeListeners(List<Closeable> listeners) throws IOException {
+    List<Exception> failures = new ArrayList<>();
+    var iterator = listeners.iterator();
+    while (iterator.hasNext()) {
+      Closeable listener = iterator.next();
+      try {
+        listener.close();
+        iterator.remove();
+      } catch (IOException | RuntimeException closeFailure) {
+        failures.add(closeFailure);
+      }
     }
-    if (tlsListener != null) {
-      tlsListener.close();
+    if (failures.isEmpty()) {
+      return;
     }
+    Exception primary =
+        failures.stream()
+            .filter(IOException.class::isInstance)
+            .findFirst()
+            .orElse(failures.getFirst());
+    for (Exception failure : failures) {
+      if (failure != primary) {
+        primary.addSuppressed(failure);
+      }
+    }
+    if (primary instanceof IOException ioFailure) {
+      throw ioFailure;
+    }
+    throw (RuntimeException) primary;
   }
 
   public ConfigurationReloader reloader() {

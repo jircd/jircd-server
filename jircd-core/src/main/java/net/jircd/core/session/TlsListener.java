@@ -16,59 +16,35 @@
 package net.jircd.core.session;
 
 import java.io.IOException;
+import java.net.Socket;
 import java.security.GeneralSecurityException;
-import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLServerSocket;
 import net.jircd.core.config.ServerConfiguration;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * The optional TLS connection listener (FR-018): blocking {@link SSLServerSocket}/{@code SSLSocket}
  * API matching the virtual-thread model (research.md "TLS approach"), not {@code SSLEngine}.
  */
-public final class TlsListener implements AutoCloseable {
-
-  private static final Logger LOG = LoggerFactory.getLogger(TlsListener.class);
-
-  private final SSLServerSocket serverSocket;
-  private final ConnectionHandler connectionHandler;
-  private volatile boolean running = true;
+public final class TlsListener extends AbstractListener<SSLServerSocket> {
 
   public TlsListener(ServerConfiguration.Listener listener, ConnectionHandler connectionHandler)
       throws IOException, GeneralSecurityException {
-    this.connectionHandler = connectionHandler;
-    SSLContext sslContext = TlsSupport.buildServerContext(listener);
-    this.serverSocket =
-        (SSLServerSocket) sslContext.getServerSocketFactory().createServerSocket(listener.port());
+    super(
+        (SSLServerSocket)
+            TlsSupport.buildServerContext(listener)
+                .getServerSocketFactory()
+                .createServerSocket(listener.port()),
+        connectionHandler::accept,
+        "tls-listener");
   }
 
-  public void start() {
-    Thread.ofVirtual().name("tls-listener").start(this::acceptLoop);
-  }
-
+  @Override
   public int boundPort() {
     return serverSocket.getLocalPort();
   }
 
-  private void acceptLoop() {
-    while (running) {
-      try {
-        // Same as PlaintextListener: ownership transfers to ConnectionHandler.
-        @SuppressWarnings("PMD.CloseResource")
-        var socket = serverSocket.accept();
-        connectionHandler.accept(socket);
-      } catch (IOException e) {
-        if (running) {
-          LOG.warn("TLS accept loop error", e);
-        }
-      }
-    }
-  }
-
   @Override
-  public void close() throws IOException {
-    running = false;
-    serverSocket.close();
+  protected Socket accept() throws IOException {
+    return serverSocket.accept();
   }
 }
