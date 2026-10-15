@@ -15,6 +15,7 @@
  */
 package net.jircd.server;
 
+import java.io.Closeable;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -23,6 +24,7 @@ import java.net.UnknownHostException;
 import java.nio.file.Path;
 import java.security.GeneralSecurityException;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
 import java.util.Set;
@@ -87,6 +89,7 @@ public final class JircdServerApplication {
 
   private PlaintextListener plaintextListener;
   private TlsListener tlsListener;
+  private final List<Closeable> ownedListeners = new ArrayList<>();
 
   public JircdServerApplication(Path configPath) throws ConfigurationException, IOException {
     extensionRegistry.discover(Thread.currentThread().getContextClassLoader());
@@ -291,25 +294,48 @@ public final class JircdServerApplication {
         configuration.listeners().isEmpty()
             ? List.of(new ServerConfiguration.Listener(6667, false))
             : configuration.listeners();
-    for (ServerConfiguration.Listener listener : listeners) {
-      if (listener.tls()) {
-        tlsListener = new TlsListener(listener, connectionHandler);
-        tlsListener.start();
-        LOG.info("TLS listener started on port {}", listener.port());
-      } else {
-        plaintextListener = new PlaintextListener(listener.port(), connectionHandler);
-        plaintextListener.start();
-        LOG.info("Plaintext listener started on port {}", listener.port());
+    try {
+      for (ServerConfiguration.Listener listener : listeners) {
+        if (listener.tls()) {
+          tlsListener = new TlsListener(listener, connectionHandler);
+          ownedListeners.add(tlsListener::close);
+          tlsListener.start();
+          LOG.info("TLS listener started on port {}", listener.port());
+        } else {
+          plaintextListener = new PlaintextListener(listener.port(), connectionHandler);
+          ownedListeners.add(plaintextListener::close);
+          plaintextListener.start();
+          LOG.info("Plaintext listener started on port {}", listener.port());
+        }
       }
+    } catch (IOException | GeneralSecurityException | RuntimeException failure) {
+      try {
+        stop();
+      } catch (IOException cleanupFailure) {
+        failure.addSuppressed(cleanupFailure);
+      }
+      throw failure;
     }
   }
 
+  // Each owned resource is explicitly closed below; failures are collected so cleanup continues.
+  @SuppressWarnings("PMD.CloseResource")
   public void stop() throws IOException {
-    if (plaintextListener != null) {
-      plaintextListener.close();
+    IOException failure = null;
+    for (Closeable listener : ownedListeners) {
+      try {
+        listener.close();
+      } catch (IOException closeFailure) {
+        if (failure == null) {
+          failure = closeFailure;
+        } else {
+          failure.addSuppressed(closeFailure);
+        }
+      }
     }
-    if (tlsListener != null) {
-      tlsListener.close();
+    ownedListeners.clear();
+    if (failure != null) {
+      throw failure;
     }
   }
 
