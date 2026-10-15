@@ -49,9 +49,11 @@ listeners:
     keyPath: /etc/letsencrypt/live/example.org/privkey.pem     # PEM private key — required together with certPath
   # Alternative certificate form for the same listener (mutually exclusive with certPath/keyPath):
   #   keystorePath: /etc/jircd/keystore.p12       # PKCS12 keystore (FR-005)
-  #   keystorePassword: <required — no default>   # REQUIRED if keystorePath is set; a well-known
+  #   keystorePassword: "<required — no default>" # REQUIRED if keystorePath is set; a well-known
   #                                                # default like "changeit" would defeat PKCS12's
-  #                                                # own password-based encryption of the key entry
+  #                                                # own password-based encryption of the key entry.
+  #                                                # A YAML string: quote an all-digit password
+  #                                                # ("123456"), an unquoted number is rejected
   # A `tls: true` listener with neither form configured refuses to start (FR-003/FR-004) — no
   # certificate is ever generated automatically, unlike releases before 004-fix-tls-certificate.
   # A passphrase-encrypted or legacy PKCS#1 PEM private key is rejected with a specific message
@@ -92,6 +94,28 @@ administratorCredentials:
   `rateLimit` value MUST cause the server to refuse to start with an error
   naming the exact offending key/value (FR-012, SC-008) — not a stack
   trace, not a silent default substitution.
+- **Every value MUST have its declared YAML type** (issue #25): the root
+  and each section MUST be a mapping (`listeners` and
+  `administratorCredentials` a list of mappings), and each scalar MUST be
+  the type this contract shows — string, integer or boolean. Values are
+  never coerced: `tls: "true"` is rejected rather than read as `true`,
+  and a string field such as `keystorePassword` whose value looks like a
+  number MUST be quoted. A wrong shape or type is rejected the same way as
+  any other malformed value, never as an unrelated runtime exception, and
+  the error names the full path of the key (`listeners[1].port`,
+  `administratorCredentials[0].hashedPassword`).
+- **Numeric ranges at the same boundary**: `rateLimit.refillRatePerSecond`
+  MUST be finite as well as positive (`.nan` and `.inf` are rejected); a
+  listener `port` MUST be an integer from `0` to `65535`; and two listeners
+  MUST NOT share a non-zero port. Port `0` may repeat, since each such
+  listener binds its own OS-assigned ephemeral port.
+- **Secrets are never echoed in an error**: the "offending key/value" rule
+  above names the key but omits the value for `keystorePassword` and
+  `hashedPassword`, including when either has the wrong type. When a
+  malformed section's value is shown, any secret key nested inside it is
+  shown as `[redacted]`. A YAML syntax error reports only its line and
+  column, not the parser's message, since that can quote the offending
+  source line, secrets included.
 - **A `tls: true` listener's certificate IS part of the "refuse to start" validation set**
   (004-fix-tls-certificate FR-003, FR-004, FR-006): it MUST have exactly one of
   `certPath`+`keyPath` (both required together — an incomplete pair is rejected) or
