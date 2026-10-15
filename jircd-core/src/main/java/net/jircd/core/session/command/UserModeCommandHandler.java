@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
+import net.jircd.core.session.CaseMapping;
 import net.jircd.core.session.ClientSession;
 import net.jircd.core.session.UserMode;
 import net.jircd.protocol.Command;
@@ -52,7 +53,8 @@ public final class UserModeCommandHandler implements CommandHandler {
       return;
     }
     String target = message.params().getFirst();
-    if (session.nickname() == null || !session.nickname().equalsIgnoreCase(target)) {
+    if (session.nickname() == null
+        || !CaseMapping.fold(session.nickname()).equals(CaseMapping.fold(target))) {
       Replies.send(
           session,
           serverName.get(),
