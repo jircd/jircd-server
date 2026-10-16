@@ -39,9 +39,13 @@ public final class Channel {
   private final Set<ClientSession> members = ConcurrentHashMap.newKeySet();
   private final Set<ClientSession> membersView = Collections.unmodifiableSet(members);
   private final Set<ClientSession> operators = ConcurrentHashMap.newKeySet();
+  private final Set<ClientSession> operatorsView = Collections.unmodifiableSet(operators);
   private final Set<ClientSession> voiced = ConcurrentHashMap.newKeySet();
+  private final Set<ClientSession> voicedView = Collections.unmodifiableSet(voiced);
   private final Set<ChannelMode> activeModes = ConcurrentHashMap.newKeySet();
+  private final Set<ChannelMode> activeModesView = Collections.unmodifiableSet(activeModes);
   private final List<BanEntry> bans = new CopyOnWriteArrayList<>();
+  private final List<BanEntry> bansView = Collections.unmodifiableList(bans);
   private final Set<String> invited = ConcurrentHashMap.newKeySet();
   private volatile String topic;
   private volatile int memberLimit;
@@ -87,23 +91,77 @@ public final class Channel {
   }
 
   public Set<ClientSession> operators() {
-    return operators;
+    return operatorsView;
   }
 
   public Set<ClientSession> voiced() {
-    return voiced;
+    return voicedView;
   }
 
   public Set<ChannelMode> activeModes() {
-    return activeModes;
+    return activeModesView;
   }
 
   public List<BanEntry> bans() {
-    return bans;
+    return bansView;
   }
 
-  public Set<String> invited() {
-    return invited;
+  /** Adds an invitation using IRC case folding; repeated invitations remain a single entry. */
+  public synchronized void invite(String nickname) {
+    invited.add(CaseMapping.fold(nickname));
+  }
+
+  /** Reports whether this nickname has a pending invitation, using IRC case folding. */
+  public synchronized boolean isInvited(String nickname) {
+    return invited.contains(CaseMapping.fold(nickname));
+  }
+
+  /** Consumes a pending invitation once, returning whether it existed. */
+  public synchronized boolean consumeInvitation(String nickname) {
+    return invited.remove(CaseMapping.fold(nickname));
+  }
+
+  /** Grants operator status to a current member; returns false only for a non-member. */
+  public synchronized boolean grantOperator(ClientSession member) {
+    if (!members.contains(member)) {
+      return false;
+    }
+    operators.add(member);
+    return true;
+  }
+
+  /** Removes operator status, returning whether it was present. */
+  public synchronized boolean revokeOperator(ClientSession member) {
+    return operators.remove(member);
+  }
+
+  /** Grants voice to a current member; returns false only for a non-member. */
+  public synchronized boolean grantVoice(ClientSession member) {
+    if (!members.contains(member)) {
+      return false;
+    }
+    voiced.add(member);
+    return true;
+  }
+
+  /** Removes voice, returning whether it was present. */
+  public synchronized boolean revokeVoice(ClientSession member) {
+    return voiced.remove(member);
+  }
+
+  /** Activates a mode, clearing PRIVATE for SECRET and SECRET for PRIVATE in the same step. */
+  public synchronized void setMode(ChannelMode mode) {
+    if (CoreChannelModes.SECRET.equals(mode)) {
+      activeModes.remove(CoreChannelModes.PRIVATE);
+    } else if (CoreChannelModes.PRIVATE.equals(mode)) {
+      activeModes.remove(CoreChannelModes.SECRET);
+    }
+    activeModes.add(mode);
+  }
+
+  /** Clears a mode; clearing an inactive mode is a no-op. */
+  public synchronized void clearMode(ChannelMode mode) {
+    activeModes.remove(mode);
   }
 
   public String topic() {
@@ -193,7 +251,7 @@ public final class Channel {
   }
 
   /** Removes a ban mask — a silent no-op if not present (FR-062). */
-  public void removeBan(String mask) {
+  public synchronized void removeBan(String mask) {
     bans.removeIf(b -> b.mask().equals(mask));
   }
 

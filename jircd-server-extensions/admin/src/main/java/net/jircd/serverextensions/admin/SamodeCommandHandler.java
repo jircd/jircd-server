@@ -41,11 +41,22 @@ public final class SamodeCommandHandler implements CommandHandler {
   private final ChannelRegistry channelRegistry;
   private final ExtensionRegistry extensionRegistry;
   private final Supplier<String> serverName;
+  private final Runnable beforeMemberChange;
 
   public SamodeCommandHandler(
       ChannelRegistry channelRegistry,
       ExtensionRegistry extensionRegistry,
       Supplier<String> serverName) {
+    this(channelRegistry, extensionRegistry, serverName, () -> {});
+  }
+
+  // Test seam for a departure after the membership pre-check, outside membership monitors.
+  SamodeCommandHandler(
+      ChannelRegistry channelRegistry,
+      ExtensionRegistry extensionRegistry,
+      Supplier<String> serverName,
+      Runnable beforeMemberChange) {
+    this.beforeMemberChange = beforeMemberChange;
     this.channelRegistry = channelRegistry;
     this.extensionRegistry = extensionRegistry;
     this.serverName = serverName;
@@ -78,10 +89,8 @@ public final class SamodeCommandHandler implements CommandHandler {
     char sign;
     if ("+o".equals(modeArg)) {
       sign = '+';
-      channel.operators().add(session);
     } else if ("-o".equals(modeArg)) {
       sign = '-';
-      channel.operators().remove(session);
     } else {
       Replies.send(
           session,
@@ -89,6 +98,28 @@ public final class SamodeCommandHandler implements CommandHandler {
           NumericReply.ERR_UNKNOWNMODE,
           modeArg,
           "is unknown mode char to me");
+      return;
+    }
+
+    beforeMemberChange.run();
+    boolean accepted;
+    synchronized (channel) {
+      accepted = channel.members().contains(session);
+      if (accepted) {
+        if (sign == '+') {
+          channel.grantOperator(session);
+        } else {
+          channel.revokeOperator(session);
+        }
+      }
+    }
+    if (!accepted) {
+      Replies.send(
+          session,
+          serverName.get(),
+          NumericReply.ERR_USERNOTINCHANNEL,
+          session.nickname(),
+          "They aren't on that channel");
       return;
     }
 

@@ -154,7 +154,7 @@ class DisconnectCleanupTest {
       registry.join(name, bob, ignored -> true);
     }
     List<Channel> channels = List.copyOf(quitter.channelMemberships());
-    channels.forEach(channel -> channel.voiced().add(quitter));
+    channels.forEach(channel -> channel.grantVoice(quitter));
     NicknameRegistry nicknames = new NicknameRegistry();
     assertThat(nicknames.claim("erin", quitter)).isTrue();
     WhowasHistory history = new WhowasHistory(() -> 100);

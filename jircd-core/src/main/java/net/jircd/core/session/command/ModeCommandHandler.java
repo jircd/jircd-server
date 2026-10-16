@@ -20,7 +20,6 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.function.IntSupplier;
 import java.util.function.Supplier;
 import net.jircd.core.extension.ExtensionRegistry;
@@ -58,6 +57,7 @@ public final class ModeCommandHandler implements CommandHandler {
   private final ExtensionRegistry extensionRegistry;
   private final Supplier<String> serverName;
   private final IntSupplier maxModesPerCommand;
+  private final Runnable beforeMemberChange;
 
   public ModeCommandHandler(
       ChannelRegistry channelRegistry,
@@ -65,6 +65,24 @@ public final class ModeCommandHandler implements CommandHandler {
       ExtensionRegistry extensionRegistry,
       Supplier<String> serverName,
       IntSupplier maxModesPerCommand) {
+    this(
+        channelRegistry,
+        nicknameRegistry,
+        extensionRegistry,
+        serverName,
+        maxModesPerCommand,
+        () -> {});
+  }
+
+  // Test seam for a departure after target resolution; never invoked under a membership monitor.
+  ModeCommandHandler(
+      ChannelRegistry channelRegistry,
+      NicknameRegistry nicknameRegistry,
+      ExtensionRegistry extensionRegistry,
+      Supplier<String> serverName,
+      IntSupplier maxModesPerCommand,
+      Runnable beforeMemberChange) {
+    this.beforeMemberChange = beforeMemberChange;
     this.channelRegistry = channelRegistry;
     this.nicknameRegistry = nicknameRegistry;
     this.extensionRegistry = extensionRegistry;
@@ -205,7 +223,16 @@ public final class ModeCommandHandler implements CommandHandler {
           }
           break;
         }
-        applyMember(channel, mode, change, target.get());
+        beforeMemberChange.run();
+        if (!applyMember(channel, mode, change, target.get())) {
+          Replies.send(
+              session,
+              serverName.get(),
+              NumericReply.ERR_USERNOTINCHANNEL,
+              rawParam,
+              "They aren't on that channel");
+          break;
+        }
         appliedParam = target.get().nickname();
       } else if (mode.kind() == ChannelMode.Kind.VALUE_SET_ONLY) {
         // 006-complete-core-protocol FR-001 — +l <n>; -l never reaches here (handled above,
@@ -267,25 +294,33 @@ public final class ModeCommandHandler implements CommandHandler {
 
   private static void applyBoolean(Channel channel, ChannelMode mode, ModeChange change) {
     if (change.sign() == '+') {
-      if (mode == CoreChannelModes.PRIVATE) {
-        channel.activeModes().remove(CoreChannelModes.SECRET);
-      } else if (mode == CoreChannelModes.SECRET) {
-        channel.activeModes().remove(CoreChannelModes.PRIVATE);
-      }
-      channel.activeModes().add(mode);
+      channel.setMode(mode);
     } else {
-      channel.activeModes().remove(mode);
+      channel.clearMode(mode);
     }
   }
 
-  private static void applyMember(
+  private static boolean applyMember(
       Channel channel, ChannelMode mode, ModeChange change, ClientSession target) {
-    Set<ClientSession> set =
-        mode == CoreChannelModes.OPERATOR ? channel.operators() : channel.voiced();
-    if (change.sign() == '+') {
-      set.add(target);
-    } else {
-      set.remove(target);
+    synchronized (channel) {
+      if (!channel.members().contains(target)) {
+        return false;
+      }
+      if (CoreChannelModes.OPERATOR.equals(mode)) {
+        if (change.sign() == '+') {
+          channel.grantOperator(target);
+        } else {
+          channel.revokeOperator(target);
+        }
+      } else {
+        if (change.sign() == '+') {
+          channel.grantVoice(target);
+        } else {
+          channel.revokeVoice(target);
+        }
+      }
+      // A member's already-unset privilege is still a valid, echoable revoke.
+      return true;
     }
   }
 

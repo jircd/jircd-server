@@ -37,6 +37,7 @@ public final class ClientSession {
   private final Set<Channel> channelMembershipsView =
       Collections.unmodifiableSet(channelMemberships);
   private final Set<UserMode> userModes = ConcurrentHashMap.newKeySet();
+  private final Set<UserMode> userModesView = Collections.unmodifiableSet(userModes);
   private final RateLimitBucket rateLimitBucket;
   private final String realHostname;
   private final Instant connectedAt = Instant.now();
@@ -166,8 +167,33 @@ public final class ClientSession {
     channelMemberships.remove(channel);
   }
 
+  /** Returns a live, unmodifiable view of user modes. */
   public Set<UserMode> userModes() {
-    return userModes;
+    return userModesView;
+  }
+
+  /**
+   * Sets a non-operator mode; caller permissions are checked by the command handler.
+   *
+   * @throws IllegalArgumentException for OPERATOR, which requires grantAdministratorPrivilege
+   */
+  public void setUserMode(UserMode mode) {
+    if (UserMode.OPERATOR.equals(mode)) {
+      throw new IllegalArgumentException("Operator mode requires grantAdministratorPrivilege");
+    }
+    userModes.add(mode);
+  }
+
+  /**
+   * Clears a non-operator mode; clearing an inactive mode is a no-op.
+   *
+   * @throws IllegalArgumentException for OPERATOR, which requires revokeAdministratorPrivilege
+   */
+  public void clearUserMode(UserMode mode) {
+    if (UserMode.OPERATOR.equals(mode)) {
+      throw new IllegalArgumentException("Operator mode requires revokeAdministratorPrivilege");
+    }
+    userModes.remove(mode);
   }
 
   public RateLimitBucket rateLimitBucket() {

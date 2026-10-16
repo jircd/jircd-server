@@ -264,7 +264,7 @@ class ChannelRegistryTest {
     ClientSession bob = newSession("bob");
     Channel channel = registry.join("#c", alice, ignored -> true).orElseThrow().channel();
     registry.join("#c", bob, ignored -> true);
-    channel.voiced().add(alice);
+    channel.grantVoice(alice);
     assertThat(registry.part(channel, newSession("outsider"))).isEmpty();
     Departure departure = registry.part(channel, alice).orElseThrow();
     assertThat(departure.channel()).isSameAs(channel);
@@ -289,7 +289,7 @@ class ChannelRegistryTest {
     ClientSession target = newSession("a[b");
     Channel channel = registry.join("#c", operator, ignored -> true).orElseThrow().channel();
     registry.join("#c", target, ignored -> true);
-    channel.voiced().add(target);
+    channel.grantVoice(target);
     assertThat(registry.kick(channel, target, "missing"))
         .isInstanceOf(KickOutcome.NotOperator.class);
     assertThat(registry.kick(channel, operator, "missing"))
