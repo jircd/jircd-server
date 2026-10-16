@@ -12,6 +12,7 @@ IRCv3 server in Java 25 (Gradle toolchain, multi-module). The project rules live
 - Before you call work done, run `./gradlew build`. It runs the tests plus Spotless, SpotBugs and PMD, the same as CI (`build.yml`).
 - Formatting: `./gradlew spotlessApply`. The pre-commit hook runs `spotlessCheck`; enable it with `git config core.hooksPath .githooks`.
 - Load tests (tag `load`) are excluded from `test`. Run them only with `./gradlew loadTest` when performance budgets are affected.
+- Coverage floor: `build` also runs `testCodeCoverageVerification` (aggregate over every module with `src/main/java`), which fails below 85% line / 75% branch. Report: `./gradlew testCodeCoverageReport`. Weekly CI (`load-test.yml`) runs `loadTest`.
 - Local server config `jircd-server/jircd.yaml` holds credentials and is gitignored. Never commit it.
 
 ## Workflow
