@@ -47,6 +47,7 @@ class TlsCertificateConfigTest {
             + "  - port: 0\n"
             + "    tls: false\n"
             + "  - port: 0\n"
+            + "    bindAddress: 127.0.0.1\n"
             + "    tls: true\n"
             + "    keystorePath: \""
             + TestServer.resourcePath("tls/test-keystore.p12")
@@ -165,6 +166,7 @@ class TlsCertificateConfigTest {
         serverName: test.jircd.local
         listeners:
           - port: 0
+            bindAddress: 127.0.0.1
             tls: false
             certPath: /nonexistent/fullchain.pem
         """;
@@ -194,6 +196,7 @@ class TlsCertificateConfigTest {
         "serverName: test.jircd.local\n"
             + "listeners:\n"
             + "  - port: 0\n"
+            + "    bindAddress: 127.0.0.1\n"
             + "    tls: true\n"
             + "    certPath: \""
             + TestServer.resourcePath("tls/test-fullchain.pem")

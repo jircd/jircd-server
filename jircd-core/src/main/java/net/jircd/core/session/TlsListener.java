@@ -33,7 +33,8 @@ public final class TlsListener extends AbstractListener<SSLServerSocket> {
         (SSLServerSocket)
             TlsSupport.buildServerContext(listener)
                 .getServerSocketFactory()
-                .createServerSocket(listener.port()),
+                // Backlog 0 keeps the default; a null bindAddress binds the wildcard address.
+                .createServerSocket(listener.port(), 0, listener.bindAddress()),
         connectionHandler::accept,
         "tls-listener");
   }

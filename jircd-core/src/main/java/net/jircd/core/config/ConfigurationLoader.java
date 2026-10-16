@@ -17,10 +17,10 @@ package net.jircd.core.config;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.InetAddress;
 import java.security.GeneralSecurityException;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -174,7 +174,6 @@ public final class ConfigurationLoader {
       return List.of();
     }
     List<ServerConfiguration.Listener> listeners = new ArrayList<>();
-    Set<Integer> ports = new HashSet<>();
     for (Object entry : asList(raw, "listeners")) {
       String path = "listeners[" + listeners.size() + "]";
       Map<String, Object> map = asMap(entry, path);
@@ -183,11 +182,8 @@ public final class ConfigurationLoader {
         throw new ConfigurationException(
             path + ".port must be an integer from 0 to 65535, got: " + redactSecrets(port));
       }
-      // Port zero asks the OS for a distinct ephemeral port on each bind.
-      if (portValue != 0 && !ports.add(portValue)) {
-        throw new ConfigurationException(path + ".port conflicts with another listener: " + port);
-      }
       boolean tls = map.containsKey("tls") && asBoolean(map.get("tls"), path + ".tls");
+      InetAddress bindAddress = asBindAddress(map.get("bindAddress"), path + ".bindAddress");
       String certPath = asString(map.get("certPath"), path + ".certPath");
       String keyPath = asString(map.get("keyPath"), path + ".keyPath");
       String keystorePath = asString(map.get("keystorePath"), path + ".keystorePath");
@@ -195,7 +191,16 @@ public final class ConfigurationLoader {
 
       ServerConfiguration.Listener listener =
           new ServerConfiguration.Listener(
-              (Integer) port, tls, certPath, keyPath, keystorePath, keystorePassword);
+              (Integer) port, tls, bindAddress, certPath, keyPath, keystorePath, keystorePassword);
+      // Port zero asks the OS for a distinct ephemeral port on each bind.
+      if (portValue != 0) {
+        for (ServerConfiguration.Listener earlier : listeners) {
+          if (earlier.port() == portValue && sharesAnAddress(earlier, listener)) {
+            throw new ConfigurationException(
+                path + ".port conflicts with another listener: " + port);
+          }
+        }
+      }
 
       // Cert fields on a tls: false listener are left untouched, not validated — the same
       // precedent this method already had of only reading recognized keys and ignoring
@@ -412,6 +417,32 @@ public final class ConfigurationLoader {
                   : ", got: " + redactSecrets(value)));
     }
     return string;
+  }
+
+  /**
+   * A literal IPv4 or IPv6 address only: a hostname would need a DNS lookup at startup, and could
+   * resolve differently from one start to the next.
+   */
+  private static InetAddress asBindAddress(Object value, String path)
+      throws ConfigurationException {
+    String literal = asString(value, path);
+    if (literal == null) {
+      return null;
+    }
+    try {
+      return InetAddress.ofLiteral(literal);
+    } catch (IllegalArgumentException notALiteral) {
+      throw new ConfigurationException(
+          path + " must be a literal IPv4 or IPv6 address, got: " + literal);
+    }
+  }
+
+  /** Two listeners on one port collide on the same address, or when either takes them all. */
+  private static boolean sharesAnAddress(
+      ServerConfiguration.Listener first, ServerConfiguration.Listener second) {
+    return first.bindsWildcard()
+        || second.bindsWildcard()
+        || first.bindAddress().equals(second.bindAddress());
   }
 
   private static boolean asBoolean(Object value, String path) throws ConfigurationException {
