@@ -16,10 +16,23 @@
 package net.jircd.core.session;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.io.ByteArrayOutputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import net.jircd.core.extension.ExtensionRegistry;
+import net.jircd.core.extension.HostnameDisplayExtension;
+import net.jircd.core.extension.ServerContext;
+import net.jircd.core.extension.ServerExtension;
+import net.jircd.core.session.command.KickCommandHandler;
+import net.jircd.protocol.MessageParser;
 import org.junit.jupiter.api.Test;
 
 class ChannelRegistryTest {
@@ -27,10 +40,8 @@ class ChannelRegistryTest {
   @Test
   void joiningDuringLastMemberRemovalKeepsOneRegisteredChannel() throws Exception {
     ChannelRegistry registry = new ChannelRegistry();
-    Channel original = registry.getOrCreate("#lobby");
     ClientSession departing = newSession("departing");
-    original.addMember(departing);
-    departing.channelMemberships().add(original);
+    Channel original = registry.join("#lobby", departing, ignored -> true).orElseThrow().channel();
     ClientSession joining = newSession("joining");
     CountDownLatch retrieved = new CountDownLatch(1);
     CountDownLatch resumeJoin = new CountDownLatch(1);
@@ -47,15 +58,13 @@ class ChannelRegistryTest {
               });
       try {
         assertThat(retrieved.await(5, TimeUnit.SECONDS)).isTrue();
-        original.removeMember(departing);
-        departing.channelMemberships().remove(original);
-        registry.removeIfEmpty(original);
+        registry.part(original, departing);
       } finally {
         resumeJoin.countDown();
       }
-      Channel joined = pendingJoin.get(5, TimeUnit.SECONDS);
+      Channel joined = pendingJoin.get(5, TimeUnit.SECONDS).channel();
       ClientSession laterJoiner = newSession("later");
-      Channel next = registry.join("#LOBBY", laterJoiner, ignored -> true).orElseThrow();
+      Channel next = registry.join("#LOBBY", laterJoiner, ignored -> true).orElseThrow().channel();
 
       assertThat(registry.lookup("#lobby")).containsSame(joined);
       assertThat(next).isSameAs(joined);
@@ -64,27 +73,25 @@ class ChannelRegistryTest {
     }
   }
 
+  /**
+   * Removal during admission now waits for the registry monitor; the admitted join stays
+   * registered.
+   */
   @Test
   void lastMemberRemovalDuringAdmissionDoesNotDetachTheJoinedChannel() throws Exception {
     ChannelRegistry registry = new ChannelRegistry();
     ClientSession departing = newSession("departing");
-    Channel original = registry.join("#lobby", departing, ignored -> true).orElseThrow();
+    Channel original = registry.join("#lobby", departing, ignored -> true).orElseThrow().channel();
     ClientSession joining = newSession("joining");
     CountDownLatch admitting = new CountDownLatch(1);
-    CountDownLatch memberRemoved = new CountDownLatch(1);
-
+    CountDownLatch attemptingRemoval = new CountDownLatch(1);
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       var removal =
           executor.submit(
               () -> {
-                if (!admitting.await(5, TimeUnit.SECONDS)) {
-                  throw new IllegalStateException("Timed out waiting for admission");
-                }
-                original.removeMember(departing);
-                departing.channelMemberships().remove(original);
-                memberRemoved.countDown();
-                registry.removeIfEmpty(original);
-                return null;
+                await(admitting);
+                attemptingRemoval.countDown();
+                return registry.part(original, departing);
               });
       Channel joined =
           registry
@@ -93,17 +100,12 @@ class ChannelRegistryTest {
                   joining,
                   channel -> {
                     admitting.countDown();
-                    try {
-                      assertThat(memberRemoved.await(5, TimeUnit.SECONDS)).isTrue();
-                    } catch (InterruptedException e) {
-                      Thread.currentThread().interrupt();
-                      throw new IllegalStateException(e);
-                    }
+                    await(attemptingRemoval);
                     return true;
                   })
-              .orElseThrow();
-      removal.get(5, TimeUnit.SECONDS);
-
+              .orElseThrow()
+              .channel();
+      assertThat(removal.get(5, TimeUnit.SECONDS)).isPresent();
       assertThat(joined).isSameAs(original);
       assertThat(registry.lookup("#lobby")).containsSame(joined);
       assertThat(joined.members()).containsExactly(joining);
@@ -113,9 +115,10 @@ class ChannelRegistryTest {
   @Test
   void staleRemovalCannotRemoveAReplacementChannel() {
     ChannelRegistry registry = new ChannelRegistry();
-    Channel old = registry.getOrCreate("#lobby");
-    registry.removeIfEmpty(old);
-    Channel replacement = registry.getOrCreate("#LOBBY");
+    ClientSession member = newSession("member");
+    Channel old = registry.join("#lobby", member, ignored -> true).orElseThrow().channel();
+    registry.part(old, member);
+    Channel replacement = registry.join("#LOBBY", member, ignored -> true).orElseThrow().channel();
 
     registry.removeIfEmpty(old);
 
@@ -130,11 +133,13 @@ class ChannelRegistryTest {
     assertThat(registry.join("#lobby", session, ignored -> false)).isEmpty();
 
     assertThat(session.channelMemberships()).isEmpty();
-    assertThat(registry.lookup("#lobby").orElseThrow().members()).isEmpty();
+    assertThat(registry.lookup("#lobby")).isEmpty();
   }
 
   private ClientSession newSession(String id) {
-    return new ClientSession(id, "host.example", RateLimitBucket.withDefaults());
+    ClientSession session = new ClientSession(id, "host.example", RateLimitBucket.withDefaults());
+    session.setNickname(id);
+    return session;
   }
 
   @Test
@@ -157,16 +162,373 @@ class ChannelRegistryTest {
   @Test
   void firstJoinerBecomesOperator() {
     ChannelRegistry registry = new ChannelRegistry();
-    Channel channel = registry.getOrCreate("#lobby");
     ClientSession first = newSession("a");
     ClientSession second = newSession("b");
 
-    boolean firstGrantedOp = channel.addMember(first);
-    boolean secondGrantedOp = channel.addMember(second);
+    JoinResult firstJoin = registry.join("#lobby", first, ignored -> true).orElseThrow();
+    Channel channel = firstJoin.channel();
+    boolean firstGrantedOp = firstJoin.grantedOperator();
+    boolean secondGrantedOp =
+        registry.join("#lobby", second, ignored -> true).orElseThrow().grantedOperator();
 
     assertThat(firstGrantedOp).isTrue();
     assertThat(secondGrantedOp).isFalse();
     assertThat(channel.operators()).containsExactly(first);
     assertThat(channel.members()).containsExactlyInAnyOrder(first, second);
+  }
+
+  @Test
+  void twoKickHandlersForOneTargetBroadcastOnlyOneDeparture() throws Exception {
+    ChannelRegistry registry = new ChannelRegistry();
+    ClientSession operator = newSession("operator");
+    operator.setNickname("operator");
+    operator.setIdent("operator");
+    ClientSession target = newSession("target");
+    target.setNickname("target");
+    registry.join("#c", operator, ignored -> true);
+    registry.join("#c", target, ignored -> true);
+    CountDownLatch deliveringFirst = new CountDownLatch(1);
+    CountDownLatch resumeFirst = new CountDownLatch(1);
+    ExtensionRegistry extensions = new ExtensionRegistry();
+    extensions.register(new PausingHostname(deliveringFirst, resumeFirst));
+    extensions.enable("pausing-hostname");
+    KickCommandHandler handler = new KickCommandHandler(registry, extensions, () -> "server");
+    ByteArrayOutputStream notices = new ByteArrayOutputStream();
+    ByteArrayOutputStream replies = new ByteArrayOutputStream();
+    try (SessionWriter targetWriter = new SessionWriter(target, notices, TagRenderer.NONE);
+        SessionWriter operatorWriter = new SessionWriter(operator, replies, TagRenderer.NONE);
+        var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      target.attachWriter(targetWriter);
+      operator.attachWriter(operatorWriter);
+      var first =
+          executor.submit(
+              () -> {
+                handler.handle(operator, MessageParser.parse("KICK #c target"));
+                return null;
+              });
+      try {
+        assertThat(deliveringFirst.await(5, TimeUnit.SECONDS)).isTrue();
+        handler.handle(operator, MessageParser.parse("KICK #c target"));
+      } finally {
+        resumeFirst.countDown();
+      }
+      first.get(5, TimeUnit.SECONDS);
+    }
+    assertThat(
+            notices
+                .toString(StandardCharsets.UTF_8)
+                .lines()
+                .filter(line -> line.contains(" KICK #c target")))
+        .hasSize(1);
+    assertThat(replies.toString(StandardCharsets.UTF_8)).contains(" 441 operator target ");
+  }
+
+  @Test
+  void joinCapturesRecipientsAndNamesAndSkipsAdmissionForAnExistingMember() {
+    ChannelRegistry registry = new ChannelRegistry();
+    ClientSession alice = newSession("alice");
+    ClientSession bob = newSession("bob");
+    JoinResult first = registry.join("#c", alice, ignored -> true).orElseThrow();
+    JoinResult second = registry.join("#C", bob, ignored -> true).orElseThrow();
+    assertThat(first.grantedOperator()).isTrue();
+    assertThat(first.alreadyMember()).isFalse();
+    assertThat(first.recipients()).containsExactly(alice);
+    assertThat(first.memberListing()).containsExactly("@alice");
+    assertThat(second.channel()).isSameAs(first.channel());
+    assertThat(second.grantedOperator()).isFalse();
+    assertThat(second.recipients()).containsExactlyInAnyOrder(alice, bob);
+    assertThat(second.memberListing()).containsExactlyInAnyOrder("@alice", "bob");
+    JoinResult repeated =
+        registry
+            .join(
+                "#c",
+                alice,
+                channel -> {
+                  throw new AssertionError("Repeated membership must skip admission");
+                })
+            .orElseThrow();
+    assertThat(repeated.alreadyMember()).isTrue();
+    assertThat(repeated.grantedOperator()).isFalse();
+    assertThat(repeated.recipients()).containsExactlyInAnyOrder(alice, bob);
+    assertThat(alice.channelMemberships()).containsExactly(first.channel());
+    assertThatThrownBy(() -> first.recipients().clear())
+        .isInstanceOf(UnsupportedOperationException.class);
+    assertThatThrownBy(() -> first.memberListing().clear())
+        .isInstanceOf(UnsupportedOperationException.class);
+  }
+
+  @Test
+  void partCapturesPreRemovalRecipientsClearsPrivilegesAndDropsTheLastMember() {
+    ChannelRegistry registry = new ChannelRegistry();
+    ClientSession alice = newSession("alice");
+    ClientSession bob = newSession("bob");
+    Channel channel = registry.join("#c", alice, ignored -> true).orElseThrow().channel();
+    registry.join("#c", bob, ignored -> true);
+    channel.voiced().add(alice);
+    assertThat(registry.part(channel, newSession("outsider"))).isEmpty();
+    Departure departure = registry.part(channel, alice).orElseThrow();
+    assertThat(departure.channel()).isSameAs(channel);
+    assertThat(departure.departed()).isSameAs(alice);
+    assertThat(departure.recipients()).containsExactlyInAnyOrder(alice, bob);
+    assertThat(channel.members()).containsExactly(bob);
+    assertThat(channel.operators()).doesNotContain(alice);
+    assertThat(channel.voiced()).doesNotContain(alice);
+    assertThat(alice.channelMemberships()).isEmpty();
+    assertThat(registry.part(channel, alice)).isEmpty();
+    registry.part(channel, bob).orElseThrow();
+    assertThat(registry.lookup("#c")).isEmpty();
+    assertThat(departure.recipients()).containsExactlyInAnyOrder(alice, bob);
+    assertThatThrownBy(() -> departure.recipients().clear())
+        .isInstanceOf(UnsupportedOperationException.class);
+  }
+
+  @Test
+  void kickChecksOperatorThenFoldedTargetAndCapturesPreRemovalRecipients() {
+    ChannelRegistry registry = new ChannelRegistry();
+    ClientSession operator = newSession("operator");
+    ClientSession target = newSession("a[b");
+    Channel channel = registry.join("#c", operator, ignored -> true).orElseThrow().channel();
+    registry.join("#c", target, ignored -> true);
+    channel.voiced().add(target);
+    assertThat(registry.kick(channel, target, "missing"))
+        .isInstanceOf(KickOutcome.NotOperator.class);
+    assertThat(registry.kick(channel, operator, "missing"))
+        .isInstanceOf(KickOutcome.NoSuchMember.class);
+    KickOutcome.Kicked result = (KickOutcome.Kicked) registry.kick(channel, operator, "A{B");
+    assertThat(result.departure().departed()).isSameAs(target);
+    assertThat(result.departure().recipients()).containsExactlyInAnyOrder(operator, target);
+    assertThat(target.channelMemberships()).isEmpty();
+    assertThat(channel.voiced()).doesNotContain(target);
+    KickOutcome.Kicked self = (KickOutcome.Kicked) registry.kick(channel, operator, "operator");
+    assertThat(self.departure().recipients()).containsExactly(operator);
+    assertThat(registry.all()).isEmpty();
+  }
+
+  @Test
+  void leaveAllDeduplicatesNeighborsAndClearsEveryMembership() {
+    ChannelRegistry registry = new ChannelRegistry();
+    ClientSession quitter = newSession("quitter");
+    ClientSession alice = newSession("alice");
+    ClientSession bob = newSession("bob");
+    for (String name : List.of("#a", "#b", "#solo")) {
+      registry.join(name, quitter, ignored -> true);
+    }
+    registry.join("#a", alice, ignored -> true);
+    registry.join("#b", alice, ignored -> true);
+    registry.join("#b", bob, ignored -> true);
+    Set<ClientSession> neighbors = registry.leaveAll(quitter);
+    assertThat(neighbors).hasSize(2).containsExactlyInAnyOrder(alice, bob).doesNotContain(quitter);
+    assertThat(quitter.channelMemberships()).isEmpty();
+    assertThat(registry.lookup("#solo")).isEmpty();
+    assertThat(registry.leaveAll(quitter)).isEmpty();
+    registry.leaveAll(alice);
+    assertThat(neighbors).containsExactlyInAnyOrder(alice, bob);
+    assertThatThrownBy(() -> neighbors.clear()).isInstanceOf(UnsupportedOperationException.class);
+  }
+
+  @Test
+  void membershipAccessorsAreUnmodifiableLiveViews() {
+    ChannelRegistry registry = new ChannelRegistry();
+    ClientSession member = newSession("member");
+    Channel channel = registry.join("#c", member, ignored -> true).orElseThrow().channel();
+    Set<ClientSession> members = channel.members();
+    Set<Channel> memberships = member.channelMemberships();
+    assertThat(channel.members()).isSameAs(members);
+    assertThat(member.channelMemberships()).isSameAs(memberships);
+    assertThatThrownBy(() -> members.clear()).isInstanceOf(UnsupportedOperationException.class);
+    assertThatThrownBy(() -> memberships.clear()).isInstanceOf(UnsupportedOperationException.class);
+    registry.part(channel, member);
+    assertThat(members).isEmpty();
+    assertThat(memberships).isEmpty();
+  }
+
+  @Test
+  void rejectedAdmissionKeepsAnExistingPopulatedChannel() {
+    ChannelRegistry registry = new ChannelRegistry();
+    ClientSession existing = newSession("existing");
+    Channel channel = registry.join("#c", existing, ignored -> true).orElseThrow().channel();
+    ClientSession rejected = newSession("rejected");
+    assertThat(registry.join("#c", rejected, ignored -> false)).isEmpty();
+    assertThat(registry.lookup("#c")).containsSame(channel);
+    assertThat(channel.members()).containsExactly(existing);
+    assertThat(rejected.channelMemberships()).isEmpty();
+  }
+
+  @Test
+  void twoConcurrentKicksHaveExactlyOneSuccessfulDeparture() throws Exception {
+    ChannelRegistry registry = new ChannelRegistry();
+    ClientSession operator = newSession("operator");
+    ClientSession target = newSession("target");
+    Channel channel = registry.join("#c", operator, ignored -> true).orElseThrow().channel();
+    registry.join("#c", target, ignored -> true);
+    CountDownLatch ready = new CountDownLatch(2);
+    CountDownLatch start = new CountDownLatch(1);
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var first =
+          executor.submit(
+              () -> {
+                ready.countDown();
+                await(start);
+                return registry.kick(channel, operator, "target");
+              });
+      var second =
+          executor.submit(
+              () -> {
+                ready.countDown();
+                await(start);
+                return registry.kick(channel, operator, "TARGET");
+              });
+      try {
+        await(ready);
+      } finally {
+        start.countDown();
+      }
+      List<KickOutcome> results =
+          List.of(first.get(5, TimeUnit.SECONDS), second.get(5, TimeUnit.SECONDS));
+      assertThat(results.stream().filter(KickOutcome.Kicked.class::isInstance)).hasSize(1);
+      assertThat(results.stream().filter(KickOutcome.NoSuchMember.class::isInstance)).hasSize(1);
+    }
+  }
+
+  @Test
+  void concurrentPartAndKickHaveExactlyOneDeparture() throws Exception {
+    ChannelRegistry registry = new ChannelRegistry();
+    ClientSession operator = newSession("operator");
+    ClientSession target = newSession("target");
+    Channel channel = registry.join("#c", operator, ignored -> true).orElseThrow().channel();
+    registry.join("#c", target, ignored -> true);
+    CountDownLatch ready = new CountDownLatch(2);
+    CountDownLatch start = new CountDownLatch(1);
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var part =
+          executor.submit(
+              () -> {
+                ready.countDown();
+                await(start);
+                return registry.part(channel, target);
+              });
+      var kick =
+          executor.submit(
+              () -> {
+                ready.countDown();
+                await(start);
+                KickOutcome result = registry.kick(channel, operator, "target");
+                return result instanceof KickOutcome.Kicked kicked
+                    ? Optional.of(kicked.departure())
+                    : Optional.<Departure>empty();
+              });
+      try {
+        await(ready);
+      } finally {
+        start.countDown();
+      }
+      List<Optional<Departure>> results =
+          List.of(part.get(5, TimeUnit.SECONDS), kick.get(5, TimeUnit.SECONDS));
+      assertThat(results.stream().filter(Optional::isPresent)).hasSize(1);
+      assertThat(target.channelMemberships()).isEmpty();
+      assertThat(channel.members()).containsExactly(operator);
+    }
+  }
+
+  @Test
+  void disconnectRacingAdmissionLeavesNoMembershipBehind() throws Exception {
+    ChannelRegistry registry = new ChannelRegistry();
+    ClientSession session = newSession("closing");
+    CountDownLatch admitting = new CountDownLatch(1);
+    CountDownLatch closed = new CountDownLatch(1);
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var join =
+          executor.submit(
+              () ->
+                  registry.join(
+                      "#c",
+                      session,
+                      channel -> {
+                        admitting.countDown();
+                        await(closed);
+                        return true;
+                      }));
+      var leave =
+          executor.submit(
+              () -> {
+                await(admitting);
+                try {
+                  session.lifecycle().closeIfNotAlreadyClosing();
+                } finally {
+                  closed.countDown();
+                }
+                return registry.leaveAll(session);
+              });
+      join.get(5, TimeUnit.SECONDS);
+      leave.get(5, TimeUnit.SECONDS);
+    }
+    assertThat(session.channelMemberships()).isEmpty();
+    assertThat(registry.all()).isEmpty();
+  }
+
+  @Test
+  void closingSessionCannotJoinOrRunAdmission() {
+    ChannelRegistry registry = new ChannelRegistry();
+    ClientSession session = newSession("closing");
+    session.lifecycle().closeIfNotAlreadyClosing();
+    assertThat(
+            registry.join(
+                "#new",
+                session,
+                channel -> {
+                  throw new AssertionError("admission ran");
+                }))
+        .isEmpty();
+    assertThat(registry.lookup("#new")).isEmpty();
+  }
+
+  private static void await(CountDownLatch latch) {
+    try {
+      assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new IllegalStateException(e);
+    }
+  }
+
+  private static final class PausingHostname implements ServerExtension, HostnameDisplayExtension {
+    private final CountDownLatch entered;
+    private final CountDownLatch resume;
+    private final AtomicBoolean first = new AtomicBoolean(true);
+
+    private PausingHostname(CountDownLatch entered, CountDownLatch resume) {
+      this.entered = entered;
+      this.resume = resume;
+    }
+
+    @Override
+    public String id() {
+      return "pausing-hostname";
+    }
+
+    @Override
+    public String extensionPoint() {
+      return "hostname-display";
+    }
+
+    @Override
+    public void start(ServerContext context) {}
+
+    @Override
+    public void stop() {}
+
+    @Override
+    public String display(String hostname) {
+      if (first.compareAndSet(true, false)) {
+        entered.countDown();
+        try {
+          assertThat(resume.await(5, TimeUnit.SECONDS)).isTrue();
+        } catch (InterruptedException e) {
+          Thread.currentThread().interrupt();
+          throw new IllegalStateException(e);
+        }
+      }
+      return hostname;
+    }
   }
 }
