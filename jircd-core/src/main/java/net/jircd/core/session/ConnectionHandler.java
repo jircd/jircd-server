@@ -208,7 +208,7 @@ public final class ConnectionHandler {
    * becomes {@code CLOSING} for any reason, it closes the socket directly, which unblocks that read
    * and lets the main thread reach its own cleanup path.
    */
-  private static void runLivenessLoop(
+  static void runLivenessLoop(
       ClientSession session, LivenessMonitor livenessMonitor, Socket socket) {
     while (!session.lifecycle().isClosing()) {
       try {
@@ -221,6 +221,14 @@ public final class ConnectionHandler {
         break;
       }
       livenessMonitor.checkNow();
+    }
+    // DisconnectCleanup flips the session to CLOSING before it drains the writer, so this thread
+    // can get here while the final ERROR/numeric is still queued. Wait for the drain (SessionWriter
+    // #close is safe to call twice) or the client sees EOF instead of that line (#38).
+    @SuppressWarnings("PMD.CloseResource")
+    SessionWriter writer = session.writer();
+    if (writer != null) {
+      writer.close();
     }
     closeQuietly(socket);
   }
