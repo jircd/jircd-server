@@ -9,7 +9,7 @@ spotless = "8.10.4"
 spotbugs = "6.5.13"
 pmd = "7.26.0"
 spotbugsTool = "4.10.3"
-sonarqube = "6.2.0.5505"
+sonarqube = "7.5.0.8588"
 
 [libraries]
 slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
