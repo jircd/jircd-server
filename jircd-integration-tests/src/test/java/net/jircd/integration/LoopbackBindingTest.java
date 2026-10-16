@@ -24,6 +24,8 @@ import java.net.BindException;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.SocketTimeoutException;
+import java.time.Duration;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -32,6 +34,8 @@ import org.junit.jupiter.api.Test;
  * therefore bind {@code 127.0.0.1} itself.
  */
 class LoopbackBindingTest {
+
+  private static final Duration ACCEPT_TIMEOUT = Duration.ofSeconds(3);
 
   /**
    * The failure #38 reports, made deterministic: the port is chosen to collide instead of waiting
@@ -52,7 +56,7 @@ class LoopbackBindingTest {
       }
       try (server;
           RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
-          Socket taken = otherProcess.accept()) {
+          Socket taken = acceptOrSkip(otherProcess)) {
         assertThat(taken.getPort()).isEqualTo(alice.localPort());
         taken.close();
         assertThatThrownBy(() -> alice.registerAndAwaitWelcome("alice", "alice"))
@@ -71,6 +75,20 @@ class LoopbackBindingTest {
       try (RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
         alice.registerAndAwaitWelcome("alice", "alice");
       }
+    }
+  }
+
+  /**
+   * Some platforms allow both binds but route the client to the wildcard listener. Nothing then
+   * reaches {@code otherProcess}, and #38 cannot happen there.
+   */
+  private static Socket acceptOrSkip(ServerSocket otherProcess) throws IOException {
+    otherProcess.setSoTimeout((int) ACCEPT_TIMEOUT.toMillis());
+    try {
+      return otherProcess.accept();
+    } catch (SocketTimeoutException _) {
+      assumeTrue(false, "this platform routes loopback clients to the wildcard listener");
+      throw new AssertionError("unreachable: the assumption above aborts the test");
     }
   }
 

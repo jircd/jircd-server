@@ -43,13 +43,13 @@ maxModesPerCommand: 6    # optional (FR-064) — defaults to 6, a long-standing 
 listeners:
   - port: 6667
     tls: false
-    bindAddress: 127.0.0.1  # optional — a literal IPv4 or IPv6 address (quote an IPv6 one:
-                            # '::1'), never a hostname, so startup does no DNS lookup. The
-                            # listener accepts on that one local address only. If omitted, it
-                            # binds the wildcard address (every local address), as before. On
-                            # macOS, a wildcard listener can share its port with another
-                            # process's 127.0.0.1 listener, which then receives the local
-                            # clients (#38); binding 127.0.0.1 itself rules that out
+    # bindAddress: 127.0.0.1  # optional — a literal IPv4 or IPv6 address (quote an IPv6 one:
+    #                         # '::1'), never a hostname, so startup does no DNS lookup. The
+    #                         # listener accepts on that one local address only. If omitted, it
+    #                         # binds the wildcard address (every local address), as before. On
+    #                         # macOS, a wildcard listener can share its port with another
+    #                         # process's 127.0.0.1 listener, which then receives the local
+    #                         # clients (#38); binding 127.0.0.1 itself rules that out
   - port: 6697
     tls: true          # optional TLS listener (FR-018); plaintext MUST remain available unless the admin removes it
     certPath: /etc/letsencrypt/live/example.org/fullchain.pem  # PEM cert/chain (004-fix-tls-certificate FR-001/FR-002)
