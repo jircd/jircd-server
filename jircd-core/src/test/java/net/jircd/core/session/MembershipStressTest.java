@@ -48,7 +48,7 @@ class MembershipStressTest {
       }
     }
     // Ensure voice is exercised even if the randomized grants race with departed members.
-    registry.lookup("#c0").orElseThrow().voiced().add(sessions.getFirst());
+    registry.lookup("#c0").orElseThrow().grantVoice(sessions.getFirst());
     AtomicInteger successfulJoins = new AtomicInteger();
     AtomicInteger departures = new AtomicInteger();
     Random random = new Random(19);
@@ -120,15 +120,8 @@ class MembershipStressTest {
                             .lookup(operation.channel())
                             .ifPresent(
                                 channel -> {
-                                  // Channel-only operation: never acquire the registry while
-                                  // holding this
-                                  // monitor. Departure cannot race between membership check and
-                                  // voice grant.
-                                  synchronized (channel) {
-                                    if (channel.members().contains(member)) {
-                                      channel.voiced().add(member);
-                                    }
-                                  }
+                                  // The owner checks membership and grants voice atomically.
+                                  channel.grantVoice(member);
                                 });
                     default -> throw new AssertionError(operation);
                   }

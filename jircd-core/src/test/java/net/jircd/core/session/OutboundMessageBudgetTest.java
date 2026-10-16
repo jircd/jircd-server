@@ -51,7 +51,7 @@ class OutboundMessageBudgetTest {
       channels.join("#ébudget", session(String.format("nick%05d", i)), ignored -> true);
     }
     Channel channel = channels.lookup("#ébudget").orElseThrow();
-    channel.voiced().add(channel.findMember("nick00001").orElseThrow());
+    channel.grantVoice(channel.findMember("nick00001").orElseThrow());
     ByteArrayOutputStream out = new ByteArrayOutputStream();
     try (SessionWriter writer = new SessionWriter(requester, out, TagRenderer.NONE)) {
       requester.attachWriter(writer);

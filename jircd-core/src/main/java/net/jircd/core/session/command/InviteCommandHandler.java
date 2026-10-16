@@ -19,7 +19,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
 import net.jircd.core.extension.ExtensionRegistry;
-import net.jircd.core.session.CaseMapping;
 import net.jircd.core.session.Channel;
 import net.jircd.core.session.ChannelRegistry;
 import net.jircd.core.session.ClientSession;
@@ -125,7 +124,7 @@ public final class InviteCommandHandler implements CommandHandler {
     }
 
     if (channel != null) {
-      channel.invited().add(CaseMapping.fold(target.get().nickname()));
+      channel.invite(target.get().nickname());
     }
     Replies.send(
         session, serverName.get(), NumericReply.RPL_INVITING, target.get().nickname(), channelName);

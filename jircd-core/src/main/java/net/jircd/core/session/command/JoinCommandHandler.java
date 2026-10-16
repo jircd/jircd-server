@@ -20,7 +20,6 @@ import java.util.Map;
 import java.util.function.IntSupplier;
 import java.util.function.Supplier;
 import net.jircd.core.extension.ExtensionRegistry;
-import net.jircd.core.session.CaseMapping;
 import net.jircd.core.session.Channel;
 import net.jircd.core.session.ChannelRegistry;
 import net.jircd.core.session.ClientSession;
@@ -146,7 +145,7 @@ public final class JoinCommandHandler implements CommandHandler {
     // than one of these active doesn't have its invitation consumed by the first gate checked and
     // then incorrectly fail the second. Consumed exactly once, below, only once every applicable
     // gate has passed.
-    boolean invited = channel.invited().contains(CaseMapping.fold(session.nickname()));
+    boolean invited = channel.isInvited(session.nickname());
 
     if (!invited && channel.activeModes().contains(CoreChannelModes.INVITE_ONLY)) {
       return new AdmissionFailure(
@@ -164,7 +163,7 @@ public final class JoinCommandHandler implements CommandHandler {
     }
 
     if (invited) {
-      channel.invited().remove(CaseMapping.fold(session.nickname()));
+      channel.consumeInvitation(session.nickname());
     }
 
     return null;

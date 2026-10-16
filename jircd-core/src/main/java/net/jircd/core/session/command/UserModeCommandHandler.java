@@ -92,13 +92,13 @@ public final class UserModeCommandHandler implements CommandHandler {
               "Permission Denied- You're not an IRC operator");
           break;
         }
-        session.userModes().add(mode);
+        session.setUserMode(mode);
         applied.add(change);
       } else {
         if (mode == UserMode.OPERATOR) {
           session.revokeAdministratorPrivilege();
         } else {
-          session.userModes().remove(mode);
+          session.clearUserMode(mode);
         }
         applied.add(change);
       }
