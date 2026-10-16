@@ -168,29 +168,29 @@ mutation through any accessor throws `UnsupportedOperationException` (SC-003).
 
 ### Tests for User Story 4 (write first, see them fail)
 
-- [ ] T038 [P] [US4] Extend `coretest/ChannelTest.java`:
+- [x] T038 [P] [US4] Extend `coretest/ChannelTest.java`:
   - `grantOperator`/`grantVoice` on a non-member returns `false` and changes nothing (C-1); on a member it returns `true`; `revoke*` removes.
   - `setMode(SECRET)` clears `PRIVATE` and vice versa (C-2).
   - `invite` + `isInvited` + `consumeInvitation` are case-folded and consume once.
   - `removeBan` of an absent mask is a no-op.
   - `members()`, `operators()`, `voiced()`, `activeModes()` and `bans()` throw `UnsupportedOperationException` on `add`.
-- [ ] T039 [P] [US4] Add `coretest/ClientSessionTest.java` (new): `setUserMode`/`clearUserMode` change `userModes()`; `userModes()` and `channelMemberships()` throw `UnsupportedOperationException` on `add`; `grant/revokeAdministratorPrivilege` still toggle `UserMode.OPERATOR`
-- [ ] T040 [P] [US4] Add a race test to `coretest/ChannelTest.java`: `grantOperator(member)` racing `ChannelRegistry.part` of that member (latch-forced) never leaves the ex-member in `operators()` (C-1 ghost-operator case)
+- [x] T039 [P] [US4] Add `coretest/ClientSessionTest.java` (new): `setUserMode`/`clearUserMode` change `userModes()`; `userModes()` and `channelMemberships()` throw `UnsupportedOperationException` on `add`; `grant/revokeAdministratorPrivilege` still toggle `UserMode.OPERATOR`
+- [x] T040 [P] [US4] Add a race test to `coretest/ChannelTest.java`: `grantOperator(member)` racing `ChannelRegistry.part` of that member (latch-forced) never leaves the ex-member in `operators()` (C-1 ghost-operator case)
 
 ### Implementation for User Story 4
 
-- [ ] T041 [US4] In `core/Channel.java`:
+- [x] T041 [US4] In `core/Channel.java`:
   - Add `synchronized` `grantOperator`, `revokeOperator`, `grantVoice` and `revokeVoice`. Grants check membership.
   - Add `setMode(ChannelMode)`, which enforces the `+s`/`+p` exclusion, and `clearMode`.
   - Add `invite(String nickname)`, `isInvited(String nickname)` and `consumeInvitation(String nickname)`, all folding with `CaseMapping`.
   - Make `removeBan` `synchronized`.
   - Return unmodifiable views from `operators()`, `voiced()`, `activeModes()` and `bans()`, and remove `invited()`.
-- [ ] T042 [US4] In `core/ClientSession.java`, add `setUserMode(UserMode)` and `clearUserMode(UserMode)` and make `userModes()` return an unmodifiable view
-- [ ] T043 [P] [US4] Migrate `core/command/ModeCommandHandler.java`: `applyBoolean` uses `setMode`/`clearMode` (drop the inline +s/+p logic) and `applyMember` uses `grant*`/`revoke*`. Echo and reply behavior are unchanged
-- [ ] T044 [P] [US4] Migrate `admin/SamodeCommandHandler.java` (`operators().add/remove` → `grantOperator`/`revokeOperator`) and `coretest/OutboundMessageBudgetTest.java` (`voiced().add` → `grantVoice`) plus `coretest/ChannelTest.java` (`operators().add` / `voiced().add` → `grantOperator` / `grantVoice`). Also migrate the voice setup added by T022/T025 in `coretest/ChannelRegistryTest.java`, `coretest/DisconnectCleanupTest.java`, and `coretest/MembershipStressTest.java` to `grantVoice`
-- [ ] T045 [P] [US4] Migrate `core/command/InviteCommandHandler.java` (`invited().add(fold(nick))` → `channel.invite(nick)`) and `core/command/JoinCommandHandler.java` `admissionFailure` (`invited().contains`/`remove` → `isInvited`/`consumeInvitation`, still peeked first and consumed only after every gate passes)
-- [ ] T046 [P] [US4] Migrate `core/command/UserModeCommandHandler.java` (`userModes().add/remove` → `setUserMode`/`clearUserMode`). Keep the existing rule that `-o` is allowed and `+o` is refused
-- [ ] T047 [US4] **[US2] gate**: run the quickstart.md §2 search (expect no output), then `./gradlew build`. `Story5*` (ban/invite/kick/mode/voice), `Story6Samode*`, `Story1UserModeTest` and `ChannelModeIsTest` are green with no integration test modified
+- [x] T042 [US4] In `core/ClientSession.java`, add `setUserMode(UserMode)` and `clearUserMode(UserMode)` and make `userModes()` return an unmodifiable view
+- [x] T043 [P] [US4] Migrate `core/command/ModeCommandHandler.java`: `applyBoolean` uses `setMode`/`clearMode` (drop the inline +s/+p logic) and `applyMember` uses `grant*`/`revoke*`. Echo and reply behavior are unchanged
+- [x] T044 [P] [US4] Migrate `admin/SamodeCommandHandler.java` (`operators().add/remove` → `grantOperator`/`revokeOperator`) and `coretest/OutboundMessageBudgetTest.java` (`voiced().add` → `grantVoice`) plus `coretest/ChannelTest.java` (`operators().add` / `voiced().add` → `grantOperator` / `grantVoice`). Also migrate the voice setup added by T022/T025 in `coretest/ChannelRegistryTest.java`, `coretest/DisconnectCleanupTest.java`, and `coretest/MembershipStressTest.java` to `grantVoice`
+- [x] T045 [P] [US4] Migrate `core/command/InviteCommandHandler.java` (`invited().add(fold(nick))` → `channel.invite(nick)`) and `core/command/JoinCommandHandler.java` `admissionFailure` (`invited().contains`/`remove` → `isInvited`/`consumeInvitation`, still peeked first and consumed only after every gate passes)
+- [x] T046 [P] [US4] Migrate `core/command/UserModeCommandHandler.java` (`userModes().add/remove` → `setUserMode`/`clearUserMode`). Keep the existing rule that `-o` is allowed and `+o` is refused
+- [x] T047 [US4] **[US2] gate**: run the quickstart.md §2 search (expect no output), then `./gradlew build`. `Story5*` (ban/invite/kick/mode/voice), `Story6Samode*`, `Story1UserModeTest` and `ChannelModeIsTest` are green with no integration test modified
 
 **Checkpoint**: Step 3 is mergeable. FR-009 is enforced by the compiler and the views.
 
@@ -211,7 +211,7 @@ finds the lock order and invariants R-1…R-4, C-1…C-5 and S-1 in the class Ja
 - [ ] T052 Run `./gradlew spotlessApply`, then `./gradlew build` (Spotless, SpotBugs, PMD, all tests) and fix any finding. Each new suppression gets a documented reason (Constitution I)
 - [ ] T053 Run `./gradlew loadTest`; all load tests must pass their asserted bounds (including <1s per message delivery). Record Gradle durations next to the baseline in `specs/012-encapsulate-session-state/baseline.md` for information only (SC-005, Quality Gate 5)
 - [ ] T054 Do the quickstart.md §4 manual walkthrough against a locally started server (two clients: JOIN, NAMES, MODE +o/+v, KICK, PART, NICK, AWAY with away-notify, QUIT) and note the outcome in `specs/012-encapsulate-session-state/baseline.md` (Constitution III, Quality Gate 4)
-- [ ] T055 **[US2] gate**: verify SC-001 and SC-004. `git diff --stat origin/main -- jircd-integration-tests` shows only the Phase 2 additions and test-support helper changes. The list of migrated unit tests (T035, T036, T044) is written into the PR description with "same invariant" notes. The PR notes the FR-020 serial race outcome as the one intended client-visible difference (confirmed 2026-10-16)
+- [ ] T055 **[US2] gate**: verify SC-001 and SC-004. `git diff --stat origin/main -- jircd-integration-tests` shows only the Phase 2 additions and test-support helper changes. The list of migrated unit tests (T035, T036, T044) is written into the PR description with "same invariant" notes. The PR notes the FR-020 serial race outcome (confirmed 2026-10-16) and the approved Step 3 review hardening: MODE/SAMODE late departures receive 441 and refused changes are not echoed; existing early membership replies and valid idempotent changes are unchanged
 
 ---
 

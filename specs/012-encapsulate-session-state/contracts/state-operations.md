@@ -71,11 +71,15 @@ void removeMember(ClientSession s);          // package-private, synchronized
 ```java
 Set<Channel> channelMemberships();   // unmodifiable view
 Set<UserMode> userModes();           // unmodifiable view
-void setUserMode(UserMode mode);
-void clearUserMode(UserMode mode);
+void setUserMode(UserMode mode);      // rejects OPERATOR with IllegalArgumentException
+void clearUserMode(UserMode mode);    // rejects OPERATOR with IllegalArgumentException
 void addMembership(Channel c);       // package-private
 void removeMembership(Channel c);    // package-private
 ```
+
+Generic user-mode mutators reject `UserMode.OPERATOR` (including equal record copies).
+Operator mode is managed only through `grantAdministratorPrivilege` /
+`revokeAdministratorPrivilege`, which update the administrator flag and operator mode together.
 
 ## Recipients (new, `net.jircd.core.session`)
 
