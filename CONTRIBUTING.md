@@ -86,3 +86,19 @@ as a GitHub Release with the `distZip`/`distTar` archives attached.
 ## Questions
 
 Open a [discussion or issue](../../issues) if anything above is unclear.
+
+## Dependency security
+
+Dependabot opens grouped weekly PRs for Gradle and GitHub Actions updates (at
+most a few open at a time). Version bumps must also refresh
+`gradle/verification-metadata.xml`: run
+`./gradlew --write-verification-metadata sha256 build` and check that the diff
+only adds the new artifacts and removes the old ones.
+
+The `Dependency security` workflow submits the Gradle dependency graph on every
+push to `main` (feeding Dependabot alerts) and runs `dependency-review-action`
+on pull requests, failing on newly introduced `high` or `critical`
+vulnerabilities. To accept an advisory that does not apply to jircd, add its ID
+to `allow-ghsas` in `.github/workflows/dependency-security.yml` with a comment
+stating why it is not exploitable here and when to revisit it; a maintainer
+reviews that in the PR.
