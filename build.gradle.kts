@@ -152,8 +152,10 @@ subprojects {
     // per-module numbers are useful on their own, but jircd-core/jircd-protocol's
     // *real* coverage also includes what jircd-integration-tests exercises
     // against them; see the root-level `testCodeCoverageReport` aggregate below
-    // for that fuller picture.
-    tasks.withType<Test>().configureEach {
+    // for that fuller picture. Only the ordinary `test` task is finalized: finalizing
+    // `loadTest` too would make `./gradlew loadTest` schedule every module's `test` via the
+    // coverage-target report's dependsOn.
+    tasks.named<Test>("test") {
         finalizedBy(tasks.withType<JacocoReport>())
     }
 
