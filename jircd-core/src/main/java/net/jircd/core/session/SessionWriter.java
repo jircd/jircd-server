@@ -26,6 +26,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.atomic.AtomicBoolean;
 import net.jircd.protocol.CapabilityName;
 import net.jircd.protocol.Command;
 import net.jircd.protocol.Message;
@@ -62,6 +63,7 @@ public final class SessionWriter implements AutoCloseable {
   private final TagRenderer tagRenderer;
   private final BlockingQueue<Runnable> queue = new ArrayBlockingQueue<>(QUEUE_CAPACITY);
   private final Thread writerThread;
+  private final AtomicBoolean closing = new AtomicBoolean();
   private volatile Runnable onOverflow = () -> {};
 
   public SessionWriter(ClientSession session, OutputStream out, TagRenderer tagRenderer) {
@@ -218,18 +220,31 @@ public final class SessionWriter implements AutoCloseable {
    * {@code ERROR} line) is guaranteed written first, not racing the writer thread's next drain. If
    * the queue is already full — the same "we're overwhelmed, drop what's left" case an overflow
    * disconnect already accepts — falls back to an immediate interrupt rather than blocking here.
+   *
+   * <p>Only the first call does this. A later call (the liveness thread closes after {@code
+   * DisconnectCleanup} does) only waits, bounded the same way, for the drain the first call
+   * started. It never offers its own pill or interrupts: the first call's pill can fill the queue,
+   * and an interrupt then would cut off the lines still draining ahead of it.
    */
   @Override
   public void close() {
+    if (!closing.compareAndSet(false, true)) {
+      awaitDrain();
+      return;
+    }
     if (queue.offer(POISON_PILL)) {
-      try {
-        writerThread.join(CLOSE_DRAIN_TIMEOUT.toMillis());
-      } catch (InterruptedException e) {
-        Thread.currentThread().interrupt();
-      }
+      awaitDrain();
     }
     if (writerThread.isAlive()) {
       writerThread.interrupt();
+    }
+  }
+
+  private void awaitDrain() {
+    try {
+      writerThread.join(CLOSE_DRAIN_TIMEOUT);
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
     }
   }
 }

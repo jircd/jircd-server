@@ -177,7 +177,18 @@ class ConfigurationLoaderTest {
     }
     for (String value :
         new String[] {
-          "localhost", "irc.example.net", "'256.0.0.1'", "''", "'::1::'", "42", "true", "[]", "{}"
+          "localhost",
+          "irc.example.net",
+          "'256.0.0.1'",
+          "''",
+          "'::1::'",
+          "42",
+          "true",
+          "[]",
+          "{}",
+          // Present but null is not the same as omitted (the wildcard).
+          "null",
+          "~"
         }) {
       cases.add(
           Arguments.of(

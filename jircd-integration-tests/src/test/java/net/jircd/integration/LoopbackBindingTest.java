@@ -46,7 +46,7 @@ class LoopbackBindingTest {
       try {
         // A later top-level 'listeners' key replaces TestServer.baseYaml()'s own.
         server = TestServer.start("listeners:\n  - port: " + port + "\n    tls: false\n");
-      } catch (BindException refused) {
+      } catch (BindException _) {
         assumeTrue(false, "this platform refuses a wildcard bind over a loopback listener");
         return;
       }
@@ -65,12 +65,19 @@ class LoopbackBindingTest {
   void testServerListensOnlyOnLoopback() throws Exception {
     try (TestServer server = TestServer.start()) {
       for (int port : new int[] {server.plaintextPort(), server.tlsPort()}) {
-        assertThatThrownBy(() -> new Socket(InetAddress.ofLiteral("::1"), port).close())
-            .isInstanceOf(IOException.class);
+        InetAddress ipv6Loopback = InetAddress.ofLiteral("::1");
+        assertThatThrownBy(() -> connect(ipv6Loopback, port)).isInstanceOf(IOException.class);
       }
       try (RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
         alice.registerAndAwaitWelcome("alice", "alice");
       }
+    }
+  }
+
+  /** Opens and closes a connection; only the open is expected to throw. */
+  private static void connect(InetAddress address, int port) throws IOException {
+    try (Socket _ = new Socket(address, port)) {
+      // Reaching here means the connection opened.
     }
   }
 
