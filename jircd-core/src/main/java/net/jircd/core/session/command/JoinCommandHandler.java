@@ -26,11 +26,11 @@ import net.jircd.core.session.ChannelRegistry;
 import net.jircd.core.session.ClientSession;
 import net.jircd.core.session.CoreChannelModes;
 import net.jircd.core.session.PresentedIdentity;
+import net.jircd.core.session.Recipients;
 import net.jircd.protocol.ChannelName;
 import net.jircd.protocol.Command;
 import net.jircd.protocol.Hostmask;
 import net.jircd.protocol.Message;
-import net.jircd.protocol.MessageSerializer;
 import net.jircd.protocol.NickMask;
 import net.jircd.protocol.NumericReply;
 
@@ -119,11 +119,7 @@ public final class JoinCommandHandler implements CommandHandler {
     String presentedForm = PresentedIdentity.presentedForm(session, extensionRegistry);
     Message joinNotification =
         new Message(Map.of(), presentedForm, Command.JOIN, "JOIN", List.of(channel.name()));
-    for (ClientSession member : channel.members()) {
-      if (member.writer() != null) {
-        member.writer().enqueueRaw(joinNotification);
-      }
-    }
+    Recipients.deliver(channel.members(), joinNotification);
 
     // 005-fix-batch-conformance FR-014 — the same 332-only shape TopicCommandHandler's own
     // query path already uses (this project tracks no set-at timestamp, so no 333 either).
@@ -187,51 +183,12 @@ public final class JoinCommandHandler implements CommandHandler {
    */
   public static void sendNamesLine(ClientSession requester, Channel channel, String serverName) {
     String visibility = visibilitySymbol(channel);
-    Message empty =
-        new Message(
-            Map.of(),
-            serverName,
-            null,
-            NumericReply.RPL_NAMREPLY.wireCode(),
-            List.of(Replies.target(requester), visibility, channel.name(), ""));
-    // Reserve the trailing colon even for a singleton reply, which may serialize without it.
-    int budget = MessageSerializer.MAX_COMMAND_BYTES - MessageSerializer.commandBytes(empty);
-    StringBuilder names = new StringBuilder();
-    int used = 0;
-    for (ClientSession member : channel.members()) {
-      String status = "";
-      if (channel.operators().contains(member)) {
-        status = "@";
-      } else if (channel.voiced().contains(member)) {
-        status = "+";
-      }
-      String token = status + member.nickname();
-      int bytes = MessageSerializer.utf8Bytes(token);
-      if (!names.isEmpty() && used + 1 + bytes > budget) {
-        Replies.send(
-            requester,
-            serverName,
-            NumericReply.RPL_NAMREPLY,
-            visibility,
-            channel.name(),
-            names.toString());
-        names.setLength(0);
-        used = 0;
-      }
-      if (!names.isEmpty()) {
-        names.append(' ');
-        used++;
-      }
-      names.append(token);
-      used += bytes;
-    }
-    Replies.send(
+    Replies.sendListed(
         requester,
         serverName,
         NumericReply.RPL_NAMREPLY,
-        visibility,
-        channel.name(),
-        names.toString());
+        List.of(visibility, channel.name()),
+        channel.memberListing());
   }
 
   private static String visibilitySymbol(Channel channel) {

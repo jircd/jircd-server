@@ -15,7 +15,7 @@
  */
 package net.jircd.core.session;
 
-import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.Set;
 import net.jircd.core.extension.ExtensionRegistry;
 import net.jircd.protocol.Command;
@@ -65,7 +65,7 @@ public final class DisconnectCleanup {
         session.connectionId(),
         java.time.Duration.between(session.connectedAt(), java.time.Instant.now()),
         reason);
-    Set<ClientSession> neighbors = new HashSet<>();
+    Set<ClientSession> neighbors = new LinkedHashSet<>();
     for (Channel channel : Set.copyOf(session.channelMemberships())) {
       channel.removeMember(session);
       neighbors.addAll(channel.members());
@@ -78,15 +78,7 @@ public final class DisconnectCleanup {
       String prefix = PresentedIdentity.presentedForm(session, extensionRegistry);
       Message quit =
           new Message(java.util.Map.of(), prefix, Command.QUIT, "QUIT", java.util.List.of(reason));
-      for (ClientSession neighbor : neighbors) {
-        // Borrowed reference to the neighbor's own still-active writer — owned and
-        // closed by that neighbor's own connection lifecycle, never here.
-        @SuppressWarnings("PMD.CloseResource")
-        SessionWriter writer = neighbor.writer();
-        if (writer != null) {
-          writer.enqueueRaw(quit);
-        }
-      }
+      Recipients.deliver(neighbors, quit);
       // 002-extended-irc-commands FR-016: one WHOWAS entry per disconnection, regardless of
       // cause (QUIT, KILL, keep-alive timeout) — this is the single point every cause funnels
       // through, so no cause-specific recording is needed anywhere else. presentedHostname is a

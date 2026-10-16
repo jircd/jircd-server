@@ -15,15 +15,14 @@
  */
 package net.jircd.core.session.command;
 
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import net.jircd.core.extension.ExtensionRegistry;
 import net.jircd.core.session.CaseMapping;
 import net.jircd.core.session.ClientSession;
 import net.jircd.core.session.NicknameRegistry;
 import net.jircd.core.session.PresentedIdentity;
+import net.jircd.core.session.Recipients;
 import net.jircd.protocol.Command;
 import net.jircd.protocol.Hostmask;
 import net.jircd.protocol.Message;
@@ -112,17 +111,6 @@ public final class NickCommandHandler implements CommandHandler {
       ClientSession session, String oldHostmask, String requested) {
     Message notification =
         new Message(Map.of(), oldHostmask, Command.NICK, "NICK", List.of(requested));
-    // One notification per session, however many channels it shares with the changing client; the
-    // client itself is always a recipient, exactly once.
-    Set<ClientSession> recipients = new LinkedHashSet<>();
-    recipients.add(session);
-    for (var channel : session.channelMemberships()) {
-      recipients.addAll(channel.members());
-    }
-    for (ClientSession recipient : recipients) {
-      if (recipient.writer() != null) {
-        recipient.writer().enqueueRaw(notification);
-      }
-    }
+    Recipients.deliver(Recipients.sharedChannelNeighbors(session, true, s -> true), notification);
   }
 }

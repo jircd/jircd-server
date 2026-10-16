@@ -16,6 +16,7 @@
 package net.jircd.core.session;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -66,6 +67,21 @@ public final class Channel {
 
   public Set<ClientSession> members() {
     return members;
+  }
+
+  /** Returns one status-prefixed nickname per member, in member iteration order. */
+  public synchronized List<String> memberListing() {
+    List<String> listing = new ArrayList<>();
+    for (ClientSession member : members) {
+      String status = "";
+      if (operators.contains(member)) {
+        status = "@";
+      } else if (voiced.contains(member)) {
+        status = "+";
+      }
+      listing.add(status + member.nickname());
+    }
+    return listing;
   }
 
   public Set<ClientSession> operators() {

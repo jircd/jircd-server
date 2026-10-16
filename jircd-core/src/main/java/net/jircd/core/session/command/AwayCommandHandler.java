@@ -15,7 +15,6 @@
  */
 package net.jircd.core.session.command;
 
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -23,6 +22,7 @@ import java.util.function.Supplier;
 import net.jircd.core.extension.ExtensionRegistry;
 import net.jircd.core.session.ClientSession;
 import net.jircd.core.session.PresentedIdentity;
+import net.jircd.core.session.Recipients;
 import net.jircd.protocol.CapabilityName;
 import net.jircd.protocol.Command;
 import net.jircd.protocol.Message;
@@ -70,25 +70,15 @@ public final class AwayCommandHandler implements CommandHandler {
    * required to dedupe.
    */
   private void broadcastAwayChange(ClientSession session, String reason) {
-    Set<ClientSession> recipients = new LinkedHashSet<>();
-    for (var channel : session.channelMemberships()) {
-      for (ClientSession member : channel.members()) {
-        if (member != session
-            && member.negotiatedCapabilities().contains(CapabilityName.AWAY_NOTIFY)) {
-          recipients.add(member);
-        }
-      }
-    }
+    Set<ClientSession> recipients =
+        Recipients.sharedChannelNeighbors(
+            session, false, m -> m.negotiatedCapabilities().contains(CapabilityName.AWAY_NOTIFY));
     if (recipients.isEmpty()) {
       return;
     }
     String prefix = PresentedIdentity.presentedForm(session, extensionRegistry);
     List<String> params = reason != null ? List.of(reason) : List.of();
     Message notice = new Message(Map.of(), prefix, Command.AWAY, "AWAY", params);
-    for (ClientSession recipient : recipients) {
-      if (recipient.writer() != null) {
-        recipient.writer().enqueueRaw(notice);
-      }
-    }
+    Recipients.deliver(recipients, notice);
   }
 }

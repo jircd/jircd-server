@@ -23,6 +23,7 @@ import net.jircd.core.session.Channel;
 import net.jircd.core.session.ChannelRegistry;
 import net.jircd.core.session.ClientSession;
 import net.jircd.core.session.PresentedIdentity;
+import net.jircd.core.session.Recipients;
 import net.jircd.core.session.command.CommandHandler;
 import net.jircd.core.session.command.Replies;
 import net.jircd.protocol.Command;
@@ -99,10 +100,6 @@ public final class SamodeCommandHandler implements CommandHandler {
             Command.MODE,
             "MODE",
             List.of(channel.name(), sign + "o", session.nickname()));
-    for (ClientSession member : channel.members()) {
-      if (member.writer() != null) {
-        member.writer().enqueueRaw(echo);
-      }
-    }
+    Recipients.deliver(channel.members(), echo);
   }
 }

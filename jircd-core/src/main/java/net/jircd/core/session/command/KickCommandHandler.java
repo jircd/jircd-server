@@ -23,6 +23,7 @@ import net.jircd.core.session.Channel;
 import net.jircd.core.session.ChannelRegistry;
 import net.jircd.core.session.ClientSession;
 import net.jircd.core.session.PresentedIdentity;
+import net.jircd.core.session.Recipients;
 import net.jircd.core.session.SecurityEventLog;
 import net.jircd.protocol.Command;
 import net.jircd.protocol.Message;
@@ -105,11 +106,7 @@ public final class KickCommandHandler implements CommandHandler {
             ? List.of(channel.name(), target.get().nickname(), reason)
             : List.of(channel.name(), target.get().nickname());
     Message kickNotification = new Message(Map.of(), presentedForm, Command.KICK, "KICK", params);
-    for (ClientSession member : channel.members()) {
-      if (member.writer() != null) {
-        member.writer().enqueueRaw(kickNotification);
-      }
-    }
+    Recipients.deliver(channel.members(), kickNotification);
 
     channel.removeMember(target.get());
     target.get().channelMemberships().remove(channel);
