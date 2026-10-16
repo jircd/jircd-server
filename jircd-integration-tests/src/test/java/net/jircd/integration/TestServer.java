@@ -37,6 +37,9 @@ public final class TestServer implements AutoCloseable {
         echo-message: enabled
       """;
 
+  /** The address test listeners bind and test clients connect to. */
+  public static final String LOOPBACK = "127.0.0.1";
+
   public static final String ADMIN_USERNAME = "root-admin";
   public static final String ADMIN_PASSWORD = "correct horse battery staple";
 
@@ -125,14 +128,22 @@ public final class TestServer implements AutoCloseable {
    * The TLS listener references a throwaway, long-lived fixture certificate ({@code
    * src/test/resources/tls/}) — since 004-fix-tls-certificate, a {@code tls: true} listener with no
    * certificate configured refuses to start, so every test relying on this base config needs a real
-   * (if fake) one.
+   * (if fake) one. Both listeners bind {@link #LOOPBACK}, not the wildcard address: an OS-assigned
+   * wildcard port can be one another local process already listens on at {@code 127.0.0.1}, and the
+   * tests' loopback clients would then reach that process instead (#38).
    */
   public static String baseYaml() {
     return "serverName: test.jircd.local\n"
         + "listeners:\n"
         + "  - port: 0\n"
+        + "    bindAddress: "
+        + LOOPBACK
+        + "\n"
         + "    tls: false\n"
         + "  - port: 0\n"
+        + "    bindAddress: "
+        + LOOPBACK
+        + "\n"
         + "    tls: true\n"
         + "    certPath: \""
         + resourcePath("tls/test-fullchain.pem")

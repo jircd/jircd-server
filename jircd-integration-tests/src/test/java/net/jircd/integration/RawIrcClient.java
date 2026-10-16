@@ -47,13 +47,13 @@ public final class RawIrcClient implements AutoCloseable {
   }
 
   public static RawIrcClient connectPlaintext(int port) throws IOException {
-    return new RawIrcClient(new Socket("localhost", port));
+    return new RawIrcClient(new Socket(TestServer.LOOPBACK, port));
   }
 
   public static RawIrcClient connectTls(int port) throws Exception {
     SSLContext context = SSLContext.getInstance("TLS");
     context.init(null, new TrustManager[] {new TrustAllTrustManager()}, null);
-    return new RawIrcClient(context.getSocketFactory().createSocket("localhost", port));
+    return new RawIrcClient(context.getSocketFactory().createSocket(TestServer.LOOPBACK, port));
   }
 
   /**
@@ -71,6 +71,10 @@ public final class RawIrcClient implements AutoCloseable {
     var digest = java.security.MessageDigest.getInstance("SHA-256");
     byte[] hash = digest.digest(certificate.getEncoded());
     return java.util.HexFormat.of().formatHex(hash);
+  }
+
+  public int localPort() {
+    return socket.getLocalPort();
   }
 
   public void send(String line) throws IOException {

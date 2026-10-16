@@ -308,7 +308,7 @@ public final class JircdServerApplication {
           tlsListener.start();
           LOG.info("TLS listener started on port {}", listener.port());
         } else {
-          plaintextListener = new PlaintextListener(listener.port(), connectionHandler);
+          plaintextListener = new PlaintextListener(listener, connectionHandler);
           ownedListeners.add(plaintextListener::close);
           plaintextListener.start();
           LOG.info("Plaintext listener started on port {}", listener.port());

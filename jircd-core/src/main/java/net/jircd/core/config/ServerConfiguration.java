@@ -15,6 +15,7 @@
  */
 package net.jircd.core.config;
 
+import java.net.InetAddress;
 import java.util.List;
 import java.util.Map;
 
@@ -45,17 +46,26 @@ public record ServerConfiguration(
    * FR-005) — at most one form may be set, and a {@code tls: true} listener MUST have exactly one
    * of them set (validated at load time, {@code ConfigurationLoader}). Ignored for a {@code tls:
    * false} listener.
+   *
+   * <p>{@code bindAddress} is the one local address the listener binds; {@code null} binds the
+   * wildcard address (every local address).
    */
   public record Listener(
       int port,
       boolean tls,
+      InetAddress bindAddress,
       String certPath,
       String keyPath,
       String keystorePath,
       String keystorePassword) {
 
     public Listener(int port, boolean tls) {
-      this(port, tls, null, null, null, null);
+      this(port, tls, null, null, null, null, null);
+    }
+
+    /** Whether this listener accepts on every local address, explicitly or by omission. */
+    public boolean bindsWildcard() {
+      return bindAddress == null || bindAddress.isAnyLocalAddress();
     }
   }
 

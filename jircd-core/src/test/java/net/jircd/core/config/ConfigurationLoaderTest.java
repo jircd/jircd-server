@@ -19,6 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.ByteArrayInputStream;
+import java.net.InetAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.Set;
 import java.util.stream.Stream;
@@ -96,6 +97,10 @@ class ConfigurationLoaderTest {
             "rateLimit: {refillRatePerSecond: nope}", "rateLimit.refillRatePerSecond", "nope"),
         Arguments.of("keepAliveFrequencySeconds: 3601", "keepAliveFrequencySeconds", "3601"),
         Arguments.of("listeners: [{port: 65536}]", "listeners[0].port", "65536"),
+        Arguments.of(
+            "listeners: [{port: 6667, bindAddress: localhost}]",
+            "listeners[0].bindAddress",
+            "localhost"),
         Arguments.of("capabilities: {message-tags: nope}", "capabilities.message-tags", "nope"),
         Arguments.of("serverName: 42", "serverName", "42"),
         Arguments.of("whoMaskEnabled: nope", "whoMaskEnabled", "nope"),
@@ -170,6 +175,45 @@ class ConfigurationLoaderTest {
           Arguments.of(
               "listeners: [{port: 6667}, {port: 6667, tls: " + tls + "}]", "listeners[1].port"));
     }
+    for (String value :
+        new String[] {
+          "localhost",
+          "irc.example.net",
+          "'256.0.0.1'",
+          "''",
+          "'::1::'",
+          "42",
+          "true",
+          "[]",
+          "{}",
+          // Present but null is not the same as omitted (the wildcard).
+          "null",
+          "~"
+        }) {
+      cases.add(
+          Arguments.of(
+              "listeners: [{port: 6667, bindAddress: " + value + "}]", "listeners[0].bindAddress"));
+    }
+    // Same port: equal addresses, or the wildcard on either side (omitted, 0.0.0.0 or ::).
+    for (String[] addresses :
+        new String[][] {
+          {"127.0.0.1", "127.0.0.1"},
+          {"'::1'", "'::1'"},
+          {"127.0.0.1", "'::ffff:127.0.0.1'"},
+          {null, "127.0.0.1"},
+          {"127.0.0.1", null},
+          {"0.0.0.0", "127.0.0.1"},
+          {"'::1'", "'::'"}
+        }) {
+      cases.add(
+          Arguments.of(
+              "listeners: ["
+                  + listenerOn(6667, addresses[0])
+                  + ", "
+                  + listenerOn(6667, addresses[1])
+                  + "]",
+              "listeners[1].port"));
+    }
     cases.add(
         Arguments.of("administratorCredentials: [{}]", "administratorCredentials[0].username"));
     cases.add(
@@ -192,6 +236,41 @@ class ConfigurationLoaderTest {
         .extracting(ServerConfiguration.Listener::port)
         .containsExactly(0, 0, 1, 65535);
     assertThat(config.rateLimit().refillRatePerSecond()).isEqualTo(0.5);
+  }
+
+  @Test
+  void bindAddressIsAnOptionalLiteralIpAddress() throws Exception {
+    ServerConfiguration config =
+        load(
+            "listeners: [{port: 6667}, {port: 6668, bindAddress: 127.0.0.1},"
+                + " {port: 6669, bindAddress: '::1'}]");
+    assertThat(config.listeners())
+        .extracting(ServerConfiguration.Listener::bindAddress)
+        .containsExactly(null, InetAddress.ofLiteral("127.0.0.1"), InetAddress.ofLiteral("::1"));
+  }
+
+  @Test
+  void samePortOnDifferentSpecificAddressesDoesNotConflict() throws Exception {
+    ServerConfiguration config =
+        load(
+            "listeners: ["
+                + listenerOn(6667, "127.0.0.1")
+                + ", "
+                + listenerOn(6667, "'::1'")
+                + ", "
+                + listenerOn(0, null)
+                + ", "
+                + listenerOn(0, "127.0.0.1")
+                + ", "
+                + listenerOn(0, "127.0.0.1")
+                + "]");
+    assertThat(config.listeners())
+        .extracting(ServerConfiguration.Listener::port)
+        .containsExactly(6667, 6667, 0, 0, 0);
+  }
+
+  private static String listenerOn(int port, String bindAddress) {
+    return "{port: " + port + (bindAddress == null ? "" : ", bindAddress: " + bindAddress) + "}";
   }
 
   @Test

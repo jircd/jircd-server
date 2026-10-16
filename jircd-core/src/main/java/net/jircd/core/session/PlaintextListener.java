@@ -19,6 +19,7 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.nio.channels.ServerSocketChannel;
+import net.jircd.core.config.ServerConfiguration;
 
 /**
  * Plaintext connection listener: a {@link ServerSocketChannel} accept loop, one virtual thread per
@@ -26,14 +27,18 @@ import java.nio.channels.ServerSocketChannel;
  */
 public final class PlaintextListener extends AbstractListener<ServerSocketChannel> {
 
-  public PlaintextListener(int port, ConnectionHandler connectionHandler) throws IOException {
-    super(openServerChannel(port), connectionHandler::accept, "plaintext-listener");
+  public PlaintextListener(
+      ServerConfiguration.Listener listener, ConnectionHandler connectionHandler)
+      throws IOException {
+    super(openServerChannel(listener), connectionHandler::accept, "plaintext-listener");
   }
 
-  private static ServerSocketChannel openServerChannel(int port) throws IOException {
+  private static ServerSocketChannel openServerChannel(ServerConfiguration.Listener listener)
+      throws IOException {
     var channel = ServerSocketChannel.open();
     try {
-      channel.bind(new InetSocketAddress(port));
+      // A null bindAddress makes this the wildcard address.
+      channel.bind(new InetSocketAddress(listener.bindAddress(), listener.port()));
       return channel;
     } catch (IOException | RuntimeException failure) {
       try {

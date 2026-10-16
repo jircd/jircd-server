@@ -43,6 +43,13 @@ maxModesPerCommand: 6    # optional (FR-064) — defaults to 6, a long-standing 
 listeners:
   - port: 6667
     tls: false
+    # bindAddress: 127.0.0.1  # optional — a literal IPv4 or IPv6 address (quote an IPv6 one:
+    #                         # '::1'), never a hostname, so startup does no DNS lookup. The
+    #                         # listener accepts on that one local address only. If omitted, it
+    #                         # binds the wildcard address (every local address), as before. On
+    #                         # macOS, a wildcard listener can share its port with another
+    #                         # process's 127.0.0.1 listener, which then receives the local
+    #                         # clients (#38); binding 127.0.0.1 itself rules that out
   - port: 6697
     tls: true          # optional TLS listener (FR-018); plaintext MUST remain available unless the admin removes it
     certPath: /etc/letsencrypt/live/example.org/fullchain.pem  # PEM cert/chain (004-fix-tls-certificate FR-001/FR-002)
@@ -107,8 +114,15 @@ administratorCredentials:
 - **Numeric ranges at the same boundary**: `rateLimit.refillRatePerSecond`
   MUST be finite as well as positive (`.nan` and `.inf` are rejected); a
   listener `port` MUST be an integer from `0` to `65535`; and two listeners
-  MUST NOT share a non-zero port. Port `0` may repeat, since each such
+  MUST NOT share a non-zero port when their `bindAddress` values are equal
+  or either one binds the wildcard address (`bindAddress` omitted,
+  `0.0.0.0` or `::`). The same port on two different specific addresses
+  (`127.0.0.1` and `::1`) is allowed. Port `0` may repeat, since each such
   listener binds its own OS-assigned ephemeral port.
+- **`bindAddress` MUST be a literal IP address**: a string holding an IPv4
+  or IPv6 address. A hostname (`localhost` included), an empty string or a
+  non-string value is rejected, and the error names the full key path
+  (`listeners[0].bindAddress`).
 - **Secrets are never echoed in an error**: the "offending key/value" rule
   above names the key but omits the value for `keystorePassword` and
   `hashedPassword`, including when either has the wrong type. When a

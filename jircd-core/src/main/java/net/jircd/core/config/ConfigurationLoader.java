@@ -17,10 +17,10 @@ package net.jircd.core.config;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.InetAddress;
 import java.security.GeneralSecurityException;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -174,7 +174,6 @@ public final class ConfigurationLoader {
       return List.of();
     }
     List<ServerConfiguration.Listener> listeners = new ArrayList<>();
-    Set<Integer> ports = new HashSet<>();
     for (Object entry : asList(raw, "listeners")) {
       String path = "listeners[" + listeners.size() + "]";
       Map<String, Object> map = asMap(entry, path);
@@ -183,11 +182,8 @@ public final class ConfigurationLoader {
         throw new ConfigurationException(
             path + ".port must be an integer from 0 to 65535, got: " + redactSecrets(port));
       }
-      // Port zero asks the OS for a distinct ephemeral port on each bind.
-      if (portValue != 0 && !ports.add(portValue)) {
-        throw new ConfigurationException(path + ".port conflicts with another listener: " + port);
-      }
       boolean tls = map.containsKey("tls") && asBoolean(map.get("tls"), path + ".tls");
+      InetAddress bindAddress = asBindAddress(map, path + ".bindAddress");
       String certPath = asString(map.get("certPath"), path + ".certPath");
       String keyPath = asString(map.get("keyPath"), path + ".keyPath");
       String keystorePath = asString(map.get("keystorePath"), path + ".keystorePath");
@@ -195,7 +191,8 @@ public final class ConfigurationLoader {
 
       ServerConfiguration.Listener listener =
           new ServerConfiguration.Listener(
-              (Integer) port, tls, certPath, keyPath, keystorePath, keystorePassword);
+              (Integer) port, tls, bindAddress, certPath, keyPath, keystorePath, keystorePassword);
+      rejectPortConflict(listeners, listener, path);
 
       // Cert fields on a tls: false listener are left untouched, not validated — the same
       // precedent this method already had of only reading recognized keys and ignoring
@@ -412,6 +409,50 @@ public final class ConfigurationLoader {
                   : ", got: " + redactSecrets(value)));
     }
     return string;
+  }
+
+  /**
+   * A literal IPv4 or IPv6 address only: a hostname would need a DNS lookup at startup, and could
+   * resolve differently from one start to the next.
+   */
+  private static InetAddress asBindAddress(Map<String, Object> listener, String path)
+      throws ConfigurationException {
+    // Only omission means the wildcard; an explicit null is rejected like any non-string.
+    if (!listener.containsKey("bindAddress")) {
+      return null;
+    }
+    String literal = requiredString(listener.get("bindAddress"), path);
+    try {
+      return InetAddress.ofLiteral(literal);
+    } catch (IllegalArgumentException _) {
+      throw new ConfigurationException(
+          path + " must be a literal IPv4 or IPv6 address, got: " + literal);
+    }
+  }
+
+  /** Port zero is exempt: it asks the OS for a distinct ephemeral port on each bind. */
+  private static void rejectPortConflict(
+      List<ServerConfiguration.Listener> earlier,
+      ServerConfiguration.Listener listener,
+      String path)
+      throws ConfigurationException {
+    if (listener.port() == 0) {
+      return;
+    }
+    for (ServerConfiguration.Listener other : earlier) {
+      if (other.port() == listener.port() && sharesAnAddress(other, listener)) {
+        throw new ConfigurationException(
+            path + ".port conflicts with another listener: " + listener.port());
+      }
+    }
+  }
+
+  /** Two listeners on one port collide on the same address, or when either takes them all. */
+  private static boolean sharesAnAddress(
+      ServerConfiguration.Listener first, ServerConfiguration.Listener second) {
+    return first.bindsWildcard()
+        || second.bindsWildcard()
+        || first.bindAddress().equals(second.bindAddress());
   }
 
   private static boolean asBoolean(Object value, String path) throws ConfigurationException {
