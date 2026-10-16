@@ -4,6 +4,7 @@ import org.gradle.api.plugins.JavaPluginExtension
 import org.gradle.api.plugins.quality.PmdExtension
 import org.gradle.testing.jacoco.plugins.JacocoPluginExtension
 import org.gradle.testing.jacoco.plugins.JacocoTaskExtension
+import org.gradle.testing.jacoco.tasks.JacocoCoverageVerification
 import org.gradle.testing.jacoco.tasks.JacocoReport
 
 plugins {
@@ -12,22 +13,20 @@ plugins {
     alias(libs.plugins.sonarqube)
 }
 
-// Every module that has `main` source worth measuring coverage for — used both by the root
-// aggregate HTML report below and by each module's own per-module Sonar coverage wiring
-// (subprojects block), since a module's own `test` task alone understates coverage for anything
-// jircd-integration-tests exercises instead (research.md "Message fan-out concurrency model").
-val coverageTargetPaths =
-    listOf(
-        "jircd-protocol",
-        "jircd-core",
-        "jircd-server",
-        "jircd-capabilities:message-tags",
-        "jircd-capabilities:server-time",
-        "jircd-capabilities:echo-message",
-        "jircd-server-extensions:cloak",
-        "jircd-server-extensions:admin",
-    )
-val coverageTargets = coverageTargetPaths.map { project(":$it") }
+// Every module that ships production Java sources (src/main/java) — derived rather than
+// hand-listed so a new module cannot silently drop out of coverage (issue #24: away-notify and
+// batch were missing). Used both by the root aggregate report below and by each module's own
+// per-module Sonar coverage wiring (subprojects block), since a module's own `test` task alone
+// understates coverage for anything jircd-integration-tests exercises instead (research.md
+// "Message fan-out concurrency model"). jircd-integration-tests has no `main` sources, so it
+// is excluded automatically.
+val coverageTargets =
+    subprojects
+        .filter { sub ->
+            sub.projectDir.resolve("src/main/java").walkTopDown().any { it.extension == "java" }
+        }
+        .sortedBy { it.path }
+val coverageTargetPaths = coverageTargets.map { it.path }
 
 // jircd-integration-tests contributes execution data (it exercises the targets above over real
 // sockets) but has no `main` source of its own to measure.
@@ -158,7 +157,7 @@ subprojects {
         finalizedBy(tasks.withType<JacocoReport>())
     }
 
-    if (project.path in coverageTargetPaths.map { ":$it" }) {
+    if (project.path in coverageTargetPaths) {
         // Reconfigure this module's own default jacocoTestReport (not the root aggregate) to
         // fold in every source's execution data, then point Sonar at that single-module XML
         // instead of the shared root aggregate — pointing every subproject's inherited
@@ -199,6 +198,8 @@ subprojects {
 // long-standing, well-understood pattern it was meant to replace. This is a
 // human-facing HTML/XML artifact only now — Sonar reads each module's own
 // jacocoTestReport.xml instead (see the subprojects block above).
+// "base" gives the root project a `check` lifecycle task for the coverage verification below.
+plugins.apply("base")
 plugins.apply("jacoco")
 
 configure<JacocoPluginExtension> {
@@ -229,6 +230,35 @@ tasks.register<JacocoReport>("testCodeCoverageReport") {
         xml.required.set(true)
         html.required.set(true)
     }
+}
+
+// Coverage floor on the aggregate (all shipped modules, incl. what jircd-integration-tests
+// exercises). Set a little below the measured level so it only trips on a real regression:
+// line >= 85%, branch >= 75%. Raise it as coverage grows; never lower it to make a build pass.
+tasks.register<JacocoCoverageVerification>("testCodeCoverageVerification") {
+    group = "verification"
+    description = "Fails if aggregate coverage drops below 85% line / 75% branch."
+    val report = tasks.named<JacocoReport>("testCodeCoverageReport")
+    dependsOn(report)
+    executionData.setFrom(report.map { it.executionData })
+    sourceDirectories.setFrom(report.map { it.sourceDirectories })
+    classDirectories.setFrom(report.map { it.classDirectories })
+    violationRules {
+        rule {
+            limit {
+                counter = "LINE"
+                minimum = "0.85".toBigDecimal()
+            }
+            limit {
+                counter = "BRANCH"
+                minimum = "0.75".toBigDecimal()
+            }
+        }
+    }
+}
+
+tasks.named("check") {
+    dependsOn("testCodeCoverageVerification")
 }
 
 sonar {
