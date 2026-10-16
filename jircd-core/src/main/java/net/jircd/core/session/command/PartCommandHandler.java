@@ -63,7 +63,8 @@ public final class PartCommandHandler implements CommandHandler {
     String reason = message.params().size() > 1 ? message.params().get(1) : null;
 
     var found = channelRegistry.lookup(channelName);
-    if (found.isEmpty() || !found.get().members().contains(session)) {
+    var departed = found.flatMap(channel -> channelRegistry.part(channel, session));
+    if (departed.isEmpty()) {
       Replies.send(
           session,
           serverName.get(),
@@ -72,16 +73,12 @@ public final class PartCommandHandler implements CommandHandler {
           "You're not on that channel");
       return;
     }
-    Channel channel = found.get();
+    Channel channel = departed.get().channel();
 
     String presentedForm = PresentedIdentity.presentedForm(session, extensionRegistry);
     List<String> params =
         reason != null ? List.of(channel.name(), reason) : List.of(channel.name());
     Message partNotification = new Message(Map.of(), presentedForm, Command.PART, "PART", params);
-    Recipients.deliver(channel.members(), partNotification);
-
-    channel.removeMember(session);
-    session.channelMemberships().remove(channel);
-    channelRegistry.removeIfEmpty(channel);
+    Recipients.deliver(departed.get().recipients(), partNotification);
   }
 }

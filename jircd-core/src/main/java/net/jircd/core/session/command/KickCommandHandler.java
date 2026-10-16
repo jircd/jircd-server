@@ -22,6 +22,7 @@ import net.jircd.core.extension.ExtensionRegistry;
 import net.jircd.core.session.Channel;
 import net.jircd.core.session.ChannelRegistry;
 import net.jircd.core.session.ClientSession;
+import net.jircd.core.session.KickOutcome;
 import net.jircd.core.session.PresentedIdentity;
 import net.jircd.core.session.Recipients;
 import net.jircd.core.session.SecurityEventLog;
@@ -77,39 +78,33 @@ public final class KickCommandHandler implements CommandHandler {
     }
     Channel channel = found.get();
 
-    if (!channel.operators().contains(session)) {
-      SecurityEventLog.rejectedModerationAction(
-          session.connectionId(), "KICK", channelName, "not a channel operator");
-      Replies.send(
-          session,
-          serverName.get(),
-          NumericReply.ERR_CHANOPRIVSNEEDED,
-          channel.name(),
-          "You're not channel operator");
-      return;
+    switch (channelRegistry.kick(channel, session, targetNickname)) {
+      case KickOutcome.NotOperator ignored -> {
+        SecurityEventLog.rejectedModerationAction(
+            session.connectionId(), "KICK", channelName, "not a channel operator");
+        Replies.send(
+            session,
+            serverName.get(),
+            NumericReply.ERR_CHANOPRIVSNEEDED,
+            channel.name(),
+            "You're not channel operator");
+      }
+      case KickOutcome.NoSuchMember ignored ->
+          Replies.send(
+              session,
+              serverName.get(),
+              NumericReply.ERR_USERNOTINCHANNEL,
+              targetNickname,
+              "They aren't on that channel");
+      case KickOutcome.Kicked kicked -> {
+        String presentedForm = PresentedIdentity.presentedForm(session, extensionRegistry);
+        List<String> params =
+            reason != null
+                ? List.of(channel.name(), kicked.departure().departed().nickname(), reason)
+                : List.of(channel.name(), kicked.departure().departed().nickname());
+        Message notification = new Message(Map.of(), presentedForm, Command.KICK, "KICK", params);
+        Recipients.deliver(kicked.departure().recipients(), notification);
+      }
     }
-
-    var target = channel.findMember(targetNickname);
-    if (target.isEmpty()) {
-      Replies.send(
-          session,
-          serverName.get(),
-          NumericReply.ERR_USERNOTINCHANNEL,
-          targetNickname,
-          "They aren't on that channel");
-      return;
-    }
-
-    String presentedForm = PresentedIdentity.presentedForm(session, extensionRegistry);
-    List<String> params =
-        reason != null
-            ? List.of(channel.name(), target.get().nickname(), reason)
-            : List.of(channel.name(), target.get().nickname());
-    Message kickNotification = new Message(Map.of(), presentedForm, Command.KICK, "KICK", params);
-    Recipients.deliver(channel.members(), kickNotification);
-
-    channel.removeMember(target.get());
-    target.get().channelMemberships().remove(channel);
-    channelRegistry.removeIfEmpty(channel);
   }
 }

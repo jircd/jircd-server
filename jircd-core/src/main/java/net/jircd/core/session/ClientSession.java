@@ -16,6 +16,7 @@
 package net.jircd.core.session;
 
 import java.time.Instant;
+import java.util.Collections;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -33,6 +34,8 @@ public final class ClientSession {
   private final ConnectionLifecycle lifecycle = new ConnectionLifecycle();
   private final Set<String> negotiatedCapabilities = ConcurrentHashMap.newKeySet();
   private final Set<Channel> channelMemberships = ConcurrentHashMap.newKeySet();
+  private final Set<Channel> channelMembershipsView =
+      Collections.unmodifiableSet(channelMemberships);
   private final Set<UserMode> userModes = ConcurrentHashMap.newKeySet();
   private final RateLimitBucket rateLimitBucket;
   private final String realHostname;
@@ -149,8 +152,18 @@ public final class ClientSession {
     this.negotiatingCapabilities = negotiating;
   }
 
+  /** Returns a live, unmodifiable view of memberships owned by registry transitions. */
   public Set<Channel> channelMemberships() {
-    return channelMemberships;
+    return channelMembershipsView;
+  }
+
+  // Called by registry transitions while holding the registry and corresponding channel monitors.
+  void addMembership(Channel channel) {
+    channelMemberships.add(channel);
+  }
+
+  void removeMembership(Channel channel) {
+    channelMemberships.remove(channel);
   }
 
   public Set<UserMode> userModes() {

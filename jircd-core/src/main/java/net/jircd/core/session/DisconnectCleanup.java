@@ -15,7 +15,6 @@
  */
 package net.jircd.core.session;
 
-import java.util.LinkedHashSet;
 import java.util.Set;
 import net.jircd.core.extension.ExtensionRegistry;
 import net.jircd.protocol.Command;
@@ -65,14 +64,7 @@ public final class DisconnectCleanup {
         session.connectionId(),
         java.time.Duration.between(session.connectedAt(), java.time.Instant.now()),
         reason);
-    Set<ClientSession> neighbors = new LinkedHashSet<>();
-    for (Channel channel : Set.copyOf(session.channelMemberships())) {
-      channel.removeMember(session);
-      neighbors.addAll(channel.members());
-      session.channelMemberships().remove(channel);
-      channelRegistry.removeIfEmpty(channel);
-    }
-    neighbors.remove(session);
+    Set<ClientSession> neighbors = channelRegistry.leaveAll(session);
 
     if (session.nickname() != null && session.ident() != null && session.realHostname() != null) {
       String prefix = PresentedIdentity.presentedForm(session, extensionRegistry);

@@ -47,10 +47,10 @@ class OutboundMessageBudgetTest {
   void namesMustFitTheCommandBudget(String command) throws Exception {
     ClientSession requester = session("requester");
     ChannelRegistry channels = new ChannelRegistry();
-    Channel channel = channels.getOrCreate("#ébudget");
     for (int i = 0; i < 60; i++) {
-      channel.addMember(session(String.format("nick%05d", i)));
+      channels.join("#ébudget", session(String.format("nick%05d", i)), ignored -> true);
     }
+    Channel channel = channels.lookup("#ébudget").orElseThrow();
     channel.voiced().add(channel.findMember("nick00001").orElseThrow());
     ByteArrayOutputStream out = new ByteArrayOutputStream();
     try (SessionWriter writer = new SessionWriter(requester, out, TagRenderer.NONE)) {

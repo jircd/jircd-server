@@ -65,7 +65,7 @@ class ChannelTest {
     Channel channel = new Channel("#lobby");
     List<ClientSession> members =
         List.of(member("operator"), member("voiced"), member("both"), member("plain"));
-    // The first joiner (operator) receives operator status from addMember.
+    // Package-private setup stays in the owner package; the first joiner receives operator status.
     members.forEach(channel::addMember);
     channel.voiced().add(members.get(1));
     channel.operators().add(members.get(2));

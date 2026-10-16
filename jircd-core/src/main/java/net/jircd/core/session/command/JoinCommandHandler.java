@@ -94,11 +94,6 @@ public final class JoinCommandHandler implements CommandHandler {
       return;
     }
 
-    // Already a member: no gates, no insertion, no notification (issue #16).
-    if (channelRegistry.lookup(name).filter(c -> c.members().contains(session)).isPresent()) {
-      return;
-    }
-
     var failure = new java.util.concurrent.atomic.AtomicReference<AdmissionFailure>();
     var joined =
         channelRegistry.join(
@@ -110,16 +105,22 @@ public final class JoinCommandHandler implements CommandHandler {
             });
     if (joined.isEmpty()) {
       AdmissionFailure rejected = failure.get();
-      Replies.send(
-          session, serverName.get(), rejected.reply(), rejected.channelName(), rejected.reason());
+      if (rejected != null) {
+        Replies.send(
+            session, serverName.get(), rejected.reply(), rejected.channelName(), rejected.reason());
+      }
       return;
     }
-    Channel channel = joined.get();
+    var result = joined.get();
+    if (result.alreadyMember()) {
+      return;
+    }
+    Channel channel = result.channel();
 
     String presentedForm = PresentedIdentity.presentedForm(session, extensionRegistry);
     Message joinNotification =
         new Message(Map.of(), presentedForm, Command.JOIN, "JOIN", List.of(channel.name()));
-    Recipients.deliver(channel.members(), joinNotification);
+    Recipients.deliver(result.recipients(), joinNotification);
 
     // 005-fix-batch-conformance FR-014 — the same 332-only shape TopicCommandHandler's own
     // query path already uses (this project tracks no set-at timestamp, so no 333 either).
@@ -128,7 +129,7 @@ public final class JoinCommandHandler implements CommandHandler {
           session, serverName.get(), NumericReply.RPL_TOPIC, channel.name(), channel.topic());
     }
 
-    sendNamesReply(session, channel, serverName.get());
+    sendNamesReply(session, channel, serverName.get(), result.memberListing());
   }
 
   private record AdmissionFailure(NumericReply reply, String channelName, String reason) {}
@@ -170,7 +171,13 @@ public final class JoinCommandHandler implements CommandHandler {
   }
 
   public static void sendNamesReply(ClientSession requester, Channel channel, String serverName) {
-    sendNamesLine(requester, channel, serverName);
+    sendNamesReply(requester, channel, serverName, channel.memberListing());
+  }
+
+  /** Sends a membership snapshot captured by a join transition, followed by its closing numeric. */
+  public static void sendNamesReply(
+      ClientSession requester, Channel channel, String serverName, List<String> memberListing) {
+    sendNamesLine(requester, channel, serverName, memberListing);
     Replies.send(
         requester, serverName, NumericReply.RPL_ENDOFNAMES, channel.name(), "End of /NAMES list");
   }
@@ -182,13 +189,18 @@ public final class JoinCommandHandler implements CommandHandler {
    * one closing reply of its own afterward, instead of one per channel.
    */
   public static void sendNamesLine(ClientSession requester, Channel channel, String serverName) {
+    sendNamesLine(requester, channel, serverName, channel.memberListing());
+  }
+
+  private static void sendNamesLine(
+      ClientSession requester, Channel channel, String serverName, List<String> memberListing) {
     String visibility = visibilitySymbol(channel);
     Replies.sendListed(
         requester,
         serverName,
         NumericReply.RPL_NAMREPLY,
         List.of(visibility, channel.name()),
-        channel.memberListing());
+        memberListing);
   }
 
   private static String visibilitySymbol(Channel channel) {

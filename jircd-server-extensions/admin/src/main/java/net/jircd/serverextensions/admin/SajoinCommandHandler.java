@@ -73,13 +73,18 @@ public final class SajoinCommandHandler implements CommandHandler {
       return;
     }
 
-    Channel channel = channelRegistry.join(name, session, ignored -> true).orElseThrow();
+    var joined = channelRegistry.join(name, session, ignored -> true);
+    if (joined.isEmpty()) {
+      return;
+    }
+    var result = joined.get();
+    Channel channel = result.channel();
 
     String presentedForm = PresentedIdentity.presentedForm(session, extensionRegistry);
     Message joinNotification =
         new Message(Map.of(), presentedForm, Command.JOIN, "JOIN", List.of(channel.name()));
-    Recipients.deliver(channel.members(), joinNotification);
+    Recipients.deliver(result.recipients(), joinNotification);
 
-    JoinCommandHandler.sendNamesReply(session, channel, serverName.get());
+    JoinCommandHandler.sendNamesReply(session, channel, serverName.get(), result.memberListing());
   }
 }

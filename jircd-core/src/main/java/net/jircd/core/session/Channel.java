@@ -17,6 +17,7 @@ package net.jircd.core.session;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -36,6 +37,7 @@ public final class Channel {
   private final String name;
   private final String foldedName;
   private final Set<ClientSession> members = ConcurrentHashMap.newKeySet();
+  private final Set<ClientSession> membersView = Collections.unmodifiableSet(members);
   private final Set<ClientSession> operators = ConcurrentHashMap.newKeySet();
   private final Set<ClientSession> voiced = ConcurrentHashMap.newKeySet();
   private final Set<ChannelMode> activeModes = ConcurrentHashMap.newKeySet();
@@ -66,7 +68,7 @@ public final class Channel {
   }
 
   public Set<ClientSession> members() {
-    return members;
+    return membersView;
   }
 
   /** Returns one status-prefixed nickname per member, in member iteration order. */
@@ -146,7 +148,7 @@ public final class Channel {
    * first-join-gets-operator default, FR-013). Returns {@code true} if operator status was granted
    * by this call.
    */
-  public synchronized boolean addMember(ClientSession session) {
+  synchronized boolean addMember(ClientSession session) {
     boolean wasEmpty = members.isEmpty();
     members.add(session);
     if (wasEmpty) {
@@ -159,7 +161,7 @@ public final class Channel {
    * Removes a departing session from membership, operator, and voice state together
    * (data-model.md).
    */
-  public void removeMember(ClientSession session) {
+  synchronized void removeMember(ClientSession session) {
     members.remove(session);
     operators.remove(session);
     voiced.remove(session);
