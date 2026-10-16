@@ -25,6 +25,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
@@ -131,6 +132,30 @@ public final class RawIrcClient implements AutoCloseable {
       }
     }
     throw new IOException("Timed out waiting for: " + prefix);
+  }
+
+  /**
+   * Sends a unique PING barrier and returns all lines through its PONG, in wire order. The supplied
+   * timeout bounds the whole read and is explicitly applied to each socket read.
+   */
+  public List<String> readThroughPong(Duration timeout) throws IOException {
+    String token = "barrier-" + UUID.randomUUID();
+    send("PING " + token);
+    Instant deadline = Instant.now().plus(timeout);
+    List<String> lines = new ArrayList<>();
+    while (Instant.now().isBefore(deadline)) {
+      long remainingMillis = Duration.between(Instant.now(), deadline).toMillis();
+      socket.setSoTimeout((int) Math.max(1, remainingMillis));
+      String line = reader.readLine();
+      if (line == null) {
+        throw new IOException("Connection closed while waiting for barrier PONG");
+      }
+      lines.add(line);
+      if (line.startsWith("PONG ") && line.endsWith(" " + token)) {
+        return lines;
+      }
+    }
+    throw new java.net.SocketTimeoutException("Timed out waiting for barrier PONG");
   }
 
   public List<String> readLinesFor(Duration duration) throws IOException {

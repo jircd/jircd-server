@@ -17,6 +17,8 @@ package net.jircd.core.session;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.List;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
@@ -56,5 +58,41 @@ class ChannelTest {
     channel.addMember(member);
 
     assertThat(channel.findMember(targeted)).isEmpty();
+  }
+
+  @Test
+  void memberListingUsesOperatorBeforeVoiceAndListsEachMemberOnceInIterationOrder() {
+    Channel channel = new Channel("#lobby");
+    List<ClientSession> members =
+        List.of(member("operator"), member("voiced"), member("both"), member("plain"));
+    // The first joiner (operator) receives operator status from addMember.
+    members.forEach(channel::addMember);
+    channel.voiced().add(members.get(1));
+    channel.operators().add(members.get(2));
+    channel.voiced().add(members.get(2));
+    assertThat(channel.memberListing())
+        .containsExactlyInAnyOrder("@operator", "+voiced", "@both", "plain")
+        .doesNotHaveDuplicates();
+    assertThat(channel.memberListing())
+        .containsExactlyElementsOf(
+            channel.members().stream()
+                .map(
+                    m ->
+                        (channel.operators().contains(m)
+                                ? "@"
+                                : channel.voiced().contains(m) ? "+" : "")
+                            + m.nickname())
+                .toList());
+  }
+
+  @Test
+  void emptyChannelHasEmptyMemberListing() {
+    assertThat(new Channel("#empty").memberListing()).isEmpty();
+  }
+
+  private static ClientSession member(String nick) {
+    ClientSession member = new ClientSession(nick, "host.example", RateLimitBucket.withDefaults());
+    member.setNickname(nick);
+    return member;
   }
 }

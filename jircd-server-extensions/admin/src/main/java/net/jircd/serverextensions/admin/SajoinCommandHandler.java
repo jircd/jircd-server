@@ -24,6 +24,7 @@ import net.jircd.core.session.Channel;
 import net.jircd.core.session.ChannelRegistry;
 import net.jircd.core.session.ClientSession;
 import net.jircd.core.session.PresentedIdentity;
+import net.jircd.core.session.Recipients;
 import net.jircd.core.session.command.CommandHandler;
 import net.jircd.core.session.command.JoinCommandHandler;
 import net.jircd.core.session.command.Replies;
@@ -77,11 +78,7 @@ public final class SajoinCommandHandler implements CommandHandler {
     String presentedForm = PresentedIdentity.presentedForm(session, extensionRegistry);
     Message joinNotification =
         new Message(Map.of(), presentedForm, Command.JOIN, "JOIN", List.of(channel.name()));
-    for (ClientSession member : channel.members()) {
-      if (member.writer() != null) {
-        member.writer().enqueueRaw(joinNotification);
-      }
-    }
+    Recipients.deliver(channel.members(), joinNotification);
 
     JoinCommandHandler.sendNamesReply(session, channel, serverName.get());
   }

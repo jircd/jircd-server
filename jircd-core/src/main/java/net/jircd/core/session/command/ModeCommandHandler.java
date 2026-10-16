@@ -33,6 +33,7 @@ import net.jircd.core.session.ClientSession;
 import net.jircd.core.session.CoreChannelModes;
 import net.jircd.core.session.NicknameRegistry;
 import net.jircd.core.session.PresentedIdentity;
+import net.jircd.core.session.Recipients;
 import net.jircd.core.session.SecurityEventLog;
 import net.jircd.protocol.Command;
 import net.jircd.protocol.Message;
@@ -385,10 +386,6 @@ public final class ModeCommandHandler implements CommandHandler {
     params.addAll(appliedParams);
     String presentedForm = PresentedIdentity.presentedForm(session, extensionRegistry);
     Message echo = new Message(Map.of(), presentedForm, Command.MODE, "MODE", params);
-    for (ClientSession member : channel.members()) {
-      if (member.writer() != null) {
-        member.writer().enqueueRaw(echo);
-      }
-    }
+    Recipients.deliver(channel.members(), echo);
   }
 }

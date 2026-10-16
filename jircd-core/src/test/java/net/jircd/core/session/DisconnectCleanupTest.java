@@ -17,6 +17,14 @@ package net.jircd.core.session;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.io.ByteArrayOutputStream;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import net.jircd.core.extension.ExtensionRegistry;
 import org.junit.jupiter.api.Test;
 
@@ -63,5 +71,47 @@ class DisconnectCleanupTest {
     cleanup.cleanup(session, "reason");
 
     assertThat(session.lifecycle().isClosing()).isTrue();
+  }
+
+  @Test
+  void peerJoiningBeforeRemovalReceivesQuitEvenAfterAnEarlierChannelWasRemoved() throws Exception {
+    ClientSession quitter = registeredSession();
+    ClientSession newcomer =
+        new ClientSession("newcomer", "host.example", RateLimitBucket.withDefaults());
+    newcomer.setNickname("newcomer");
+    ChannelRegistry registry = new ChannelRegistry();
+    registry.join("#one", quitter, ignored -> true);
+    registry.join("#two", quitter, ignored -> true);
+    List<Channel> removalOrder = List.copyOf(Set.copyOf(quitter.channelMemberships()));
+    Channel first = removalOrder.getFirst();
+    Channel second = removalOrder.getLast();
+    DisconnectCleanup cleanup =
+        new DisconnectCleanup(
+            new NicknameRegistry(),
+            registry,
+            new WhowasHistory(() -> 100),
+            new ExtensionRegistry());
+    ByteArrayOutputStream out = new ByteArrayOutputStream();
+    try (SessionWriter writer = new SessionWriter(newcomer, out, TagRenderer.NONE);
+        var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      newcomer.attachWriter(writer);
+      Future<?> pending;
+      synchronized (registry) {
+        pending = executor.submit(() -> cleanup.cleanup(quitter, "leaving"));
+        // Cleanup removes the first membership, then blocks at removeIfEmpty on our registry
+        // monitor. The second membership cannot be removed until we release that monitor.
+        long deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
+        while (first.members().contains(quitter) && System.nanoTime() < deadline) {
+          Thread.onSpinWait();
+        }
+        assertThat(first.members()).doesNotContain(quitter);
+        assertThat(second.members()).contains(quitter);
+        registry.join(second.name(), newcomer, ignored -> true);
+        assertThat(second.memberListing()).contains("@erin", "newcomer");
+      }
+      pending.get(5, TimeUnit.SECONDS);
+    }
+    assertThat(out.toString(StandardCharsets.UTF_8))
+        .isEqualTo(":erin!erin@host.example QUIT leaving\r\n");
   }
 }

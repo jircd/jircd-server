@@ -25,6 +25,7 @@ import net.jircd.core.session.ChannelRegistry;
 import net.jircd.core.session.ChannelVisibility;
 import net.jircd.core.session.ClientSession;
 import net.jircd.core.session.CoreChannelModes;
+import net.jircd.core.session.Recipients;
 import net.jircd.protocol.Command;
 import net.jircd.protocol.Message;
 import net.jircd.protocol.NumericReply;
@@ -113,10 +114,6 @@ public final class TopicCommandHandler implements CommandHandler {
     Message topicNotification =
         new Message(
             Map.of(), serverName.get(), Command.TOPIC, "TOPIC", List.of(channel.name(), newTopic));
-    for (ClientSession member : channel.members()) {
-      if (member.writer() != null) {
-        member.writer().enqueueRaw(topicNotification);
-      }
-    }
+    Recipients.deliver(channel.members(), topicNotification);
   }
 }

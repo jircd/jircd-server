@@ -23,6 +23,7 @@ import net.jircd.core.session.Channel;
 import net.jircd.core.session.ChannelRegistry;
 import net.jircd.core.session.ClientSession;
 import net.jircd.core.session.PresentedIdentity;
+import net.jircd.core.session.Recipients;
 import net.jircd.protocol.Command;
 import net.jircd.protocol.Message;
 import net.jircd.protocol.NumericReply;
@@ -77,11 +78,7 @@ public final class PartCommandHandler implements CommandHandler {
     List<String> params =
         reason != null ? List.of(channel.name(), reason) : List.of(channel.name());
     Message partNotification = new Message(Map.of(), presentedForm, Command.PART, "PART", params);
-    for (ClientSession member : channel.members()) {
-      if (member.writer() != null) {
-        member.writer().enqueueRaw(partNotification);
-      }
-    }
+    Recipients.deliver(channel.members(), partNotification);
 
     channel.removeMember(session);
     session.channelMemberships().remove(channel);
