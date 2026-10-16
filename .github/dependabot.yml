@@ -1,0 +1,20 @@
+version: 2
+updates:
+  - package-ecosystem: gradle
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    groups:
+      gradle-minor-patch:
+        update-types: [minor, patch]
+    # Dependabot cannot refresh gradle/verification-metadata.xml; run
+    # ./gradlew --write-verification-metadata sha256 build on the PR branch.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+    groups:
+      actions-minor-patch:
+        update-types: [minor, patch]
