@@ -184,3 +184,112 @@ BUILD SUCCESSFUL in 1m 14s
 ```
 
 No commit or stash. T022 onward remain unchecked; no Phase 4 implementation.
+
+## Delivery Step 2 (T022–T037)
+
+Implemented on the committed Step 1 head `b5b450b`, based on main `08bb476`, on 2026-10-16.
+
+### Tests first
+
+- Before production changes, `ChannelRegistryTest.twoKickHandlersForOneTargetBroadcastOnlyOneDeparture` failed (expected one KICK plus the losing command's numeric), and the approved `rejectedAdmissionDoesNotInsertMembership` assertion failed. Scoped command exit code 1; 3 tests ran, 2 failed.
+- A forced legacy disconnect/JOIN reproduction completed cleanup while admission was blocked and then demonstrated the leftover membership. Exit code 1; 1 test ran and failed. The final regression is `ChannelRegistryTest.disconnectRacingAdmissionLeavesNoMembershipBehind`, using explicit admission/closing latches and `leaveAll`.
+- T025's three-channel cleanup/idempotence characterization passed unchanged production code (exit code 0).
+- The new transition, race and stress API tests were written before implementation; the first T037 scoped run failed compilation because `JoinResult`, `Departure`, `KickOutcome`, `part` and `leaveAll` did not exist. No new API implementation preceded that check.
+
+### Changes and migrations
+
+- Registry transitions own both sides of membership under registry → channel locking, return immutable snapshots, and drop empty registered channels. Delivery occurs after those monitors are released.
+- JOIN handles `alreadyMember` silently; SAJOIN still broadcasts and sends the captured NAMES listing for a repeat membership. Closing sessions are refused without dereferencing a missing admission failure or throwing in SAJOIN.
+- KICK/PART use the serial outcomes; only a successful removal broadcasts. The handler-level race regression now passes.
+- The Step 1 QUIT regression now arranges the admitted join before cleanup, since join-between-channel-removals cannot occur under `leaveAll`'s registry lock. Its QUIT assertion is retained and the new ordering is documented in Javadoc. The prior admission/removal race also preserves its final assertions with serialized choreography.
+- Stress workload: 32 sessions, 8 channels, 2,048 fixed-seed randomized operations over virtual threads, tracking recreated channel instances by identity. Final membership equivalence, registry non-emptiness, privilege subsets and recipient uniqueness pass.
+- Package-private isolated setup remains in ChannelTest; OutboundMessageBudgetTest now creates its 60 memberships through registry joins. T044 records later migration of the voice setup added in T022/T025.
+
+**Approved deviation**: rejected admission removes a channel created by that join only if still empty and still the registered instance. `rejectedAdmissionDoesNotInsertMembership` keeps its name and now asserts no session memberships and absent registry lookup, as approved. Recorded under T029 in tasks.md. No other design deviation.
+
+### T037 gates
+
+Executed in this order, each with exit code 0:
+
+```sh
+./gradlew :jircd-core:test --tests '*ChannelRegistry*' --tests '*DisconnectCleanup*' --tests '*MembershipStress*'
+./gradlew build
+./gradlew loadTest
+```
+
+Scoped tests (23 transition/cleanup/stress cases; Gradle's coverage dependencies also run integration tests):
+
+```text
+BUILD SUCCESSFUL in 1m 8s
+47 actionable tasks: 26 executed, 21 up-to-date
+```
+
+Full build includes Spotless, SpotBugs, PMD and the new aggregate coverage floor:
+
+```text
+> Task :testCodeCoverageVerification
+BUILD SUCCESSFUL in 10s
+107 actionable tasks: 42 executed, 65 up-to-date
+```
+
+Aggregate coverage: LINE 3,071 / 3,330 = 92.22%; BRANCH 1,149 / 1,380 = 83.26%. Floors: 85% line / 75% branch.
+
+Load-test gate:
+
+```text
+ConcurrentConnectionScaleLoadTest > deliveryLatencyStaysWithinBudgetAtOneThousandConnections() PASSED
+KeepAliveLoadTest > idleConnectionIsProbedThenDisconnectedIfNeverAnswered() PASSED
+KeepAliveLoadTest > respondingToTheServersPingKeepsTheConnectionAlive() PASSED
+RateLimitLoadTest > floodFromOneConnectionDoesNotDegradeOtherWellBehavedClients() PASSED
+Story1DeliveryLatencyLoadTest > deliveryLatencyStaysWithinOneSecondBudget() PASSED
+BUILD SUCCESSFUL in 32s
+36 actionable tasks: 2 executed, 34 up-to-date
+```
+
+All asserted bounds pass, including <1s per message delivery. Durations below are JUnit/Gradle whole-test durations for information only; no measured latency/throughput comparison is inferred (SC-005).
+
+| Test | Outcome | Duration (s) |
+|---|---|---:|
+| `Story1DeliveryLatencyLoadTest.deliveryLatencyStaysWithinOneSecondBudget()` | PASS | 5.741 |
+| `ConcurrentConnectionScaleLoadTest.deliveryLatencyStaysWithinBudgetAtOneThousandConnections()` | PASS | 2.861 |
+| `KeepAliveLoadTest.idleConnectionIsProbedThenDisconnectedIfNeverAnswered()` | PASS | 15.045 |
+| `KeepAliveLoadTest.respondingToTheServersPingKeepsTheConnectionAlive()` | PASS | 5.024 |
+| `RateLimitLoadTest.floodFromOneConnectionDoesNotDegradeOtherWellBehavedClients()` | PASS | 2.32 |
+
+No integration-test files changed in Step 2. `git diff --stat origin/main -- jircd-integration-tests/src/test/java/net/jircd/integration/` still shows exactly the four Phase 2 additions and RawIrcClient support changes from Step 1.
+
+T022–T037 complete; T038 onward remain unchecked. No Step 3 implementation, commits or stashes. Optional implementation commit hooks remain skipped per user instruction.
+
+## Step 2 review corrections
+
+- Item 1: contract and data-model join descriptions now return `JoinResult.alreadyMember=true` for unchanged membership and document cleanup of a newly created, still-empty, still-registered channel on refusal/CLOSING. The result-type field list includes alreadyMember.
+- Item 2: each workload departure includes its departed member; each successful non-repeated join includes its joiner; all recipients belong to the test's sessions. Removed the duplicate check on a Set. Conservation asserts initial 256 memberships + successful joins = departures + final memberships; the test counts memberships immediately before leaveAll while holding the registry monitor, without changing any production signature.
+- Item 3: added the fifth randomized operation for voice grants, checking membership and adding voice under the channel monitor. Setup seeds voice so it is exercised even if randomized grants race with departures. MembershipStressTest is listed under T044 for migration to grantVoice.
+- Item 4: admission remains blocked by a release latch while the test asserts the cleanup future is not done, before allowing the admitted join to finish.
+- Item 6: Channel.members and ClientSession.channelMemberships each return one cached unmodifiable view stored in a final field. The existing live-view test now also checks stable view identity.
+- Item 5 intentionally left unchanged for PR documentation, as requested.
+
+Tests-first check: new cached-view identity assertion failed on the previous per-call wrapper allocation; strengthened cleanup/stress tests passed (3 tests, 1 expected failure; exit code 1). After caching, the scoped gate passed:
+
+```sh
+./gradlew :jircd-core:test --tests '*ChannelRegistry*' --tests '*DisconnectCleanup*' --tests '*MembershipStress*'
+```
+
+```text
+BUILD SUCCESSFUL in 1m 8s
+47 actionable tasks: 16 executed, 31 up-to-date
+```
+
+Then `./gradlew build` passed, exit code 0, including testCodeCoverageVerification, Spotless, PMD and SpotBugs:
+
+```text
+> Task :testCodeCoverageVerification
+BUILD SUCCESSFUL in 10s
+107 actionable tasks: 40 executed, 67 up-to-date
+```
+
+Aggregate BRANCH coverage: 1149/1380 = 83.26%.
+
+Aggregate LINE coverage: 3074/3333 = 92.23%.
+
+No integration-test files changed, no Step 3 implementation, no commit or stash. Load tests were not rerun for this review; the T037 load-test gate above remains the recorded run.
