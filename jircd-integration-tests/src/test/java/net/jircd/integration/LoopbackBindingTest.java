@@ -94,7 +94,7 @@ class LoopbackBindingTest {
 
   /** Opens and closes a connection; only the open is expected to throw. */
   private static void connect(InetAddress address, int port) throws IOException {
-    try (Socket _ = new Socket(address, port)) {
+    try (var _ = new Socket(address, port)) {
       // Reaching here means the connection opened.
     }
   }

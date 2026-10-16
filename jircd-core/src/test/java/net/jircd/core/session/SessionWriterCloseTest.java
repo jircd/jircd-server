@@ -22,7 +22,6 @@ import java.io.IOException;
 import java.io.InterruptedIOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
@@ -54,7 +53,7 @@ class SessionWriterCloseTest {
       Thread firstClose = Thread.ofPlatform().start(writer::close);
       awaitWaiting(firstClose);
       Thread secondClose = Thread.ofPlatform().start(writer::close);
-      awaitWaitingOrDone(secondClose);
+      awaitWaitingOrInterruptedTheWriter(secondClose, out);
       out.release.countDown();
       firstClose.join();
       secondClose.join();
@@ -67,19 +66,26 @@ class SessionWriterCloseTest {
     return new Message(Map.of(), null, Command.ERROR, "ERROR", List.of("line " + number));
   }
 
-  private static void awaitWaiting(Thread thread) throws InterruptedException {
+  private static void awaitWaiting(Thread thread) {
     while (thread.getState() != Thread.State.TIMED_WAITING) {
-      Thread.sleep(1);
+      Thread.onSpinWait();
     }
   }
 
-  /** Before the fix, the second close interrupts the writer and returns without waiting. */
-  private static void awaitWaitingOrDone(Thread thread) throws InterruptedException {
+  /**
+   * After the fix, the second close waits for the drain. Before it, the second close interrupted
+   * the writer and returned; wait until that interrupt has reached the stream, so the release below
+   * cannot beat it.
+   */
+  private static void awaitWaitingOrInterruptedTheWriter(Thread thread, BlockingOutputStream out)
+      throws InterruptedException {
     while (thread.getState() != Thread.State.TIMED_WAITING
         && thread.getState() != Thread.State.TERMINATED) {
-      Thread.sleep(1);
+      Thread.onSpinWait();
     }
-    thread.join(Duration.ofMillis(100));
+    if (thread.getState() == Thread.State.TERMINATED) {
+      out.interrupted.await();
+    }
   }
 
   /**
@@ -89,6 +95,7 @@ class SessionWriterCloseTest {
   private static final class BlockingOutputStream extends OutputStream {
     final CountDownLatch firstWriteStarted = new CountDownLatch(1);
     final CountDownLatch release = new CountDownLatch(1);
+    final CountDownLatch interrupted = new CountDownLatch(1);
     private final ByteArrayOutputStream written = new ByteArrayOutputStream();
     private volatile boolean closedByInterrupt;
 
@@ -102,8 +109,9 @@ class SessionWriterCloseTest {
       firstWriteStarted.countDown();
       try {
         release.await();
-      } catch (InterruptedException e) {
+      } catch (InterruptedException _) {
         closedByInterrupt = true;
+        interrupted.countDown();
       }
       if (closedByInterrupt) {
         throw new InterruptedIOException("closed by interrupt");
