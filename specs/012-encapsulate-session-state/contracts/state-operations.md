@@ -21,8 +21,11 @@ void removeIfEmpty(Channel channel);                   // package-private; trans
 ```
 
 Contract:
-- `join` returns empty if the session is `CLOSING`, is already a member (the issue #16 no-op),
-  or `admission` refuses. `admission` runs under both monitors and must not block.
+- `join` returns empty if it observes the session in `CLOSING` or `admission` refuses. An
+  existing member instead returns `JoinResult` with `alreadyMember=true`, without changing
+  membership or running admission. `admission` runs under both monitors and must not block.
+- A refused or `CLOSING` join removes the channel it just created, only if the channel is still
+  empty and still the registered instance. An existing channel is retained.
 - `SAJOIN` passes an always-true admission. The closing and already-member checks still apply.
   Today SAJOIN on an existing membership re-broadcasts JOIN; see the note below.
 - `part`/`kick` return the recipients captured **before** removal. Callers deliver after the

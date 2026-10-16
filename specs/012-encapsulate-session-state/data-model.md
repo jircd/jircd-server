@@ -35,7 +35,7 @@ ChannelRegistry monitor  ──►  Channel monitor  ──►  (nothing else)
 
 | Operation | Precondition checked inside | Effect | Result |
 |---|---|---|---|
-| `join(name, session, admission)` | session not `CLOSING`; already a member → no change, admission skipped; else `admission.test(channel)` | get-or-create, add member (first member → operator), add membership on session, consume invitation (inside admission) | `Optional<JoinResult>`: empty if `CLOSING` or refused; `alreadyMember=true` if no change was needed |
+| `join(name, session, admission)` | session not `CLOSING`; already a member → no change, admission skipped; else `admission.test(channel)` | get-or-create, add member (first member → operator), add membership on session, consume invitation (inside admission); if `CLOSING` or refused, remove the channel just created only if still empty and still the registered instance (retain an existing channel) | `Optional<JoinResult>`: empty if `CLOSING` or refused; an existing member returns `JoinResult` with `alreadyMember=true`, no state change and no admission |
 | `part(channel, session)` | `session ∈ members` | capture members (before), remove member + op + voice, remove session membership, drop if empty | `Optional<Departure>`, empty → ERR_NOTONCHANNEL |
 | `kick(channel, kicker, targetNick)` | kicker is operator; target found by folded nick | capture members (before), remove target fully, drop if empty | `KickOutcome` (`NotOperator` / `NoSuchMember` / `Kicked(Departure)`) |
 | `leaveAll(session)` | none (cleanup has already claimed `CLOSING`) | for each membership: remove, capture remaining members, drop if empty | `Set<ClientSession>` neighbours, de-duplicated, self excluded |
@@ -85,7 +85,7 @@ All collection accessors return unmodifiable views.
 ## Result types (new, immutable records)
 
 - **`JoinResult(Channel channel, Set<ClientSession> recipients, boolean grantedOperator,
-  List<String> memberListing)`**: `recipients` = members after insertion, `memberListing` =
+  boolean alreadyMember, List<String> memberListing)`**: `recipients` = members after insertion, `memberListing` =
   NAMES tokens captured under the same lock.
 - **`Departure(Channel channel, ClientSession departed, Set<ClientSession> recipients)`**:
   `recipients` = members before removal.
