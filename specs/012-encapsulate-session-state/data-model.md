@@ -80,7 +80,8 @@ All collection accessors return unmodifiable views.
 - S-1: After `DisconnectCleanup.cleanup` returns, `channelMemberships()` is empty and the
   nickname is released.
 - S-2: `UserMode.OPERATOR ∈ userModes` if and only if administrator privilege was granted and
-  not revoked, or `+o` was otherwise set by the existing path. Behavior is unchanged.
+  not revoked. Generic `setUserMode` / `clearUserMode` reject OPERATOR with
+  `IllegalArgumentException`; only administrator grant/revoke operations manage operator mode.
 
 ## Result types (new, immutable records)
 

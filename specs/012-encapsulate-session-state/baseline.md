@@ -293,3 +293,97 @@ Aggregate BRANCH coverage: 1149/1380 = 83.26%.
 Aggregate LINE coverage: 3074/3333 = 92.23%.
 
 No integration-test files changed, no Step 3 implementation, no commit or stash. Load tests were not rerun for this review; the T037 load-test gate above remains the recorded run.
+
+## Delivery Step 3 (T038–T047)
+
+Implemented on Step 2 commit `7a80ef6` on 2026-10-16. No changes outside this delivery step.
+
+### Tests first
+
+- The legacy unchecked operator grant, forced after PART with latches while holding a previously resolved member reference, left a ghost operator: `ChannelTest.grantRacingPartCannotLeaveAGhostOperator` failed before implementation. Channel read-only collection assertions also failed (2 tests, 2 failures; exit code 1). The final race uses `grantOperator` and verifies refusal after departure; the opposite grant-before-PART order is covered too.
+- ClientSession's user-mode accessor mutation assertion failed before implementation; absent-ban removal and administrator grant/revoke characterizations passed unchanged (3 tests, 1 failure; exit code 1).
+- Named mutator, mode-exclusion, invitation and user-mode tests were written before the API; compilation failed on the missing methods (exit code 1).
+- A further C-2 regression showed equal ChannelMode record copies bypassed an identity comparison (1 test, 1 failure; exit code 1). `setMode` now compares record values; both directions of secret/private exclusion pass.
+
+### Implementation and migrations
+
+- Channel owns synchronized grants/revokes (grants check membership), mode changes (secret/private exclusion), folded invitation lookup/consumption, and ban removal. Privilege/mode/ban accessors return cached unmodifiable live views; invited() is removed.
+- ClientSession exposes named user-mode changes and a cached unmodifiable live view. Administrator grant/revoke behavior and the handler's +o refusal / -o allowance are preserved.
+- MODE/SAMODE/INVITE/JOIN/UMODE callers use named operations. Invitations remain peeked first and consumed only after every JOIN gate passes.
+- T044 setup/workload migrations cover OutboundMessageBudgetTest, ChannelTest, ChannelRegistryTest, DisconnectCleanupTest and MembershipStressTest, including both stress-test voice grants. Existing assertions remain; no integration-test file was modified.
+
+### Gates
+
+Scoped validation (exit code 0):
+
+```sh
+./gradlew :jircd-core:test --tests '*ChannelTest*' --tests '*ClientSessionTest*' --tests '*ChannelRegistry*' --tests '*DisconnectCleanup*' --tests '*MembershipStress*' --tests '*OutboundMessageBudget*'
+```
+
+```text
+BUILD SUCCESSFUL in 1m 8s
+47 actionable tasks: 16 executed, 31 up-to-date
+```
+
+T047 first runs the exact accessor-mutation search from quickstart §2:
+
+```sh
+rg -n --glob '**/src/main/**' '\.(members|operators|voiced|activeModes|bans|invited|channelMemberships|userModes)\(\)\.(add|remove|clear|removeIf|addAll|retainAll)' .
+```
+
+PASS: no output (rg exit code 1 means no matches). The second quickstart fan-out audit still lists only the pre-existing server-wide/single-recipient sends in Wallops, CAP, Replies, RegistrationCompletion and INVITE; as quickstart explains, it is an audit rather than a zero-hit gate.
+
+Then `./gradlew build` passed, exit code 0, including tests, Spotless, PMD, SpotBugs and aggregate coverage verification:
+
+```text
+> Task :testCodeCoverageVerification
+BUILD SUCCESSFUL in 11s
+107 actionable tasks: 40 executed, 67 up-to-date
+```
+
+Aggregate BRANCH coverage: 1154/1386 = 83.26%.
+
+Aggregate LINE coverage: 3102/3362 = 92.27%.
+
+All 27 cases across 19 required Story5*, Story6Samode*, Story1UserModeTest and ChannelModeIsTest suites passed.
+
+T038–T047 complete; T048 onward remain unchecked. No plan deviations, no Step 4 implementation, no commit or stash. Optional implementation commit hooks remain skipped per user instruction.
+
+## Step 3 review hardening (optional items 1–4, approved)
+
+1. MODE and SAMODE atomically validate membership and apply the privilege change under the channel monitor. A target that departed after resolution receives ERR_USERNOTINCHANNEL (441); that change is omitted from the echo. Existing valid idempotent grants/revokes still echo. SAMODE's pre-existing early non-membership reply remains ERR_NOTONCHANNEL (442); the newly requested late refusal is 441. Replies and delivery run outside the monitor. Narrow package-private constructor hooks force the post-resolution departure window in tests; public constructor signatures are unchanged and supply no-op hooks.
+2. MODE's member-kind operator comparison now uses CoreChannelModes.OPERATOR.equals(mode), preserving the existing voice fallback.
+3. ClientSession.setUserMode/clearUserMode reject OPERATOR (including equal record copies) with IllegalArgumentException. Administrator grant/revoke methods remain the only operator-mode writers. The only production caller of the generic setters is UserModeCommandHandler: +o is rejected by its permission branch, and -o goes directly to revokeAdministratorPrivilege. Contract and data-model S-2 were aligned.
+4. Both grant/PART tests now explicitly document their two forced serial orders in Javadoc.
+
+Tests first: the operator setter test failed before the guard (exit 1). With only the no-op-compatible test seams installed, all four MODE and both SAMODE late-departure cases failed before the handler fix; their idempotent-member characterizations passed (exit 1). After the fix, all cases pass. No sleeps, retries or timeout increases were added.
+
+Final scoped command, exit code 0:
+
+```sh
+./gradlew :jircd-core:test --tests '*ChannelTest*' --tests '*ClientSessionTest*' --tests '*ModeMemberDepartureTest*' --tests '*MembershipStress*' :jircd-server-extensions:admin:test --tests '*SamodeMemberDepartureTest*'
+```
+
+```text
+BUILD SUCCESSFUL in 1m 8s
+49 actionable tasks: 16 executed, 33 up-to-date
+```
+
+Then `./gradlew build`, exit code 0, including testCodeCoverageVerification, Spotless, PMD and SpotBugs:
+
+```text
+> Task :testCodeCoverageVerification
+BUILD SUCCESSFUL in 12s
+111 actionable tasks: 41 executed, 70 up-to-date
+```
+
+New regression files:
+
+- jircd-core/src/test/java/net/jircd/core/session/command/ModeMemberDepartureTest.java
+- jircd-server-extensions/admin/src/test/java/net/jircd/serverextensions/admin/SamodeMemberDepartureTest.java
+
+The T055 PR-description reminder now includes these approved concurrent MODE/SAMODE outcomes. No integration-test files changed. No Step 4 implementation, commit or stash.
+
+Aggregate BRANCH coverage: 1169/1400 = 83.50%.
+
+Aggregate LINE coverage: 3132/3391 = 92.36%.
