@@ -161,6 +161,55 @@ public final class Channel {
     action.run();
   }
 
+  /** The outcome of {@link #applyAsOperator}. */
+  public enum ModeChangeResult {
+    /** The change was applied. */
+    APPLIED,
+    /** The requester is not an operator of the channel, so nothing changed. */
+    NOT_OPERATOR,
+    /** A privilege change named a target that is not a member, so nothing changed. */
+    NOT_A_MEMBER,
+    /** A ban was refused because the ban list is full, so nothing changed. */
+    BAN_LIST_FULL
+  }
+
+  /**
+   * Applies {@code change} on behalf of {@code requester} in one step under this channel's monitor:
+   * the requester's operator status is checked and the change made with no gap between them, so a
+   * de-op or departure of the requester cannot fall in between. A requester who is not an operator
+   * at that moment, including one who has left, changes nothing.
+   */
+  public synchronized ModeChangeResult applyAsOperator(
+      ClientSession requester, ChannelModeChange change) {
+    Objects.requireNonNull(change);
+    if (!operators.contains(requester)) {
+      return ModeChangeResult.NOT_OPERATOR;
+    }
+    switch (change) {
+      case ChannelModeChange.Flag flag -> {
+        if (flag.set()) {
+          setMode(flag.mode());
+        } else {
+          clearMode(flag.mode());
+        }
+      }
+      case ChannelModeChange.Limit limit -> setMemberLimit(limit.limit());
+      case ChannelModeChange.Key key -> setKey(key.key());
+      case ChannelModeChange.BanAdd ban -> {
+        if (!addBan(ban.entry())) {
+          return ModeChangeResult.BAN_LIST_FULL;
+        }
+      }
+      case ChannelModeChange.BanRemove ban -> removeBan(ban.mask());
+      case ChannelModeChange.Privilege privilege -> {
+        if (!setMemberPrivilege(privilege.target(), privilege.privilege(), privilege.granted())) {
+          return ModeChangeResult.NOT_A_MEMBER;
+        }
+      }
+    }
+    return ModeChangeResult.APPLIED;
+  }
+
   /** A per-member channel privilege. */
   public enum MemberPrivilege {
     OPERATOR,
