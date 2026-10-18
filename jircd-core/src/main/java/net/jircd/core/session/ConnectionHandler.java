@@ -97,6 +97,7 @@ public final class ConnectionHandler {
   private final Supplier<String> serverName;
   private final Supplier<ServerConfiguration.RateLimit> rateLimit;
   private final Supplier<Integer> keepAliveFrequencySeconds;
+  private final Supplier<Integer> sendqLimitBytes;
   private final TagRenderer tagRenderer;
   private final Map<Command, CommandHandler> handlers = new ConcurrentHashMap<>();
 
@@ -105,12 +106,14 @@ public final class ConnectionHandler {
       DisconnectCleanup disconnectCleanup,
       Supplier<String> serverName,
       Supplier<ServerConfiguration.RateLimit> rateLimit,
-      Supplier<Integer> keepAliveFrequencySeconds) {
+      Supplier<Integer> keepAliveFrequencySeconds,
+      Supplier<Integer> sendqLimitBytes) {
     this.extensionRegistry = extensionRegistry;
     this.disconnectCleanup = disconnectCleanup;
     this.serverName = serverName;
     this.rateLimit = rateLimit;
     this.keepAliveFrequencySeconds = keepAliveFrequencySeconds;
+    this.sendqLimitBytes = sendqLimitBytes;
     this.tagRenderer = new CapabilityTagRenderer(extensionRegistry);
   }
 
@@ -134,6 +137,8 @@ public final class ConnectionHandler {
       return;
     }
 
+    // Samples the outbound limit once per admitted connection; queue enforcement is separate.
+    sendqLimitBytes.get();
     ServerConfiguration.RateLimit configuredRateLimit = rateLimit.get();
     ClientSession session =
         new ClientSession(

@@ -97,6 +97,7 @@ class ListenerBindAddressTest {
         disconnectCleanup,
         () -> "test.jircd.local",
         () -> new ServerConfiguration.RateLimit(20, 10.0),
-        () -> 60);
+        () -> 60,
+        () -> ServerConfiguration.DEFAULT_SENDQ_LIMIT_BYTES);
   }
 }
