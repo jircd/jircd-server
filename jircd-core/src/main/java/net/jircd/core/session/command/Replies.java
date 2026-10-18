@@ -22,12 +22,16 @@ import net.jircd.core.session.ClientSession;
 import net.jircd.protocol.Message;
 import net.jircd.protocol.MessageSerializer;
 import net.jircd.protocol.NumericReply;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Builds and sends numeric-reply {@link Message}s, always addressed to the session's current
  * nickname, or {@code *} if it hasn't claimed one yet.
  */
 public final class Replies {
+
+  private static final Logger LOG = LoggerFactory.getLogger(Replies.class);
 
   private Replies() {}
 
@@ -42,7 +46,10 @@ public final class Replies {
     }
   }
 
-  /** Sends a space-separated list across byte-budgeted numeric replies, including an empty list. */
+  /**
+   * Sends a space-separated list across byte-budgeted numeric replies, including an empty list.
+   * Unrepresentable headers and indivisible items are logged and skipped; later items still send.
+   */
   public static void sendListed(
       ClientSession session,
       String serverName,
@@ -55,7 +62,18 @@ public final class Replies {
     params.add("");
     Message empty = new Message(Map.of(), serverName, null, numeric.wireCode(), params);
     // Reserve the trailing colon even for a singleton reply, which may serialize without it.
-    int budget = MessageSerializer.MAX_COMMAND_BYTES - MessageSerializer.commandBytes(empty);
+    int headerBytes = MessageSerializer.commandBytes(empty);
+    int budget = MessageSerializer.MAX_COMMAND_BYTES - headerBytes;
+    String channel = fixedParams.isEmpty() ? "*" : fixedParams.getLast();
+    if (budget < 0) {
+      LOG.warn(
+          "Dropping oversized listed reply header: numeric={}, channel={}, headerBytes={}, limit={}",
+          numeric.wireCode(),
+          channel,
+          headerBytes,
+          MessageSerializer.MAX_COMMAND_BYTES);
+      return;
+    }
     StringBuilder listed = new StringBuilder();
     int used = 0;
     for (String item : items) {
@@ -66,6 +84,20 @@ public final class Replies {
         listed.setLength(0);
         used = 0;
       }
+      if (bytes > budget) {
+        params.set(params.size() - 1, item);
+        Message singleton = new Message(Map.of(), serverName, null, numeric.wireCode(), params);
+        int singletonBytes = MessageSerializer.commandBytes(singleton);
+        if (singletonBytes > MessageSerializer.MAX_COMMAND_BYTES) {
+          LOG.warn(
+              "Dropping oversized listed item: numeric={}, channel={}, itemBytes={}, budget={}",
+              numeric.wireCode(),
+              channel,
+              bytes,
+              MessageSerializer.MAX_COMMAND_BYTES - (singletonBytes - bytes));
+          continue;
+        }
+      }
       if (!listed.isEmpty()) {
         listed.append(' ');
         used++;
@@ -73,8 +105,10 @@ public final class Replies {
       listed.append(item);
       used += bytes;
     }
-    params.set(params.size() - 1, listed.toString());
-    send(session, serverName, numeric, params.subList(1, params.size()).toArray(String[]::new));
+    if (!listed.isEmpty() || items.isEmpty()) {
+      params.set(params.size() - 1, listed.toString());
+      send(session, serverName, numeric, params.subList(1, params.size()).toArray(String[]::new));
+    }
   }
 
   public static String target(ClientSession session) {

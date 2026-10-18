@@ -37,6 +37,7 @@ public final class ConfigurationReloader {
   private final Path configPath;
   private final ConfigurationLoader loader;
   private final ExtensionRegistry extensionRegistry;
+  private final String runningServerName;
   private volatile ServerConfiguration current;
 
   public ConfigurationReloader(
@@ -48,6 +49,7 @@ public final class ConfigurationReloader {
     this.loader = loader;
     this.extensionRegistry = extensionRegistry;
     this.current = initial;
+    this.runningServerName = initial.serverName();
   }
 
   public ServerConfiguration current() {
@@ -64,6 +66,8 @@ public final class ConfigurationReloader {
     try (InputStream in = new FileInputStream(configPath.toFile())) {
       reloaded = loader.load(in);
     }
+    ConfigurationLoader.validateReplyBudgets(
+        runningServerName, reloaded.nicknameMaxLength(), reloaded.channelNameMaxLength());
     reconcile(reloaded);
     this.current = reloaded;
     extensionRegistry.updateConfiguredLengths(

@@ -24,6 +24,8 @@ import java.time.Duration;
 import net.jircd.core.config.ConfigurationException;
 import net.jircd.server.JircdServerApplication;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class Story4LengthLimitConfigTest {
 
@@ -75,6 +77,31 @@ class Story4LengthLimitConfigTest {
     assertThatThrownBy(() -> startWith("topicMaxLength: 401"))
         .isInstanceOf(ConfigurationException.class)
         .hasMessageContaining("topicMaxLength");
+  }
+
+  @Test
+  void coupledLengthBudgetsAreRejectedAtStartup() throws Exception {
+    assertThatThrownBy(() -> startWith("nicknameMaxLength: 217\nchannelNameMaxLength: 50"))
+        .isInstanceOf(ConfigurationException.class)
+        .hasMessageContaining("353=514");
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"JOIN", "SAJOIN"})
+  void channelAdmissionChecksUtf8BytesWithoutChangingIsupport(String command) throws Exception {
+    try (TestServer server =
+            TestServer.start(TestServer.adminEnabledYaml() + "channelNameMaxLength: 10\n");
+        RawIrcClient root = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+      root.registerAndAwaitWelcome("root", "root");
+      assertThat(root.readUntil("CHANNELLEN=10", Duration.ofSeconds(5))).contains("CHANNELLEN=10");
+      root.send("OPER " + TestServer.ADMIN_USERNAME + " :" + TestServer.ADMIN_PASSWORD);
+      root.readUntil("381", Duration.ofSeconds(5));
+      root.send(command + " #界界界a");
+      assertThat(root.readUntil("476", Duration.ofSeconds(5))).contains("#界界界a");
+      root.send(command + " #界界界");
+      assertThat(root.readUntil("353", Duration.ofSeconds(5))).contains("#界界界");
+      assertThat(root.readUntil("366", Duration.ofSeconds(5))).contains("#界界界");
+    }
   }
 
   private static void startWith(String extraYaml) throws Exception {

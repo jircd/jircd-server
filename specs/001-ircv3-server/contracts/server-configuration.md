@@ -20,8 +20,9 @@ nicknameMaxLength: 9    # optional (FR-056) — defaults to 9 (RFC 2812 baseline
                           # integer, at most 400. Enforced by NICK (432 ERR_ERRONEUSNICKNAME)
                           # and advertised as NICKLEN.
 channelNameMaxLength: 50 # optional (FR-056) — defaults to 50, including the leading "#".
-                          # Positive integer, at most 400. Enforced by JOIN
-                          # (476 ERR_BADCHANMASK) and advertised as CHANNELLEN.
+                          # Positive integer, at most 400; bounds both UTF-16 code units and
+                          # UTF-8 bytes. Enforced by JOIN and SAJOIN (476 ERR_BADCHANMASK)
+                          # and advertised unchanged as CHANNELLEN.
 topicMaxLength: 390      # optional (FR-056) — defaults to 390 (a widely-used real-world IRC
                           # default; RFC 2812 defines no topic length). Positive integer, at
                           # most 400. Enforced by TOPIC-set (417 ERR_INPUTTOOLONG) and
@@ -160,6 +161,50 @@ administratorCredentials:
   disconnected or evicted — the limit only gates new claims, the same
   "no retroactive enforcement" posture extension-state changes already
   have (FR-011).
+- **Coupled NAMES byte bounds (issue #54)** also apply at startup and reload.
+  Let `S` be the resolved server name's UTF-8 byte length, `N` be
+  `nicknameMaxLength`, and `Cmax` be `channelNameMaxLength` used as the channel
+  UTF-8 byte cap. Both `S + 2N + Cmax + 14 <= 512` (353 RPL_NAMREPLY) and
+  `S + N + Cmax + 29 <= 512` (366 RPL_ENDOFNAMES) MUST hold. The first reserves
+  a trailing colon and one member status character; the two nickname lengths
+  cover the recipient and listed member. The second includes the closing
+  numeric's fixed text. An error names `serverName`, `nicknameMaxLength`, and
+  `channelNameMaxLength`, both computed reply sizes, and the channel byte budget
+  `min(512 - S - 2N - 14, 512 - S - N - 29)`. The limits are rejected, never
+  silently clamped. For example, `test.jircd.local` is 16 bytes: `N=216, Cmax=50`
+  exactly fills the conservative 353 budget; `N=217, Cmax=50` requires 514 bytes
+  and is rejected. The omitted server name is resolved before validation.
+  `serverName` remains fixed for the lifetime of the running application;
+  reload validates against both the proposed configuration and the running
+  prefix before applying extension states or limits. A failed reload keeps
+  the previous configuration and ISUPPORT lengths.
+- **Channel admission counts UTF-8 bytes as well as characters.** JOIN and
+  SAJOIN apply `channelNameMaxLength` to both UTF-16 code units and wire bytes,
+  including the leading `#`. Both reply with the existing `476 ERR_BADCHANMASK`
+  on overflow. ISUPPORT continues to advertise `CHANNELLEN=<channelNameMaxLength>`;
+  no new token or configuration key is introduced. This makes the advertised
+  maximum enforceable in wire bytes. The [CHANNELLEN specification](https://modern.ircdocs.horse/#channellen-parameter)
+  defines the maximum joinable name length without specifying a Unicode unit.
+  Compatibility change: a multibyte name that fits the old character-only check
+  can now be refused. Shorten it or raise the limit subject to the coupled bounds;
+  previously joined channels and claimed nicknames are not renamed, kicked, or
+  disconnected on reload. NICK retains its existing ASCII grammar and maximum
+  `N` at registration and subsequent nickname changes.
+- **Grandfathered state has a defensive output policy.** A reload that lowers
+  one limit and raises another can leave retained names outside the new coupled
+  bound. NAMES flushes preceding fitting items, measures actual singleton fit,
+  skips an unrepresentable item with a specific WARN (channel, item bytes,
+  singleton byte budget), and continues with later items. It never truncates or
+  splits a nickname. The one-byte slack from an omitted singleton trailing colon
+  is usable. If all items are skipped, no synthetic empty 353 is emitted; an
+  actually empty list still produces an empty 353. A header that exceeds 512
+  bytes including CRLF is diagnosed separately. JOIN, SAJOIN, and targeted NAMES
+  still attempt their channel 366; bare NAMES attempts its `*` 366. A closer
+  that independently exceeds 512 bytes is logged and dropped by the writer.
+  These fallbacks can produce an incomplete listing for retained old state;
+  new name claims obey the configured byte limits. Repeating JOIN or SAJOIN on
+  an over-limit channel still returns 476, even for an existing member; the
+  existing membership remains intact.
 - **`whoMaskEnabled`** is a plain boolean with no numeric bound to
   validate (FR-061) — omitting it is valid (defaults to `true`); a
   non-boolean value is rejected the same way any other malformed

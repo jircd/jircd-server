@@ -19,8 +19,6 @@ import java.io.Closeable;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.InetAddress;
-import java.net.UnknownHostException;
 import java.nio.file.Path;
 import java.security.GeneralSecurityException;
 import java.time.Instant;
@@ -112,7 +110,7 @@ public final class JircdServerApplication {
     }
 
     this.serverVersion = resolveServerVersion();
-    this.serverName = resolveServerName(configuration.serverName());
+    this.serverName = configuration.serverName();
     extensionRegistry.updateConfiguredLengths(
         configuration.nicknameMaxLength(),
         configuration.channelNameMaxLength(),
@@ -408,19 +406,6 @@ public final class JircdServerApplication {
       }
       return version;
     }
-  }
-
-  private static String resolveServerName(String configured) {
-    if (configured != null) {
-      return configured;
-    }
-    String hostname;
-    try {
-      hostname = InetAddress.getLocalHost().getHostName();
-    } catch (UnknownHostException e) {
-      hostname = "localhost";
-    }
-    return hostname.contains(".") ? hostname : hostname + ".local";
   }
 
   public static void main(String[] args) throws InterruptedException {
