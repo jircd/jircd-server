@@ -95,6 +95,14 @@ most a few open at a time). Version bumps must also refresh
 `./gradlew --write-verification-metadata sha256 build` and check that the diff
 only adds the new artifacts and removes the old ones.
 
+A Dependabot Gradle wrapper bump must also update `distributionSha256Sum` in
+`gradle/wrapper/gradle-wrapper.properties`. Use the SHA-256 checksum for the
+matching `-bin.zip` from [Gradle's release checksums](https://gradle.org/release-checksums/)
+and regenerate the wrapper with
+`./gradlew wrapper --gradle-version <version> --gradle-distribution-sha256-sum <sha256>`.
+The official checksum is also published at
+`https://services.gradle.org/distributions/gradle-<version>-bin.zip.sha256`.
+
 The `Dependency security` workflow submits the Gradle dependency graph on every
 push to `main` (feeding Dependabot alerts) and runs `dependency-review-action`
 on pull requests, failing on newly introduced `high` or `critical`
