@@ -24,15 +24,27 @@ import java.util.Objects;
  */
 public sealed interface ChannelModeChange {
 
-  /** Sets or clears a boolean mode. */
+  /** Sets or clears a boolean mode; any other mode kind is rejected. */
   record Flag(ChannelMode mode, boolean set) implements ChannelModeChange {
     public Flag {
       Objects.requireNonNull(mode);
+      if (mode.kind() != ChannelMode.Kind.BOOLEAN) {
+        throw new IllegalArgumentException("not a boolean mode: " + mode.flag());
+      }
     }
   }
 
-  /** Sets the member limit to a positive value, or clears it with {@code 0}. */
-  record Limit(int limit) implements ChannelModeChange {}
+  /**
+   * Sets the member limit to a positive value, or clears it with {@code 0}; a negative value is
+   * rejected.
+   */
+  record Limit(int limit) implements ChannelModeChange {
+    public Limit {
+      if (limit < 0) {
+        throw new IllegalArgumentException("negative member limit: " + limit);
+      }
+    }
+  }
 
   /** Sets the channel key, or clears it with {@code null}. */
   record Key(String key) implements ChannelModeChange {}

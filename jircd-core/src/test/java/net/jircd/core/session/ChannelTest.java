@@ -407,6 +407,9 @@ class ChannelTest {
     ClientSession plain = member("plain");
     channel.addMember(op);
     channel.addMember(plain);
+    BanEntry seeded = new BanEntry("*!*@seeded", "op", Instant.now());
+    channel.addBan(seeded);
+    channel.grantVoice(op);
 
     List<ChannelModeChange> changes =
         List.of(
@@ -423,9 +426,9 @@ class ChannelTest {
     assertThat(channel.activeModes()).isEmpty();
     assertThat(channel.memberLimit()).isZero();
     assertThat(channel.key()).isNull();
-    assertThat(channel.bans()).isEmpty();
+    assertThat(channel.bans()).containsExactly(seeded);
     assertThat(channel.operators()).containsExactly(op);
-    assertThat(channel.voiced()).isEmpty();
+    assertThat(channel.voiced()).containsExactly(op);
   }
 
   @Test
@@ -488,17 +491,40 @@ class ChannelTest {
   }
 
   @Test
+  void aFlagChangeRequiresABooleanMode() {
+    for (ChannelMode mode :
+        List.of(
+            CoreChannelModes.BAN_MASK,
+            CoreChannelModes.OPERATOR,
+            CoreChannelModes.USER_LIMIT,
+            CoreChannelModes.CHANNEL_KEY)) {
+      assertThatThrownBy(() -> new ChannelModeChange.Flag(mode, true))
+          .isInstanceOf(IllegalArgumentException.class);
+    }
+  }
+
+  @Test
+  void aLimitChangeRejectsNegativeValuesAndAllowsZeroToClear() {
+    assertThatThrownBy(() -> new ChannelModeChange.Limit(-1))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThat(new ChannelModeChange.Limit(0).limit()).isZero();
+  }
+
+  @Test
   void applyAsOperatorReportsANonMemberTargetAndAFullBanList() {
     Channel channel = new Channel("#c");
     ClientSession op = member("op");
     channel.addMember(op);
 
-    assertThat(
-            channel.applyAsOperator(
-                op,
-                new ChannelModeChange.Privilege(
-                    member("outsider"), Channel.MemberPrivilege.OPERATOR, true)))
-        .isEqualTo(Channel.ModeChangeResult.NOT_A_MEMBER);
+    ClientSession outsider = member("outsider");
+    for (Channel.MemberPrivilege privilege : Channel.MemberPrivilege.values()) {
+      assertThat(
+              channel.applyAsOperator(
+                  op, new ChannelModeChange.Privilege(outsider, privilege, true)))
+          .isEqualTo(Channel.ModeChangeResult.NOT_A_MEMBER);
+    }
+    assertThat(channel.operators()).containsExactly(op);
+    assertThat(channel.voiced()).isEmpty();
 
     for (int i = 0; i < Channel.MAX_BANS; i++) {
       applied(
@@ -506,12 +532,11 @@ class ChannelTest {
           op,
           new ChannelModeChange.BanAdd(new BanEntry("*!*@h" + i, "op", Instant.now())));
     }
-    assertThat(
-            channel.applyAsOperator(
-                op,
-                new ChannelModeChange.BanAdd(new BanEntry("*!*@one-more", "op", Instant.now()))))
+    List<BanEntry> before = List.copyOf(channel.bans());
+    BanEntry extra = new BanEntry("*!*@one-more", "op", Instant.now());
+    assertThat(channel.applyAsOperator(op, new ChannelModeChange.BanAdd(extra)))
         .isEqualTo(Channel.ModeChangeResult.BAN_LIST_FULL);
-    assertThat(channel.bans()).hasSize(Channel.MAX_BANS);
+    assertThat(channel.bans()).containsExactlyElementsOf(before).doesNotContain(extra);
   }
 
   private static void applied(Channel channel, ClientSession requester, ChannelModeChange change) {

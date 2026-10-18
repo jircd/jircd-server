@@ -19,11 +19,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import net.jircd.core.extension.ExtensionRegistry;
+import net.jircd.core.session.BanEntry;
 import net.jircd.core.session.Channel;
 import net.jircd.core.session.ChannelRegistry;
 import net.jircd.core.session.ClientSession;
@@ -60,8 +62,7 @@ class ModeRequesterRevocationTest {
   }
 
   @ParameterizedTest
-  @ValueSource(
-      strings = {"+m", "+k key", "+l 5", "+b bad!*@*", "+o target", "+v target", "-o target"})
+  @ValueSource(strings = {"+m", "+k key", "+l 5", "+b bad!*@*", "+o target", "+v target"})
   void requesterDeoppedBeforeTheChangeAppliesNothing(String change) throws Exception {
     String output = runWithRevocation(change, Revocation.DEOP, 1);
     assertRefused(output);
@@ -79,17 +80,24 @@ class ModeRequesterRevocationTest {
   }
 
   @ParameterizedTest
-  @ValueSource(strings = {"-m", "-k key", "-l", "-b bad!*@*"})
+  @ValueSource(strings = {"-m", "-k key", "-l", "-b bad!*@*", "-o target", "-v target"})
   void unsetsAreRefusedToo(String change) throws Exception {
     setUpChannel();
     channel.setMode(CoreChannelModes.MODERATED);
     channel.setKey("key");
     channel.setMemberLimit(5);
+    BanEntry ban = new BanEntry("bad!*@*", "requester", Instant.now());
+    channel.addBan(ban);
+    channel.grantOperator(target);
+    channel.grantVoice(target);
     String output = runHandler(change, Revocation.DEOP, 1);
     assertRefused(output);
-    assertThat(channel.activeModes()).contains(CoreChannelModes.MODERATED);
+    assertThat(channel.activeModes()).containsExactly(CoreChannelModes.MODERATED);
     assertThat(channel.key()).isEqualTo("key");
     assertThat(channel.memberLimit()).isEqualTo(5);
+    assertThat(channel.bans()).containsExactly(ban);
+    assertThat(channel.operators()).contains(target);
+    assertThat(channel.voiced()).contains(target);
   }
 
   @ParameterizedTest
@@ -99,8 +107,8 @@ class ModeRequesterRevocationTest {
     // echo, the second is refused, and the third is never attempted.
     setUpChannel();
     String output = runHandler("+mtn", Revocation.valueOf(how), 2);
-    assertThat(channel.activeModes()).contains(CoreChannelModes.MODERATED);
     assertThat(channel.activeModes())
+        .contains(CoreChannelModes.MODERATED)
         .doesNotContain(CoreChannelModes.TOPIC_LOCK, CoreChannelModes.MEMBERS_ONLY);
     assertThat(output).contains(" 482 requester #c :You're not channel operator");
     assertThat(output).doesNotContain("+mt");

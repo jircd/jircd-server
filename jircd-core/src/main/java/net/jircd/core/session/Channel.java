@@ -185,29 +185,41 @@ public final class Channel {
     if (!operators.contains(requester)) {
       return ModeChangeResult.NOT_OPERATOR;
     }
-    switch (change) {
-      case ChannelModeChange.Flag flag -> {
-        if (flag.set()) {
-          setMode(flag.mode());
-        } else {
-          clearMode(flag.mode());
-        }
+    return switch (change) {
+      case ChannelModeChange.Flag(ChannelMode mode, boolean set) -> {
+        setFlag(mode, set);
+        yield ModeChangeResult.APPLIED;
       }
-      case ChannelModeChange.Limit limit -> setMemberLimit(limit.limit());
-      case ChannelModeChange.Key key -> setKey(key.key());
-      case ChannelModeChange.BanAdd ban -> {
-        if (!addBan(ban.entry())) {
-          return ModeChangeResult.BAN_LIST_FULL;
-        }
+      case ChannelModeChange.Limit(int limit) -> {
+        setMemberLimit(limit);
+        yield ModeChangeResult.APPLIED;
       }
-      case ChannelModeChange.BanRemove ban -> removeBan(ban.mask());
-      case ChannelModeChange.Privilege privilege -> {
-        if (!setMemberPrivilege(privilege.target(), privilege.privilege(), privilege.granted())) {
-          return ModeChangeResult.NOT_A_MEMBER;
-        }
+      case ChannelModeChange.Key(String newKey) -> {
+        setKey(newKey);
+        yield ModeChangeResult.APPLIED;
       }
+      case ChannelModeChange.BanAdd(BanEntry entry) ->
+          addBan(entry) ? ModeChangeResult.APPLIED : ModeChangeResult.BAN_LIST_FULL;
+      case ChannelModeChange.BanRemove(String mask) -> {
+        removeBan(mask);
+        yield ModeChangeResult.APPLIED;
+      }
+      case ChannelModeChange.Privilege(
+              ClientSession target,
+              MemberPrivilege privilege,
+              boolean granted) ->
+          setMemberPrivilege(target, privilege, granted)
+              ? ModeChangeResult.APPLIED
+              : ModeChangeResult.NOT_A_MEMBER;
+    };
+  }
+
+  private void setFlag(ChannelMode mode, boolean set) {
+    if (set) {
+      setMode(mode);
+    } else {
+      clearMode(mode);
     }
-    return ModeChangeResult.APPLIED;
   }
 
   /** A per-member channel privilege. */
