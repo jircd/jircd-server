@@ -23,14 +23,15 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
@@ -102,86 +103,114 @@ class JoinStormLoadTest {
   /** SC-002's 1-second channel delivery budget, about 7x the worst measured maximum. */
   private static final Duration MAX_LATENCY_BOUND = Duration.ofSeconds(1);
 
-  // PMD's CloseResource check doesn't credit the finally-block loop below closing every entry in
-  // stormClients — each is genuinely closed, just not in the same scope it was opened in.
+  // ClientPool owns these borrowed clients and closes every socket before workers terminate.
   @SuppressWarnings("PMD.CloseResource")
   @Test
   void joinStormDoesNotStallTrafficOnAnotherChannel() throws Exception {
-    List<RawIrcClient> stormClients = new ArrayList<>();
     AtomicBoolean stormOver = new AtomicBoolean();
-    try (TestServer server = TestServer.start();
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
-        RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort());
-        ExecutorService threads = Executors.newVirtualThreadPerTaskExecutor()) {
-      alice.registerAndAwaitWelcome("alice", "alice");
-      bob.registerAndAwaitWelcome("bob", "bob");
-      alice.send("JOIN #quiet");
-      alice.readUntil("366", Duration.ofSeconds(5));
-      bob.send("JOIN #quiet");
-      bob.readUntil("366", Duration.ofSeconds(5));
-
+    CompletableFuture<Void> failure = new CompletableFuture<>();
+    ExecutorService threads = Executors.newVirtualThreadPerTaskExecutor();
+    try (threads;
+        ScheduledExecutorService clock = Executors.newSingleThreadScheduledExecutor();
+        TestServer server = TestServer.start();
+        ClientPool clients = new ClientPool()) {
       try {
-        connectStormClients(server.plaintextPort(), stormClients, threads);
+        RawIrcClient alice = clients.connect(server.plaintextPort());
+        RawIrcClient bob = clients.connect(server.plaintextPort());
+        alice.registerAndAwaitWelcome("alice", "alice");
+        bob.registerAndAwaitWelcome("bob", "bob");
+        alice.send("JOIN #quiet");
+        alice.readUntil(" 366 ", Duration.ofSeconds(5));
+        bob.send("JOIN #quiet");
+        bob.readUntil(" 366 ", Duration.ofSeconds(5));
+        List<RawIrcClient> stormClients =
+            connectStormClients(server.plaintextPort(), clients, threads, failure);
 
         for (int i = 0; i < WARMUP_MESSAGES; i++) {
           alice.send("PRIVMSG #quiet :warmup " + i);
           bob.readUntil("warmup " + i, Duration.ofSeconds(2));
-          Thread.sleep(SEND_CADENCE.toMillis());
+          clock.schedule(() -> {}, SEND_CADENCE.toNanos(), TimeUnit.NANOSECONDS).get();
         }
 
-        // Bob measures, Alice paces. Alice stops once the whole storm has its 366s, then sends an
-        // END marker so Bob knows no more measured messages are coming.
-        AtomicInteger stormJoined = new AtomicInteger();
-        AtomicBoolean stormDone = new AtomicBoolean();
-        Future<List<Long>> measured = threads.submit(() -> measureLatencies(bob));
+        CompletableFuture<List<Sample>> measured =
+            watch(
+                CompletableFuture.supplyAsync(
+                    () -> {
+                      try {
+                        return measureLatencies(bob);
+                      } catch (IOException e) {
+                        throw new CompletionException(e);
+                      }
+                    },
+                    threads),
+                failure);
+        StormWindow window = new StormWindow();
         Future<?> sender =
-            threads.submit(
+            clock.scheduleWithFixedDelay(
                 () -> {
-                  sendUntilStormDone(alice, stormDone);
-                  return null;
-                });
-
-        List<Future<?>> stormTasks = new ArrayList<>();
-        long stormStart = System.nanoTime();
+                  try {
+                    window.send(alice);
+                  } catch (IOException e) {
+                    failure.completeExceptionally(e);
+                  }
+                },
+                0,
+                SEND_CADENCE.toNanos(),
+                TimeUnit.NANOSECONDS);
+        List<CompletableFuture<Void>> stormTasks = new ArrayList<>();
         for (int from = 0; from < STORM_CLIENTS; from += WAVE_SIZE) {
           CountDownLatch startGate = new CountDownLatch(1);
+          List<CompletableFuture<Void>> joined = new ArrayList<>();
           int to = Math.min(from + WAVE_SIZE, STORM_CLIENTS);
-          CountDownLatch waveJoined = new CountDownLatch(to - from);
           for (RawIrcClient client : stormClients.subList(from, to)) {
+            CompletableFuture<Void> clientJoined = new CompletableFuture<>();
+            joined.add(clientJoined);
             stormTasks.add(
-                threads.submit(
-                    () -> {
-                      startGate.await();
-                      client.send("JOIN #storm");
-                      awaitEndOfNames(client);
-                      stormJoined.incrementAndGet();
-                      waveJoined.countDown();
-                      drainUntil(client, stormOver);
-                      return null;
-                    }));
+                watch(
+                    CompletableFuture.runAsync(
+                        () -> {
+                          try {
+                            startGate.await();
+                            client.send("JOIN #storm");
+                            awaitEndOfNames(client);
+                            clientJoined.complete(null);
+                            drainUntil(client, stormOver);
+                          } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            throw new CompletionException(e);
+                          } catch (IOException e) {
+                            throw new CompletionException(e);
+                          }
+                        },
+                        threads),
+                    failure));
           }
           startGate.countDown();
-          if (!waveJoined.await(STEP_TIMEOUT.toSeconds() * 2, TimeUnit.SECONDS)) {
-            stormOver.set(true);
-            String cause = "none";
-            for (Future<?> task : stormTasks) {
-              if (task.state() == Future.State.FAILED) {
-                cause = String.valueOf(task.exceptionNow());
-                break;
-              }
-            }
-            throw new AssertionError(
-                "only %d of %d storm clients received 366; first task failure: %s"
-                    .formatted(stormJoined.get(), STORM_CLIENTS, cause));
-          }
+          CompletableFuture.anyOf(
+                  CompletableFuture.allOf(joined.toArray(CompletableFuture[]::new)), failure)
+              .get(window.remainingNanos(), TimeUnit.NANOSECONDS);
         }
-        Duration stormDuration = Duration.ofNanos(System.nanoTime() - stormStart);
-        stormDone.set(true);
-        sender.get(STEP_TIMEOUT.toSeconds(), TimeUnit.SECONDS);
-        List<Long> latenciesNanos = measured.get(STEP_TIMEOUT.toSeconds(), TimeUnit.SECONDS);
+        long stormEnd = window.stop();
+        sender.cancel(false);
+        Duration stormDuration = Duration.ofNanos(stormEnd - window.start);
+        alice.send("PRIVMSG #quiet :lat END 0");
+        CompletableFuture.anyOf(measured, failure).get(STEP_TIMEOUT.toSeconds(), TimeUnit.SECONDS);
+        List<Sample> samples = measured.get();
+        // Close only after checking failures, so an unexpected disconnect cannot become teardown.
+        if (failure.isDone()) {
+          failure.get();
+        }
         stormOver.set(true);
+        clients.close();
+        CompletableFuture.allOf(stormTasks.toArray(CompletableFuture[]::new))
+            .get(STEP_TIMEOUT.toSeconds(), TimeUnit.SECONDS);
 
-        long[] sorted = latenciesNanos.stream().mapToLong(Long::longValue).sorted().toArray();
+        long[] sorted =
+            samples.stream()
+                .filter(sample -> sample.sentAt() >= window.start && sample.sentAt() < stormEnd)
+                .mapToLong(Sample::latencyNanos)
+                .sorted()
+                .toArray();
         assertThat(sorted).as("#quiet messages measured during the storm").isNotEmpty();
         Duration p99 = Duration.ofNanos(sorted[(int) Math.ceil(sorted.length * 0.99) - 1]);
         Duration max = Duration.ofNanos(sorted[sorted.length - 1]);
@@ -191,110 +220,102 @@ class JoinStormLoadTest {
             STORM_CLIENTS,
             stormDuration.toMillis(),
             sorted.length,
-            Duration.ofNanos(sorted[sorted.length / 2]).toNanos() / 1e6,
+            sorted[sorted.length / 2] / 1e6,
             p99.toNanos() / 1e6,
             max.toNanos() / 1e6);
-
         assertThat(stormDuration).as("total storm completion").isLessThan(STORM_BOUND);
         assertThat(p99).as("#quiet p99 delivery latency").isLessThan(P99_LATENCY_BOUND);
         assertThat(max).as("#quiet max delivery latency").isLessThan(MAX_LATENCY_BOUND);
-        for (Future<?> task : stormTasks) {
-          task.get(STEP_TIMEOUT.toSeconds(), TimeUnit.SECONDS);
-        }
       } finally {
         stormOver.set(true);
-        for (RawIrcClient client : stormClients) {
-          client.close();
-        }
+        // Interrupt pending connects and socket reads before resource cleanup waits for workers.
+        threads.shutdownNow();
       }
     }
   }
 
-  private static void connectStormClients(
-      int port, List<RawIrcClient> stormClients, ExecutorService threads) throws Exception {
+  private static <T> CompletableFuture<T> watch(
+      CompletableFuture<T> task, CompletableFuture<Void> failure) {
+    task.whenComplete(
+        (_, error) -> {
+          if (error != null) {
+            failure.completeExceptionally(error);
+          }
+        });
+    return task;
+  }
+
+  private static List<RawIrcClient> connectStormClients(
+      int port, ClientPool clients, ExecutorService threads, CompletableFuture<Void> failure)
+      throws Exception {
     Semaphore connectSlots = new Semaphore(CONNECT_CONCURRENCY);
     List<CompletableFuture<RawIrcClient>> connecting = new ArrayList<>();
     for (int i = 0; i < STORM_CLIENTS; i++) {
       int index = i;
       connecting.add(
-          CompletableFuture.supplyAsync(
-              () -> {
-                try {
-                  connectSlots.acquire();
-                } catch (InterruptedException e) {
-                  Thread.currentThread().interrupt();
-                  throw new IllegalStateException(e);
-                }
-                try {
-                  RawIrcClient client = RawIrcClient.connectPlaintext(port);
-                  try {
-                    client.registerAndAwaitWelcome("storm" + index, "storm" + index);
-                  } catch (IOException | RuntimeException e) {
-                    client.close();
-                    throw e;
-                  }
-                  return client;
-                } catch (IOException e) {
-                  throw new java.io.UncheckedIOException(e);
-                } finally {
-                  connectSlots.release();
-                }
-              },
-              threads));
+          watch(
+              CompletableFuture.supplyAsync(
+                  () -> {
+                    try {
+                      connectSlots.acquire();
+                      try {
+                        RawIrcClient client = clients.connect(port);
+                        client.registerAndAwaitWelcome("storm" + index, "storm" + index);
+                        return client;
+                      } finally {
+                        connectSlots.release();
+                      }
+                    } catch (InterruptedException e) {
+                      Thread.currentThread().interrupt();
+                      throw new CompletionException(e);
+                    } catch (IOException e) {
+                      throw new CompletionException(e);
+                    }
+                  },
+                  threads),
+              failure));
     }
-    int failures = 0;
-    Throwable firstCause = null;
-    for (CompletableFuture<RawIrcClient> future : connecting) {
+    try {
+      CompletableFuture.anyOf(
+              CompletableFuture.allOf(connecting.toArray(CompletableFuture[]::new)), failure)
+          .get(STEP_TIMEOUT.toSeconds() * 2, TimeUnit.SECONDS);
+      return connecting.stream().map(CompletableFuture::join).toList();
+    } finally {
+      connecting.forEach(task -> task.cancel(true));
+    }
+  }
+
+  static void awaitEndOfNames(RawIrcClient client) throws IOException {
+    long deadline = System.nanoTime() + STEP_TIMEOUT.toNanos();
+    while (System.nanoTime() < deadline) {
+      String line =
+          client.readUntil(" ", Duration.ofNanos(Math.max(1, deadline - System.nanoTime())));
+      if (line.matches("^(?:@[^ ]+ )?(?::[^ ]+ )?366(?: .*|$)")) {
+        return;
+      }
+    }
+    throw new SocketTimeoutException("Timed out waiting for end-of-NAMES command 366");
+  }
+
+  /** Drain JOIN broadcasts until explicit teardown; an earlier disconnect fails the storm. */
+  static void drainUntil(RawIrcClient client, AtomicBoolean stormOver) throws IOException {
+    while (!stormOver.get()) {
       try {
-        stormClients.add(future.get(STEP_TIMEOUT.toSeconds() * 2, TimeUnit.SECONDS));
-      } catch (java.util.concurrent.ExecutionException e) {
-        failures++;
-        if (firstCause == null) {
-          firstCause = e.getCause();
+        if (client.readLine() == null) {
+          throw new IOException("Storm client disconnected before teardown");
+        }
+      } catch (SocketTimeoutException _) {
+        // A read timeout is not EOF; keep draining until the test closes the socket.
+      } catch (IOException e) {
+        if (!stormOver.get()) {
+          throw e;
         }
       }
     }
-    if (failures > 0) {
-      throw new IllegalStateException(
-          "%d of %d storm clients failed to register (%d registered); first cause: %s"
-              .formatted(failures, STORM_CLIENTS, stormClients.size(), firstCause),
-          firstCause);
-    }
   }
 
-  private static void awaitEndOfNames(RawIrcClient client) throws IOException {
-    client.readUntil("366", STEP_TIMEOUT);
-  }
-
-  /**
-   * Keeps reading so the server's writes to this client never back up behind the other 1,999
-   * clients' JOIN broadcasts, until the test ends and closes the socket.
-   */
-  private static void drainUntil(RawIrcClient client, AtomicBoolean stormOver) {
-    try {
-      while (!stormOver.get() && client.readLine() != null) {
-        // discard
-      }
-    } catch (SocketTimeoutException timeout) {
-      if (!stormOver.get()) {
-        drainUntil(client, stormOver);
-      }
-    } catch (IOException closed) {
-      // The test closes every client at the end.
-    }
-  }
-
-  private static void sendUntilStormDone(RawIrcClient alice, AtomicBoolean stormDone)
-      throws IOException, InterruptedException {
-    for (int seq = 0; !stormDone.get(); seq++) {
-      alice.send("PRIVMSG #quiet :lat " + seq + " " + System.nanoTime());
-      Thread.sleep(SEND_CADENCE.toMillis());
-    }
-    alice.send("PRIVMSG #quiet :lat END 0");
-  }
-
-  private static List<Long> measureLatencies(RawIrcClient bob) throws IOException {
-    List<Long> latencies = new ArrayList<>();
+  private static List<Sample> measureLatencies(RawIrcClient bob) throws IOException {
+    List<Sample> latencies = new ArrayList<>();
     while (true) {
       String line = bob.readUntil(":lat ", STEP_TIMEOUT);
       long receivedAt = System.nanoTime();
@@ -302,7 +323,74 @@ class JoinStormLoadTest {
       if ("END".equals(payload[0])) {
         return latencies;
       }
-      latencies.add(receivedAt - Long.parseLong(payload[1]));
+      long sentAt = Long.parseLong(payload[1]);
+      latencies.add(new Sample(sentAt, receivedAt - sentAt));
+    }
+  }
+
+  private record Sample(long sentAt, long latencyNanos) {}
+
+  private static final class StormWindow {
+    private final long start = System.nanoTime();
+    private boolean stopped;
+    private int sequence;
+
+    synchronized void send(RawIrcClient alice) throws IOException {
+      if (!stopped) {
+        alice.send("PRIVMSG #quiet :lat " + sequence++ + " " + System.nanoTime());
+      }
+    }
+
+    synchronized long stop() {
+      stopped = true;
+      return System.nanoTime();
+    }
+
+    long remainingNanos() {
+      return Math.max(1, STORM_BOUND.toNanos() - (System.nanoTime() - start));
+    }
+  }
+
+  /** Own sockets immediately, including registrations still running when the test fails. */
+  static final class ClientPool implements AutoCloseable {
+    private final List<RawIrcClient> clients = new ArrayList<>();
+    private boolean closed;
+
+    // Ownership transfers to this pool, or the late client is closed immediately.
+    @SuppressWarnings("PMD.CloseResource")
+    RawIrcClient connect(int port) throws IOException {
+      RawIrcClient client = RawIrcClient.connectPlaintext(port);
+      synchronized (this) {
+        if (closed) {
+          client.close();
+          throw new IOException("Client pool already closed");
+        }
+        clients.add(client);
+      }
+      return client;
+    }
+
+    // PMD does not credit this loop closing every owned entry while collecting close failures.
+    @SuppressWarnings("PMD.CloseResource")
+    @Override
+    public synchronized void close() throws IOException {
+      closed = true;
+      IOException failure = null;
+      for (RawIrcClient client : clients) {
+        try {
+          client.close();
+        } catch (IOException e) {
+          if (failure == null) {
+            failure = e;
+          } else {
+            failure.addSuppressed(e);
+          }
+        }
+      }
+      clients.clear();
+      if (failure != null) {
+        throw failure;
+      }
     }
   }
 }
