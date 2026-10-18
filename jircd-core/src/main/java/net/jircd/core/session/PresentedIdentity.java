@@ -23,11 +23,10 @@ import net.jircd.protocol.Hostmask;
 
 /**
  * Resolves a session's display hostmask by live-checking current {@code cloak} {@link
- * ServerExtension} state, never cached (FR-031, research.md "Cloak extension boundary") — with no
- * cloak extension enabled, the display value is simply the real hostname. Each call is a live
- * sample. A caller may reuse one sample briefly: JOIN's ban check uses the identity sampled just
- * before it takes the membership monitors, so a JOIN racing an administrator's cloak toggle is
- * checked against the earlier identity.
+ * ServerExtension} state, never cached, with no cloak extension enabled, the display value is
+ * simply the real hostname. Each call is a live sample. A caller may reuse one sample briefly:
+ * JOIN's ban check uses the identity sampled just before it takes the membership monitors, so a
+ * JOIN racing an administrator's cloak toggle is checked against the earlier identity.
  */
 public final class PresentedIdentity {
 

@@ -29,9 +29,9 @@ import net.jircd.protocol.ModeStringParser;
 import net.jircd.protocol.NumericReply;
 
 /**
- * {@code MODE} (user form) — self-only (FR-044): a session may only query or change its own user
- * modes, never another session's. {@code operator} can only be acquired via {@code OPER} (Story 6),
- * never set directly here.
+ * {@code MODE} (user form) — self-only: a session may only query or change its own user modes,
+ * never another session's. {@code operator} can only be acquired via {@code OPER} (Story 6), never
+ * set directly here.
  */
 public final class UserModeCommandHandler implements CommandHandler {
 

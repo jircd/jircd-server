@@ -29,12 +29,12 @@ import net.jircd.protocol.Message;
 import net.jircd.protocol.NumericReply;
 
 /**
- * {@code NICK} — claims/changes a nickname (FR-001/FR-002). Format ({@code 432}) and uniqueness
- * ({@code 433}) are independent, sequential checks; {@code 431} for a missing argument. Any of
- * these sent before this session has successfully claimed a nickname address {@code *} (FR-053,
- * {@link Replies}). A successful change broadcasts {@code NICK} to the changing client itself and
- * every channel it's currently a member of (005-fix-batch-conformance FR-001/FR-002) — the same
- * fan-out shape {@code JoinCommandHandler}'s {@code JOIN} notification already uses.
+ * {@code NICK} — claims/changes a nickname. Format ({@code 432}) and uniqueness ({@code 433}) are
+ * independent, sequential checks; {@code 431} for a missing argument. Any of these sent before this
+ * session has successfully claimed a nickname address {@code *} ({@link Replies}). A successful
+ * change broadcasts {@code NICK} to the changing client itself and every channel it's currently a
+ * member of — the same fan-out shape {@code JoinCommandHandler}'s {@code JOIN} notification already
+ * uses.
  */
 public final class NickCommandHandler implements CommandHandler {
 

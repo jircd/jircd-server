@@ -29,11 +29,10 @@ import net.jircd.protocol.Message;
 import net.jircd.protocol.NumericReply;
 
 /**
- * {@code AWAY} — sets or clears the sender's away status (002-extended-irc-commands
- * FR-004/FR-005/FR-006). A reason given while already away replaces the previous one in place,
- * confirmed the same way as setting it for the first time; no parameter clears it. Every successful
- * change also broadcasts an {@code AWAY} notice to channel-mates who negotiated the {@code
- * away-notify} capability (011-away-notify-batch FR-001 through FR-006).
+ * {@code AWAY} — sets or clears the sender's away status. A reason given while already away
+ * replaces the previous one in place, confirmed the same way as setting it for the first time; no
+ * parameter clears it. Every successful change also broadcasts an {@code AWAY} notice to
+ * channel-mates who negotiated the {@code away-notify} capability.
  */
 public final class AwayCommandHandler implements CommandHandler {
 
@@ -48,7 +47,7 @@ public final class AwayCommandHandler implements CommandHandler {
   @Override
   public void handle(ClientSession session, Message message) {
     String server = serverName.get();
-    // 005-fix-batch-conformance FR-022 — an empty trailing argument clears away status the same
+    // An empty trailing argument clears away status the same
     // way a fully-absent one already does, rather than setting an empty-string away reason.
     if (message.params().isEmpty() || message.params().getFirst().isEmpty()) {
       session.setAwayReason(null);
@@ -65,9 +64,8 @@ public final class AwayCommandHandler implements CommandHandler {
 
   /**
    * Fans out to every channel-mate opted into {@code away-notify}, deduplicated to one notice per
-   * recipient regardless of how many channels they share with {@code session} (FR-004) — unlike
-   * {@code NickCommandHandler.broadcastNickChange}'s simpler per-channel loop, which was never
-   * required to dedupe.
+   * recipient regardless of how many channels they share with {@code session}. The sender is
+   * excluded, unlike {@code NICK}, whose notice also goes to the changing client itself.
    */
   private void broadcastAwayChange(ClientSession session, String reason) {
     Set<ClientSession> recipients =

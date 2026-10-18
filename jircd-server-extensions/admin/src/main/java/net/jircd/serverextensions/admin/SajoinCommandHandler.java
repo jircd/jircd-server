@@ -35,8 +35,8 @@ import net.jircd.protocol.NumericReply;
 
 /**
  * {@code SAJOIN} — the sender's own session joins a channel via the same create-or-join path
- * ordinary {@code JOIN} uses, but skipping the {@code JOIN}-gate check point entirely (FR-057,
- * research.md "Administrator channel override"). Grammar/UTF-8 validity are NOT skipped.
+ * ordinary {@code JOIN} uses, but skipping the {@code JOIN}-gate check point entirely.
+ * Grammar/UTF-8 validity are NOT skipped.
  */
 public final class SajoinCommandHandler implements CommandHandler {
 

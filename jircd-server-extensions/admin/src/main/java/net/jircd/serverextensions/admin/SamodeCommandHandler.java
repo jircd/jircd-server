@@ -32,9 +32,9 @@ import net.jircd.protocol.NumericReply;
 
 /**
  * {@code SAMODE <channel> <+o|-o>} — grants or revokes the sender's own operator status on a
- * channel it's already a member of, bypassing FR-046's "sender must already be an operator"
- * precondition (FR-058, research.md "Administrator channel override"). Self-targeting only — no
- * target parameter, unlike {@code ModeCommandHandler}'s {@code +o}/{@code -o}.
+ * channel it's already a member of, bypassing the "sender must already be an operator" precondition
+ * ordinary {@code MODE} enforces. Self-targeting only — no target parameter, unlike {@code
+ * ModeCommandHandler}'s {@code +o}/{@code -o}.
  */
 public final class SamodeCommandHandler implements CommandHandler {
 

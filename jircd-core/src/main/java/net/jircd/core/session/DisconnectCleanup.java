@@ -25,10 +25,9 @@ import org.slf4j.LoggerFactory;
 /**
  * The one path every disconnect trigger funnels through — a client-sent {@code QUIT}, a keep-alive
  * timeout, an {@code OPER} lockout, and an abrupt TCP-level loss all call this rather than
- * duplicating cleanup logic per trigger (FR-017, research.md "Voluntary disconnect and quit
- * reasons"). Removes channel membership (including operator/voice status, data-model.md {@code
- * Channel} validation rules) and notifies every affected channel — exactly once per distinct
- * neighbor, not once per shared channel.
+ * duplicating cleanup logic per trigger. Removes channel membership (including operator and voice
+ * status) and notifies every affected channel — exactly once per distinct neighbor, not once per
+ * shared channel.
  */
 public final class DisconnectCleanup {
 
@@ -71,7 +70,7 @@ public final class DisconnectCleanup {
       Message quit =
           new Message(java.util.Map.of(), prefix, Command.QUIT, "QUIT", java.util.List.of(reason));
       Recipients.deliver(neighbors, quit);
-      // 002-extended-irc-commands FR-016: one WHOWAS entry per disconnection, regardless of
+      // One WHOWAS entry per disconnection, regardless of
       // cause (QUIT, KILL, keep-alive timeout) — this is the single point every cause funnels
       // through, so no cause-specific recording is needed anywhere else. presentedHostname is a
       // snapshot of whatever cloak was displaying for this session right now, not a live

@@ -42,8 +42,8 @@ import net.jircd.protocol.NickMask;
 import net.jircd.protocol.NumericReply;
 
 /**
- * {@code MODE} (channel form, FR-064): one whole-command operator-privilege check (not per-flag —
- * except the {@code b}-alone bare ban-list query, which needs no privilege at all), then applies an
+ * {@code MODE} (channel form): one whole-command operator-privilege check (not per-flag — except
+ * the {@code b}-alone bare ban-list query, which needs no privilege at all), then applies an
  * ordered {@link ModeChange} list left-to-right, stopping (but keeping what was already applied —
  * not atomic, not rolled back) at the first unrecognized flag, missing parameter, or unresolvable
  * {@code MEMBER}-kind target; a parameter-consuming flag beyond {@code
@@ -115,7 +115,7 @@ public final class ModeCommandHandler implements CommandHandler {
     Channel channel = found.get();
 
     if (message.params().size() < 2) {
-      // 007-bare-mode-query FR-001/FR-005/FR-006 — a bare "MODE #chan" is a read-only settings
+      // A bare "MODE #chan" is a read-only settings
       // query, not treated as an unrecognized flag anymore; runs before the operator-privilege
       // check below, the same structural position the bare ban-list query already occupies.
       sendChannelModeIs(session, channel);
@@ -123,7 +123,7 @@ public final class ModeCommandHandler implements CommandHandler {
     }
 
     String modeStringArg = message.params().get(1);
-    // 005-fix-batch-conformance FR-016 — both accepted RFC forms of a bare ban-list query.
+    // Both accepted RFC forms of a bare ban-list query.
     if (message.params().size() == 2 && (modeStringArg.equals("b") || modeStringArg.equals("+b"))) {
       sendBanList(session, channel);
       return;
@@ -175,7 +175,7 @@ public final class ModeCommandHandler implements CommandHandler {
         continue;
       }
 
-      // 006-complete-core-protocol FR-003 — unsetting a VALUE_SET_ONLY mode (user-limit) takes no
+      // Unsetting a VALUE_SET_ONLY mode (user-limit) takes no
       // parameter at all, the same no-parameter shape BOOLEAN unsetting already has; only setting
       // it consumes one, below.
       if (mode.kind() == ChannelMode.Kind.VALUE_SET_ONLY && change.sign() == '-') {
@@ -203,7 +203,7 @@ public final class ModeCommandHandler implements CommandHandler {
       if (mode.kind() == ChannelMode.Kind.MEMBER) {
         var target = channel.findMember(rawParam);
         if (target.isEmpty()) {
-          // 005-fix-batch-conformance FR-017 — the same nickname-registry-existence check
+          // The same nickname-registry-existence check
           // WHOIS/KILL already do: 401 for "not connected anywhere", 441 only once it's
           // confirmed the nickname exists but isn't a member of THIS channel.
           if (nicknameRegistry.lookup(rawParam).isEmpty()) {
@@ -235,7 +235,7 @@ public final class ModeCommandHandler implements CommandHandler {
         }
         appliedParam = target.get().nickname();
       } else if (mode.kind() == ChannelMode.Kind.VALUE_SET_ONLY) {
-        // 006-complete-core-protocol FR-001 — +l <n>; -l never reaches here (handled above,
+        // +l <n>; -l never reaches here (handled above,
         // no parameter). An invalid (non-numeric or non-positive) value is silently ignored —
         // no crash, no error reply, the same "silently ignored" outcome irctest's own
         // testLimitInvalidValues explicitly accepts as valid server behavior.
@@ -251,7 +251,7 @@ public final class ModeCommandHandler implements CommandHandler {
         channel.setMemberLimit(limit);
         appliedParam = rawParam;
       } else if (mode.kind() == ChannelMode.Kind.VALUE_ALWAYS) {
-        // 006-complete-core-protocol FR-004 — +k/-k both always take a parameter; -k's value is
+        // +k/-k both always take a parameter; -k's value is
         // never checked against the current key (the same "don't require re-proving what you're
         // removing" precedent -b <mask> already sets). A +k value that's empty or contains a
         // space can never be supplied back via JOIN's own space-delimited key grammar (RFC 2812's
@@ -336,14 +336,14 @@ public final class ModeCommandHandler implements CommandHandler {
   /**
    * {@code 324 RPL_CHANNELMODEIS} — every currently active {@code BOOLEAN}/{@code
    * VALUE_SET_ONLY}/{@code VALUE_ALWAYS}-kind flag as one mode string, each value-carrying flag's
-   * current value appended as a trailing param in the same order its letter appears
-   * (007-bare-mode-query FR-001 through FR-004). {@code LIST}/{@code MEMBER}-kind flags are
-   * deliberately excluded — {@code b} (ban masks) and {@code o}/{@code v} (per-member privileges)
-   * already have their own dedicated query forms ({@code MODE #chan +b}, {@code NAMES}'s
-   * {@code @}/{@code +} prefixes) and are not duplicated here (research.md "Mode string composition
-   * and scope boundary"). No operator privilege is required — this is a read-only query, mirroring
-   * {@code TOPIC}'s own view-vs-set split (FR-005); a private/secret channel is hidden from a
-   * non-member the same way {@code TOPIC}/{@code NAMES} already hide theirs (FR-006).
+   * current value appended as a trailing param in the same order its letter appears. {@code
+   * LIST}/{@code MEMBER}-kind flags are deliberately excluded — {@code b} (ban masks) and {@code
+   * o}/{@code v} (per-member privileges) already have their own dedicated query forms ({@code MODE
+   * #chan +b}, {@code NAMES}'s {@code @}/{@code +} prefixes) and are not duplicated here
+   * (research.md "Mode string composition and scope boundary"). No operator privilege is required —
+   * this is a read-only query, mirroring {@code TOPIC}'s own view-vs-set split; a private/secret
+   * channel is hidden from a non-member the same way {@code TOPIC}/{@code NAMES} already hide
+   * theirs.
    */
   private void sendChannelModeIs(ClientSession session, Channel channel) {
     if (ChannelVisibility.isHiddenFrom(channel, session, extensionRegistry)) {

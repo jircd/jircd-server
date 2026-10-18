@@ -414,3 +414,32 @@ code with the same test. All runs exited 0.
 Medians: storm 2293 ms (main) vs 2335 ms (branch), +1.8%; `#quiet` p50 19.6 ms vs 19.4 ms,
 −1.0%; `#quiet` p99 134.3 ms vs 100.1 ms. Worst p99/max: 181.0 ms main, 157.2 ms branch, all
 within the 500 ms / 1 s bounds. SC-007 is met.
+
+## Step 4 (Phase 6) results, 2026-10-18
+
+- T048–T051: comments only. The quickstart §3 search over `git diff --name-only origin/main -- '*.java'`
+  now has no feature-FR hits. One pre-existing hit remains in an unmodified line of
+  `RawIrcClient.java` (`004-fix-tls-certificate SC-001`, a different search pattern, not an FR number).
+  `Channel` and `ClientSession` carry the C-1…C-5 / S-1, S-2 class Javadoc.
+- T052: `./gradlew --no-daemon spotlessApply` exit 0, then `./gradlew --no-daemon build` exit 0
+  (`BUILD SUCCESSFUL in 1m 17s`), including Spotless, SpotBugs, PMD and coverage verification.
+  No new suppressions.
+- T053: `./gradlew --no-daemon loadTest` exit 0 (`BUILD SUCCESSFUL in 34s`; baseline 32s).
+  Durations are for information only; all asserted bounds pass.
+
+| Test | Outcome | Duration (s) | Baseline (s) |
+|---|---|---:|---:|
+| `Story1DeliveryLatencyLoadTest` | PASS | 5.756 | 5.721 |
+| `ConcurrentConnectionScaleLoadTest` | PASS | 2.875 | 2.809 |
+| `KeepAliveLoadTest.idleConnectionIsProbedThenDisconnectedIfNeverAnswered` | PASS | 15.038 | 15.041 |
+| `KeepAliveLoadTest.respondingToTheServersPingKeepsTheConnectionAlive` | PASS | 5.031 | 5.016 |
+| `RateLimitLoadTest` | PASS | 2.323 | 2.306 |
+
+- T054: manual walkthrough, two raw-socket clients (alice creates `#w`, bob negotiates
+  `away-notify`) against a locally started server (`installDist`, credential-free config kept
+  outside the repo: one plaintext loopback listener, `away-notify: enabled`). Steps: JOIN, NAMES,
+  MODE +o/+v/-o, bare MODE, AWAY set/replace/clear, NICK, KICK, rejoin, PART, rejoin, QUIT, NAMES.
+  The same script ran against a build of `origin/main`. The two transcripts are identical apart
+  from the timestamp and the order of the two nicknames in `353` replies (hash-set iteration
+  order, unspecified on both builds). Bob received `AWAY lunch`, `AWAY brb` and bare `AWAY`
+  notices from alice; QUIT reached alice once; the final NAMES, after bob's QUIT, listed only alice (the channel was never empty: alice stayed in it throughout).

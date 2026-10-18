@@ -31,7 +31,7 @@ import net.jircd.protocol.NumericReply;
 /**
  * {@code PART} — leaves a channel. {@code <reason>}, if given, is echoed (absent otherwise — no
  * default synthesized, unlike {@code QUIT}). Removes the parting session from the channel's
- * members, operators, and voiced sets together (data-model.md {@code Channel} validation rules).
+ * members, operators, and voiced sets together.
  */
 public final class PartCommandHandler implements CommandHandler {
 

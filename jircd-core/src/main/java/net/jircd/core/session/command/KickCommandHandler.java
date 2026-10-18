@@ -31,8 +31,8 @@ import net.jircd.protocol.Message;
 import net.jircd.protocol.NumericReply;
 
 /**
- * {@code KICK} — operator-only channel member removal (FR-013/FR-014). Always available, never
- * gated by {@code FR-011} toggling (FR-036).
+ * {@code KICK} — operator-only channel member removal. Always available, never gated by extension
+ * toggling.
  */
 public final class KickCommandHandler implements CommandHandler {
 
@@ -62,7 +62,7 @@ public final class KickCommandHandler implements CommandHandler {
     }
     String channelName = message.params().getFirst();
     String targetNickname = message.params().get(1);
-    // 005-fix-batch-conformance FR-015 — a no-comment KICK defaults to the kicker's own
+    // A no-comment KICK defaults to the kicker's own
     // nickname, the widely-implemented Modern IRC convention, rather than omitting it.
     String reason = message.params().size() > 2 ? message.params().get(2) : session.nickname();
 

@@ -34,16 +34,15 @@ import net.jircd.protocol.NickMask;
 import net.jircd.protocol.NumericReply;
 
 /**
- * {@code JOIN} — create-or-join (FR-003), with the {@code JOIN}-gate check point FR-043 requires:
- * ban-mask (FR-062), invite-only (FR-065), user-limit, and channel-key (006-complete-core-protocol
- * FR-002/FR-005), each checked independently — a pending invitation exempts the latter three alike,
- * peeked once and consumed at most once per join, never per gate (research.md "Story 1"
- * invite-exemption decision).
+ * {@code JOIN} — create-or-join, with the {@code JOIN}-gate check point: ban-mask, invite-only,
+ * user-limit, and channel-key, each checked independently — a pending invitation exempts the latter
+ * three alike, peeked once and consumed at most once per join, never per gate (research.md "Story
+ * 1" invite-exemption decision).
  *
  * <p>Accepts a comma-separated list of channel names, with an optional matching comma-separated
- * list of keys (RFC1459 §4.2.1, 005-fix-batch-conformance FR-013) — each named channel is processed
- * independently through the same single-channel logic; one channel failing its own check doesn't
- * stop the others in the same command from being processed.
+ * list of keys (RFC1459 §4.2.1) — each named channel is processed independently through the same
+ * single-channel logic; one channel failing its own check doesn't stop the others in the same
+ * command from being processed.
  */
 public final class JoinCommandHandler implements CommandHandler {
 
@@ -74,7 +73,7 @@ public final class JoinCommandHandler implements CommandHandler {
           "Not enough parameters");
       return;
     }
-    // 005-fix-batch-conformance FR-013 — comma-separated channel (and optional matching
+    // Comma-separated channel (and optional matching
     // comma-separated key) lists are core JOIN grammar (RFC1459 §4.2.1), not an extension. A
     // fewer-keys-than-channels list leaves the remainder keyless. Each named channel is
     // processed independently — one failing its own check doesn't stop the others.
@@ -126,7 +125,7 @@ public final class JoinCommandHandler implements CommandHandler {
         new Message(Map.of(), presentedForm, Command.JOIN, "JOIN", List.of(channel.name()));
     Recipients.deliver(result.recipients(), joinNotification);
 
-    // 005-fix-batch-conformance FR-014 — the same 332-only shape TopicCommandHandler's own
+    // The same 332-only shape TopicCommandHandler's own
     // query path already uses (this project tracks no set-at timestamp, so no 333 either).
     if (channel.topic() != null) {
       Replies.send(
@@ -145,7 +144,7 @@ public final class JoinCommandHandler implements CommandHandler {
           NumericReply.ERR_BANNEDFROMCHAN, channel.name(), "Cannot join channel (+b)");
     }
 
-    // 006-complete-core-protocol FR-002/FR-005 (spec.md Clarifications) — a pending invitation
+    // A pending invitation
     // exempts a join from +i, +l, and +k alike; peeked here (not consumed) so a channel with more
     // than one of these active doesn't have its invitation consumed by the first gate checked and
     // then incorrectly fail the second. Consumed exactly once, below, only once every applicable
@@ -188,9 +187,9 @@ public final class JoinCommandHandler implements CommandHandler {
 
   /**
    * The {@code RPL_NAMREPLY} half of {@link #sendNamesReply} on its own, with no closing {@code
-   * RPL_ENDOFNAMES} — extracted so a bare, argument-less {@code NAMES} (006-complete-core-protocol
-   * FR-010, {@code NamesCommandHandler}) can call this once per visible channel and send exactly
-   * one closing reply of its own afterward, instead of one per channel.
+   * RPL_ENDOFNAMES} — extracted so a bare, argument-less {@code NAMES} ({@code
+   * NamesCommandHandler}) can call this once per visible channel and send exactly one closing reply
+   * of its own afterward, instead of one per channel.
    */
   public static void sendNamesLine(ClientSession requester, Channel channel, String serverName) {
     sendNamesLine(requester, channel, serverName, channel.memberListing());

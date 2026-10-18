@@ -25,7 +25,7 @@ import net.jircd.protocol.NumericReply;
 
 /**
  * Builds and sends numeric-reply {@link Message}s, always addressed to the session's current
- * nickname, or {@code *} if it hasn't claimed one yet (FR-053).
+ * nickname, or {@code *} if it hasn't claimed one yet.
  */
 public final class Replies {
 
