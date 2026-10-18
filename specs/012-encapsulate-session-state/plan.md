@@ -180,6 +180,15 @@ Each step is one PR-sized change. It is mergeable on its own and must pass `./gr
    `addMember`/`removeMember`/membership mutators, and an unmodifiable `members()` and
    `channelMemberships()`. Migrate PART/KICK/JOIN/SAJOIN/DisconnectCleanup and
    `ChannelRegistryTest`.
+2b. **JOIN critical-section fix** (US1, FR-021, SC-007): narrow `ChannelRegistry.join` to
+   admission and insertion under registry → channel. Build the recipient snapshot and NAMES
+   listing after both monitors are released. `Channel.memberListing()` stops taking the channel
+   monitor. JOIN samples the joiner's presented identity before calling `join` for the ban
+   check, and again after it for the JOIN line, and always echoes the joiner's own JOIN. The
+   acceptance criterion is SC-007: medians of the storm time and `#quiet` p50 within 10% of main
+   over ≥7 alternating #48 runs per variant; p99/max only within the test's bounds. See research
+   R10. Delivered after step 3 because the #48 measurement came in then; it touches only
+   `ChannelRegistry`, `Channel.memberListing` and `JoinCommandHandler`.
 3. **Named mutators** (US4, FR-006): privileges, modes, invitations, ban view and user modes.
    Migrate MODE/SAMODE/INVITE/UMODE and `OutboundMessageBudgetTest` setup.
 4. **Invariants and cleanup** (US4, FR-017): lock-order and invariant Javadoc, plus FR-number

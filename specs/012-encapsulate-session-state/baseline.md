@@ -387,3 +387,30 @@ The T055 PR-description reminder now includes these approved concurrent MODE/SAM
 Aggregate BRANCH coverage: 1169/1400 = 83.50%.
 
 Aggregate LINE coverage: 3132/3391 = 92.36%.
+
+## Step 2b SC-007 measurement (T037d)
+
+#48 `JoinStormLoadTest`, 7 alternating runs per variant, 2026-10-17, no concurrent builds.
+`issue-48` is the main baseline with the #48 test at `64f1373`; `cmp-012` is the final Step 2b
+code with the same test. All runs exited 0.
+
+| Run | Variant | Storm | `#quiet` msgs | p50 | p99 | max | Load avg |
+|---|---|---|---|---|---|---|---|
+| 1 | issue-48 | 2256 ms | 17 | 14.1 ms | 92.2 ms | 92.2 ms | 2.46 |
+| 1 | cmp-012 | 2359 ms | 18 | 19.4 ms | 87.1 ms | 87.1 ms | 2.76 |
+| 2 | issue-48 | 2364 ms | 19 | 20.4 ms | 121.8 ms | 121.8 ms | 3.77 |
+| 2 | cmp-012 | 2335 ms | 18 | 19.6 ms | 100.1 ms | 100.1 ms | 4.70 |
+| 3 | issue-48 | 2344 ms | 19 | 19.6 ms | 86.7 ms | 86.7 ms | 4.44 |
+| 3 | cmp-012 | 2349 ms | 19 | 24.2 ms | 105.2 ms | 105.2 ms | 3.47 |
+| 4 | issue-48 | 2306 ms | 19 | 24.9 ms | 139.5 ms | 139.5 ms | 3.76 |
+| 4 | cmp-012 | 2220 ms | 18 | 19.6 ms | 157.2 ms | 157.2 ms | 2.99 |
+| 5 | issue-48 | 2244 ms | 19 | 18.6 ms | 134.3 ms | 134.3 ms | 3.33 |
+| 5 | cmp-012 | 2353 ms | 18 | 16.5 ms | 94.2 ms | 94.2 ms | 2.69 |
+| 6 | issue-48 | 2293 ms | 19 | 18.4 ms | 139.4 ms | 139.4 ms | 3.98 |
+| 6 | cmp-012 | 2306 ms | 17 | 19.4 ms | 102.8 ms | 102.8 ms | 3.08 |
+| 7 | issue-48 | 2254 ms | 18 | 19.7 ms | 181.0 ms | 181.0 ms | 3.38 |
+| 7 | cmp-012 | 2327 ms | 18 | 18.1 ms | 73.4 ms | 73.4 ms | 2.91 |
+
+Medians: storm 2293 ms (main) vs 2335 ms (branch), +1.8%; `#quiet` p50 19.6 ms vs 19.4 ms,
+−1.0%; `#quiet` p99 134.3 ms vs 100.1 ms. Worst p99/max: 181.0 ms main, 157.2 ms branch, all
+within the 500 ms / 1 s bounds. SC-007 is met.

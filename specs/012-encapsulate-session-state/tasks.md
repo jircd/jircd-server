@@ -156,6 +156,24 @@ race tests stay green.
 **Checkpoint**: Step 2 is mergeable and is the MVP. The membership invariants hold under
 concurrency.
 
+### Step 2b: JOIN critical-section fix (FR-021, SC-007, research R10)
+
+Added 2026-10-16 after the #48 JOIN-storm measurement. Delivered after Phase 5, before Phase 6.
+
+- [x] T037a [US1] Tests first. Add to `coretest/ChannelRegistryTest.java`:
+  - (a) A test using a package-private `ChannelRegistry(Consumer<Channel> joinSnapshotHook)`. The hook blocks a JOIN to `#storm` at the start of its snapshot phase, and `lookup("#quiet")`, `part` and `join` on `#quiet` from another thread complete while it is blocked.
+  - (b) A test that, while a thread holds a channel's monitor, `memberListing()` from another thread completes.
+
+  Add to `jircd-core/src/test/java/net/jircd/core/session/command/JoinBanGateLockTest.java`:
+  - (c) A JOIN to a channel with a ban, with a pausing hostname-display extension. While the extension is paused, `lookup()` of another channel completes.
+
+  Observe (a)–(c) failing on the step 3 code, with the hook placed where the snapshot was then built.
+- [x] T037b [US1] In `core/ChannelRegistry.java`, keep the CLOSING/already-member/admission/insertion phase under registry → channel. Build `JoinResult` (recipients and `memberListing()`) after both monitors are released, calling the hook first. Update the class Javadoc lock rule to say "no O(members) work or extension code under the registry monitor". In `core/Channel.java`, remove `synchronized` from `memberListing()`
+- [x] T037c [US1] In `core/command/JoinCommandHandler.java`, compute `PresentedIdentity.presentedForm` once before `channelRegistry.join` and pass it to `passesBanGate`. Reuse it for the JOIN line. Replies and their order are unchanged
+- [x] T037e [US1] Tests first (spec Clarifications 2026-10-16, decision 1). Add `ChannelRegistryTest.joinerKickedBeforeTheSnapshotIsStillARecipient`: pause J's join in the snapshot hook, KICK J, and assert J is still in `JoinResult.recipients()` and the listing is shown as read. Add `coretest/JoinSnapshotHandlerTest.joinerKickedDuringTheSnapshotStillReceivesItsOwnJoin` (handler level: J receives its own JOIN). Both observed failing first. Then in `core/ChannelRegistry.java` add the joiner to the recipient copy unconditionally, outside all locks; never patch the listing. `MembershipStressTest`'s "joiner is a recipient" assertion stays
+- [x] T037f [US1] Tests first (decision 2). Add `JoinSnapshotHandlerTest.joinLineUsesTheIdentityPresentedAfterTheJoin`: enable a cloak extension while the JOIN is paused in the snapshot hook, then assert the JOIN line carries the cloaked host. Observed failing first. Then in `core/command/JoinCommandHandler.java` re-sample `presentedForm` after `join` for the JOIN line; the ban check keeps the pre-lock sample. Update the `core/PresentedIdentity.java` contract note (FR-022)
+- [x] T037d [US1] **[US2] gate**: run the scoped `ChannelRegistry*`, `ChannelTest`, `MembershipStress*`, `DisconnectCleanup*` and `*Join*` tests, then `./gradlew build` (exit 0, coverage floor included). The user then measures SC-007 with the #48 `JoinStormLoadTest`: at least 7 alternating runs per variant (main and feature branch) on an otherwise idle machine. The medians of the storm completion time and of the `#quiet` p50 latency must each be within 10% of main; `#quiet` p99 and max only need to stay within the test's bounds (500 ms / 1 s). Record per-run values and medians in `baseline.md`. First-version (v1) evidence is in research R10. Done 2026-10-17: final measurement storm median 2293 → 2335 ms (+1.8%), `#quiet` p50 median 19.6 → 19.4 ms (−1.0%), worst p99/max 181 ms main / 157 ms branch, all within bounds (research R10, `baseline.md`)
+
 ---
 
 ## Phase 5: User Story 4 — Named mutators for privileges, modes, invites, bans, user modes (Delivery Step 3, Priority: P3)

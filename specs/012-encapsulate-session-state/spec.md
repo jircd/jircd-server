@@ -40,6 +40,16 @@ maintainers, who need the state rules to live in one place.
   that channel" where today a duplicate KICK/PART broadcast could occur? → A: Yes. Adopt the
   serial-outcome rule: only the operation that actually removed the member notifies, and the
   other receives the reply it would have received had it run second (FR-020).
+- Q: After Step 2b moved the JOIN snapshot outside the guards, a joiner KICKed or disconnected
+  during the snapshot could miss its own JOIN echo. What should a joiner receive? → A: Always
+  echo the joiner's own JOIN. The joiner is unconditionally a JOIN recipient, added without
+  taking any guard. NAMES shows the listing as read and is never patched to include the joiner
+  (FR-001).
+- Q: JOIN samples the joiner's presented (possibly cloaked) identity before taking any guard,
+  and an administrator can toggle cloaking meanwhile. Which identity applies? → A: The JOIN line
+  re-samples the presented identity after the join, outside all guards. The ban check keeps the
+  identity sampled just before locking. This is an accepted relaxation: only JOINs racing an
+  administrator's cloak toggle are affected (FR-022).
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -200,8 +210,13 @@ compiler, since the collections are no longer exposed for mutation).
 - **FR-001**: Joining a channel MUST be a single operation that, as one indivisible step,
   resolves or creates the channel, evaluates admission (ban, invite-only, member limit, key,
   invitation exemption and its one-time consumption), adds the membership on both the channel
-  and the session sides, grants operator status to the first member, and captures the set of
-  members who must be notified.
+  and the session sides, and grants operator status to the first member. The members to notify
+  and the NAMES listing are read right after that step, with no channel or directory guard held,
+  so that a large channel's O(members) work never blocks other channels (FR-021). Like the
+  pre-feature code, both are weakly consistent reads after the join. Unlike it, the listing is
+  read before the JOIN fan-out. The joiner is always a recipient of its own JOIN; the NAMES
+  listing is shown as read and never patched to include the joiner (Clarifications). Research
+  R10 lists the resulting outcomes.
 - **FR-002**: Leaving a channel (PART) and being removed from it (KICK) MUST each be a single
   operation that, as one indivisible step, verifies the member is present, captures the members
   to notify, removes membership, operator status and voice status from the channel, removes the
@@ -224,7 +239,17 @@ compiler, since the collections are no longer exposed for mutation).
   user-facing counterparts, differing only in skipping the checks they are allowed to bypass.
 - **FR-008**: Every transition operation MUST return enough information for the caller to send
   notifications and replies without re-reading live state (for example the captured recipient
-  set and whether operator status was granted).
+  set and whether operator status was granted). For JOIN, the returned recipients and listing
+  are read after the guards are released (FR-001).
+- **FR-021**: The channel-directory guard, which every channel lookup also takes, MUST NOT be
+  held for work that grows with a channel's member count, or while extension code runs, during
+  JOIN. The JOIN admission check gets the joiner's presented identity computed before any guard
+  is taken.
+- **FR-022**: The JOIN line MUST use the joiner's presented identity sampled after the join,
+  outside all guards. The ban check MAY use the identity sampled just before the guards were
+  taken. A JOIN that races an administrator enabling or disabling cloaking is therefore checked
+  against the earlier identity. This is an accepted relaxation of the live-check rule for that
+  race only (Clarifications).
 
 **Read-only access**
 
@@ -322,6 +347,13 @@ compiler, since the collections are no longer exposed for mutation).
   Gradle durations are recorded for information only.
 - **SC-006**: In the files touched by this feature, 0 comments justify behavior solely by citing
   a historical feature or requirement number.
+- **SC-007**: In the JOIN-storm load test from #48 (2,000 clients join one channel in waves of
+  100 while messages between two users in a quiet channel are timed), measured over at least 7
+  alternating runs per variant (main and feature branch) on an otherwise idle machine, the
+  feature branch's **median** storm completion time and **median** quiet-channel p50 latency are
+  each within 10% of main's. The quiet-channel p99 and max only need to stay within the test's
+  own bounds (500 ms / 1 s). Each run measures only about 18 quiet-channel messages, so a run's
+  p99 is effectively its slowest sample and not a stable statistic.
 
 ## Assumptions
 
@@ -338,4 +370,6 @@ compiler, since the collections are no longer exposed for mutation).
   sweep of historical references is out of scope.
 - Server-to-server federation, new commands, and new replies are out of scope.
 - No new user-facing operation is added, so no new latency budget is defined; the existing load
-  tests' budgets apply (SC-005).
+  tests' budgets apply (SC-005). The #48 JOIN-storm test showed a measurable JOIN regression at
+  step 2 (storm +~45%, quiet-channel p99/max 171–277 ms vs 77–157 ms on main), so SC-007 restores
+  a measured, main-relative criterion for JOIN.

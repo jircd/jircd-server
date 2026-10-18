@@ -14,7 +14,9 @@ ChannelRegistry monitor  ──►  Channel monitor  ──►  (nothing else)
   the next.
 - No monitor is held while enqueueing to a `SessionWriter` or while calling extension code. The
   only foreign code run under the monitors is the JOIN admission predicate, which must not block
-  (documented today, still required).
+  and gets the joiner's presented identity precomputed (FR-021).
+- JOIN builds its recipient snapshot and NAMES listing after releasing both monitors (research
+  R10). `Channel.memberListing()` takes no monitor.
 - `NicknameRegistry` stays lock-free (`ConcurrentHashMap`) and is never called while a monitor
   is held.
 
@@ -29,7 +31,9 @@ ChannelRegistry monitor  ──►  Channel monitor  ──►  (nothing else)
 - R-2: After any transition returns, no registered channel is empty.
 - R-3: For every channel `c` and session `s`: `s ∈ c.members()` ⇔ `c ∈ s.channelMemberships()`.
   This holds whenever the registry monitor is not held by a transition.
-- R-4: A session in `CLOSING` is never added to a channel.
+- R-4: A join that observes the session in `CLOSING` is refused. A join that passed that check
+  before cleanup claimed `CLOSING` may still finish its insertion, and cleanup's `leaveAll` then
+  removes it, so no membership survives cleanup (research R10).
 
 **Transitions** (all under the registry monitor, then the channel monitor):
 
@@ -62,8 +66,14 @@ All collection accessors return unmodifiable views.
   in one step.
 - C-3: `bans.size() ≤ MAX_BANS`. Masks are unique.
 - C-4: The first member added to an empty channel becomes an operator.
-- C-5: `memberListing()` shows each member once, prefixed `@` if an operator, else `+` if
-  voiced, in member iteration order.
+- C-5 (qualified, applies to every caller: JOIN, SAJOIN, NAMES, bare NAMES):
+  `memberListing()` is a weakly consistent traversal without the channel monitor. It never
+  visits the same session twice. It is not a membership snapshot of one instant: a member that
+  leaves or joins during the traversal may or may not appear, including the joiner itself after
+  a concurrent KICK. Each prefix (`@`, `+`, none) comes from two separate unguarded reads, so a
+  concurrent privilege change can yield a prefix the member never held (research R10).
+  With no concurrent change it lists each member once, prefixed `@` if an
+  operator, else `+` if voiced, in member iteration order.
 
 ## ClientSession
 
@@ -86,8 +96,10 @@ All collection accessors return unmodifiable views.
 ## Result types (new, immutable records)
 
 - **`JoinResult(Channel channel, Set<ClientSession> recipients, boolean grantedOperator,
-  boolean alreadyMember, List<String> memberListing)`**: `recipients` = members after insertion, `memberListing` =
-  NAMES tokens captured under the same lock.
+  boolean alreadyMember, List<String> memberListing)`**: `recipients` = a copy of the live members taken after the
+  monitors are released, **plus the joiner, always**; `memberListing` = NAMES tokens from a
+  separate earlier traversal, also after release, never patched to include the joiner. Neither
+  is a snapshot of one instant, and they are not consistent with each other (research R10).
 - **`Departure(Channel channel, ClientSession departed, Set<ClientSession> recipients)`**:
   `recipients` = members before removal.
 - **`KickOutcome`**: sealed interface with `NotOperator`, `NoSuchMember`,

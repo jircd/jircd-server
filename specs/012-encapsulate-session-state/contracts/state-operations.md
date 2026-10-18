@@ -24,6 +24,14 @@ Contract:
 - `join` returns empty if it observes the session in `CLOSING` or `admission` refuses. An
   existing member instead returns `JoinResult` with `alreadyMember=true`, without changing
   membership or running admission. `admission` runs under both monitors and must not block.
+  It must not call extension code; callers precompute the joiner's presented identity.
+- `JoinResult.memberListing` and then `JoinResult.recipients` are read from the live channel in
+  two separate traversals after both monitors are released, never under the registry monitor.
+  Neither is a snapshot of one instant, and they need not agree with each other. With a
+  concurrent departure, the joiner can be missing from the listing (shown as read, never
+  patched), but `recipients` always contains the joiner (research R10).
+- JOIN's ban check uses the presented identity sampled before `join`; the JOIN line re-samples
+  it after `join` returns (FR-022).
 - A refused or `CLOSING` join removes the channel it just created, only if the channel is still
   empty and still the registered instance. An existing channel is retained.
 - `SAJOIN` passes an always-true admission. The closing and already-member checks still apply.
@@ -60,7 +68,8 @@ void invite(String nickname);                // folds internally
 boolean consumeInvitation(String nickname);  // used by JOIN admission
 boolean addBan(BanEntry entry);              // unchanged
 void removeBan(String mask);                 // unchanged; now synchronized
-List<String> memberListing();                // "@nick"/"+nick"/"nick" tokens
+List<String> memberListing();                // "@nick"/"+nick"/"nick" tokens; weakly
+                                             // consistent, no monitor (data-model C-5)
 
 boolean addMember(ClientSession s);          // package-private
 void removeMember(ClientSession s);          // package-private, synchronized
