@@ -16,6 +16,7 @@
 package net.jircd.core.session;
 
 import java.time.Instant;
+import java.util.Collections;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -23,9 +24,17 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * A single connected client's live state, from TCP accept to disconnect (data-model.md
- * "ClientSession", Aggregate Root). {@code connectionId} is its identity; everything else is
- * mutable state guarded by this aggregate.
+ * A single connected client's live state, from TCP accept to disconnect. {@code connectionId} is
+ * its identity; everything else is mutable state guarded by this aggregate.
+ *
+ * <p>S-1: {@code channelMemberships} is written only by {@link ChannelRegistry} transitions while
+ * the corresponding channel's monitor is held, so it agrees with each channel's member set whenever
+ * no transition is in progress (a transition updates the channel, then the session, and a live view
+ * can observe the step between). Once the {@code DisconnectCleanup.cleanup} invocation that claimed
+ * the disconnect returns, it is empty; a duplicate invocation returns immediately. S-2: only the
+ * administrator grant and revoke operations change {@code UserMode.OPERATOR}; after a grant returns
+ * it is present, after a revoke returns it is absent. The flag and the mode are written one after
+ * the other, not atomically.
  */
 public final class ClientSession {
 
@@ -33,7 +42,10 @@ public final class ClientSession {
   private final ConnectionLifecycle lifecycle = new ConnectionLifecycle();
   private final Set<String> negotiatedCapabilities = ConcurrentHashMap.newKeySet();
   private final Set<Channel> channelMemberships = ConcurrentHashMap.newKeySet();
+  private final Set<Channel> channelMembershipsView =
+      Collections.unmodifiableSet(channelMemberships);
   private final Set<UserMode> userModes = ConcurrentHashMap.newKeySet();
+  private final Set<UserMode> userModesView = Collections.unmodifiableSet(userModes);
   private final RateLimitBucket rateLimitBucket;
   private final String realHostname;
   private final Instant connectedAt = Instant.now();
@@ -100,8 +112,8 @@ public final class ClientSession {
   }
 
   /**
-   * Also the source-of-truth signal for FR-001's one-shot USER restriction: absent means USER
-   * hasn't been processed yet.
+   * Also the source-of-truth signal for the one-shot USER restriction: absent means USER hasn't
+   * been processed yet.
    */
   public boolean hasProcessedUser() {
     return ident != null;
@@ -122,7 +134,7 @@ public final class ClientSession {
   /**
    * Non-{@code null} while away, holding the reason; {@code null} otherwise. Presence, not a
    * separate boolean, is the away/not-away signal — the same pattern {@link #ident} already uses as
-   * its own registration-state signal (002-extended-irc-commands FR-004/FR-005/FR-006).
+   * its own registration-state signal.
    */
   public String awayReason() {
     return awayReason;
@@ -149,12 +161,47 @@ public final class ClientSession {
     this.negotiatingCapabilities = negotiating;
   }
 
+  /** Returns a live, unmodifiable view of memberships owned by registry transitions. */
   public Set<Channel> channelMemberships() {
-    return channelMemberships;
+    return channelMembershipsView;
   }
 
+  // Called by registry transitions while holding the registry and corresponding channel monitors.
+  void addMembership(Channel channel) {
+    channelMemberships.add(channel);
+  }
+
+  void removeMembership(Channel channel) {
+    channelMemberships.remove(channel);
+  }
+
+  /** Returns a live, unmodifiable view of user modes. */
   public Set<UserMode> userModes() {
-    return userModes;
+    return userModesView;
+  }
+
+  /**
+   * Sets a non-operator mode; caller permissions are checked by the command handler.
+   *
+   * @throws IllegalArgumentException for OPERATOR, which requires grantAdministratorPrivilege
+   */
+  public void setUserMode(UserMode mode) {
+    if (UserMode.OPERATOR.equals(mode)) {
+      throw new IllegalArgumentException("Operator mode requires grantAdministratorPrivilege");
+    }
+    userModes.add(mode);
+  }
+
+  /**
+   * Clears a non-operator mode; clearing an inactive mode is a no-op.
+   *
+   * @throws IllegalArgumentException for OPERATOR, which requires revokeAdministratorPrivilege
+   */
+  public void clearUserMode(UserMode mode) {
+    if (UserMode.OPERATOR.equals(mode)) {
+      throw new IllegalArgumentException("Operator mode requires revokeAdministratorPrivilege");
+    }
+    userModes.remove(mode);
   }
 
   public RateLimitBucket rateLimitBucket() {
@@ -165,18 +212,14 @@ public final class ClientSession {
     return administratorPrivilege.get();
   }
 
-  /**
-   * Grants administrator privilege and adds the operator user mode in the same act (FR-034/FR-044).
-   */
+  /** Grants administrator privilege and adds the operator user mode in the same act. */
   public void grantAdministratorPrivilege() {
     administratorPrivilege.set(true);
     userModes.add(UserMode.OPERATOR);
     failedOperAttempts.set(0);
   }
 
-  /**
-   * Revokes administrator privilege and removes the operator user mode in the same act (FR-044).
-   */
+  /** Revokes administrator privilege and removes the operator user mode in the same act. */
   public void revokeAdministratorPrivilege() {
     administratorPrivilege.set(false);
     userModes.remove(UserMode.OPERATOR);

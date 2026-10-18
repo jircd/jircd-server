@@ -20,31 +20,29 @@ import java.util.Map;
 import java.util.function.IntSupplier;
 import java.util.function.Supplier;
 import net.jircd.core.extension.ExtensionRegistry;
-import net.jircd.core.session.CaseMapping;
 import net.jircd.core.session.Channel;
 import net.jircd.core.session.ChannelRegistry;
 import net.jircd.core.session.ClientSession;
 import net.jircd.core.session.CoreChannelModes;
 import net.jircd.core.session.PresentedIdentity;
+import net.jircd.core.session.Recipients;
 import net.jircd.protocol.ChannelName;
 import net.jircd.protocol.Command;
 import net.jircd.protocol.Hostmask;
 import net.jircd.protocol.Message;
-import net.jircd.protocol.MessageSerializer;
 import net.jircd.protocol.NickMask;
 import net.jircd.protocol.NumericReply;
 
 /**
- * {@code JOIN} — create-or-join (FR-003), with the {@code JOIN}-gate check point FR-043 requires:
- * ban-mask (FR-062), invite-only (FR-065), user-limit, and channel-key (006-complete-core-protocol
- * FR-002/FR-005), each checked independently — a pending invitation exempts the latter three alike,
- * peeked once and consumed at most once per join, never per gate (research.md "Story 1"
- * invite-exemption decision).
+ * {@code JOIN} — create-or-join, with the {@code JOIN}-gate check point: ban-mask, invite-only,
+ * user-limit, and channel-key, each checked independently — a pending invitation exempts the latter
+ * three alike, peeked once and consumed at most once per join, never per gate (research.md "Story
+ * 1" invite-exemption decision).
  *
  * <p>Accepts a comma-separated list of channel names, with an optional matching comma-separated
- * list of keys (RFC1459 §4.2.1, 005-fix-batch-conformance FR-013) — each named channel is processed
- * independently through the same single-channel logic; one channel failing its own check doesn't
- * stop the others in the same command from being processed.
+ * list of keys (RFC1459 §4.2.1) — each named channel is processed independently through the same
+ * single-channel logic; one channel failing its own check doesn't stop the others in the same
+ * command from being processed.
  */
 public final class JoinCommandHandler implements CommandHandler {
 
@@ -75,7 +73,7 @@ public final class JoinCommandHandler implements CommandHandler {
           "Not enough parameters");
       return;
     }
-    // 005-fix-batch-conformance FR-013 — comma-separated channel (and optional matching
+    // Comma-separated channel (and optional matching
     // comma-separated key) lists are core JOIN grammar (RFC1459 §4.2.1), not an extension. A
     // fewer-keys-than-channels list leaves the remainder keyless. Each named channel is
     // processed independently — one failing its own check doesn't stop the others.
@@ -94,62 +92,90 @@ public final class JoinCommandHandler implements CommandHandler {
       return;
     }
 
-    // Already a member: no gates, no insertion, no notification (issue #16).
+    // A repeated JOIN is a no-op that needs neither the displayed identity nor a membership
+    // snapshot. The registry still checks membership authoritatively for racing callers.
     if (channelRegistry.lookup(name).filter(c -> c.members().contains(session)).isPresent()) {
       return;
     }
 
+    // Sampled before any registry monitor, because it may run hostname-display extension code. The
+    // ban check uses this sample; an administrator toggling cloaking meanwhile is not re-checked. A
+    // failed sample is kept and rethrown only if a nonempty ban list needs it, so a failed sample
+    // cannot bypass the bans; with no bans it is not needed and is discarded.
+    AdmissionIdentity admissionIdentity = AdmissionIdentity.sample(session, extensionRegistry);
     var failure = new java.util.concurrent.atomic.AtomicReference<AdmissionFailure>();
     var joined =
         channelRegistry.join(
             name,
             session,
             channel -> {
-              failure.set(admissionFailure(channel, session, suppliedKey));
+              failure.set(admissionFailure(channel, session, admissionIdentity, suppliedKey));
               return failure.get() == null;
             });
     if (joined.isEmpty()) {
       AdmissionFailure rejected = failure.get();
-      Replies.send(
-          session, serverName.get(), rejected.reply(), rejected.channelName(), rejected.reason());
+      if (rejected != null) {
+        Replies.send(
+            session, serverName.get(), rejected.reply(), rejected.channelName(), rejected.reason());
+      }
       return;
     }
-    Channel channel = joined.get();
+    var result = joined.get();
+    if (result.alreadyMember()) {
+      return;
+    }
+    Channel channel = result.channel();
 
+    // Re-sampled after the join, outside every monitor, so the JOIN line shows the current
+    // identity.
     String presentedForm = PresentedIdentity.presentedForm(session, extensionRegistry);
     Message joinNotification =
         new Message(Map.of(), presentedForm, Command.JOIN, "JOIN", List.of(channel.name()));
-    for (ClientSession member : channel.members()) {
-      if (member.writer() != null) {
-        member.writer().enqueueRaw(joinNotification);
-      }
-    }
+    Recipients.deliver(result.recipients(), joinNotification);
 
-    // 005-fix-batch-conformance FR-014 — the same 332-only shape TopicCommandHandler's own
+    // The same 332-only shape TopicCommandHandler's own
     // query path already uses (this project tracks no set-at timestamp, so no 333 either).
     if (channel.topic() != null) {
       Replies.send(
           session, serverName.get(), NumericReply.RPL_TOPIC, channel.name(), channel.topic());
     }
 
-    sendNamesReply(session, channel, serverName.get());
+    sendNamesReply(session, channel, serverName.get(), result.memberListing());
+  }
+
+  /** The pre-lock displayed identity, or the runtime failure raised while resolving it. */
+  private record AdmissionIdentity(String presentedForm, RuntimeException failure) {
+    static AdmissionIdentity sample(ClientSession session, ExtensionRegistry extensions) {
+      try {
+        return new AdmissionIdentity(PresentedIdentity.presentedForm(session, extensions), null);
+      } catch (RuntimeException e) {
+        return new AdmissionIdentity(null, e);
+      }
+    }
+
+    String require() {
+      if (failure != null) {
+        throw failure;
+      }
+      return presentedForm;
+    }
   }
 
   private record AdmissionFailure(NumericReply reply, String channelName, String reason) {}
 
-  private AdmissionFailure admissionFailure(
-      Channel channel, ClientSession session, String suppliedKey) {
-    if (!passesBanGate(channel, session)) {
+  private static AdmissionFailure admissionFailure(
+      Channel channel, ClientSession session, AdmissionIdentity identity, String suppliedKey) {
+    if (!passesBanGate(channel, session, identity)) {
       return new AdmissionFailure(
           NumericReply.ERR_BANNEDFROMCHAN, channel.name(), "Cannot join channel (+b)");
     }
 
-    // 006-complete-core-protocol FR-002/FR-005 (spec.md Clarifications) — a pending invitation
+    // A pending invitation
     // exempts a join from +i, +l, and +k alike; peeked here (not consumed) so a channel with more
     // than one of these active doesn't have its invitation consumed by the first gate checked and
     // then incorrectly fail the second. Consumed exactly once, below, only once every applicable
     // gate has passed.
-    boolean invited = channel.invited().contains(CaseMapping.fold(session.nickname()));
+    boolean invited = channel.isInvited(session.nickname());
 
     if (!invited && channel.activeModes().contains(CoreChannelModes.INVITE_ONLY)) {
       return new AdmissionFailure(
@@ -167,71 +193,43 @@ public final class JoinCommandHandler implements CommandHandler {
     }
 
     if (invited) {
-      channel.invited().remove(CaseMapping.fold(session.nickname()));
+      channel.consumeInvitation(session.nickname());
     }
 
     return null;
   }
 
   public static void sendNamesReply(ClientSession requester, Channel channel, String serverName) {
-    sendNamesLine(requester, channel, serverName);
+    sendNamesReply(requester, channel, serverName, channel.memberListing());
+  }
+
+  /** Sends a membership snapshot captured by a join transition, followed by its closing numeric. */
+  public static void sendNamesReply(
+      ClientSession requester, Channel channel, String serverName, List<String> memberListing) {
+    sendNamesLine(requester, channel, serverName, memberListing);
     Replies.send(
         requester, serverName, NumericReply.RPL_ENDOFNAMES, channel.name(), "End of /NAMES list");
   }
 
   /**
    * The {@code RPL_NAMREPLY} half of {@link #sendNamesReply} on its own, with no closing {@code
-   * RPL_ENDOFNAMES} — extracted so a bare, argument-less {@code NAMES} (006-complete-core-protocol
-   * FR-010, {@code NamesCommandHandler}) can call this once per visible channel and send exactly
-   * one closing reply of its own afterward, instead of one per channel.
+   * RPL_ENDOFNAMES} — extracted so a bare, argument-less {@code NAMES} ({@code
+   * NamesCommandHandler}) can call this once per visible channel and send exactly one closing reply
+   * of its own afterward, instead of one per channel.
    */
   public static void sendNamesLine(ClientSession requester, Channel channel, String serverName) {
+    sendNamesLine(requester, channel, serverName, channel.memberListing());
+  }
+
+  private static void sendNamesLine(
+      ClientSession requester, Channel channel, String serverName, List<String> memberListing) {
     String visibility = visibilitySymbol(channel);
-    Message empty =
-        new Message(
-            Map.of(),
-            serverName,
-            null,
-            NumericReply.RPL_NAMREPLY.wireCode(),
-            List.of(Replies.target(requester), visibility, channel.name(), ""));
-    // Reserve the trailing colon even for a singleton reply, which may serialize without it.
-    int budget = MessageSerializer.MAX_COMMAND_BYTES - MessageSerializer.commandBytes(empty);
-    StringBuilder names = new StringBuilder();
-    int used = 0;
-    for (ClientSession member : channel.members()) {
-      String status = "";
-      if (channel.operators().contains(member)) {
-        status = "@";
-      } else if (channel.voiced().contains(member)) {
-        status = "+";
-      }
-      String token = status + member.nickname();
-      int bytes = MessageSerializer.utf8Bytes(token);
-      if (!names.isEmpty() && used + 1 + bytes > budget) {
-        Replies.send(
-            requester,
-            serverName,
-            NumericReply.RPL_NAMREPLY,
-            visibility,
-            channel.name(),
-            names.toString());
-        names.setLength(0);
-        used = 0;
-      }
-      if (!names.isEmpty()) {
-        names.append(' ');
-        used++;
-      }
-      names.append(token);
-      used += bytes;
-    }
-    Replies.send(
+    Replies.sendListed(
         requester,
         serverName,
         NumericReply.RPL_NAMREPLY,
-        visibility,
-        channel.name(),
-        names.toString());
+        List.of(visibility, channel.name()),
+        memberListing);
   }
 
   private static String visibilitySymbol(Channel channel) {
@@ -244,11 +242,12 @@ public final class JoinCommandHandler implements CommandHandler {
     return "=";
   }
 
-  private boolean passesBanGate(Channel channel, ClientSession session) {
+  private static boolean passesBanGate(
+      Channel channel, ClientSession session, AdmissionIdentity identity) {
     if (channel.bans().isEmpty()) {
       return true;
     }
-    String presented = PresentedIdentity.presentedForm(session, extensionRegistry);
+    String presented = identity.require();
     String real = Hostmask.format(session.nickname(), session.ident(), session.realHostname());
     for (var ban : channel.bans()) {
       if (NickMask.matches(presented, ban.mask()) || NickMask.matches(real, ban.mask())) {

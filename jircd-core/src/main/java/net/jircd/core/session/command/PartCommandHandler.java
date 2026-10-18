@@ -17,12 +17,15 @@ package net.jircd.core.session.command;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.Supplier;
 import net.jircd.core.extension.ExtensionRegistry;
 import net.jircd.core.session.Channel;
 import net.jircd.core.session.ChannelRegistry;
 import net.jircd.core.session.ClientSession;
+import net.jircd.core.session.Departure;
 import net.jircd.core.session.PresentedIdentity;
+import net.jircd.core.session.Recipients;
 import net.jircd.protocol.Command;
 import net.jircd.protocol.Message;
 import net.jircd.protocol.NumericReply;
@@ -30,7 +33,7 @@ import net.jircd.protocol.NumericReply;
 /**
  * {@code PART} — leaves a channel. {@code <reason>}, if given, is echoed (absent otherwise — no
  * default synthesized, unlike {@code QUIT}). Removes the parting session from the channel's
- * members, operators, and voiced sets together (data-model.md {@code Channel} validation rules).
+ * members, operators, and voiced sets together.
  */
 public final class PartCommandHandler implements CommandHandler {
 
@@ -62,7 +65,17 @@ public final class PartCommandHandler implements CommandHandler {
     String reason = message.params().size() > 1 ? message.params().get(1) : null;
 
     var found = channelRegistry.lookup(channelName);
-    if (found.isEmpty() || !found.get().members().contains(session)) {
+    // A non-member is answered as if its PART ran after the departure. Only a member resolves the
+    // notification prefix, which may run hostname-display extension code, before the membership
+    // transition and outside every monitor: a failure leaves membership unchanged. The registry
+    // still decides authoritatively whether this call removed the member.
+    String presentedForm = null;
+    Optional<Departure> departed = Optional.empty();
+    if (found.isPresent() && found.get().members().contains(session)) {
+      presentedForm = PresentedIdentity.presentedForm(session, extensionRegistry);
+      departed = channelRegistry.part(found.get(), session);
+    }
+    if (departed.isEmpty()) {
       Replies.send(
           session,
           serverName.get(),
@@ -71,20 +84,11 @@ public final class PartCommandHandler implements CommandHandler {
           "You're not on that channel");
       return;
     }
-    Channel channel = found.get();
+    Channel channel = departed.get().channel();
 
-    String presentedForm = PresentedIdentity.presentedForm(session, extensionRegistry);
     List<String> params =
         reason != null ? List.of(channel.name(), reason) : List.of(channel.name());
     Message partNotification = new Message(Map.of(), presentedForm, Command.PART, "PART", params);
-    for (ClientSession member : channel.members()) {
-      if (member.writer() != null) {
-        member.writer().enqueueRaw(partNotification);
-      }
-    }
-
-    channel.removeMember(session);
-    session.channelMemberships().remove(channel);
-    channelRegistry.removeIfEmpty(channel);
+    Recipients.deliver(departed.get().recipients(), partNotification);
   }
 }

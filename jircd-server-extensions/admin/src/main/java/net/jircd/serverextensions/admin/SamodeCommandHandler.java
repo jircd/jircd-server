@@ -23,6 +23,7 @@ import net.jircd.core.session.Channel;
 import net.jircd.core.session.ChannelRegistry;
 import net.jircd.core.session.ClientSession;
 import net.jircd.core.session.PresentedIdentity;
+import net.jircd.core.session.Recipients;
 import net.jircd.core.session.command.CommandHandler;
 import net.jircd.core.session.command.Replies;
 import net.jircd.protocol.Command;
@@ -31,20 +32,31 @@ import net.jircd.protocol.NumericReply;
 
 /**
  * {@code SAMODE <channel> <+o|-o>} — grants or revokes the sender's own operator status on a
- * channel it's already a member of, bypassing FR-046's "sender must already be an operator"
- * precondition (FR-058, research.md "Administrator channel override"). Self-targeting only — no
- * target parameter, unlike {@code ModeCommandHandler}'s {@code +o}/{@code -o}.
+ * channel it's already a member of, bypassing the "sender must already be an operator" precondition
+ * ordinary {@code MODE} enforces. Self-targeting only — no target parameter, unlike {@code
+ * ModeCommandHandler}'s {@code +o}/{@code -o}.
  */
 public final class SamodeCommandHandler implements CommandHandler {
 
   private final ChannelRegistry channelRegistry;
   private final ExtensionRegistry extensionRegistry;
   private final Supplier<String> serverName;
+  private final Runnable beforeMemberChange;
 
   public SamodeCommandHandler(
       ChannelRegistry channelRegistry,
       ExtensionRegistry extensionRegistry,
       Supplier<String> serverName) {
+    this(channelRegistry, extensionRegistry, serverName, () -> {});
+  }
+
+  // Test seam for a departure after the membership pre-check, outside membership monitors.
+  SamodeCommandHandler(
+      ChannelRegistry channelRegistry,
+      ExtensionRegistry extensionRegistry,
+      Supplier<String> serverName,
+      Runnable beforeMemberChange) {
+    this.beforeMemberChange = beforeMemberChange;
     this.channelRegistry = channelRegistry;
     this.extensionRegistry = extensionRegistry;
     this.serverName = serverName;
@@ -77,10 +89,8 @@ public final class SamodeCommandHandler implements CommandHandler {
     char sign;
     if ("+o".equals(modeArg)) {
       sign = '+';
-      channel.operators().add(session);
     } else if ("-o".equals(modeArg)) {
       sign = '-';
-      channel.operators().remove(session);
     } else {
       Replies.send(
           session,
@@ -88,6 +98,19 @@ public final class SamodeCommandHandler implements CommandHandler {
           NumericReply.ERR_UNKNOWNMODE,
           modeArg,
           "is unknown mode char to me");
+      return;
+    }
+
+    beforeMemberChange.run();
+    boolean accepted =
+        channel.setMemberPrivilege(session, Channel.MemberPrivilege.OPERATOR, sign == '+');
+    if (!accepted) {
+      Replies.send(
+          session,
+          serverName.get(),
+          NumericReply.ERR_USERNOTINCHANNEL,
+          session.nickname(),
+          "They aren't on that channel");
       return;
     }
 
@@ -99,10 +122,6 @@ public final class SamodeCommandHandler implements CommandHandler {
             Command.MODE,
             "MODE",
             List.of(channel.name(), sign + "o", session.nickname()));
-    for (ClientSession member : channel.members()) {
-      if (member.writer() != null) {
-        member.writer().enqueueRaw(echo);
-      }
-    }
+    Recipients.deliver(channel.members(), echo);
   }
 }

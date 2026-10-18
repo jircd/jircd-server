@@ -22,29 +22,43 @@ import net.jircd.core.extension.ExtensionRegistry;
 import net.jircd.core.session.Channel;
 import net.jircd.core.session.ChannelRegistry;
 import net.jircd.core.session.ClientSession;
+import net.jircd.core.session.Departure;
+import net.jircd.core.session.KickOutcome;
 import net.jircd.core.session.PresentedIdentity;
+import net.jircd.core.session.Recipients;
 import net.jircd.core.session.SecurityEventLog;
 import net.jircd.protocol.Command;
 import net.jircd.protocol.Message;
 import net.jircd.protocol.NumericReply;
 
 /**
- * {@code KICK} — operator-only channel member removal (FR-013/FR-014). Always available, never
- * gated by {@code FR-011} toggling (FR-036).
+ * {@code KICK} — operator-only channel member removal. Always available, never gated by extension
+ * toggling.
  */
 public final class KickCommandHandler implements CommandHandler {
 
   private final ChannelRegistry channelRegistry;
   private final ExtensionRegistry extensionRegistry;
   private final Supplier<String> serverName;
+  private final Runnable beforeTransition;
 
   public KickCommandHandler(
       ChannelRegistry channelRegistry,
       ExtensionRegistry extensionRegistry,
       Supplier<String> serverName) {
+    this(channelRegistry, extensionRegistry, serverName, () -> {});
+  }
+
+  /** Test-only seam: runs after the pre-checks and prefix preparation, before the transition. */
+  KickCommandHandler(
+      ChannelRegistry channelRegistry,
+      ExtensionRegistry extensionRegistry,
+      Supplier<String> serverName,
+      Runnable beforeTransition) {
     this.channelRegistry = channelRegistry;
     this.extensionRegistry = extensionRegistry;
     this.serverName = serverName;
+    this.beforeTransition = beforeTransition;
   }
 
   @Override
@@ -60,7 +74,7 @@ public final class KickCommandHandler implements CommandHandler {
     }
     String channelName = message.params().getFirst();
     String targetNickname = message.params().get(1);
-    // 005-fix-batch-conformance FR-015 — a no-comment KICK defaults to the kicker's own
+    // A no-comment KICK defaults to the kicker's own
     // nickname, the widely-implemented Modern IRC convention, rather than omitting it.
     String reason = message.params().size() > 2 ? message.params().get(2) : session.nickname();
 
@@ -76,43 +90,42 @@ public final class KickCommandHandler implements CommandHandler {
     }
     Channel channel = found.get();
 
-    if (!channel.operators().contains(session)) {
-      SecurityEventLog.rejectedModerationAction(
-          session.connectionId(), "KICK", channelName, "not a channel operator");
-      Replies.send(
-          session,
-          serverName.get(),
-          NumericReply.ERR_CHANOPRIVSNEEDED,
-          channel.name(),
-          "You're not channel operator");
+    // A non-member kicker is not an operator, so it is answered as such without the extension.
+    if (!channel.members().contains(session)) {
+      rejectNotOperator(session, channel, channelName);
       return;
     }
-
-    var target = channel.findMember(targetNickname);
-    if (target.isEmpty()) {
-      Replies.send(
-          session,
-          serverName.get(),
-          NumericReply.ERR_USERNOTINCHANNEL,
-          targetNickname,
-          "They aren't on that channel");
-      return;
-    }
-
+    // The notification prefix may run hostname-display extension code, so it is resolved for every
+    // member kicker before the membership transition and outside every monitor: a failure leaves
+    // the target a member. The registry still decides authoritatively, and a request that turns
+    // out invalid discards the prefix.
     String presentedForm = PresentedIdentity.presentedForm(session, extensionRegistry);
-    List<String> params =
-        reason != null
-            ? List.of(channel.name(), target.get().nickname(), reason)
-            : List.of(channel.name(), target.get().nickname());
-    Message kickNotification = new Message(Map.of(), presentedForm, Command.KICK, "KICK", params);
-    for (ClientSession member : channel.members()) {
-      if (member.writer() != null) {
-        member.writer().enqueueRaw(kickNotification);
+    beforeTransition.run();
+    switch (channelRegistry.kick(channel, session, targetNickname)) {
+      case KickOutcome.NotOperator() -> rejectNotOperator(session, channel, channelName);
+      case KickOutcome.NoSuchMember() ->
+          Replies.send(
+              session,
+              serverName.get(),
+              NumericReply.ERR_USERNOTINCHANNEL,
+              targetNickname,
+              "They aren't on that channel");
+      case KickOutcome.Kicked(Departure departure) -> {
+        List<String> params = List.of(channel.name(), departure.departed().nickname(), reason);
+        Message notification = new Message(Map.of(), presentedForm, Command.KICK, "KICK", params);
+        Recipients.deliver(departure.recipients(), notification);
       }
     }
+  }
 
-    channel.removeMember(target.get());
-    target.get().channelMemberships().remove(channel);
-    channelRegistry.removeIfEmpty(channel);
+  private void rejectNotOperator(ClientSession session, Channel channel, String channelName) {
+    SecurityEventLog.rejectedModerationAction(
+        session.connectionId(), "KICK", channelName, "not a channel operator");
+    Replies.send(
+        session,
+        serverName.get(),
+        NumericReply.ERR_CHANOPRIVSNEEDED,
+        channel.name(),
+        "You're not channel operator");
   }
 }

@@ -16,17 +16,35 @@
 package net.jircd.core.session;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.Supplier;
 
 /**
- * A named, joinable group through which members exchange messages (data-model.md "Channel",
- * Aggregate Root). {@code name} is its identity; membership and moderation state are guarded by
- * this aggregate.
+ * A named, joinable group through which members exchange messages. {@code name} is its identity;
+ * membership and moderation state are guarded by this aggregate. The mutators of the member,
+ * operator, voice, mode, ban and invitation collections are {@code synchronized} on this monitor;
+ * {@code topic}, {@code memberLimit} and {@code key} are single-field volatile values with
+ * unsynchronized setters. Lock order: an operation that needs both monitors takes the {@link
+ * ChannelRegistry} monitor first, one that needs only this monitor never takes the registry monitor
+ * while holding it, and no operation holds two channel monitors.
+ *
+ * <p>C-1: {@code operators} and {@code voiced} are subsets of {@code members}; granting either to a
+ * non-member is refused and changes nothing. C-2: {@code secret} and {@code private} are never both
+ * active; setting one clears the other in the same step. C-3: at most {@link #MAX_BANS} bans, with
+ * unique masks. C-4: the first member added to an empty channel becomes an operator. C-5: {@link
+ * #memberListing} is a weakly consistent traversal taken without the monitor. It never lists a
+ * session twice but is not a snapshot of one instant, and a prefix may come from two separate reads
+ * of the operator and voice sets.
+ *
+ * <p>The collection accessors return unmodifiable views. Membership changes arrive only through
+ * {@link ChannelRegistry} transitions.
  */
 public final class Channel {
 
@@ -35,10 +53,15 @@ public final class Channel {
   private final String name;
   private final String foldedName;
   private final Set<ClientSession> members = ConcurrentHashMap.newKeySet();
+  private final Set<ClientSession> membersView = Collections.unmodifiableSet(members);
   private final Set<ClientSession> operators = ConcurrentHashMap.newKeySet();
+  private final Set<ClientSession> operatorsView = Collections.unmodifiableSet(operators);
   private final Set<ClientSession> voiced = ConcurrentHashMap.newKeySet();
+  private final Set<ClientSession> voicedView = Collections.unmodifiableSet(voiced);
   private final Set<ChannelMode> activeModes = ConcurrentHashMap.newKeySet();
+  private final Set<ChannelMode> activeModesView = Collections.unmodifiableSet(activeModes);
   private final List<BanEntry> bans = new CopyOnWriteArrayList<>();
+  private final List<BanEntry> bansView = Collections.unmodifiableList(bans);
   private final Set<String> invited = ConcurrentHashMap.newKeySet();
   private volatile String topic;
   private volatile int memberLimit;
@@ -55,37 +78,160 @@ public final class Channel {
   }
 
   /**
-   * When this channel instance was created (007-bare-mode-query FR-007) — a field initializer, not
-   * a constructor parameter, so it resets naturally whenever a zero-member channel is recreated as
-   * a fresh {@code Channel} object (FR-008), the same way {@code topic}/{@code memberLimit}/{@code
-   * key} already reset.
+   * When this channel instance was created. A field initializer, not a constructor parameter, so a
+   * zero-member channel recreated as a fresh {@code Channel} starts with a new value, the same way
+   * {@code topic}, {@code memberLimit} and {@code key} reset.
    */
   public Instant createdAt() {
     return createdAt;
   }
 
   public Set<ClientSession> members() {
-    return members;
+    return membersView;
+  }
+
+  /**
+   * Returns one status-prefixed nickname per member, in member iteration order. Reads the
+   * concurrent sets without this monitor, so a NAMES reply on a large channel never delays a
+   * transition waiting for it while holding the registry monitor. The traversal never visits a
+   * session twice, but it is not a snapshot of one instant: concurrent joins and departures may or
+   * may not appear, and each prefix comes from two separate reads, so a concurrent privilege change
+   * can yield a prefix the member never held.
+   */
+  public List<String> memberListing() {
+    List<String> listing = new ArrayList<>();
+    for (ClientSession member : members) {
+      String status = "";
+      if (operators.contains(member)) {
+        status = "@";
+      } else if (voiced.contains(member)) {
+        status = "+";
+      }
+      listing.add(status + member.nickname());
+    }
+    return listing;
   }
 
   public Set<ClientSession> operators() {
-    return operators;
+    return operatorsView;
   }
 
   public Set<ClientSession> voiced() {
-    return voiced;
+    return voicedView;
   }
 
   public Set<ChannelMode> activeModes() {
-    return activeModes;
+    return activeModesView;
   }
 
   public List<BanEntry> bans() {
-    return bans;
+    return bansView;
   }
 
-  public Set<String> invited() {
-    return invited;
+  /** Adds an invitation using IRC case folding; repeated invitations remain a single entry. */
+  public synchronized void invite(String nickname) {
+    invited.add(CaseMapping.fold(nickname));
+  }
+
+  /** Reports whether this nickname has a pending invitation, using IRC case folding. */
+  public synchronized boolean isInvited(String nickname) {
+    return invited.contains(CaseMapping.fold(nickname));
+  }
+
+  /** Consumes a pending invitation once, returning whether it existed. */
+  public synchronized boolean consumeInvitation(String nickname) {
+    return invited.remove(CaseMapping.fold(nickname));
+  }
+
+  /**
+   * Runs {@code action} holding this channel's monitor and returns its result; the monitor is
+   * released when the action returns or throws. The action reads and changes state guarded by this
+   * channel and, when the {@link ChannelRegistry} monitor is already held by the caller, the
+   * registry-owned transition state (session membership, registry map). It never acquires the
+   * registry monitor for the first time, so a channel-only action must not call registry
+   * operations, and it never takes another channel's monitor. It does not deliver messages, call
+   * extension code or block.
+   */
+  synchronized <T> T underMonitor(Supplier<T> action) {
+    return action.get();
+  }
+
+  /** As {@link #underMonitor(Supplier)}, for an action with no result. */
+  synchronized void runUnderMonitor(Runnable action) {
+    action.run();
+  }
+
+  /** A per-member channel privilege. */
+  public enum MemberPrivilege {
+    OPERATOR,
+    VOICE
+  }
+
+  /**
+   * Grants or revokes a privilege for a current member in one step under this channel's monitor.
+   * Returns {@code false} and changes nothing for a non-member; for a member it returns {@code
+   * true}, including a revoke of a privilege the member does not hold.
+   */
+  public synchronized boolean setMemberPrivilege(
+      ClientSession member, MemberPrivilege privilege, boolean granted) {
+    Objects.requireNonNull(privilege);
+    if (!members.contains(member)) {
+      return false;
+    }
+    Set<ClientSession> holders =
+        switch (privilege) {
+          case OPERATOR -> operators;
+          case VOICE -> voiced;
+        };
+    if (granted) {
+      holders.add(member);
+    } else {
+      holders.remove(member);
+    }
+    return true;
+  }
+
+  /** Grants operator status to a current member; returns false only for a non-member. */
+  public synchronized boolean grantOperator(ClientSession member) {
+    if (!members.contains(member)) {
+      return false;
+    }
+    operators.add(member);
+    return true;
+  }
+
+  /** Removes operator status, returning whether it was present. */
+  public synchronized boolean revokeOperator(ClientSession member) {
+    return operators.remove(member);
+  }
+
+  /** Grants voice to a current member; returns false only for a non-member. */
+  public synchronized boolean grantVoice(ClientSession member) {
+    if (!members.contains(member)) {
+      return false;
+    }
+    voiced.add(member);
+    return true;
+  }
+
+  /** Removes voice, returning whether it was present. */
+  public synchronized boolean revokeVoice(ClientSession member) {
+    return voiced.remove(member);
+  }
+
+  /** Activates a mode, clearing PRIVATE for SECRET and SECRET for PRIVATE in the same step. */
+  public synchronized void setMode(ChannelMode mode) {
+    if (CoreChannelModes.SECRET.equals(mode)) {
+      activeModes.remove(CoreChannelModes.PRIVATE);
+    } else if (CoreChannelModes.PRIVATE.equals(mode)) {
+      activeModes.remove(CoreChannelModes.SECRET);
+    }
+    activeModes.add(mode);
+  }
+
+  /** Clears a mode; clearing an inactive mode is a no-op. */
+  public synchronized void clearMode(ChannelMode mode) {
+    activeModes.remove(mode);
   }
 
   public String topic() {
@@ -97,9 +243,9 @@ public final class Channel {
   }
 
   /**
-   * The {@code user-limit} channel mode's current value (006-complete-core-protocol FR-001) —
-   * {@code 0} means unset (no limit), mirroring {@code topic}'s {@code null}-means-unset shape but
-   * using {@code 0} since a real limit is always positive.
+   * The {@code user-limit} channel mode's current value. {@code 0} means unset (no limit),
+   * mirroring {@code topic}'s {@code null}-means-unset shape but using {@code 0} since a real limit
+   * is always positive.
    */
   public int memberLimit() {
     return memberLimit;
@@ -109,10 +255,7 @@ public final class Channel {
     this.memberLimit = memberLimit;
   }
 
-  /**
-   * The {@code channel-key} channel mode's current value (006-complete-core-protocol FR-004) —
-   * {@code null} means unset.
-   */
+  /** The {@code channel-key} channel mode's current value. {@code null} means unset. */
   public String key() {
     return key;
   }
@@ -127,10 +270,10 @@ public final class Channel {
 
   /**
    * Adds a member, granting operator status if this is the channel's very first member (classic
-   * first-join-gets-operator default, FR-013). Returns {@code true} if operator status was granted
-   * by this call.
+   * first-join-gets-operator default). Returns {@code true} if operator status was granted by this
+   * call.
    */
-  public synchronized boolean addMember(ClientSession session) {
+  synchronized boolean addMember(ClientSession session) {
     boolean wasEmpty = members.isEmpty();
     members.add(session);
     if (wasEmpty) {
@@ -139,19 +282,16 @@ public final class Channel {
     return wasEmpty;
   }
 
-  /**
-   * Removes a departing session from membership, operator, and voice state together
-   * (data-model.md).
-   */
-  public void removeMember(ClientSession session) {
+  /** Removes a departing session from membership, operator, and voice state together. */
+  synchronized void removeMember(ClientSession session) {
     members.remove(session);
     operators.remove(session);
     voiced.remove(session);
   }
 
   /**
-   * Lookup of a current member by nickname (FR-064's `MEMBER`-kind targets), folded with the same
-   * rfc1459 casemapping as {@link NicknameRegistry} (FR-052).
+   * Lookup of a current member by nickname, folded with the same rfc1459 casemapping as {@link
+   * NicknameRegistry}.
    */
   public Optional<ClientSession> findMember(String nickname) {
     String folded = CaseMapping.fold(nickname);
@@ -159,9 +299,9 @@ public final class Channel {
   }
 
   /**
-   * Adds a ban mask, enforcing the 100-entry cap atomically (FR-062) — {@code true} if the mask is
-   * now present (including already-present, a no-op success), {@code false} if adding it would
-   * exceed the cap.
+   * Adds a ban mask, enforcing the 100-entry cap atomically — {@code true} if the mask is now
+   * present (including already-present, a no-op success), {@code false} if adding it would exceed
+   * the cap.
    */
   public synchronized boolean addBan(BanEntry entry) {
     if (bans.stream().anyMatch(b -> b.mask().equals(entry.mask()))) {
@@ -174,8 +314,8 @@ public final class Channel {
     return true;
   }
 
-  /** Removes a ban mask — a silent no-op if not present (FR-062). */
-  public void removeBan(String mask) {
+  /** Removes a ban mask — a silent no-op if not present. */
+  public synchronized void removeBan(String mask) {
     bans.removeIf(b -> b.mask().equals(mask));
   }
 

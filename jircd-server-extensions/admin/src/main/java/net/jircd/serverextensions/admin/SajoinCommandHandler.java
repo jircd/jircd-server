@@ -24,6 +24,7 @@ import net.jircd.core.session.Channel;
 import net.jircd.core.session.ChannelRegistry;
 import net.jircd.core.session.ClientSession;
 import net.jircd.core.session.PresentedIdentity;
+import net.jircd.core.session.Recipients;
 import net.jircd.core.session.command.CommandHandler;
 import net.jircd.core.session.command.JoinCommandHandler;
 import net.jircd.core.session.command.Replies;
@@ -34,8 +35,8 @@ import net.jircd.protocol.NumericReply;
 
 /**
  * {@code SAJOIN} — the sender's own session joins a channel via the same create-or-join path
- * ordinary {@code JOIN} uses, but skipping the {@code JOIN}-gate check point entirely (FR-057,
- * research.md "Administrator channel override"). Grammar/UTF-8 validity are NOT skipped.
+ * ordinary {@code JOIN} uses, but skipping the {@code JOIN}-gate check point entirely.
+ * Grammar/UTF-8 validity are NOT skipped.
  */
 public final class SajoinCommandHandler implements CommandHandler {
 
@@ -72,17 +73,18 @@ public final class SajoinCommandHandler implements CommandHandler {
       return;
     }
 
-    Channel channel = channelRegistry.join(name, session, ignored -> true).orElseThrow();
+    var joined = channelRegistry.join(name, session, ignored -> true);
+    if (joined.isEmpty()) {
+      return;
+    }
+    var result = joined.get();
+    Channel channel = result.channel();
 
     String presentedForm = PresentedIdentity.presentedForm(session, extensionRegistry);
     Message joinNotification =
         new Message(Map.of(), presentedForm, Command.JOIN, "JOIN", List.of(channel.name()));
-    for (ClientSession member : channel.members()) {
-      if (member.writer() != null) {
-        member.writer().enqueueRaw(joinNotification);
-      }
-    }
+    Recipients.deliver(result.recipients(), joinNotification);
 
-    JoinCommandHandler.sendNamesReply(session, channel, serverName.get());
+    JoinCommandHandler.sendNamesReply(session, channel, serverName.get(), result.memberListing());
   }
 }

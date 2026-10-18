@@ -15,7 +15,6 @@
  */
 package net.jircd.core.session;
 
-import java.util.HashSet;
 import java.util.Set;
 import net.jircd.core.extension.ExtensionRegistry;
 import net.jircd.protocol.Command;
@@ -26,10 +25,9 @@ import org.slf4j.LoggerFactory;
 /**
  * The one path every disconnect trigger funnels through — a client-sent {@code QUIT}, a keep-alive
  * timeout, an {@code OPER} lockout, and an abrupt TCP-level loss all call this rather than
- * duplicating cleanup logic per trigger (FR-017, research.md "Voluntary disconnect and quit
- * reasons"). Removes channel membership (including operator/voice status, data-model.md {@code
- * Channel} validation rules) and notifies every affected channel — exactly once per distinct
- * neighbor, not once per shared channel.
+ * duplicating cleanup logic per trigger. Removes channel membership (including operator and voice
+ * status) and notifies every affected channel — exactly once per distinct neighbor, not once per
+ * shared channel.
  */
 public final class DisconnectCleanup {
 
@@ -39,16 +37,32 @@ public final class DisconnectCleanup {
   private final ChannelRegistry channelRegistry;
   private final WhowasHistory whowasHistory;
   private final ExtensionRegistry extensionRegistry;
+  private final Runnable afterClaim;
 
   public DisconnectCleanup(
       NicknameRegistry nicknameRegistry,
       ChannelRegistry channelRegistry,
       WhowasHistory whowasHistory,
       ExtensionRegistry extensionRegistry) {
+    this(nicknameRegistry, channelRegistry, whowasHistory, extensionRegistry, () -> {});
+  }
+
+  /**
+   * Test-only seam: {@code afterClaim} runs once the call has claimed CLOSING, before any channel
+   * membership is removed. Not a production extension point; a hook that throws leaves CLOSING
+   * claimed with the memberships in place, and the guard prevents a retry.
+   */
+  DisconnectCleanup(
+      NicknameRegistry nicknameRegistry,
+      ChannelRegistry channelRegistry,
+      WhowasHistory whowasHistory,
+      ExtensionRegistry extensionRegistry,
+      Runnable afterClaim) {
     this.nicknameRegistry = nicknameRegistry;
     this.channelRegistry = channelRegistry;
     this.whowasHistory = whowasHistory;
     this.extensionRegistry = extensionRegistry;
+    this.afterClaim = afterClaim;
   }
 
   public void cleanup(ClientSession session, String reason) {
@@ -61,33 +75,19 @@ public final class DisconnectCleanup {
     if (!session.lifecycle().closeIfNotAlreadyClosing()) {
       return;
     }
+    afterClaim.run();
     ConnectionMonitorLog.disconnected(
         session.connectionId(),
         java.time.Duration.between(session.connectedAt(), java.time.Instant.now()),
         reason);
-    Set<ClientSession> neighbors = new HashSet<>();
-    for (Channel channel : Set.copyOf(session.channelMemberships())) {
-      channel.removeMember(session);
-      neighbors.addAll(channel.members());
-      session.channelMemberships().remove(channel);
-      channelRegistry.removeIfEmpty(channel);
-    }
-    neighbors.remove(session);
+    Set<ClientSession> neighbors = channelRegistry.leaveAll(session);
 
     if (session.nickname() != null && session.ident() != null && session.realHostname() != null) {
       String prefix = PresentedIdentity.presentedForm(session, extensionRegistry);
       Message quit =
           new Message(java.util.Map.of(), prefix, Command.QUIT, "QUIT", java.util.List.of(reason));
-      for (ClientSession neighbor : neighbors) {
-        // Borrowed reference to the neighbor's own still-active writer — owned and
-        // closed by that neighbor's own connection lifecycle, never here.
-        @SuppressWarnings("PMD.CloseResource")
-        SessionWriter writer = neighbor.writer();
-        if (writer != null) {
-          writer.enqueueRaw(quit);
-        }
-      }
-      // 002-extended-irc-commands FR-016: one WHOWAS entry per disconnection, regardless of
+      Recipients.deliver(neighbors, quit);
+      // One WHOWAS entry per disconnection, regardless of
       // cause (QUIT, KILL, keep-alive timeout) — this is the single point every cause funnels
       // through, so no cause-specific recording is needed anywhere else. presentedHostname is a
       // snapshot of whatever cloak was displaying for this session right now, not a live
