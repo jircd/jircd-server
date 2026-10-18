@@ -16,6 +16,7 @@
 package net.jircd.integration;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.IOException;
@@ -51,7 +52,7 @@ class JoinStormSupportTest {
           .write(
               "@time=now :server 366 storm366 #storm :End of NAMES\r\n"
                   .getBytes(StandardCharsets.UTF_8));
-      JoinStormLoadTest.awaitEndOfNames(client);
+      assertThatCode(() -> JoinStormLoadTest.awaitEndOfNames(client)).doesNotThrowAnyException();
     }
   }
 
