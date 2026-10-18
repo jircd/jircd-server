@@ -11,7 +11,7 @@ description: "Task list for the outbound queue overflow policy (013, issue #50)"
 
 **Tests**: Required. The constitution (Testing Standards) and AGENTS.md require tests first; each story lists its tests before its implementation.
 
-**Organization**: grouped by user story. The open decisions are resolved in spec.md Clarifications (storm 2,000; server-wide limit; no fan-out change; backlog discard on overflow; ceiling 2 MiB).
+**Organization**: grouped by user story. The open decisions are resolved in spec.md Clarifications (storm 2,000; server-wide limit; no fan-out change; backlog discard on overflow; ceiling 2 MiB; pure per-message capability accounting; separate survival and latency targets).
 
 ## Format: `[ID] [P?] [Story] Description`
 
@@ -26,9 +26,9 @@ Gradle multi-module. Core code: `jircd-core/src/main/java/net/jircd/core/...`; u
 
 **Purpose**: bring in the load test and measure the baseline before changing anything
 
-- [ ] T001 Cherry-pick commit `a847df5` (`JoinStormLoadTest`, from `feature/issue-48-join-storm-load-test`) onto this branch so `jircd-integration-tests/src/test/java/net/jircd/integration/JoinStormLoadTest.java` exists; #48's PR is open as #59; if it has merged by then, rebase instead and skip the cherry-pick
-- [ ] T002 Record the pre-change baseline: run `./gradlew :jircd-integration-tests:loadTest --tests '*JoinStormLoadTest*'` at least 7 times (waves of 100) and write medians (storm time, `#quiet` p99/max) plus the observed overflow failures at one simultaneous wave of 250 and 1,000 into `specs/013-outbound-sendq-policy/baseline.md`
-- [ ] T003 [P] Add a package-private/test-only way to read a `SessionWriter`'s peak queued bytes (or log it at DEBUG) and use it in a scratch run of the 2,000-client single-wave storm to record bytes queued per member; write the figure into `specs/013-outbound-sendq-policy/baseline.md` and confirm or adjust the 512 KiB default in `research.md` D3 (default MUST be at least 3x the measured peak and at most the 2 MiB ceiling; if 3x the peak exceeds 2 MiB, stop and report to the user)
+- [x] T001 Bring in #48's hardened `JoinStormLoadTest` and `JoinStormSupportTest`: satisfied by the coordinator rebase onto main containing merged PR #59 (`f9dfac1`); no cherry-pick is needed.
+- [x] T002 Record the pre-change baseline: run `./gradlew --no-daemon :jircd-integration-tests:loadTest --tests 'net.jircd.integration.JoinStormLoadTest' --rerun` at least 7 times (waves of 100) and write medians (storm time, `#quiet` p99/max) plus the observed overflow failures at one simultaneous wave of 250 and 1,000 into `specs/013-outbound-sendq-policy/baseline.md`
+- [x] T003 Record the accepted scratch peak in `baseline.md` and research D3: 2,000 clients in one wave, peak 31,286 B, 3x = 93,858 B; retain default 524288 B below the 2097152 B ceiling. The temporary package-private probe and enlarged entry cap are restored afterward. Its old allowance is historical methodology; the user accepts this measurement and the 512 KiB default. The 2 GiB probe reaches all clients; its failed latency assertion informs the separate survival target.
 
 ---
 
@@ -52,22 +52,22 @@ Gradle multi-module. Core code: `jircd-core/src/main/java/net/jircd/core/...`; u
 
 **Goal**: queue limit is in bytes, default sized so a 2,000-client simultaneous storm completes with 0 overflow disconnects.
 
-**Independent Test**: `JoinStormLoadTest` with one simultaneous wave of 2,000 passes; `SessionWriter` unit tests show the byte accounting.
+**Independent Test**: `SingleWaveJoinStormLoadTest` proves 2,000-client survival without latency assertions; existing `JoinStormLoadTest` keeps waves of 100 and all bounds; unit tests prove the conservative wire-byte bound and pure memoized contributions.
 
 ### Tests for User Story 1 (write first, confirm they fail)
 
-- [ ] T009 [P] [US1] Add `jircd-core/src/test/java/net/jircd/core/session/SessionWriterByteLimitTest.java`: with limit 16384 and a blocked output stream, enqueueing raw messages totalling under the limit never triggers overflow, however many entries; the first enqueue that would push estimated queued bytes past the limit triggers overflow exactly once; bytes are released as the writer drains; a fan-out entry is counted with the 128-byte tag allowance; a maximum-size legal line fits an empty queue at the 16384 floor
-- [ ] T010 [P] [US1] Update `jircd-core/src/test/java/net/jircd/core/session/SessionWriterCloseTest.java` (it fills "256 lines") and any other test that assumes the 256-entry cap (`rg -l 'QUEUE_CAPACITY|256' jircd-core/src/test`) to size its fill from a byte limit instead
-- [ ] T011 [US1] Change `jircd-integration-tests/src/test/java/net/jircd/integration/JoinStormLoadTest.java` to JOIN all 2,000 clients in one simultaneous wave (remove `WAVE_SIZE` waves, keep `CONNECT_CONCURRENCY`), assert 0 unexpected disconnects, and update the class comment's measured numbers; confirm it fails on the current code
+- [ ] T009 [US1] Write tests first in `jircd-core/src/test/java/net/jircd/core/session/SessionWriterByteLimitTest.java` for the 16384-byte floor: many small entries fit below the limit, the first exceeding enqueue overflows once, drain releases reservations, and a maximum-size legal line fits an empty queue. Compare recipient charges with rendered wire bytes including CRLF: capability combinations, message-tags gating, only forwarded client `+` tags, multibyte/escaped values, delimiters, collisions and truncation; exact ordinary charges and a conservative upper bound in all cases. Include a legal 4094-byte server tag data contribution (4096 with framing). Add tests for thread-safe contribution-byte memoization once per message/capability, distinct messages/capability identities, and accounting/render consistency across queued negotiation/reload changes. Add purity tests for `MessageTagsExtension` and `ServerTimeExtension` under their modules' `src/test/java`: repeated calls with the same immutable message yield equal tags derived from its messageId/sentAt. Record pre-implementation failures of the new accounting behavior; purity characterization tests may already pass.
+- [ ] T010 [US1] Update `jircd-core/src/test/java/net/jircd/core/session/SessionWriterCloseTest.java` and other tests that assume the 256-entry cap (`rg -l 'QUEUE_CAPACITY|256' jircd-core/src/test`) to fill from a byte limit; preserve the final-line and second-close drain guarantees. Write these tests before changing the queue.
+- [ ] T011 [US1] Add `jircd-integration-tests/src/test/java/net/jircd/integration/SingleWaveJoinStormLoadTest.java`, tagged `load`: 2,000 continuously reading clients JOIN one channel from one gate, all reach their own end-of-NAMES, zero overflow/unexpected disconnects through explicit teardown; no latency assertion, with finite failure/step/cleanup timeouts. Reuse the hardened shared failure future, bounded connect concurrency and ClientPool ownership. Keep existing `JoinStormLoadTest` waves of 100, scheduled sender, support tests and all latency/time bounds unchanged. Confirm the separate survival test fails on the old queue. If required, configure only the integration build's `loadTest` maximum heap to `2g` with a comment citing T003 (512 MiB exhausts; 2 GiB reaches 2,000 clients); use the same setting for before/after comparisons.
 
 ### Implementation for User Story 1
 
-- [ ] T012 [US1] In `jircd-core/src/main/java/net/jircd/core/session/SessionWriter.java` replace `ArrayBlockingQueue(256)`/`QUEUE_CAPACITY` with an unbounded `LinkedBlockingQueue` plus an atomic `queuedBytes` against a `limitBytes` constructor argument (keep the 3-argument constructor using `DEFAULT_SENDQ_LIMIT_BYTES`); entries carry their estimated size and release it when the writer takes them
-- [ ] T013 [US1] Add the size estimate in `SessionWriter.java`: UTF-8 byte lengths of prefix, command, params and tag keys/values plus separators and CRLF, without serializing; fan-out entries add the fixed 128-byte allowance (research.md D2); enqueue reserves bytes atomically and, when `queuedBytes + size > limitBytes`, undoes the reservation and calls the existing overflow path
-- [ ] T014 [US1] Pass `sendqLimitBytes` from the T008 supplier into `new SessionWriter(...)` in `ConnectionHandler.java`
-- [ ] T015 [US1] Run T009-T011 to green, then 7 alternating before/after runs of `JoinStormLoadTest` (and `Story1DeliveryLatencyLoadTest`, `ConcurrentConnectionScaleLoadTest`) comparing medians against `baseline.md`; record results in `baseline.md` (constitution IV: regressions over 10% need written justification)
+- [ ] T012 [US1] In `jircd-core/src/main/java/net/jircd/core/session/SessionWriter.java` replace `ArrayBlockingQueue(256)`/`QUEUE_CAPACITY` with a `LinkedBlockingQueue` plus atomic `queuedBytes` against a `limitBytes` constructor argument (keep the 3-argument constructor using `DEFAULT_SENDQ_LIMIT_BYTES`); entries carry their conservative wire-byte charge and release it when taken. Preserve final-line/close guarantees.
+- [ ] T013 [US1] Implement research D2 and `contracts/outbound-accounting.md` in `SessionWriter`, `OutboundMessage` accounting metadata and the tag-rendering path: compute each enabled capability's escaped contribution byte metadata once per message/capability, memoized safely for concurrent fan-out with message-scoped lifetime; sum the recipient's component bytes, forwarded client `+` entries only with message-tags negotiation, contributions of its negotiated enabled capabilities, all delimiters and CRLF. No fixed allowance or per-recipient serialization; rendering stays at drain time with no uncharged selection changes. Charge a conservative upper bound for collisions/truncation, reserve atomically, undo rejected reservations and invoke the existing overflow path. Document the pure-message `contributeTags` contract at `jircd-core/src/main/java/net/jircd/core/extension/CapabilityExtension.java`; both current implementations already use messageId/sentAt. Run T009's purity and rendered-wire/memoization tests to green.
+- [ ] T014 [US1] Read the T008 supplier once per connection and pass `sendqLimitBytes` into `new SessionWriter(...)` in `ConnectionHandler.java`; remove the interim discarded `sendqLimitBytes.get();` call.
+- [ ] T015 [US1] Run T009-T011 tests to green; run the separate single-wave survival load test seven times with all 2,000 clients completing and zero overflow/unexpected disconnects, without latency assertions. Run seven alternating before/after pairs of the unchanged wave-of-100 `JoinStormLoadTest`, `Story1DeliveryLatencyLoadTest` and `ConcurrentConnectionScaleLoadTest`, serially with `--no-daemon` and matching heap/JVM settings; force task execution for each sample. Compare comparable medians in `baseline.md`, retain T002's 512 MiB baseline separately if using 2 GiB, and record results plus written justification for regressions over 10%. Run `./gradlew --no-daemon spotlessApply` then `./gradlew --no-daemon build` to exit 0. Mark completed tasks and stop for review after T015; do not start Phase 4 or commit.
 
-**Checkpoint**: the storm passes at default settings; overflow still closes with the old reason and no ERROR line
+**Checkpoint**: the separate survival test passes at default settings, existing latency tests retain their bounds, and rendered-wire tests prove accounting; overflow still closes with the old reason and no ERROR line. Stop after T015.
 
 ---
 
@@ -107,7 +107,7 @@ Gradle multi-module. Core code: `jircd-core/src/main/java/net/jircd/core/...`; u
 ### Implementation for User Story 3
 
 - [ ] T024 [US3] Add `sendqOverflow(String connectionId, int limitBytes, long queuedBytes)` and a process-wide `AtomicLong` total to `jircd-core/src/main/java/net/jircd/core/session/ConnectionMonitorLog.java`; call it from the sendq overflow path in `ConnectionHandler.java` before `cleanup`
-- [ ] T025 [P] [US3] Document the policy in `README.md` (FR-012): default, unit, key, minimum, ceiling, the exact `ERROR` text, QUIT/log reason, reload applies to new connections only, worst-case memory (`connections x limit`: 10,000 x 512 KiB = 5 GiB at the default, 10,000 x 2 MiB = 20 GiB at the ceiling), and guidance for raising it; add `sendqLimitBytes` to the example configuration if the README has one (the gitignored local `jircd-server/jircd.yaml` MUST NOT be touched)
+- [ ] T025 [P] [US3] Document queued wire-data budgeting and additional JVM object/cache overhead, and the policy in `README.md` (FR-012): default, unit, key, minimum, ceiling, the exact `ERROR` text, QUIT/log reason, reload applies to new connections only, worst-case memory (`connections x limit`: 10,000 x 512 KiB = 5 GiB at the default, 10,000 x 2 MiB = 20 GiB at the ceiling), and guidance for raising it; add `sendqLimitBytes` to the example configuration if the README has one (the gitignored local `jircd-server/jircd.yaml` MUST NOT be touched)
 - [ ] T026 [US3] Run T022-T023 to green
 
 **Checkpoint**: all three stories complete
@@ -117,15 +117,15 @@ Gradle multi-module. Core code: `jircd-core/src/main/java/net/jircd/core/...`; u
 ## Phase 6: Polish and cross-cutting
 
 - [ ] T027 [P] Check that no other code path assumes the removed 256-entry capacity or the old shared overflow callback: `rg 'setOnOverflow|QUEUE_CAPACITY|Excess Flood' --glob '*.java'`
-- [ ] T028 `./gradlew spotlessApply` then `./gradlew build` (tests, Spotless, SpotBugs, PMD, coverage 85% line / 75% branch); fix findings without suppressions
-- [ ] T029 Run `./gradlew loadTest` once end to end and the quickstart.md steps; paste the before/after medians into the PR description
+- [ ] T028 `./gradlew --no-daemon spotlessApply` then `./gradlew --no-daemon build` (tests, Spotless, SpotBugs, PMD, coverage 85% line / 75% branch); fix findings without suppressions
+- [ ] T029 Run `./gradlew --no-daemon loadTest` once end to end and the quickstart.md steps; paste the before/after medians into the PR description
 - [ ] T030 Mark completed tasks here and in `baseline.md` with the results; leave the docs commit separate from code per the repo's convention (do not commit without the user's review)
 
 ---
 
 ## Dependencies and execution order
 
-- Phase 1 first (T001 gates T011; T002/T003 inform the default and the budgets).
+- Phase 1 is complete (T001 via rebase; T002 baseline and T003 accepted peak/default are recorded).
 - Phase 2 gates everything: T004 -> T005 -> T006 -> T008; T007 parallel after T006.
 - US1 (T009-T015) is the MVP and gates US2 because both change `SessionWriter.java`; US2 (T016-T021) follows. US3's test and log work (T022-T024) touches `ConnectionMonitorLog.java` and could start after Phase 2, but its integration test T023 needs US2's overflow path.
 - T025 (README) is independent of code after the default is fixed by T003.
@@ -133,7 +133,7 @@ Gradle multi-module. Core code: `jircd-core/src/main/java/net/jircd/core/...`; u
 
 ## Parallel examples
 
-- After T006: T007 with T009, T010 (different files).
+- T009 includes tests in core and the two capability modules; assign disjoint files if delegating. T010 and the separate T011 load test have distinct files. All Gradle runs remain serial.
 - US2 tests T016, T017, T018 (different files / independent cases).
 - T022 and T025 alongside US2 implementation.
 

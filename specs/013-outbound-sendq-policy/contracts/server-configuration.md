@@ -14,3 +14,11 @@ sendqLimitBytes: 524288
 - Reload: affects connections opened after the reload only.
 - Worst-case queue memory is `connections x sendqLimitBytes` (documented in the README); at the
   default, 10,000 connections x 512 KiB = 5 GiB, at the ceiling 10,000 x 2 MiB = 20 GiB.
+
+- The 512 KiB default is confirmed by T003: peak 31,286 B, 3x = 93,858 B. The ceiling stays 2 MiB.
+- Queue charges upper-bound rendered wire bytes using the selected recipient's actual capability
+  contribution metadata, escaped tag bytes, delimiters and CRLF; no fixed tag allowance. See
+  [outbound accounting](outbound-accounting.md). The product describes queued wire data; JVM
+  object/cache overhead is additional to the `connections x limit` figure.
+- The optional 2 GiB integration `loadTest` heap is a test-harness setting, not this configuration
+  key or a server deployment requirement; see [load-test contract](load-tests.md).

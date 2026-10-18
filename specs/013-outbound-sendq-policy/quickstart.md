@@ -1,16 +1,29 @@
 # Quickstart: validating the sendq policy
 
-Prerequisites: JDK 25 toolchain, worktree `.worktrees/013-outbound-sendq-policy`.
+Prerequisites: JDK 25 toolchain, worktree `.worktrees/013-outbound-sendq-policy`. Run every Gradle
+invocation serially with `--no-daemon`. No implementation starts until the revised docs are reviewed.
 
-1. Unit and integration tests (scoped first):
-   `./gradlew :jircd-core:test --tests '*SessionWriter*' --tests '*ConfigurationLoader*' --tests '*ConnectionMonitorLog*'`
-   `./gradlew :jircd-integration-tests:test --tests '*SendqOverflow*'`
-   Expect: green; a non-reading client is closed, receives `ERROR ... (SendQ exceeded)` when it can, others unaffected.
-2. JOIN storm (load tag, excluded from `test`):
-   `./gradlew :jircd-integration-tests:loadTest --tests '*JoinStormLoadTest*'`
-   Expect: 2,000 simultaneous JOINs, 0 overflow disconnects, budgets met (see spec SC-001, SC-002).
-   Run at least 7 alternating before/after runs and compare medians (variance is high, see #48).
-3. Config check: set `sendqLimitBytes: 100` (below the 16384 floor) and then `2097153` (above the
-   2 MiB ceiling) in a test config and start the server; expect a startup error naming
-   `sendqLimitBytes` each time.
-4. Full gate: `./gradlew build` (tests, Spotless, SpotBugs, PMD, coverage 85%/75%).
+1. Scoped unit tests first:
+   `./gradlew --no-daemon :jircd-core:test --tests '*SessionWriter*' --tests '*ConfigurationLoader*' --tests '*ConnectionMonitorLog*'`
+   Run the new purity tests in `:jircd-capabilities:message-tags:test` and
+   `:jircd-capabilities:server-time:test`. Verify the conservative accounting bound against rendered
+   wire bytes, including escaped tags, a legal 4094-byte server contribution and memoization.
+2. Overflow integration behavior (after Phase 4):
+   `./gradlew --no-daemon :jircd-integration-tests:test --tests '*SendqOverflow*'`
+   Expect a stuck reader to close, best-effort ERROR, and other readers unaffected.
+3. Existing latency regression test (load tag, excluded from `test`):
+   `./gradlew --no-daemon :jircd-integration-tests:loadTest --tests 'net.jircd.integration.JoinStormLoadTest' --rerun`
+   Expect waves of 100, storm <15 s, quiet p99 <500 ms, max <1 s; all bounds unchanged.
+4. Separate survival test:
+   `./gradlew --no-daemon :jircd-integration-tests:loadTest --tests 'net.jircd.integration.SingleWaveJoinStormLoadTest' --rerun`
+   Expect 2,000 clients in one wave, all end-of-NAMES, zero overflow/unexpected disconnects; no
+   latency assertion. The build's integration `loadTest` task may use a documented 2 GiB heap,
+   based on T003; no init script is needed after implementation.
+5. T015 measurements: seven alternating before/after pairs for the existing wave-of-100 test,
+   Story1DeliveryLatencyLoadTest and ConcurrentConnectionScaleLoadTest with matching heap/JVM
+   settings, plus seven post-change survival runs. Keep the original 512 MiB T002 figures labeled;
+   record comparable medians and explain regressions over 10% in `baseline.md`.
+6. Config check: use a disposable test configuration with `sendqLimitBytes: 100`, then `2097153`;
+   each startup error names the setting. Never edit the local `jircd-server/jircd.yaml`.
+7. Full gate: `./gradlew --no-daemon spotlessApply`, then `./gradlew --no-daemon build` (tests,
+   Spotless, SpotBugs, PMD, coverage 85%/75%). Stop after T015 for review.

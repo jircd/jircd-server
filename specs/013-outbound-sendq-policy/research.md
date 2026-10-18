@@ -27,34 +27,60 @@
 
 ## D2: Unit and accounting of the limit
 
-- **Decision**: bytes. Each queued entry carries an estimated wire size; `queuedBytes` (atomic) is
-  added at enqueue and subtracted when the writer thread takes the entry. Overflow when
-  `queuedBytes + size > limit`.
-- **Estimate**: sum of UTF-8 lengths of prefix, command, params and tag key/values plus separators
-  and CRLF, computed without serializing. Fan-out entries add a fixed allowance (128 B) for the
-  tags rendered at drain time (`time`, `msgid`). The estimate is an upper bound, so real memory use
-  stays within the limit.
-- **Rationale**: serializing 2,000 times per JOIN on the broadcaster thread would turn a cheap
-  enqueue into the cost the registry is trying to avoid; an upper-bound estimate keeps the memory
-  guarantee.
-- **Alternatives**: serialize at enqueue (exact, more CPU, moves per-recipient tag rendering to the
-  sender); count entries but raise 256 (does not express memory, keeps the hidden unit).
-- **Queue type**: `LinkedBlockingQueue` (no entry cap; entries are at least ~10 B so the byte
-  budget bounds the count).
+- **Decision**: a conservative upper bound on outbound wire bytes. Each entry carries its charge;
+  atomically reserve at enqueue and release when the writer takes it. Reject an enqueue whose
+  reservation exceeds `limitBytes`. The queue is a `LinkedBlockingQueue` bounded by this budget.
+- **Recipient charge**: prefix/command/parameters with UTF-8 and trailing-parameter syntax,
+  forwarded client `+` tags only if the recipient negotiated message-tags, and the sum of
+  contributions from enabled capabilities that recipient negotiated, plus tag delimiters and
+  CRLF. Count escaped tag values, including expansion of semicolon, space, backslash, CR and LF.
+  There is no fixed allowance. Count actual selected contributions, however large their legal
+  tag data is; preserve the existing per-origin and combined protocol budgets.
+- **Shared computation**: `CapabilityExtension.contributeTags(message)` is pure and depends only
+  on the immutable message: msgid uses `message.messageId()` and time uses `message.sentAt()`.
+  Compute escaped contribution byte metadata once per enabled capability/message, memoized
+  safely across concurrent recipients. Cache by capability identity and message, with lifetime
+  bounded by that message; recipients sum only their selected contributions. Document and test
+  the purity contract; both existing implementations already satisfy it.
+- **Bound, not exact wire size**: summing selected tag entries before existing merge precedence
+  may count overwritten keys; untruncated component bytes may exceed the eventual text length.
+  Both overcount safely. Ordinary non-colliding, untruncated messages have exact wire charges.
+  Delimiters include `@`, `=`, `;`, separating spaces, trailing-parameter `:` and CRLF as applicable.
+  Accounting and drain-time capability selection must stay consistent: no queued entry may
+  acquire uncharged decorations through capability negotiation or reload. Rendering remains at
+  drain time; tests cover queued entries across those changes as well as normal selection.
+- **Validation**: compare reserved bytes with actual rendered wire bytes for each capability
+  combination, escaped/multibyte values, client-tag filtering, merge collisions and text
+  truncation. Include a legal 4,094-byte server tag data contribution (4,096 bytes with framing).
+  Test memoization once per message/capability under concurrent fan-out and across new messages.
+- **Rationale**: per-message memoized metadata avoids serialization or contribution-byte
+  recomputation per recipient without assuming a maximum smaller than the protocol permits.
+- **Rejected**: the former fixed 128-byte allowance undercounts legal large server tags;
+  serializing per recipient at enqueue moves rendering onto the broadcaster; a message-count
+  cap does not express the wire-data budget.
 
 ## D3: Default, floor and ceiling
 
-- **Decision**: default 512 KiB (524288), floor 16 KiB (16384), ceiling 2 MiB (2097152), the user's decision.
-- **Rationale**: a JOIN line is about 50-80 B; 2,000 JOINs is about 100-160 KB per member before
-  other traffic, so 512 KiB is about 3x headroom. Floor is above one maximum line (8191 tag bytes +
-  512 command bytes + CRLF) so a legal message always fits an empty queue. Ceiling keeps a typo from
-  disabling the protection and matches the 1-2 MB per class of classic IRC servers. The default
-  (512 KiB, or whatever T003 measures) MUST NOT exceed the ceiling.
-- **Open**: the default MUST be re-validated by a measurement task (queued bytes per member during
-  the 2,000 storm, via a test hook) before the value is fixed; the plan's number is a starting
-  point, not a measured result.
-- **Worst case memory** at default: 10,000 stuck connections x 512 KiB = 5 GiB; at the ceiling,
-  10,000 x 2 MiB = 20 GiB. Both documented; the first is an argument against a higher default.
+- **Decision**: retain default 512 KiB (524288), floor 16 KiB (16384), ceiling 2 MiB (2097152).
+- **T003 complete**: the scratch single-wave 2,000-client probe records peak queued bytes per
+  member of **31,286 B**; **3x = 93,858 B**, below the default and ceiling. The probe counts the
+  former fan-out allowance; retain that historical methodology in `baseline.md` rather than
+  relabeling it as a measurement of the revised estimator. No default increase is needed.
+- **Protocol floor**: one maximum-size outbound line (8191 tag-section bytes plus 512
+  command-section bytes including CRLF) fits the floor. The upper-bound estimator must also
+  admit a maximum-size legal line into an empty queue at this floor.
+- **Heap evidence**: both scratch variants exhaust the default 512 MiB test heap. A 2 GiB
+  test heap reaches end-of-NAMES for all 2,000 clients and records the peak. Permit the build's
+  integration `loadTest` task to set `maxHeapSize = "2g"` with a comment citing that probe.
+  This is a test-harness resource setting, not a larger sendq or a deployment heap requirement.
+- **Separate targets**: keep `JoinStormLoadTest` in waves of 100 with its existing 15 s storm,
+  500 ms quiet p99 and 1 s max bounds. Add `SingleWaveJoinStormLoadTest` for survival of 2,000
+  simultaneous JOINs, all end-of-NAMES and zero overflow/unexpected disconnects, with no latency
+  assertion. Retain finite failure/cleanup timeouts and the hardened shared failure/ClientPool
+  mechanisms. The probe's quiet p99/max of 1,789.5 ms is recorded, not turned into a relaxed
+  latency bound. Compare before/after latency runs with the same heap configuration.
+- **Worst-case queued wire data**: 10,000 x 512 KiB = 5 GiB; at the ceiling, 10,000 x 2 MiB =
+  20 GiB. JVM object/cache overhead is additional; the byte budget is not an exact heap measure.
 
 ## D4: Server-wide only, not per connection class
 
@@ -100,6 +126,6 @@
 
 ## D8: Test dependency on #48
 
-- **Decision**: cherry-pick `a847df5` (`JoinStormLoadTest`) onto this branch, then change it to one
-  simultaneous wave. Coordinate with the #48 PR so the file does not conflict.
-- **Open**: #48's PR is open as #59 (branch `feature/issue-48-join-storm-load-test`); if it merges first, rebase and drop the cherry-pick.
+- **Resolved**: PR #59 merges as `f9dfac1`; the coordinator rebases this branch onto main.
+  T001 is satisfied without a cherry-pick. Keep the hardened `JoinStormLoadTest` and
+  `JoinStormSupportTest`; the separate single-wave test reuses their failure/ownership patterns.

@@ -40,6 +40,8 @@ queue overflow from a rate-limit flood.
 The audience is twofold: IRC users and bots in large channels, who must not be dropped by a
 legitimate burst, and operators, who must be able to size the limit and see when it is hit.
 
+## Clarifications
+
 ### Session 2026-10-18
 
 - Q: Which of the issue's four options are in scope? → A: Options 1 (byte-sized, configurable
@@ -51,9 +53,32 @@ legitimate burst, and operators, who must be able to size the limit and see when
   default at least 3x the measured per-member volume (FR-003, SC-001).
 - Q: Is discarding queued-but-unwritten lines acceptable when a connection overflows, so the
   `ERROR` line is sent first? → A: Yes (FR-007).
-- Bounds (user decision): default 512 KiB (stays subject to the T003 measurement and must not
-  exceed the ceiling), minimum 16 KiB, ceiling 2 MiB (2,097,152 bytes), in line with classic
+- Bounds (user decision): default 512 KiB (confirmed by T003: peak 31,286 B, 3x = 93,858 B),
+  minimum 16 KiB, ceiling 2 MiB (2,097,152 bytes), in line with classic
   servers (FR-004, FR-012).
+
+### Follow-up decisions 2026-10-18
+
+- Q: How are deferred capability tags charged? → A: Remove the fixed allowance. Compute each
+  enabled capability's contributed escaped tag bytes once per message, memoized by capability;
+  `contributeTags` is a pure function of that message (`msgid` uses `messageId`, `time` uses
+  `sentAt`). At enqueue charge the recipient's component bytes, forwarded client `+` tags only
+  when message-tags is negotiated, contributions of its negotiated enabled capabilities, tag
+  delimiters and CRLF. Rendering stays at drain time. Accounting is a **conservative upper
+  bound**: it includes actual selected contributions, but may count entries later overwritten
+  during tag merging or text later truncated. No fixed allowance or smaller legal tag budget.
+  Contract documentation and tests cover purity, memoization, escaped bytes and rendered-wire
+  comparison, including legal 4,094-byte server tag data.
+- Q: Must the single-wave storm satisfy the existing latency budget? → A: Keep
+  `JoinStormLoadTest` at waves of 100 with all its current bounds unchanged. Add a separate
+  load-tagged 2,000-client single-wave survival test with zero overflow disconnects and all
+  clients completing end-of-NAMES; it has no latency assertion. Finite failure/cleanup timeouts
+  remain. The build's integration `loadTest` task may use a documented 2 GiB heap: the T003
+  probe exhausts 512 MiB, but reaches all 2,000 clients with 2 GiB. This does not relax the
+  wave-of-100 test's latency bounds.
+- T003 is complete: measured peak 31,286 B, 3x = 93,858 B; retain the 512 KiB default.
+  The probe's old allowance and its failed latency assertion remain historical evidence in
+  `baseline.md`, not requirements for the revised estimator or a passing single-wave test.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -66,17 +91,18 @@ end-of-NAMES; nobody already in the channel is disconnected along the way.
 **Why this priority**: This is the user-visible failure the issue reports; the other stories
 are about explaining and observing the limit, which only matters once the limit is sane.
 
-**Independent Test**: Run the JOIN-storm load test with all clients of one storm JOINing at the
-same instant (no waves) and assert every client reaches its own end-of-NAMES with no unexpected
-disconnects.
+**Independent Test**: Run the separate single-wave survival load test with 2,000 clients and
+assert every client reaches its own end-of-NAMES with zero overflow or unexpected disconnects.
+Run the unchanged wave-of-100 `JoinStormLoadTest` separately for latency regression coverage.
 
 **Acceptance Scenarios**:
 
 1. **Given** a channel receiving a simultaneous JOIN storm of the agreed size from clients that
    read continuously, **When** the storm runs, **Then** no client is disconnected for outbound
    queue overflow and every client receives its own end-of-NAMES.
-2. **Given** the same storm, **When** it completes, **Then** the time to complete and the
-   latency of traffic on an unrelated channel stay within the existing JOIN-storm budgets.
+2. **Given** the existing 2,000-client storm in waves of 100, **When** it runs, **Then** completion
+   time and unrelated-channel latency stay within its unchanged budgets. The separate
+   single-wave survival test imposes no latency assertion.
 3. **Given** a server with default settings and no configuration changes, **When** the storm
    runs, **Then** scenario 1 holds (the default is sized for the agreed storm).
 
@@ -170,7 +196,11 @@ it refuses to start with an error naming the setting.
 
 - **FR-001**: The limit on data queued for one connection MUST be measured in bytes of outbound
   protocol data, not in number of messages, so that the policy does not depend on how a burst is
-  split into lines.
+  split into lines. Charging MUST upper-bound the rendered outbound wire bytes, including escaped
+  tag values, all delimiters and CRLF, without serializing per recipient at enqueue. Each
+  recipient is charged only for the client tags and enabled capability contributions selected
+  for it; contribution byte metadata is memoized once per message/capability. Tag collisions and
+  text truncation may make the bound conservative; a fixed tag allowance is prohibited.
 - **FR-002**: The system MUST provide an administrator-configurable setting for that limit in the
   server configuration, and a documented default.
 - **FR-003**: The default MUST be large enough that a simultaneous JOIN storm of the agreed size
@@ -198,10 +228,11 @@ it refuses to start with an error naming the setting.
 - **FR-010**: Handling an overflow that races another disconnect trigger for the same connection
   MUST produce one close, one log entry and one QUIT broadcast.
 - **FR-011**: A connection that stops reading MUST still be closed once the data queued for it
-  exceeds the limit, so per-connection memory stays bounded by the limit plus one message.
+  exceeds the limit, so queued protocol data per connection stays bounded by the limit plus one
+  message. JVM object and message-metadata overhead is additional to this wire-data budget.
 - **FR-012**: The documented policy MUST state: default size, unit, configuration key, minimum
-  (16 KiB), ceiling (2 MiB), the exact client-visible `ERROR` text, the QUIT/log reason, and the worst-case memory a server
-  can spend on queues (connections x limit).
+  (16 KiB), ceiling (2 MiB), the exact client-visible `ERROR` text, the QUIT/log reason, and the worst-case
+  queued wire-data budget (connections x limit), with additional JVM object/metadata overhead stated.
 - **FR-013**: Reducing how many lines a JOIN burst generates (coalescing or limiting JOIN
   broadcasts, or an IRCv3 batching approach for JOIN fan-out) is out of scope for this feature
   (it changes what members receive and overlaps feature 012's fan-out ownership). This feature
@@ -210,9 +241,14 @@ it refuses to start with an error naming the setting.
 - **FR-014**: Existing behavior that is not overflow MUST NOT change: message order and content,
   rate limiting, and the final-line guarantee that a line queued just before a close is still
   written.
-- **FR-015**: The load test and the integration test described in the success criteria MUST be
-  re-runnable by the project's normal test and load-test commands, per the project's
-  performance principle.
+- **FR-015**: The separate single-wave survival test, unchanged wave-of-100 latency test and
+  integration tests MUST run through the normal test/load-test commands. The integration
+  `loadTest` task may set a documented 2 GiB heap justified by the T003 probe; no latency bound
+  in the existing wave-of-100 test changes.
+- **FR-016**: `CapabilityExtension.contributeTags` MUST be a pure function of its message, with
+  no wall-clock, random, recipient or mutable external-state dependency. Its contract and tests
+  MUST enforce repeatable contributions (`msgid = message.messageId()`, `time = message.sentAt()`)
+  so byte metadata can be shared across recipients while rendering remains at drain time.
 
 ### Key Entities
 
@@ -231,10 +267,12 @@ it refuses to start with an error naming the setting.
 
 - **SC-001**: A simultaneous JOIN storm of the agreed size on one channel, from clients that read
   continuously, completes with 0 overflow disconnects and every client receiving its own
-  end-of-NAMES, on a server with default settings (today: waves of 100 are required).
-- **SC-002**: During that storm, completion time and unrelated-channel delivery latency stay
-  within the existing JOIN-storm budgets (storm under 15 s, p99 under 500 ms, max under 1 s), and
-  no budget regresses by more than 10% against the stored baseline.
+  end-of-NAMES, on a server with default settings, in a separate load-tagged survival test
+  with no latency assertion (today: waves of 100 are required).
+- **SC-002**: The existing `JoinStormLoadTest`, with 2,000 clients in waves of 100, keeps its
+  bounds: storm under 15 s, quiet p99 under 500 ms and max under 1 s. No measured budget regresses
+  by more than 10% against comparable baseline runs without written justification. The separate
+  SC-001 single-wave survival test has no latency assertion.
 - **SC-003**: A client that never reads is disconnected, with queued data never exceeding the
   limit by more than one message, within 5 seconds of the limit being reached.
 - **SC-004**: 100% of overflow disconnects produce one log entry with a reason distinct from
@@ -244,9 +282,15 @@ it refuses to start with an error naming the setting.
 - **SC-006**: With no explicit configuration the server uses the documented default; an operator
   can change the limit without modifying code; an invalid value prevents startup (or leaves the
   previous configuration active on reload) 100% of the time.
-- **SC-007**: Worst-case queue memory at the default limit is stated in the documentation and is
-  within what a default-sized deployment can hold (connections x limit is stated, not left for
-  the operator to derive).
+- **SC-007**: The worst-case queued wire-data budget at the default limit (connections x limit)
+  is stated in the documentation, with additional JVM object/metadata overhead identified so
+  operators can size deployment memory.
+- **SC-008**: Byte-accounting tests compare each recipient's reserved bytes against its rendered
+  wire line (including CRLF) and never undercount. Coverage includes capability combinations,
+  client `+` tag forwarding, escaping, tag collisions, text truncation and a legal server-origin
+  tag contribution with 4,094 escaped data bytes. Repeated/concurrent recipient accounting
+  computes contribution byte metadata once per message/capability; purity tests cover existing
+  message-tags and server-time implementations.
 
 ## Assumptions
 
@@ -255,9 +299,8 @@ it refuses to start with an error naming the setting.
 - "Healthy client" means one that reads its socket continuously at ordinary speed; the storm
   success criterion does not promise survival for a client that reads slowly enough to fall
   behind by more than the limit.
-- The exact default and ceiling values, and the way a message's size is measured against the
-  limit, are decisions for the planning phase based on measured storm volume; this specification
-  requires only that the default pass SC-001 with margin.
+- T003 confirms the 512 KiB default from a 31,286-byte peak (3x = 93,858 bytes); floor and ceiling
+  remain 16 KiB and 2 MiB. The revised accounting still requires rendered-wire validation.
 - The listener accept-backlog limit found in #48 (comment) is a separate issue and not part of
   this feature.
 - The change should not alter the wire format of any message sent other than the new `ERROR`
