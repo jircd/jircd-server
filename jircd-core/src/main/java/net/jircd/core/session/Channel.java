@@ -75,8 +75,15 @@ public final class Channel {
     return membersView;
   }
 
-  /** Returns one status-prefixed nickname per member, in member iteration order. */
-  public synchronized List<String> memberListing() {
+  /**
+   * Returns one status-prefixed nickname per member, in member iteration order. Reads the
+   * concurrent sets without this monitor, so a NAMES reply on a large channel never delays a
+   * transition waiting for it while holding the registry monitor. The traversal never visits a
+   * session twice, but it is not a snapshot of one instant: concurrent joins and departures may or
+   * may not appear, and each prefix comes from two separate reads, so a concurrent privilege change
+   * can yield a prefix the member never held.
+   */
+  public List<String> memberListing() {
     List<String> listing = new ArrayList<>();
     for (ClientSession member : members) {
       String status = "";

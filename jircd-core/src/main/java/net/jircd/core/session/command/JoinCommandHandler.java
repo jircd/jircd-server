@@ -93,13 +93,16 @@ public final class JoinCommandHandler implements CommandHandler {
       return;
     }
 
+    // Sampled before any registry monitor, because it may run hostname-display extension code. The
+    // ban check uses this sample; an administrator toggling cloaking meanwhile is not re-checked.
+    String admissionIdentity = PresentedIdentity.presentedForm(session, extensionRegistry);
     var failure = new java.util.concurrent.atomic.AtomicReference<AdmissionFailure>();
     var joined =
         channelRegistry.join(
             name,
             session,
             channel -> {
-              failure.set(admissionFailure(channel, session, suppliedKey));
+              failure.set(admissionFailure(channel, session, admissionIdentity, suppliedKey));
               return failure.get() == null;
             });
     if (joined.isEmpty()) {
@@ -116,6 +119,8 @@ public final class JoinCommandHandler implements CommandHandler {
     }
     Channel channel = result.channel();
 
+    // Re-sampled after the join, outside every monitor, so the JOIN line shows the current
+    // identity.
     String presentedForm = PresentedIdentity.presentedForm(session, extensionRegistry);
     Message joinNotification =
         new Message(Map.of(), presentedForm, Command.JOIN, "JOIN", List.of(channel.name()));
@@ -133,9 +138,9 @@ public final class JoinCommandHandler implements CommandHandler {
 
   private record AdmissionFailure(NumericReply reply, String channelName, String reason) {}
 
-  private AdmissionFailure admissionFailure(
-      Channel channel, ClientSession session, String suppliedKey) {
-    if (!passesBanGate(channel, session)) {
+  private static AdmissionFailure admissionFailure(
+      Channel channel, ClientSession session, String presentedForm, String suppliedKey) {
+    if (!passesBanGate(channel, session, presentedForm)) {
       return new AdmissionFailure(
           NumericReply.ERR_BANNEDFROMCHAN, channel.name(), "Cannot join channel (+b)");
     }
@@ -212,11 +217,10 @@ public final class JoinCommandHandler implements CommandHandler {
     return "=";
   }
 
-  private boolean passesBanGate(Channel channel, ClientSession session) {
+  private static boolean passesBanGate(Channel channel, ClientSession session, String presented) {
     if (channel.bans().isEmpty()) {
       return true;
     }
-    String presented = PresentedIdentity.presentedForm(session, extensionRegistry);
     String real = Hostmask.format(session.nickname(), session.ident(), session.realHostname());
     for (var ban : channel.bans()) {
       if (NickMask.matches(presented, ban.mask()) || NickMask.matches(real, ban.mask())) {

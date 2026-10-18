@@ -20,6 +20,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -27,6 +28,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import net.jircd.core.extension.ExtensionRegistry;
 import net.jircd.core.extension.HostnameDisplayExtension;
 import net.jircd.core.extension.ServerContext;
@@ -480,6 +482,121 @@ class ChannelRegistryTest {
                 }))
         .isEmpty();
     assertThat(registry.lookup("#new")).isEmpty();
+  }
+
+  /**
+   * A JOIN's O(members) snapshot runs after the registry and channel monitors are released, so a
+   * large channel's join never blocks lookups or transitions on other channels.
+   */
+  @Test
+  void joinSnapshotDoesNotBlockLookupsOrTransitionsOnOtherChannels() throws Exception {
+    CountDownLatch inSnapshot = new CountDownLatch(1);
+    CountDownLatch release = new CountDownLatch(1);
+    AtomicBoolean first = new AtomicBoolean(true);
+    AtomicBoolean hookHeldMonitor = new AtomicBoolean();
+    AtomicReference<ChannelRegistry> self = new AtomicReference<>();
+    ChannelRegistry registry =
+        new ChannelRegistry(
+            channel -> {
+              if ("#storm".equals(channel.name()) && first.compareAndSet(true, false)) {
+                hookHeldMonitor.set(Thread.holdsLock(self.get()) || Thread.holdsLock(channel));
+                inSnapshot.countDown();
+                await(release);
+              }
+            });
+    self.set(registry);
+    ClientSession quietMember = newSession("quiet");
+    Channel quiet = registry.join("#quiet", quietMember, ignored -> true).orElseThrow().channel();
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var stormJoin =
+          executor.submit(() -> registry.join("#storm", newSession("joiner"), ignored -> true));
+      try {
+        assertThat(inSnapshot.await(5, TimeUnit.SECONDS)).isTrue();
+        // One bounded budget for every operation, well inside the hook's own 5 s release wait.
+        var progress =
+            executor.submit(
+                () -> {
+                  assertThat(registry.lookup("#quiet")).containsSame(quiet);
+                  ClientSession other = newSession("other");
+                  assertThat(registry.join("#quiet", other, ignored -> true)).isPresent();
+                  assertThat(registry.part(quiet, other)).isPresent();
+                  // A second JOIN on the paused channel needs both monitors.
+                  assertThat(registry.join("#storm", newSession("second"), ignored -> true))
+                      .isPresent();
+                  return null;
+                });
+        assertThat(progress).succeedsWithin(Duration.ofSeconds(2));
+      } finally {
+        release.countDown();
+      }
+      assertThat(stormJoin.get(5, TimeUnit.SECONDS)).isPresent();
+    }
+    assertThat(hookHeldMonitor).isFalse();
+  }
+
+  /** The joiner is always a recipient of its own JOIN, even if it is kicked before the snapshot. */
+  @Test
+  void joinerKickedBeforeTheSnapshotIsStillARecipient() throws Exception {
+    CountDownLatch inSnapshot = new CountDownLatch(1);
+    CountDownLatch release = new CountDownLatch(1);
+    AtomicBoolean first = new AtomicBoolean(true);
+    ChannelRegistry registry =
+        new ChannelRegistry(
+            channel -> {
+              if (first.compareAndSet(true, false)) {
+                inSnapshot.countDown();
+                await(release);
+              }
+            });
+    ClientSession operator = newSession("operator");
+    ClientSession joiner = newSession("joiner");
+    // Joining without a hook pause: the first hook call is the joiner's.
+    first.set(false);
+    Channel channel = registry.join("#c", operator, ignored -> true).orElseThrow().channel();
+    first.set(true);
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var join = executor.submit(() -> registry.join("#c", joiner, ignored -> true));
+      try {
+        assertThat(inSnapshot.await(5, TimeUnit.SECONDS)).isTrue();
+        assertThat(registry.kick(channel, operator, "joiner"))
+            .isInstanceOf(KickOutcome.Kicked.class);
+      } finally {
+        release.countDown();
+      }
+      JoinResult result = join.get(5, TimeUnit.SECONDS).orElseThrow();
+      assertThat(result.recipients()).contains(joiner, operator);
+      assertThat(result.memberListing()).containsExactly("@operator");
+    }
+  }
+
+  /** NAMES listings read the concurrent member sets without taking the channel monitor. */
+  @Test
+  void memberListingDoesNotWaitForTheChannelMonitor() throws Exception {
+    ChannelRegistry registry = new ChannelRegistry();
+    Channel channel =
+        registry.join("#c", newSession("alice"), ignored -> true).orElseThrow().channel();
+    CountDownLatch holding = new CountDownLatch(1);
+    CountDownLatch release = new CountDownLatch(1);
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var holder =
+          executor.submit(
+              () -> {
+                synchronized (channel) {
+                  holding.countDown();
+                  await(release);
+                }
+                return null;
+              });
+      try {
+        assertThat(holding.await(5, TimeUnit.SECONDS)).isTrue();
+        assertThat(executor.submit(channel::memberListing))
+            .succeedsWithin(Duration.ofSeconds(2))
+            .isEqualTo(List.of("@alice"));
+      } finally {
+        release.countDown();
+      }
+      holder.get(5, TimeUnit.SECONDS);
+    }
   }
 
   private static void await(CountDownLatch latch) {

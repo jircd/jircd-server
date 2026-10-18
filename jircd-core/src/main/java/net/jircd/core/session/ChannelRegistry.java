@@ -23,22 +23,39 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Consumer;
 import java.util.function.Predicate;
 
 /**
  * Owns channel existence and membership transitions, with case-folded channel-name uniqueness.
  *
- * <p>Lock order: registry → channel; never two channels; no delivery under either monitor.
- * Admission runs under both monitors and must not block. All other delivery and extension work runs
- * after the transition returns.
+ * <p>Lock order: registry → channel; never two channels; no delivery under either monitor. Every
+ * channel lookup takes the registry monitor, so JOIN does no O(members) work and runs no extension
+ * code under it: admission must not block or call extensions, and the JOIN snapshot is read after
+ * both monitors are released.
  *
  * <p>R-1: at most one registered channel per folded name. R-2: after each transition no registered
  * channel is empty. R-3: channel membership and session membership agree whenever no transition
- * holds the registry monitor. R-4: joins that observe a CLOSING session are refused; cleanup claims
- * CLOSING before taking the registry monitor, so it also removes any join already in progress.
+ * holds the registry monitor. R-4: joins that observe a CLOSING session are refused; a join that
+ * passed that check may still finish its insertion, and cleanup, which claims CLOSING before taking
+ * the registry monitor, then removes it.
  */
 public final class ChannelRegistry {
   private final Map<String, Channel> byFoldedName = new LinkedHashMap<>();
+  private final Consumer<Channel> joinSnapshotHook;
+
+  public ChannelRegistry() {
+    this(channel -> {});
+  }
+
+  /**
+   * Test-only seam: runs after both monitors are released, at the start of a JOIN's NAMES and
+   * recipient reads. Not a production extension point; a hook that throws leaves the membership in
+   * place.
+   */
+  ChannelRegistry(Consumer<Channel> joinSnapshotHook) {
+    this.joinSnapshotHook = joinSnapshotHook;
+  }
 
   /**
    * Returns the existing channel or creates one; membership transitions populate it under this
@@ -50,35 +67,45 @@ public final class ChannelRegistry {
 
   /**
    * Admits and joins a non-closing session under the registry then channel monitor. An existing
-   * member skips admission and returns an unchanged membership with alreadyMember set.
+   * member skips admission and returns an unchanged membership with alreadyMember set. The NAMES
+   * listing and then the recipients are read after both monitors are released, from the weakly
+   * consistent live views, so this O(members) work never holds the registry monitor. The joiner is
+   * always a recipient of its own JOIN; the listing is never patched to include it.
    */
-  public synchronized Optional<JoinResult> join(
+  public Optional<JoinResult> join(
       String name, ClientSession session, Predicate<Channel> admission) {
-    boolean created = !byFoldedName.containsKey(CaseMapping.fold(name));
-    Channel channel = getOrCreate(name);
-    synchronized (channel) {
-      if (session.lifecycle().isClosing()) {
-        if (created) {
-          removeIfEmpty(channel);
+    Channel channel;
+    boolean alreadyMember;
+    boolean grantedOperator = false;
+    synchronized (this) {
+      boolean created = !byFoldedName.containsKey(CaseMapping.fold(name));
+      channel = getOrCreate(name);
+      synchronized (channel) {
+        if (session.lifecycle().isClosing()) {
+          if (created) {
+            removeIfEmpty(channel);
+          }
+          return Optional.empty();
         }
-        return Optional.empty();
-      }
-      if (channel.members().contains(session)) {
-        return Optional.of(
-            new JoinResult(channel, channel.members(), false, true, channel.memberListing()));
-      }
-      if (!admission.test(channel)) {
-        if (created) {
-          removeIfEmpty(channel);
+        alreadyMember = channel.members().contains(session);
+        if (!alreadyMember) {
+          if (!admission.test(channel)) {
+            if (created) {
+              removeIfEmpty(channel);
+            }
+            return Optional.empty();
+          }
+          grantedOperator = channel.addMember(session);
+          session.addMembership(channel);
         }
-        return Optional.empty();
       }
-      boolean grantedOperator = channel.addMember(session);
-      session.addMembership(channel);
-      return Optional.of(
-          new JoinResult(
-              channel, channel.members(), grantedOperator, false, channel.memberListing()));
     }
+    joinSnapshotHook.accept(channel);
+    List<String> listing = channel.memberListing();
+    Set<ClientSession> recipients = new LinkedHashSet<>(channel.members());
+    recipients.add(session);
+    return Optional.of(
+        new JoinResult(channel, recipients, grantedOperator, alreadyMember, listing));
   }
 
   /**

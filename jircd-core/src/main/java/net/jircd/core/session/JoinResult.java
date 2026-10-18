@@ -20,7 +20,12 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
-/** A completed join, with recipients and NAMES tokens captured under the membership locks. */
+/**
+ * A completed join. The NAMES tokens and then the recipients are read from the live channel in two
+ * separate weakly consistent traversals after the membership monitors are released, so neither is a
+ * snapshot of one instant and the two need not agree. The joiner is always among the recipients;
+ * with a concurrent departure it may be missing from the listing, which is never patched.
+ */
 public record JoinResult(
     Channel channel,
     Set<ClientSession> recipients,
