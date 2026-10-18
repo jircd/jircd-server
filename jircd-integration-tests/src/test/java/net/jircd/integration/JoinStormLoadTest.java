@@ -46,10 +46,14 @@ import org.junit.jupiter.api.Test;
  * <p>Measured on {@code main} at 08bb476 (developer laptop, loopback, 2,000 clients in waves of
  * {@value #WAVE_SIZE}, 12 runs): storm completion 2.1-2.4 s; {@code #quiet} p50 16-33 ms, p99 and
  * max 55-137 ms. Only about 18 messages fit in a storm at the 110 ms cadence, so p99 is the max.
- * Budgets: storm under 15 s, p99 under 500 ms, max under 1 s (SC-002). The same server is not
- * expected to survive one wave of 250 or more: each member's outbound queue holds 256 lines and
- * overflow closes the connection, and every JOIN is broadcast to every member, so bigger waves
- * evicted slow readers (observed at 250 and at 1,000 clients).
+ * Budgets: storm under 15 s, p99 under 500 ms, max under 1 s (SC-002). Feature 012 (#19) moved the
+ * JOIN NAMES listing, recipient copy and hostname-display calls out of the registry monitor; on
+ * {@code main} at f59a68f (7 runs) the medians are storm 2.38 s and {@code #quiet} p50 18 ms, with
+ * p99 and max 50-126 ms, so the registry lock is not the bottleneck at this size and {@code lookup}
+ * needs no lock-free index. The same server is not expected to survive one wave of 250 or more:
+ * each member's outbound queue holds 256 lines and overflow closes the connection, and every JOIN
+ * is broadcast to every member, so bigger waves evicted slow readers (observed at 250 and at 1,000
+ * clients).
  */
 @Tag("load")
 class JoinStormLoadTest {
