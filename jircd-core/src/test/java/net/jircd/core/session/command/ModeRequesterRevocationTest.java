@@ -110,8 +110,9 @@ class ModeRequesterRevocationTest {
     assertThat(channel.activeModes())
         .contains(CoreChannelModes.MODERATED)
         .doesNotContain(CoreChannelModes.TOPIC_LOCK, CoreChannelModes.MEMBERS_ONLY);
-    assertThat(output).contains(" 482 requester #c :You're not channel operator");
-    assertThat(output).doesNotContain("+mt");
+    assertThat(output)
+        .contains(" 482 requester #c :You're not channel operator")
+        .doesNotContain("+mt");
     if (how.equals("DEOP")) {
       // A departed requester is no longer a recipient of the echo; a de-opped one still is.
       assertThat(output).contains(" MODE #c +m");
