@@ -84,14 +84,15 @@ class DisconnectCleanupTest {
     ChannelRegistry registry = new ChannelRegistry();
     registry.join("#one", quitter, ignored -> true);
     registry.join("#two", quitter, ignored -> true);
+    CountDownLatch claimed = new CountDownLatch(1);
     DisconnectCleanup cleanup =
         new DisconnectCleanup(
             new NicknameRegistry(),
             registry,
             new WhowasHistory(() -> 100),
-            new ExtensionRegistry());
+            new ExtensionRegistry(),
+            claimed::countDown);
     CountDownLatch admitting = new CountDownLatch(1);
-    CountDownLatch attemptingCleanup = new CountDownLatch(1);
     CountDownLatch releaseAdmission = new CountDownLatch(1);
     ByteArrayOutputStream out = new ByteArrayOutputStream();
     try (SessionWriter writer = new SessionWriter(newcomer, out, TagRenderer.NONE);
@@ -112,11 +113,14 @@ class DisconnectCleanupTest {
           executor.submit(
               () -> {
                 await(admitting);
-                attemptingCleanup.countDown();
                 cleanup.cleanup(quitter, "leaving");
               });
       try {
-        await(attemptingCleanup);
+        // Cleanup has claimed CLOSING and entered its body, while the admitted join still holds the
+        // registry: the quitter keeps its memberships until the admission is released.
+        await(claimed);
+        assertThat(quitter.lifecycle().isClosing()).isTrue();
+        assertThat(quitter.channelMemberships()).hasSize(2);
         assertThat(leaving.isDone()).isFalse();
       } finally {
         releaseAdmission.countDown();
@@ -126,6 +130,7 @@ class DisconnectCleanupTest {
     }
     assertThat(out.toString(StandardCharsets.UTF_8))
         .isEqualTo(":erin!erin@host.example QUIT leaving\r\n");
+    assertThat(quitter.channelMemberships()).isEmpty();
   }
 
   private static void await(CountDownLatch latch) {

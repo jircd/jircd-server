@@ -18,15 +18,19 @@ package net.jircd.core.session;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class ClientSessionTest {
   @Test
   void collectionsRejectExternalAdditions() {
     ClientSession session = session();
-    assertThatThrownBy(() -> session.userModes().add(UserMode.INVISIBLE))
+    Set<UserMode> userModes = session.userModes();
+    Set<Channel> memberships = session.channelMemberships();
+    Channel channel = new Channel("#c");
+    assertThatThrownBy(() -> userModes.add(UserMode.INVISIBLE))
         .isInstanceOf(UnsupportedOperationException.class);
-    assertThatThrownBy(() -> session.channelMemberships().add(new Channel("#c")))
+    assertThatThrownBy(() -> memberships.add(channel))
         .isInstanceOf(UnsupportedOperationException.class);
   }
 

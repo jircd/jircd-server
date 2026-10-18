@@ -302,26 +302,12 @@ public final class ModeCommandHandler implements CommandHandler {
 
   private static boolean applyMember(
       Channel channel, ChannelMode mode, ModeChange change, ClientSession target) {
-    synchronized (channel) {
-      if (!channel.members().contains(target)) {
-        return false;
-      }
-      if (CoreChannelModes.OPERATOR.equals(mode)) {
-        if (change.sign() == '+') {
-          channel.grantOperator(target);
-        } else {
-          channel.revokeOperator(target);
-        }
-      } else {
-        if (change.sign() == '+') {
-          channel.grantVoice(target);
-        } else {
-          channel.revokeVoice(target);
-        }
-      }
-      // A member's already-unset privilege is still a valid, echoable revoke.
-      return true;
-    }
+    Channel.MemberPrivilege privilege =
+        CoreChannelModes.OPERATOR.equals(mode)
+            ? Channel.MemberPrivilege.OPERATOR
+            : Channel.MemberPrivilege.VOICE;
+    // A member's already-unset privilege is still a valid, echoable revoke.
+    return channel.setMemberPrivilege(target, privilege, change.sign() == '+');
   }
 
   private static ChannelMode resolve(Collection<ChannelMode> recognized, char flag) {

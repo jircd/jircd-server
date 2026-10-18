@@ -102,10 +102,14 @@ class JoinBanGateLockTest {
     }
 
     @Override
-    public void start(ServerContext context) {}
+    public void start(ServerContext context) {
+      // Stateless test extension: nothing to set up.
+    }
 
     @Override
-    public void stop() {}
+    public void stop() {
+      // Stateless test extension: nothing to release.
+    }
 
     @Override
     public String display(String hostname) {

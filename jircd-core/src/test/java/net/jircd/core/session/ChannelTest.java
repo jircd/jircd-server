@@ -20,6 +20,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -99,16 +100,21 @@ class ChannelTest {
   void collectionsRejectExternalAdditions() {
     Channel channel = new Channel("#c");
     ClientSession outsider = member("outsider");
-    assertThatThrownBy(() -> channel.members().add(outsider))
+    Set<ClientSession> members = channel.members();
+    Set<ClientSession> operators = channel.operators();
+    Set<ClientSession> voiced = channel.voiced();
+    Set<ChannelMode> activeModes = channel.activeModes();
+    List<BanEntry> bans = channel.bans();
+    BanEntry ban = new BanEntry("*!*@host", "setter", Instant.EPOCH);
+    assertThatThrownBy(() -> members.add(outsider))
         .isInstanceOf(UnsupportedOperationException.class);
-    assertThatThrownBy(() -> channel.operators().add(outsider))
+    assertThatThrownBy(() -> operators.add(outsider))
         .isInstanceOf(UnsupportedOperationException.class);
-    assertThatThrownBy(() -> channel.voiced().add(outsider))
+    assertThatThrownBy(() -> voiced.add(outsider))
         .isInstanceOf(UnsupportedOperationException.class);
-    assertThatThrownBy(() -> channel.activeModes().add(CoreChannelModes.SECRET))
+    assertThatThrownBy(() -> activeModes.add(CoreChannelModes.SECRET))
         .isInstanceOf(UnsupportedOperationException.class);
-    assertThatThrownBy(() -> channel.bans().add(new BanEntry("*!*@host", "setter", Instant.EPOCH)))
-        .isInstanceOf(UnsupportedOperationException.class);
+    assertThatThrownBy(() -> bans.add(ban)).isInstanceOf(UnsupportedOperationException.class);
   }
 
   /** Pins the serial order: resolve the member, PART, then attempt the operator grant. */
@@ -307,6 +313,91 @@ class ChannelTest {
       Thread.currentThread().interrupt();
       throw new IllegalStateException(e);
     }
+  }
+
+  @Test
+  void underMonitorRunsHoldingTheChannelMonitorAndReturnsTheResult() {
+    Channel channel = new Channel("#c");
+
+    boolean held = channel.underMonitor(() -> Thread.holdsLock(channel));
+
+    assertThat(held).isTrue();
+    assertThat(Thread.holdsLock(channel)).isFalse();
+  }
+
+  @Test
+  void underMonitorReleasesTheMonitorWhenTheActionThrows() throws Exception {
+    Channel channel = new Channel("#c");
+
+    assertThatThrownBy(
+            () ->
+                channel.underMonitor(
+                    () -> {
+                      throw new IllegalStateException("boom");
+                    }))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage("boom");
+
+    assertThat(Thread.holdsLock(channel)).isFalse();
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      assertThat(
+              executor.submit(() -> channel.underMonitor(() -> "entered")).get(5, TimeUnit.SECONDS))
+          .isEqualTo("entered");
+    }
+  }
+
+  @Test
+  void runUnderMonitorHoldsTheChannelMonitor() {
+    Channel channel = new Channel("#c");
+    boolean[] held = new boolean[1];
+
+    channel.runUnderMonitor(() -> held[0] = Thread.holdsLock(channel));
+
+    assertThat(held[0]).isTrue();
+    assertThat(Thread.holdsLock(channel)).isFalse();
+  }
+
+  @Test
+  void setMemberPrivilegeGrantsAndRevokesForAMember() {
+    Channel channel = new Channel("#c");
+    ClientSession target = member("target");
+    channel.addMember(target);
+    channel.revokeOperator(target);
+
+    assertThat(channel.setMemberPrivilege(target, Channel.MemberPrivilege.OPERATOR, true)).isTrue();
+    assertThat(channel.operators()).containsExactly(target);
+    assertThat(channel.setMemberPrivilege(target, Channel.MemberPrivilege.VOICE, true)).isTrue();
+    assertThat(channel.voiced()).containsExactly(target);
+    assertThat(channel.setMemberPrivilege(target, Channel.MemberPrivilege.OPERATOR, false))
+        .isTrue();
+    assertThat(channel.setMemberPrivilege(target, Channel.MemberPrivilege.VOICE, false)).isTrue();
+    assertThat(channel.operators()).isEmpty();
+    assertThat(channel.voiced()).isEmpty();
+  }
+
+  @Test
+  void setMemberPrivilegeRevokeOfAnUnsetPrivilegeIsStillValidForAMember() {
+    Channel channel = new Channel("#c");
+    ClientSession target = member("target");
+    channel.addMember(target);
+    channel.revokeOperator(target);
+
+    assertThat(channel.setMemberPrivilege(target, Channel.MemberPrivilege.OPERATOR, false))
+        .isTrue();
+    assertThat(channel.setMemberPrivilege(target, Channel.MemberPrivilege.VOICE, false)).isTrue();
+  }
+
+  @Test
+  void setMemberPrivilegeRefusesANonMemberAndChangesNothing() {
+    Channel channel = new Channel("#c");
+    ClientSession outsider = member("outsider");
+
+    for (Channel.MemberPrivilege privilege : Channel.MemberPrivilege.values()) {
+      assertThat(channel.setMemberPrivilege(outsider, privilege, true)).isFalse();
+      assertThat(channel.setMemberPrivilege(outsider, privilege, false)).isFalse();
+    }
+    assertThat(channel.operators()).isEmpty();
+    assertThat(channel.voiced()).isEmpty();
   }
 
   private static ClientSession member(String nick) {

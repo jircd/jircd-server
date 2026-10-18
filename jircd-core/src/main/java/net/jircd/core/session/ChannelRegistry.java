@@ -112,27 +112,29 @@ public final class ChannelRegistry {
    * Removes both sides of a membership and captures recipients before removal; empty means absent.
    */
   public synchronized Optional<Departure> part(Channel channel, ClientSession session) {
-    synchronized (channel) {
-      if (!channel.members().contains(session)) {
-        return Optional.empty();
-      }
-      return Optional.of(depart(channel, session));
-    }
+    return channel.underMonitor(
+        () -> {
+          if (!channel.members().contains(session)) {
+            return Optional.empty();
+          }
+          return Optional.of(depart(channel, session));
+        });
   }
 
   /** Checks operator status and resolves the folded target nickname under the membership locks. */
   public synchronized KickOutcome kick(
       Channel channel, ClientSession kicker, String targetNickname) {
-    synchronized (channel) {
-      if (!channel.operators().contains(kicker)) {
-        return new KickOutcome.NotOperator();
-      }
-      var target = channel.findMember(targetNickname);
-      if (target.isEmpty()) {
-        return new KickOutcome.NoSuchMember();
-      }
-      return new KickOutcome.Kicked(depart(channel, target.get()));
-    }
+    return channel.underMonitor(
+        () -> {
+          if (!channel.operators().contains(kicker)) {
+            return new KickOutcome.NotOperator();
+          }
+          var target = channel.findMember(targetNickname);
+          if (target.isEmpty()) {
+            return new KickOutcome.NoSuchMember();
+          }
+          return new KickOutcome.Kicked(depart(channel, target.get()));
+        });
   }
 
   // Both monitors are already held. Keep delivery out of this state-only operation.
@@ -151,12 +153,13 @@ public final class ChannelRegistry {
   public synchronized Set<ClientSession> leaveAll(ClientSession session) {
     Set<ClientSession> neighbors = new LinkedHashSet<>();
     for (Channel channel : Set.copyOf(session.channelMemberships())) {
-      synchronized (channel) {
-        channel.removeMember(session);
-        neighbors.addAll(channel.members());
-        session.removeMembership(channel);
-        removeIfEmpty(channel);
-      }
+      channel.runUnderMonitor(
+          () -> {
+            channel.removeMember(session);
+            neighbors.addAll(channel.members());
+            session.removeMembership(channel);
+            removeIfEmpty(channel);
+          });
     }
     neighbors.remove(session);
     return Collections.unmodifiableSet(neighbors);
@@ -171,11 +174,11 @@ public final class ChannelRegistry {
    * Removes only this instance, if still registered and empty. Caller holds the registry monitor.
    */
   synchronized void removeIfEmpty(Channel channel) {
-    synchronized (channel) {
-      byFoldedName.computeIfPresent(
-          CaseMapping.fold(channel.name()),
-          (key, existing) -> existing == channel && existing.isEmpty() ? null : existing);
-    }
+    channel.runUnderMonitor(
+        () ->
+            byFoldedName.computeIfPresent(
+                CaseMapping.fold(channel.name()),
+                (key, existing) -> existing == channel && existing.isEmpty() ? null : existing));
   }
 
   /** Returns registered channels in creation order as a snapshot. */

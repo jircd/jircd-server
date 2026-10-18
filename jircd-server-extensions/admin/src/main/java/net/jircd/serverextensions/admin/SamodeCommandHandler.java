@@ -102,17 +102,8 @@ public final class SamodeCommandHandler implements CommandHandler {
     }
 
     beforeMemberChange.run();
-    boolean accepted;
-    synchronized (channel) {
-      accepted = channel.members().contains(session);
-      if (accepted) {
-        if (sign == '+') {
-          channel.grantOperator(session);
-        } else {
-          channel.revokeOperator(session);
-        }
-      }
-    }
+    boolean accepted =
+        channel.setMemberPrivilege(session, Channel.MemberPrivilege.OPERATOR, sign == '+');
     if (!accepted) {
       Replies.send(
           session,

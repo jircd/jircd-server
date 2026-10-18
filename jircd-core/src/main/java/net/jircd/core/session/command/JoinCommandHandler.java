@@ -92,9 +92,17 @@ public final class JoinCommandHandler implements CommandHandler {
       return;
     }
 
+    // A repeated JOIN is a no-op that needs neither the displayed identity nor a membership
+    // snapshot. The registry still checks membership authoritatively for racing callers.
+    if (channelRegistry.lookup(name).filter(c -> c.members().contains(session)).isPresent()) {
+      return;
+    }
+
     // Sampled before any registry monitor, because it may run hostname-display extension code. The
-    // ban check uses this sample; an administrator toggling cloaking meanwhile is not re-checked.
-    String admissionIdentity = PresentedIdentity.presentedForm(session, extensionRegistry);
+    // ban check uses this sample; an administrator toggling cloaking meanwhile is not re-checked. A
+    // failed sample is kept and rethrown only if a nonempty ban list needs it, so a failed sample
+    // cannot bypass the bans; with no bans it is not needed and is discarded.
+    AdmissionIdentity admissionIdentity = AdmissionIdentity.sample(session, extensionRegistry);
     var failure = new java.util.concurrent.atomic.AtomicReference<AdmissionFailure>();
     var joined =
         channelRegistry.join(
@@ -135,11 +143,29 @@ public final class JoinCommandHandler implements CommandHandler {
     sendNamesReply(session, channel, serverName.get(), result.memberListing());
   }
 
+  /** The pre-lock displayed identity, or the runtime failure raised while resolving it. */
+  private record AdmissionIdentity(String presentedForm, RuntimeException failure) {
+    static AdmissionIdentity sample(ClientSession session, ExtensionRegistry extensions) {
+      try {
+        return new AdmissionIdentity(PresentedIdentity.presentedForm(session, extensions), null);
+      } catch (RuntimeException e) {
+        return new AdmissionIdentity(null, e);
+      }
+    }
+
+    String require() {
+      if (failure != null) {
+        throw failure;
+      }
+      return presentedForm;
+    }
+  }
+
   private record AdmissionFailure(NumericReply reply, String channelName, String reason) {}
 
   private static AdmissionFailure admissionFailure(
-      Channel channel, ClientSession session, String presentedForm, String suppliedKey) {
-    if (!passesBanGate(channel, session, presentedForm)) {
+      Channel channel, ClientSession session, AdmissionIdentity identity, String suppliedKey) {
+    if (!passesBanGate(channel, session, identity)) {
       return new AdmissionFailure(
           NumericReply.ERR_BANNEDFROMCHAN, channel.name(), "Cannot join channel (+b)");
     }
@@ -216,10 +242,12 @@ public final class JoinCommandHandler implements CommandHandler {
     return "=";
   }
 
-  private static boolean passesBanGate(Channel channel, ClientSession session, String presented) {
+  private static boolean passesBanGate(
+      Channel channel, ClientSession session, AdmissionIdentity identity) {
     if (channel.bans().isEmpty()) {
       return true;
     }
+    String presented = identity.require();
     String real = Hostmask.format(session.nickname(), session.ident(), session.realHostname());
     for (var ban : channel.bans()) {
       if (NickMask.matches(presented, ban.mask()) || NickMask.matches(real, ban.mask())) {

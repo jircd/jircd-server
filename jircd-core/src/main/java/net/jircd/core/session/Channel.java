@@ -24,6 +24,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.Supplier;
 
 /**
  * A named, joinable group through which members exchange messages. {@code name} is its identity;
@@ -140,6 +141,54 @@ public final class Channel {
   /** Consumes a pending invitation once, returning whether it existed. */
   public synchronized boolean consumeInvitation(String nickname) {
     return invited.remove(CaseMapping.fold(nickname));
+  }
+
+  /**
+   * Runs {@code action} holding this channel's monitor and returns its result; the monitor is
+   * released when the action returns or throws. The action reads and changes state guarded by this
+   * channel and, when the {@link ChannelRegistry} monitor is already held by the caller, the
+   * registry-owned transition state (session membership, registry map). It never acquires the
+   * registry monitor for the first time, so a channel-only action must not call registry
+   * operations, and it never takes another channel's monitor. It does not deliver messages, call
+   * extension code or block.
+   */
+  synchronized <T> T underMonitor(Supplier<T> action) {
+    return action.get();
+  }
+
+  /** As {@link #underMonitor(Supplier)}, for an action with no result. */
+  synchronized void runUnderMonitor(Runnable action) {
+    action.run();
+  }
+
+  /** A per-member channel privilege. */
+  public enum MemberPrivilege {
+    OPERATOR,
+    VOICE
+  }
+
+  /**
+   * Grants or revokes a privilege for a current member in one step under this channel's monitor.
+   * Returns {@code false} and changes nothing for a non-member; for a member it returns {@code
+   * true}, including a revoke of a privilege the member does not hold.
+   */
+  public synchronized boolean setMemberPrivilege(
+      ClientSession member, MemberPrivilege privilege, boolean granted) {
+    Objects.requireNonNull(privilege);
+    if (!members.contains(member)) {
+      return false;
+    }
+    Set<ClientSession> holders =
+        switch (privilege) {
+          case OPERATOR -> operators;
+          case VOICE -> voiced;
+        };
+    if (granted) {
+      holders.add(member);
+    } else {
+      holders.remove(member);
+    }
+    return true;
   }
 
   /** Grants operator status to a current member; returns false only for a non-member. */

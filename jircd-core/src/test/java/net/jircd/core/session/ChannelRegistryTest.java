@@ -253,10 +253,10 @@ class ChannelRegistryTest {
     assertThat(repeated.grantedOperator()).isFalse();
     assertThat(repeated.recipients()).containsExactlyInAnyOrder(alice, bob);
     assertThat(alice.channelMemberships()).containsExactly(first.channel());
-    assertThatThrownBy(() -> first.recipients().clear())
-        .isInstanceOf(UnsupportedOperationException.class);
-    assertThatThrownBy(() -> first.memberListing().clear())
-        .isInstanceOf(UnsupportedOperationException.class);
+    Set<ClientSession> joinRecipients = first.recipients();
+    List<String> joinListing = first.memberListing();
+    assertThatThrownBy(joinRecipients::clear).isInstanceOf(UnsupportedOperationException.class);
+    assertThatThrownBy(joinListing::clear).isInstanceOf(UnsupportedOperationException.class);
   }
 
   @Test
@@ -280,7 +280,8 @@ class ChannelRegistryTest {
     registry.part(channel, bob).orElseThrow();
     assertThat(registry.lookup("#c")).isEmpty();
     assertThat(departure.recipients()).containsExactlyInAnyOrder(alice, bob);
-    assertThatThrownBy(() -> departure.recipients().clear())
+    Set<ClientSession> departureRecipients = departure.recipients();
+    assertThatThrownBy(departureRecipients::clear)
         .isInstanceOf(UnsupportedOperationException.class);
   }
 
@@ -325,7 +326,7 @@ class ChannelRegistryTest {
     assertThat(registry.leaveAll(quitter)).isEmpty();
     registry.leaveAll(alice);
     assertThat(neighbors).containsExactlyInAnyOrder(alice, bob);
-    assertThatThrownBy(() -> neighbors.clear()).isInstanceOf(UnsupportedOperationException.class);
+    assertThatThrownBy(neighbors::clear).isInstanceOf(UnsupportedOperationException.class);
   }
 
   @Test
@@ -337,8 +338,8 @@ class ChannelRegistryTest {
     Set<Channel> memberships = member.channelMemberships();
     assertThat(channel.members()).isSameAs(members);
     assertThat(member.channelMemberships()).isSameAs(memberships);
-    assertThatThrownBy(() -> members.clear()).isInstanceOf(UnsupportedOperationException.class);
-    assertThatThrownBy(() -> memberships.clear()).isInstanceOf(UnsupportedOperationException.class);
+    assertThatThrownBy(members::clear).isInstanceOf(UnsupportedOperationException.class);
+    assertThatThrownBy(memberships::clear).isInstanceOf(UnsupportedOperationException.class);
     registry.part(channel, member);
     assertThat(members).isEmpty();
     assertThat(memberships).isEmpty();
@@ -629,10 +630,14 @@ class ChannelRegistryTest {
     }
 
     @Override
-    public void start(ServerContext context) {}
+    public void start(ServerContext context) {
+      // Stateless test extension: nothing to set up.
+    }
 
     @Override
-    public void stop() {}
+    public void stop() {
+      // Stateless test extension: nothing to release.
+    }
 
     @Override
     public String display(String hostname) {

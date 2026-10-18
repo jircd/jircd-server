@@ -37,16 +37,32 @@ public final class DisconnectCleanup {
   private final ChannelRegistry channelRegistry;
   private final WhowasHistory whowasHistory;
   private final ExtensionRegistry extensionRegistry;
+  private final Runnable afterClaim;
 
   public DisconnectCleanup(
       NicknameRegistry nicknameRegistry,
       ChannelRegistry channelRegistry,
       WhowasHistory whowasHistory,
       ExtensionRegistry extensionRegistry) {
+    this(nicknameRegistry, channelRegistry, whowasHistory, extensionRegistry, () -> {});
+  }
+
+  /**
+   * Test-only seam: {@code afterClaim} runs once the call has claimed CLOSING, before any channel
+   * membership is removed. Not a production extension point; a hook that throws leaves CLOSING
+   * claimed with the memberships in place, and the guard prevents a retry.
+   */
+  DisconnectCleanup(
+      NicknameRegistry nicknameRegistry,
+      ChannelRegistry channelRegistry,
+      WhowasHistory whowasHistory,
+      ExtensionRegistry extensionRegistry,
+      Runnable afterClaim) {
     this.nicknameRegistry = nicknameRegistry;
     this.channelRegistry = channelRegistry;
     this.whowasHistory = whowasHistory;
     this.extensionRegistry = extensionRegistry;
+    this.afterClaim = afterClaim;
   }
 
   public void cleanup(ClientSession session, String reason) {
@@ -59,6 +75,7 @@ public final class DisconnectCleanup {
     if (!session.lifecycle().closeIfNotAlreadyClosing()) {
       return;
     }
+    afterClaim.run();
     ConnectionMonitorLog.disconnected(
         session.connectionId(),
         java.time.Duration.between(session.connectedAt(), java.time.Instant.now()),

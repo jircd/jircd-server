@@ -22,6 +22,7 @@ import net.jircd.core.extension.ExtensionRegistry;
 import net.jircd.core.session.Channel;
 import net.jircd.core.session.ChannelRegistry;
 import net.jircd.core.session.ClientSession;
+import net.jircd.core.session.Departure;
 import net.jircd.core.session.KickOutcome;
 import net.jircd.core.session.PresentedIdentity;
 import net.jircd.core.session.Recipients;
@@ -39,14 +40,25 @@ public final class KickCommandHandler implements CommandHandler {
   private final ChannelRegistry channelRegistry;
   private final ExtensionRegistry extensionRegistry;
   private final Supplier<String> serverName;
+  private final Runnable beforeTransition;
 
   public KickCommandHandler(
       ChannelRegistry channelRegistry,
       ExtensionRegistry extensionRegistry,
       Supplier<String> serverName) {
+    this(channelRegistry, extensionRegistry, serverName, () -> {});
+  }
+
+  /** Test-only seam: runs after the pre-checks and prefix preparation, before the transition. */
+  KickCommandHandler(
+      ChannelRegistry channelRegistry,
+      ExtensionRegistry extensionRegistry,
+      Supplier<String> serverName,
+      Runnable beforeTransition) {
     this.channelRegistry = channelRegistry;
     this.extensionRegistry = extensionRegistry;
     this.serverName = serverName;
+    this.beforeTransition = beforeTransition;
   }
 
   @Override
@@ -78,33 +90,42 @@ public final class KickCommandHandler implements CommandHandler {
     }
     Channel channel = found.get();
 
+    // A non-member kicker is not an operator, so it is answered as such without the extension.
+    if (!channel.members().contains(session)) {
+      rejectNotOperator(session, channel, channelName);
+      return;
+    }
+    // The notification prefix may run hostname-display extension code, so it is resolved for every
+    // member kicker before the membership transition and outside every monitor: a failure leaves
+    // the target a member. The registry still decides authoritatively, and a request that turns
+    // out invalid discards the prefix.
+    String presentedForm = PresentedIdentity.presentedForm(session, extensionRegistry);
+    beforeTransition.run();
     switch (channelRegistry.kick(channel, session, targetNickname)) {
-      case KickOutcome.NotOperator ignored -> {
-        SecurityEventLog.rejectedModerationAction(
-            session.connectionId(), "KICK", channelName, "not a channel operator");
-        Replies.send(
-            session,
-            serverName.get(),
-            NumericReply.ERR_CHANOPRIVSNEEDED,
-            channel.name(),
-            "You're not channel operator");
-      }
-      case KickOutcome.NoSuchMember ignored ->
+      case KickOutcome.NotOperator() -> rejectNotOperator(session, channel, channelName);
+      case KickOutcome.NoSuchMember() ->
           Replies.send(
               session,
               serverName.get(),
               NumericReply.ERR_USERNOTINCHANNEL,
               targetNickname,
               "They aren't on that channel");
-      case KickOutcome.Kicked kicked -> {
-        String presentedForm = PresentedIdentity.presentedForm(session, extensionRegistry);
-        List<String> params =
-            reason != null
-                ? List.of(channel.name(), kicked.departure().departed().nickname(), reason)
-                : List.of(channel.name(), kicked.departure().departed().nickname());
+      case KickOutcome.Kicked(Departure departure) -> {
+        List<String> params = List.of(channel.name(), departure.departed().nickname(), reason);
         Message notification = new Message(Map.of(), presentedForm, Command.KICK, "KICK", params);
-        Recipients.deliver(kicked.departure().recipients(), notification);
+        Recipients.deliver(departure.recipients(), notification);
       }
     }
+  }
+
+  private void rejectNotOperator(ClientSession session, Channel channel, String channelName) {
+    SecurityEventLog.rejectedModerationAction(
+        session.connectionId(), "KICK", channelName, "not a channel operator");
+    Replies.send(
+        session,
+        serverName.get(),
+        NumericReply.ERR_CHANOPRIVSNEEDED,
+        channel.name(),
+        "You're not channel operator");
   }
 }

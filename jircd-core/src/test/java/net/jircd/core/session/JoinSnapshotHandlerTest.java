@@ -23,6 +23,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import net.jircd.core.extension.ExtensionRegistry;
 import net.jircd.core.extension.HostnameDisplayExtension;
@@ -93,6 +94,21 @@ class JoinSnapshotHandlerTest {
         .doesNotContain("joiner@host.example");
   }
 
+  @Test
+  void repeatedHandlerJoinNeverReachesTheSnapshot() throws Exception {
+    AtomicInteger snapshots = new AtomicInteger();
+    ChannelRegistry registry = new ChannelRegistry(channel -> snapshots.incrementAndGet());
+    ClientSession joiner = session("joiner");
+    registry.join("#c", joiner, ignored -> true);
+    int afterFirstJoin = snapshots.get();
+    JoinCommandHandler handler =
+        new JoinCommandHandler(registry, new ExtensionRegistry(), () -> "srv", () -> 50);
+
+    handler.handle(joiner, MessageParser.parse("JOIN #c"));
+
+    assertThat(snapshots.get()).isEqualTo(afterFirstJoin);
+  }
+
   private static Void handle(JoinCommandHandler handler, ClientSession session, String line)
       throws Exception {
     handler.handle(session, MessageParser.parse(line));
@@ -150,10 +166,14 @@ class JoinSnapshotHandlerTest {
     }
 
     @Override
-    public void start(ServerContext context) {}
+    public void start(ServerContext context) {
+      // Stateless test extension: nothing to set up.
+    }
 
     @Override
-    public void stop() {}
+    public void stop() {
+      // Stateless test extension: nothing to release.
+    }
 
     @Override
     public String display(String hostname) {
