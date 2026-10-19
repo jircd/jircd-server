@@ -314,42 +314,54 @@ public final class JircdServerApplication {
     @SuppressWarnings("PMD.CloseResource")
     TlsListener previousTlsListener = tlsListener;
     try {
-      for (ServerConfiguration.Listener listener : listeners) {
-        if (listener.tls()) {
-          tlsListener = new TlsListener(listener, connectionHandler);
-          ownedListeners.add(tlsListener);
-          tlsListener.start();
-          LOG.info("TLS listener started on port {}", listener.port());
-        } else {
-          plaintextListener = new PlaintextListener(listener, connectionHandler);
-          ownedListeners.add(plaintextListener);
-          plaintextListener.start();
-          LOG.info("Plaintext listener started on port {}", listener.port());
-        }
-      }
+      startListeners(listeners);
     } catch (IOException | GeneralSecurityException | RuntimeException failure) {
-      try {
-        closeListeners(
-            ownedListeners.subList(previousListenerCount, ownedListeners.size()),
-            System.nanoTime() + Duration.ofSeconds(3).toNanos());
-      } catch (IOException | RuntimeException cleanupFailure) {
-        if (failure != cleanupFailure) {
-          failure.addSuppressed(cleanupFailure);
-        }
-      }
-      if (previousListenerCount == 0) {
-        // Nothing else was serving, so every connection belongs to this failed attempt.
-        try {
-          connectionHandler.closeConnections(Duration.ofSeconds(3));
-        } catch (IOException | RuntimeException cleanupFailure) {
-          if (failure != cleanupFailure) {
-            failure.addSuppressed(cleanupFailure);
-          }
-        }
-      }
+      rollbackStart(failure, previousListenerCount);
       plaintextListener = previousPlaintextListener;
       tlsListener = previousTlsListener;
       throw failure;
+    }
+  }
+
+  private void startListeners(List<ServerConfiguration.Listener> listeners)
+      throws IOException, GeneralSecurityException {
+    for (ServerConfiguration.Listener listener : listeners) {
+      if (listener.tls()) {
+        tlsListener = new TlsListener(listener, connectionHandler);
+        ownedListeners.add(tlsListener);
+        tlsListener.start();
+        LOG.info("TLS listener started on port {}", listener.port());
+      } else {
+        plaintextListener = new PlaintextListener(listener, connectionHandler);
+        ownedListeners.add(plaintextListener);
+        plaintextListener.start();
+        LOG.info("Plaintext listener started on port {}", listener.port());
+      }
+    }
+  }
+
+  /** Closes listeners and connections from a failed start; cleanup failures are suppressed. */
+  private void rollbackStart(Exception failure, int previousListenerCount) {
+    try {
+      closeListeners(
+          ownedListeners.subList(previousListenerCount, ownedListeners.size()),
+          System.nanoTime() + Duration.ofSeconds(3).toNanos());
+    } catch (IOException | RuntimeException cleanupFailure) {
+      suppressUnlessSame(failure, cleanupFailure);
+    }
+    if (previousListenerCount == 0) {
+      // Nothing else was serving, so every connection belongs to this failed attempt.
+      try {
+        connectionHandler.closeConnections(Duration.ofSeconds(3));
+      } catch (IOException | RuntimeException cleanupFailure) {
+        suppressUnlessSame(failure, cleanupFailure);
+      }
+    }
+  }
+
+  private static void suppressUnlessSame(Exception failure, Exception cleanupFailure) {
+    if (failure != cleanupFailure) {
+      failure.addSuppressed(cleanupFailure);
     }
   }
 

@@ -254,6 +254,15 @@ public final class ConnectionHandler {
             .name("liveness-" + connectionId)
             .start(() -> runLivenessLoop(session, livenessMonitor, socket));
 
+    try {
+      readCommands(session, socket);
+    } finally {
+      awaitTeardown(socket, liveness, writer, overflowCleanup);
+    }
+  }
+
+  /** Reads and dispatches client lines until EOF, close or I/O failure, then cleans up. */
+  private void readCommands(ClientSession session, Socket socket) {
     try (BufferedInputStream in = new BufferedInputStream(socket.getInputStream())) {
       byte[] lineBytes;
       while ((lineBytes = readLineBytes(in)) != null) {
@@ -277,17 +286,23 @@ public final class ConnectionHandler {
       if (!session.lifecycle().isClosing()) {
         disconnectCleanup.cleanup(session, "Connection reset by peer");
       }
-    } finally {
-      closeQuietly(socket);
-      liveness.interrupt();
-      try {
-        liveness.join();
-        writer.awaitTermination();
-        Thread cleanup = overflowCleanup.get();
-        if (cleanup != null) cleanup.join();
-      } catch (InterruptedException _) {
-        Thread.currentThread().interrupt();
-      }
+    }
+  }
+
+  private static void awaitTeardown(
+      Socket socket,
+      Thread liveness,
+      SessionWriter writer,
+      AtomicReference<Thread> overflowCleanup) {
+    closeQuietly(socket);
+    liveness.interrupt();
+    try {
+      liveness.join();
+      writer.awaitTermination();
+      Thread cleanup = overflowCleanup.get();
+      if (cleanup != null) cleanup.join();
+    } catch (InterruptedException _) {
+      Thread.currentThread().interrupt();
     }
   }
 
