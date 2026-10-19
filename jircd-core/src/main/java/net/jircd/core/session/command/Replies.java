@@ -77,19 +77,7 @@ public final class Replies {
     int budget = MessageSerializer.MAX_COMMAND_BYTES - headerBytes;
     String channel = fixedParams.isEmpty() ? "*" : fixedParams.getLast();
     if (budget < 0) {
-      long suppressed =
-          LOG.isWarnEnabled()
-              ? OVERSIZED_WARNINGS.admit("header|" + numeric.wireCode() + "|" + channel)
-              : -1;
-      if (suppressed >= 0) {
-        LOG.warn(
-            "Dropping oversized listed reply header: numeric={}, channel={}, headerBytes={}, limit={}, suppressedSinceLast={}",
-            numeric.wireCode(),
-            channel,
-            headerBytes,
-            MessageSerializer.MAX_COMMAND_BYTES,
-            suppressed);
-      }
+      warnOversizedHeader(numeric, channel, headerBytes);
       return;
     }
     StringBuilder listed = new StringBuilder();
@@ -97,8 +85,7 @@ public final class Replies {
     for (String item : items) {
       int bytes = MessageSerializer.utf8Bytes(item);
       if (!listed.isEmpty() && used + 1 + bytes > budget) {
-        params.set(params.size() - 1, listed.toString());
-        send(session, serverName, numeric, params.subList(1, params.size()).toArray(String[]::new));
+        sendLine(session, serverName, numeric, params, listed.toString());
         listed.setLength(0);
         used = 0;
       }
@@ -107,19 +94,7 @@ public final class Replies {
         Message singleton = new Message(Map.of(), serverName, null, numeric.wireCode(), params);
         int singletonBytes = MessageSerializer.commandBytes(singleton);
         if (singletonBytes > MessageSerializer.MAX_COMMAND_BYTES) {
-          long suppressed =
-              LOG.isWarnEnabled()
-                  ? OVERSIZED_WARNINGS.admit("item|" + numeric.wireCode() + "|" + channel)
-                  : -1;
-          if (suppressed >= 0) {
-            LOG.warn(
-                "Dropping oversized listed item: numeric={}, channel={}, itemBytes={}, budget={}, suppressedSinceLast={}",
-                numeric.wireCode(),
-                channel,
-                bytes,
-                MessageSerializer.MAX_COMMAND_BYTES - (singletonBytes - bytes),
-                suppressed);
-          }
+          warnOversizedItem(numeric, channel, bytes, singletonBytes);
           continue;
         }
       }
@@ -131,8 +106,51 @@ public final class Replies {
       used += bytes;
     }
     if (!listed.isEmpty() || items.isEmpty()) {
-      params.set(params.size() - 1, listed.toString());
-      send(session, serverName, numeric, params.subList(1, params.size()).toArray(String[]::new));
+      sendLine(session, serverName, numeric, params, listed.toString());
+    }
+  }
+
+  private static void sendLine(
+      ClientSession session,
+      String serverName,
+      NumericReply numeric,
+      List<String> params,
+      String listed) {
+    params.set(params.size() - 1, listed);
+    send(session, serverName, numeric, params.subList(1, params.size()).toArray(String[]::new));
+  }
+
+  private static void warnOversizedHeader(NumericReply numeric, String channel, int headerBytes) {
+    if (!LOG.isWarnEnabled()) {
+      return;
+    }
+    long suppressed = OVERSIZED_WARNINGS.admit("header|" + numeric.wireCode() + "|" + channel);
+    if (suppressed >= 0) {
+      LOG.warn(
+          "Dropping oversized listed reply header: numeric={}, channel={}, headerBytes={}, limit={}, suppressedSinceLast={}",
+          numeric.wireCode(),
+          channel,
+          headerBytes,
+          MessageSerializer.MAX_COMMAND_BYTES,
+          suppressed);
+    }
+  }
+
+  private static void warnOversizedItem(
+      NumericReply numeric, String channel, int itemBytes, int singletonBytes) {
+    if (!LOG.isWarnEnabled()) {
+      return;
+    }
+    long suppressed = OVERSIZED_WARNINGS.admit("item|" + numeric.wireCode() + "|" + channel);
+    if (suppressed >= 0) {
+      int budget = MessageSerializer.MAX_COMMAND_BYTES - (singletonBytes - itemBytes);
+      LOG.warn(
+          "Dropping oversized listed item: numeric={}, channel={}, itemBytes={}, budget={}, suppressedSinceLast={}",
+          numeric.wireCode(),
+          channel,
+          itemBytes,
+          budget,
+          suppressed);
     }
   }
 

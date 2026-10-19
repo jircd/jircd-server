@@ -56,10 +56,10 @@ class NamesByteBudgetTest {
       }
       send("requester", "#other", List.of(oversized));
       assertThat(logs.messages()).hasSize(2);
-      assertThat(logs.messages().get(0).toString())
+      assertThat(logs.messages().get(0))
           .contains(
               "Dropping oversized listed item", CHANNEL, "itemBytes=600", "suppressedSinceLast=0");
-      assertThat(logs.messages().get(1).toString()).contains("#other");
+      assertThat(logs.messages().get(1)).contains("#other");
     }
   }
 

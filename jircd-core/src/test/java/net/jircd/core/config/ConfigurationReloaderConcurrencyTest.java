@@ -49,13 +49,15 @@ class ConfigurationReloaderConcurrencyTest {
       entered.countDown();
       try {
         release.await();
-      } catch (InterruptedException e) {
+      } catch (InterruptedException _) {
         Thread.currentThread().interrupt();
       }
     }
 
     @Override
-    public void stop() {}
+    public void stop() {
+      // Nothing to release: start() only parks the reload under test.
+    }
   }
 
   @Test

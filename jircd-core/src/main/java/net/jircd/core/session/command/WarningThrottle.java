@@ -53,11 +53,17 @@ public final class WarningThrottle {
    */
   public synchronized long admit(String key) {
     long now = nanoClock.getAsLong();
-    State state = states.get(key);
-    if (state == null) {
-      state = new State();
-      state.lastAdmittedNanos = now;
-      states.put(key, state);
+    boolean[] created = {false};
+    State state =
+        states.computeIfAbsent(
+            key,
+            _ -> {
+              created[0] = true;
+              State fresh = new State();
+              fresh.lastAdmittedNanos = now;
+              return fresh;
+            });
+    if (created[0]) {
       return 0;
     }
     if (now - state.lastAdmittedNanos < intervalNanos) {
