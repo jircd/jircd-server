@@ -274,6 +274,11 @@ public final class SessionWriter implements AutoCloseable {
     }
   }
 
+  /** Waits for the writer's actual exit after its socket has been closed. */
+  void awaitTermination() throws InterruptedException {
+    writerThread.join();
+  }
+
   private void awaitDrain() {
     // A failed socket write can invoke cleanup on this writer; joining itself cannot drain it.
     if (Thread.currentThread() == writerThread) return;

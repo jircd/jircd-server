@@ -23,8 +23,10 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.net.BindException;
 import java.net.ServerSocket;
+import java.net.Socket;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -32,6 +34,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
+import net.jircd.core.session.ConnectionHandler;
+import net.jircd.protocol.Command;
 import net.jircd.server.JircdServerApplication;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -41,6 +45,103 @@ import org.junit.jupiter.params.provider.ValueSource;
 class ListenerLifecycleTest {
 
   @TempDir Path temporaryDirectory;
+
+  @Test
+  void stopWaitsForRegisteredAndUnregisteredConnectionsToClose() throws Exception {
+    try (TestServer server = TestServer.start();
+        RawIrcClient registered = RawIrcClient.connectPlaintext(server.plaintextPort());
+        RawIrcClient unregistered = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+      registered.registerAndAwaitWelcome("shutdown", "shutdown");
+      registered.readThroughPong(Duration.ofSeconds(5));
+      unregistered.send("PING :accepted");
+      unregistered.readUntil("PONG", Duration.ofSeconds(5));
+      server.application.stop();
+      assertThat(server.application.nicknameRegistry().all()).isEmpty();
+      assertThat(registered.readLine()).isNull();
+      assertThat(unregistered.readLine()).isNull();
+    }
+  }
+
+  @Test
+  void listenerFailureStillDrainsConnectionsAndReportsAllFailures() throws Exception {
+    try (TestServer server = TestServer.start();
+        RawIrcClient client = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+      client.registerAndAwaitWelcome("failstop", "failstop");
+      client.readThroughPong(Duration.ofSeconds(5));
+      IOException first = new IOException("first listener failure");
+      IOException second = new IOException("second listener failure");
+      ownedListeners(server.application)
+          .add(
+              () -> {
+                throw first;
+              });
+      ownedListeners(server.application)
+          .add(
+              () -> {
+                throw second;
+              });
+      try {
+        assertThatThrownBy(server.application::stop)
+            .isSameAs(first)
+            .satisfies(failure -> assertThat(failure.getSuppressed()).containsExactly(second));
+        assertThat(server.application.nicknameRegistry().all()).isEmpty();
+        assertThat(client.readLine()).isNull();
+      } finally {
+        // Injected failures are permanent; remove them before the fixture's final close.
+        ownedListeners(server.application).clear();
+      }
+    }
+  }
+
+  @Test
+  void stoppedApplicationRejectsLateAcceptsAndCanRestart() throws Exception {
+    try (TestServer server = TestServer.start();
+        Socket late = new Socket()) {
+      var field = JircdServerApplication.class.getDeclaredField("connectionHandler");
+      field.setAccessible(true);
+      ConnectionHandler handler = (ConnectionHandler) field.get(server.application);
+      server.application.stop();
+      handler.accept(late);
+      assertThat(late.isClosed()).isTrue();
+      server.application.start();
+      try (RawIrcClient client = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+        client.registerAndAwaitWelcome("restart", "restart");
+      }
+    }
+  }
+
+  @Test
+  void connectionShutdownTimesOutLoudlyAndCanBeWaitedForAgain() throws Exception {
+    CountDownLatch entered = new CountDownLatch(1);
+    CountDownLatch release = new CountDownLatch(1);
+    try (TestServer server = TestServer.start();
+        RawIrcClient client = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+      var field = JircdServerApplication.class.getDeclaredField("connectionHandler");
+      field.setAccessible(true);
+      ConnectionHandler handler = (ConnectionHandler) field.get(server.application);
+      handler.registerHandler(
+          Command.PING,
+          (_, _) -> {
+            entered.countDown();
+            try {
+              release.await();
+            } catch (InterruptedException e) {
+              Thread.currentThread().interrupt();
+            }
+          });
+      try {
+        client.send("PING :block");
+        assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
+        assertThatThrownBy(() -> handler.closeConnections(Duration.ofMillis(20)))
+            .isInstanceOf(IOException.class)
+            .hasMessageContaining("Timed out waiting for 1 connections to stop");
+      } finally {
+        release.countDown();
+      }
+      server.application.stop();
+      assertThat(client.readLine()).isNull();
+    }
+  }
 
   @ParameterizedTest
   @ValueSource(booleans = {false, true})

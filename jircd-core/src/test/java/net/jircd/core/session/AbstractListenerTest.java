@@ -33,7 +33,7 @@ import org.junit.jupiter.api.Test;
 class AbstractListenerTest {
 
   @Test
-  void closeReturnsWhenAcceptThreadDoesNotExitWithinTimeout() throws Exception {
+  void closeFailsWhenAcceptThreadDoesNotExitWithinTimeout() throws Exception {
     var entered = new CountDownLatch(1);
     var release = new CountDownLatch(1);
     var closed = new AtomicBoolean();
@@ -66,14 +66,19 @@ class AbstractListenerTest {
       try {
         listener.start();
         assertThat(entered.await(1, TimeUnit.SECONDS)).isTrue();
-        assertTimeoutPreemptively(Duration.ofSeconds(1), listener::close);
+        assertTimeoutPreemptively(
+            Duration.ofSeconds(1),
+            () ->
+                assertThatThrownBy(listener::close)
+                    .isInstanceOf(IOException.class)
+                    .hasMessageContaining("Timed out stopping blocked-listener"));
         assertThat(closed).isTrue();
         assertThat(acceptThread.get().isAlive()).isTrue();
       } finally {
         release.countDown();
+        assertThat(acceptThread.get().join(Duration.ofSeconds(1))).isTrue();
       }
     }
-    assertThat(acceptThread.get().join(Duration.ofSeconds(1))).isTrue();
   }
 
   @Test

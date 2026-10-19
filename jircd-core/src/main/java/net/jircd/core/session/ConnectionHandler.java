@@ -99,6 +99,8 @@ public final class ConnectionHandler {
   private final Supplier<Integer> keepAliveFrequencySeconds;
   private final Supplier<Integer> sendqLimitBytes;
   private final TagRenderer tagRenderer;
+  private boolean accepting = true;
+  private final Map<Thread, Socket> connections = new ConcurrentHashMap<>();
   private final Map<Command, CommandHandler> handlers = new ConcurrentHashMap<>();
 
   public ConnectionHandler(
@@ -122,11 +124,59 @@ public final class ConnectionHandler {
   }
 
   /** Spawns one virtual thread to own this connection's lifetime end to end. */
-  public void accept(Socket socket) {
+  public synchronized void accept(Socket socket) {
+    if (!accepting) {
+      closeQuietly(socket);
+      return;
+    }
     String connectionId = UUID.randomUUID().toString();
-    Thread.ofVirtual()
-        .name("connection-" + connectionId)
-        .start(() -> handleConnection(socket, connectionId));
+    Thread connection =
+        Thread.ofVirtual()
+            .name("connection-" + connectionId)
+            .unstarted(
+                () -> {
+                  try {
+                    handleConnection(socket, connectionId);
+                  } finally {
+                    closeQuietly(socket);
+                    connections.remove(Thread.currentThread());
+                  }
+                });
+    connections.put(connection, socket);
+    connection.start();
+  }
+
+  /** Allows listener accepts when the application starts again. */
+  public synchronized void startAccepting() {
+    accepting = true;
+  }
+
+  /** Rejects late accepts before shutdown starts draining owned connections. */
+  public synchronized void stopAccepting() {
+    accepting = false;
+  }
+
+  /**
+   * Closes accepted sockets and waits for their connection, liveness and writer work to finish.
+   * Rejects late accepts even if a listener failed to stop. A timeout leaves outstanding
+   * connections tracked so a subsequent call can wait again.
+   */
+  public void closeConnections(Duration timeout) throws IOException {
+    long deadline = System.nanoTime() + timeout.toNanos();
+    stopAccepting();
+    connections.values().forEach(ConnectionHandler::closeQuietly);
+    for (Thread connection : connections.keySet()) {
+      try {
+        long remaining = deadline - System.nanoTime();
+        if (remaining <= 0 || !connection.join(Duration.ofNanos(remaining))) {
+          throw new IOException(
+              "Timed out waiting for " + connections.size() + " connections to stop");
+        }
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        throw new IOException("Interrupted waiting for connections to stop", e);
+      }
+    }
   }
 
   private void handleConnection(Socket socket, String connectionId) {
@@ -168,9 +218,10 @@ public final class ConnectionHandler {
             KEEP_ALIVE_TIMEOUT,
             Clock.systemUTC());
     session.attachLivenessMonitor(livenessMonitor);
-    Thread.ofVirtual()
-        .name("liveness-" + connectionId)
-        .start(() -> runLivenessLoop(session, livenessMonitor, socket));
+    Thread liveness =
+        Thread.ofVirtual()
+            .name("liveness-" + connectionId)
+            .start(() -> runLivenessLoop(session, livenessMonitor, socket));
 
     try (BufferedInputStream in = new BufferedInputStream(socket.getInputStream())) {
       byte[] lineBytes;
@@ -197,6 +248,13 @@ public final class ConnectionHandler {
       }
     } finally {
       closeQuietly(socket);
+      liveness.interrupt();
+      try {
+        liveness.join();
+        writer.awaitTermination();
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+      }
     }
   }
 

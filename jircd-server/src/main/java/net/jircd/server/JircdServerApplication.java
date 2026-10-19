@@ -21,6 +21,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Path;
 import java.security.GeneralSecurityException;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -286,6 +287,7 @@ public final class JircdServerApplication {
   }
 
   public synchronized void start() throws IOException, GeneralSecurityException {
+    connectionHandler.startAccepting();
     // No TLS entry in the zero-config default (004-fix-tls-certificate, research.md "The
     // zero-config default listener list") — a TLS listener with no certificate configured now
     // refuses to start, so defaulting to one here would break the simplest possible quickstart.
@@ -303,19 +305,21 @@ public final class JircdServerApplication {
       for (ServerConfiguration.Listener listener : listeners) {
         if (listener.tls()) {
           tlsListener = new TlsListener(listener, connectionHandler);
-          ownedListeners.add(tlsListener::close);
+          ownedListeners.add(tlsListener);
           tlsListener.start();
           LOG.info("TLS listener started on port {}", listener.port());
         } else {
           plaintextListener = new PlaintextListener(listener, connectionHandler);
-          ownedListeners.add(plaintextListener::close);
+          ownedListeners.add(plaintextListener);
           plaintextListener.start();
           LOG.info("Plaintext listener started on port {}", listener.port());
         }
       }
     } catch (IOException | GeneralSecurityException | RuntimeException failure) {
       try {
-        closeListeners(ownedListeners.subList(previousListenerCount, ownedListeners.size()));
+        closeListeners(
+            ownedListeners.subList(previousListenerCount, ownedListeners.size()),
+            System.nanoTime() + Duration.ofSeconds(3).toNanos());
       } catch (IOException | RuntimeException cleanupFailure) {
         if (failure != cleanupFailure) {
           failure.addSuppressed(cleanupFailure);
@@ -328,19 +332,55 @@ public final class JircdServerApplication {
     }
   }
 
+  /**
+   * Stops listeners and accepted connections within one 30-second budget. Connection cleanup is
+   * attempted even when a listener fails; additional failures are suppressed on the first failure.
+   */
   public synchronized void stop() throws IOException {
-    closeListeners(ownedListeners);
+    long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
+    connectionHandler.stopAccepting();
+    Exception failure = null;
+    try {
+      closeListeners(ownedListeners, deadline);
+    } catch (IOException | RuntimeException listenerFailure) {
+      failure = listenerFailure;
+    }
+    try {
+      connectionHandler.closeConnections(remainingShutdownTime(deadline));
+    } catch (IOException | RuntimeException connectionFailure) {
+      if (failure == null) {
+        failure = connectionFailure;
+      } else if (failure != connectionFailure) {
+        failure.addSuppressed(connectionFailure);
+      }
+    }
+    if (failure instanceof IOException ioFailure) {
+      throw ioFailure;
+    }
+    if (failure instanceof RuntimeException runtimeFailure) {
+      throw runtimeFailure;
+    }
+  }
+
+  private static Duration remainingShutdownTime(long deadline) {
+    return Duration.ofNanos(Math.max(1, deadline - System.nanoTime()));
   }
 
   // Successful closes relinquish ownership; failed resources remain available for a retry.
   @SuppressWarnings("PMD.CloseResource")
-  private static void closeListeners(List<Closeable> listeners) throws IOException {
+  private static void closeListeners(List<Closeable> listeners, long deadline) throws IOException {
     List<Exception> failures = new ArrayList<>();
     var iterator = listeners.iterator();
     while (iterator.hasNext()) {
       Closeable listener = iterator.next();
       try {
-        listener.close();
+        if (listener instanceof PlaintextListener plaintext) {
+          plaintext.close(remainingShutdownTime(deadline));
+        } else if (listener instanceof TlsListener tls) {
+          tls.close(remainingShutdownTime(deadline));
+        } else {
+          listener.close();
+        }
         iterator.remove();
       } catch (IOException | RuntimeException closeFailure) {
         failures.add(closeFailure);

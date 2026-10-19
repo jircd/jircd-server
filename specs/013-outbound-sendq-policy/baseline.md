@@ -197,3 +197,36 @@ written performance tradeoff, not a claim that noise explains every increase.
 - `JoinStormLoadTest` `p50Ms`: 20.500 → 24.800 ms (+21.0%, absolute +4.300 ms).
 
 All 42 final comparison invocations and seven final survival invocations exit 0. Every unchanged hard latency/time budget passes; all seven survival runs complete all 2,000 clients with zero overflow/unexpected disconnects. T009–T015 stop at the Phase 3 checkpoint; Phase 4 remains pending.
+
+
+### T029 grouped-suite teardown validation (2026-10-19)
+
+The unmodified grouped suite reproduced Story1 registration timeout after the single-wave storm
+(exit 1, 51 s). A deterministic lifecycle regression also showed `stop()` returning with a
+registered session still present. Shutdown now tracks accepted connections, closes their sockets,
+and waits for connection, liveness and writer work to finish, with a 30 s connection deadline.
+Listener join timeout now throws instead of reporting successful closure. This addresses the
+previously documented isolation gap; it does not attribute every historical latency outlier to it.
+
+Three consecutive executed grouped suites pass (exit 0; 44 s, 45 s, 44 s). The latter two use
+`./gradlew --no-daemon loadTest --rerun-tasks` because an unforced repeat was up-to-date and is
+not counted. No latency/time bound, ordering, exclusion, retry or queue-accounting behavior changes.
+These are suite validations, not replacement before/after medians. T029 quickstart and PR-median
+steps remain pending; Phase 4 has not started.
+
+
+### T029 Round 2: failed-listener cleanup and shared deadline
+
+Coordinator verification subsequently failed: SingleWave teardown hit the TLS listener's 3 s
+join timeout, and Story1 then timed out (grouped suite exit 1, 57 s). This supersedes the earlier
+three-pass reliability conclusion. The listener exception skipped `closeConnections`; a new
+deterministic regression confirms that listener failure left a registered connection behind.
+Carrier starvation is plausible, but the available log/XML contains no thread-state evidence
+that proves it.
+
+Stop now rejects late accepts, gives listener joins and connection draining one shared 30 s
+shutdown deadline, and always attempts connection cleanup even when listeners fail. Further
+failures are suppressed; genuinely stuck listeners still throw. Five consecutive forced grouped
+runs pass (exit 0; 48 s, 49 s, 44 s, 45 s, 50 s); `rg -n 'Timed out'` finds no matches in each log
+(exit 1 for no matches). Load-test latency bounds, ordering, exclusions and retry behavior are
+unchanged. The coordinator's Duration import is retained. Quickstart and PR medians remain pending.

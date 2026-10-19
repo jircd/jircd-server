@@ -75,9 +75,14 @@ abstract class AbstractListener<S extends Closeable> implements Closeable {
     }
   }
 
-  /** Closes the socket and waits up to three seconds for the accept thread to exit. */
+  /** Closes the socket and waits up to three seconds; throws if the accept thread cannot exit. */
   @Override
   public final void close() throws IOException {
+    close(closeTimeout);
+  }
+
+  /** Closes the listener and waits within the caller's remaining shutdown budget. */
+  public final void close(Duration timeout) throws IOException {
     running = false;
     Exception failure = null;
     try {
@@ -86,7 +91,7 @@ abstract class AbstractListener<S extends Closeable> implements Closeable {
       failure = closeFailure;
     } finally {
       try {
-        joinAcceptThread();
+        joinAcceptThread(timeout);
       } catch (IOException | RuntimeException joinFailure) {
         if (failure == null) {
           failure = joinFailure;
@@ -103,13 +108,12 @@ abstract class AbstractListener<S extends Closeable> implements Closeable {
     }
   }
 
-  private void joinAcceptThread() throws IOException {
+  private void joinAcceptThread(Duration timeout) throws IOException {
     Thread thread = listenerThread.get();
     if (thread != null) {
       try {
-        if (!thread.join(closeTimeout)) {
-          LOG.warn(
-              "{} accept thread still alive after {} shutdown timeout", threadName, closeTimeout);
+        if (!thread.join(timeout)) {
+          throw new IOException("Timed out stopping " + threadName + " after " + timeout);
         }
       } catch (InterruptedException e) {
         Thread.currentThread().interrupt();
