@@ -33,6 +33,12 @@ public interface CapabilityExtension extends Extension {
    * capability negotiated (T088/T089) — the caller ({@code CapabilityTagRenderer}) checks that
    * precondition before calling this; implementations don't re-check it themselves. Extensions that
    * don't decorate tags (e.g. {@code echo-message}) leave this at its no-op default.
+   *
+   * <p>This is a pure function of the immutable message: equal message inputs produce equal maps,
+   * independently of wall clock, randomness, recipient or mutable external state. Identifiers and
+   * timestamps derive from {@link OutboundMessage#messageId()} and {@link
+   * OutboundMessage#sentAt()}. Contribution byte metadata is memoized once per message and
+   * capability identity; rendering may invoke this function again at drain time.
    */
   default Map<String, String> contributeTags(OutboundMessage message) {
     return Map.of();

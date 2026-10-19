@@ -48,12 +48,15 @@ public final class Recipients {
 
   /** Delivers to recipients with an attached writer. */
   public static void deliver(Collection<ClientSession> recipients, Message message) {
+    if (recipients.isEmpty()) return;
+    // Raw recipients share one immutable wire message and therefore one byte charge.
+    long bytes = WireBytes.raw(message);
     for (ClientSession recipient : recipients) {
       // Borrowed reference to the recipient's own writer, closed by its connection lifecycle.
       @SuppressWarnings("PMD.CloseResource")
       SessionWriter writer = recipient.writer();
       if (writer != null) {
-        writer.enqueueRaw(message);
+        writer.enqueueRaw(message, bytes);
       }
     }
   }

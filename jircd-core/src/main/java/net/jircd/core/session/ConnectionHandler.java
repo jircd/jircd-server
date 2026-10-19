@@ -137,8 +137,6 @@ public final class ConnectionHandler {
       return;
     }
 
-    // Samples the outbound limit once per admitted connection; queue enforcement is separate.
-    sendqLimitBytes.get();
     ServerConfiguration.RateLimit configuredRateLimit = rateLimit.get();
     ClientSession session =
         new ClientSession(
@@ -153,7 +151,8 @@ public final class ConnectionHandler {
     @SuppressWarnings("PMD.CloseResource")
     SessionWriter writer;
     try {
-      writer = new SessionWriter(session, socket.getOutputStream(), tagRenderer);
+      writer =
+          new SessionWriter(session, socket.getOutputStream(), tagRenderer, sendqLimitBytes.get());
     } catch (IOException e) {
       closeQuietly(socket);
       return;

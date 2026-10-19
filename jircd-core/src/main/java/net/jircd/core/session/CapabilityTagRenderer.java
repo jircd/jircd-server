@@ -15,21 +15,17 @@
  */
 package net.jircd.core.session;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import net.jircd.core.extension.CapabilityExtension;
 import net.jircd.core.extension.ExtensionRegistry;
 import net.jircd.protocol.CapabilityName;
 import net.jircd.protocol.MessageSerializer;
 
-/**
- * The real {@link TagRenderer}: for each currently-{@code ENABLED} {@link CapabilityExtension},
- * live-checks whether the recipient has it negotiated and, if so, merges in its contributed tags
- * (T092) — never caches the enabled/negotiated set, the same live-check posture {@code
- * CapabilityNegotiator} already has (FR-007/FR-035).
- */
+/** Selects negotiated enabled contributions at enqueue and renders that selection at drain. */
 public final class CapabilityTagRenderer implements TagRenderer {
-
   private final ExtensionRegistry extensionRegistry;
 
   public CapabilityTagRenderer(ExtensionRegistry extensionRegistry) {
@@ -37,31 +33,43 @@ public final class CapabilityTagRenderer implements TagRenderer {
   }
 
   @Override
-  public Map<String, String> render(ClientSession recipient, OutboundMessage message) {
-    // 005-fix-batch-conformance FR-010 — seed with the sender's own client tags first, so a
-    // capability-contributed tag (msgid/time, reserved names) still wins on a key collision, but
-    // a client's own tag otherwise survives to the wire instead of being silently dropped. Only
-    // `+`-prefixed client-only tags ever forward, to every recipient alike including the sender's
-    // own echo: a bare tag (message-tags spec's reserved, non-`+` namespace — e.g. an unrecognized
-    // vendor tag) is never a client's to set at all, so it's dropped rather than round-tripped.
-    // Either way, nothing is forwarded unless the recipient negotiated message-tags itself — a
-    // recipient with nothing negotiated has no way to parse a tag section on the wire.
-    Map<String, String> tags = new LinkedHashMap<>();
-    if (recipient.negotiatedCapabilities().contains(CapabilityName.MESSAGE_TAGS)) {
-      for (var entry : message.clientTags().entrySet()) {
-        if (entry.getKey().startsWith("+")) {
-          tags.put(entry.getKey(), entry.getValue());
-        }
-      }
-    }
-    checkOriginBudget(tags);
-    Map<String, String> serverTags = new LinkedHashMap<>();
+  public PreparedTags prepare(ClientSession recipient, OutboundMessage message) {
+    if (recipient.negotiatedCapabilities().isEmpty())
+      return TagRenderer.NONE.prepare(recipient, message);
+    boolean forwardClientTags =
+        recipient.negotiatedCapabilities().contains(CapabilityName.MESSAGE_TAGS);
+    List<CapabilityExtension> selected = new ArrayList<>();
+    WireBytes.Tags bytes = forwardClientTags ? message.clientTagBytes() : WireBytes.Tags.NONE;
     for (var extension : extensionRegistry.enabled()) {
       if (extension instanceof CapabilityExtension capability
           && recipient.negotiatedCapabilities().contains(capability.providedCapability().name())) {
-        serverTags.putAll(capability.contributeTags(message));
+        selected.add(capability);
+        bytes = bytes.plus(message.contributionBytes(capability));
       }
     }
+    if (selected.isEmpty() && !forwardClientTags)
+      return TagRenderer.NONE.prepare(recipient, message);
+    List<CapabilityExtension> selection = List.copyOf(selected);
+    // Merging can collapse many overlapping contributions into one legal tag section.
+    // No emitted section exceeds the protocol maximum, even when the summed bound does.
+    return new PreparedTags(
+        Math.min(bytes.wireBytes(), MessageSerializer.MAX_TAG_SECTION_BYTES),
+        () -> renderSelected(message, forwardClientTags, selection));
+  }
+
+  @Override
+  public Map<String, String> render(ClientSession recipient, OutboundMessage message) {
+    return prepare(recipient, message).tags().get();
+  }
+
+  private static Map<String, String> renderSelected(
+      OutboundMessage message, boolean forwardClientTags, List<CapabilityExtension> selection) {
+    Map<String, String> tags = new LinkedHashMap<>();
+    if (forwardClientTags) tags.putAll(message.forwardedClientTags());
+    checkOriginBudget(tags);
+    Map<String, String> serverTags = new LinkedHashMap<>();
+    for (CapabilityExtension capability : selection)
+      serverTags.putAll(capability.contributeTags(message));
     checkOriginBudget(serverTags);
     tags.putAll(serverTags);
     return tags;

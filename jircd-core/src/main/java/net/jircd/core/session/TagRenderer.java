@@ -27,7 +27,37 @@ import java.util.Map;
 @FunctionalInterface
 public interface TagRenderer {
 
-  TagRenderer NONE = (recipient, message) -> Map.of();
+  PreparedTags NO_TAGS = new PreparedTags(0, Map::of);
+
+  TagRenderer NONE =
+      new TagRenderer() {
+        @Override
+        public Map<String, String> render(ClientSession recipient, OutboundMessage message) {
+          return Map.of();
+        }
+
+        @Override
+        public PreparedTags prepare(ClientSession recipient, OutboundMessage message) {
+          return NO_TAGS;
+        }
+      };
+
+  /**
+   * Deferred tag rendering with a conservative bound on its complete tag section, including
+   * framing.
+   */
+  record PreparedTags(long wireBytes, java.util.function.Supplier<Map<String, String>> tags) {}
+
+  /**
+   * Prepares a reservation without rendering the recipient's wire line. Custom renderers without
+   * contribution metadata reserve the protocol's full legal tag section; capability renderers
+   * override this with the selected message contributions.
+   */
+  default PreparedTags prepare(ClientSession recipient, OutboundMessage message) {
+    return new PreparedTags(
+        net.jircd.protocol.MessageSerializer.MAX_TAG_SECTION_BYTES,
+        () -> render(recipient, message));
+  }
 
   Map<String, String> render(ClientSession recipient, OutboundMessage message);
 }

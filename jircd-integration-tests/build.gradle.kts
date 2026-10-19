@@ -9,3 +9,8 @@ dependencies {
     // runtimeOnly everywhere else in this build, but tests need it on the compile classpath too.
     testImplementation(rootProject.libs.logback.classic)
 }
+
+// The 2,000-reader single-wave T003 probe exhausts 512 MiB and completes with a 2 GiB heap.
+tasks.named<Test>("loadTest") {
+    maxHeapSize = "2g"
+}
