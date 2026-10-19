@@ -161,6 +161,67 @@ public final class Channel {
     action.run();
   }
 
+  /** The outcome of {@link #applyAsOperator}. */
+  public enum ModeChangeResult {
+    /** The change was applied. */
+    APPLIED,
+    /** The requester is not an operator of the channel, so nothing changed. */
+    NOT_OPERATOR,
+    /** A privilege change named a target that is not a member, so nothing changed. */
+    NOT_A_MEMBER,
+    /** A ban was refused because the ban list is full, so nothing changed. */
+    BAN_LIST_FULL
+  }
+
+  /**
+   * Applies {@code change} on behalf of {@code requester} in one step under this channel's monitor:
+   * the requester's operator status is checked and the change made with no gap between them, so a
+   * de-op or departure of the requester cannot fall in between. A requester who is not an operator
+   * at that moment, including one who has left, changes nothing.
+   */
+  public synchronized ModeChangeResult applyAsOperator(
+      ClientSession requester, ChannelModeChange change) {
+    Objects.requireNonNull(change);
+    if (!operators.contains(requester)) {
+      return ModeChangeResult.NOT_OPERATOR;
+    }
+    return switch (change) {
+      case ChannelModeChange.Flag(ChannelMode mode, boolean set) -> {
+        setFlag(mode, set);
+        yield ModeChangeResult.APPLIED;
+      }
+      case ChannelModeChange.Limit(int limit) -> {
+        setMemberLimit(limit);
+        yield ModeChangeResult.APPLIED;
+      }
+      case ChannelModeChange.Key(String newKey) -> {
+        setKey(newKey);
+        yield ModeChangeResult.APPLIED;
+      }
+      case ChannelModeChange.BanAdd(BanEntry entry) ->
+          addBan(entry) ? ModeChangeResult.APPLIED : ModeChangeResult.BAN_LIST_FULL;
+      case ChannelModeChange.BanRemove(String mask) -> {
+        removeBan(mask);
+        yield ModeChangeResult.APPLIED;
+      }
+      case ChannelModeChange.Privilege(
+              ClientSession target,
+              MemberPrivilege privilege,
+              boolean granted) ->
+          setMemberPrivilege(target, privilege, granted)
+              ? ModeChangeResult.APPLIED
+              : ModeChangeResult.NOT_A_MEMBER;
+    };
+  }
+
+  private void setFlag(ChannelMode mode, boolean set) {
+    if (set) {
+      setMode(mode);
+    } else {
+      clearMode(mode);
+    }
+  }
+
   /** A per-member channel privilege. */
   public enum MemberPrivilege {
     OPERATOR,

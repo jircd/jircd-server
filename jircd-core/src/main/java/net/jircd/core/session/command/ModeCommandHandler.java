@@ -26,6 +26,7 @@ import net.jircd.core.extension.ExtensionRegistry;
 import net.jircd.core.session.BanEntry;
 import net.jircd.core.session.Channel;
 import net.jircd.core.session.ChannelMode;
+import net.jircd.core.session.ChannelModeChange;
 import net.jircd.core.session.ChannelRegistry;
 import net.jircd.core.session.ChannelVisibility;
 import net.jircd.core.session.ClientSession;
@@ -42,13 +43,15 @@ import net.jircd.protocol.NickMask;
 import net.jircd.protocol.NumericReply;
 
 /**
- * {@code MODE} (channel form): one whole-command operator-privilege check (not per-flag — except
- * the {@code b}-alone bare ban-list query, which needs no privilege at all), then applies an
+ * {@code MODE} (channel form): a whole-command operator-privilege check up front (except the {@code
+ * b}-alone bare ban-list query, which needs no privilege at all) answers 482 early, then each
+ * change re-checks the requester's operator status under the channel monitor in the same step as
+ * the mutation, so a requester de-opped or departed since the check changes nothing. It applies an
  * ordered {@link ModeChange} list left-to-right, stopping (but keeping what was already applied —
- * not atomic, not rolled back) at the first unrecognized flag, missing parameter, or unresolvable
- * {@code MEMBER}-kind target; a parameter-consuming flag beyond {@code
- * ServerConfiguration.maxModesPerCommand} stops silently, no reply beyond the echo of what was
- * applied so far.
+ * not atomic, not rolled back) at the first unrecognized flag, missing parameter, unresolvable
+ * {@code MEMBER}-kind target, or change refused with 482 because the requester lost operator
+ * status; a parameter-consuming flag beyond {@code ServerConfiguration.maxModesPerCommand} stops
+ * silently, no reply beyond the echo of what was applied so far.
  */
 public final class ModeCommandHandler implements CommandHandler {
 
@@ -57,7 +60,7 @@ public final class ModeCommandHandler implements CommandHandler {
   private final ExtensionRegistry extensionRegistry;
   private final Supplier<String> serverName;
   private final IntSupplier maxModesPerCommand;
-  private final Runnable beforeMemberChange;
+  private final Runnable beforeChange;
 
   public ModeCommandHandler(
       ChannelRegistry channelRegistry,
@@ -74,15 +77,16 @@ public final class ModeCommandHandler implements CommandHandler {
         () -> {});
   }
 
-  // Test seam for a departure after target resolution; never invoked under a membership monitor.
+  // Test seam run after the whole-command check and before each mutation, to interleave a
+  // de-op or departure of the requester; never invoked under a channel monitor.
   ModeCommandHandler(
       ChannelRegistry channelRegistry,
       NicknameRegistry nicknameRegistry,
       ExtensionRegistry extensionRegistry,
       Supplier<String> serverName,
       IntSupplier maxModesPerCommand,
-      Runnable beforeMemberChange) {
-    this.beforeMemberChange = beforeMemberChange;
+      Runnable beforeChange) {
+    this.beforeChange = beforeChange;
     this.channelRegistry = channelRegistry;
     this.nicknameRegistry = nicknameRegistry;
     this.extensionRegistry = extensionRegistry;
@@ -130,18 +134,22 @@ public final class ModeCommandHandler implements CommandHandler {
     }
 
     if (!channel.operators().contains(session)) {
-      SecurityEventLog.rejectedModerationAction(
-          session.connectionId(), "MODE", channelName, "not a channel operator");
-      Replies.send(
-          session,
-          serverName.get(),
-          NumericReply.ERR_CHANOPRIVSNEEDED,
-          channel.name(),
-          "You're not channel operator");
+      refuse(session, channel);
       return;
     }
 
     applyChanges(session, channel, message);
+  }
+
+  private void refuse(ClientSession session, Channel channel) {
+    SecurityEventLog.rejectedModerationAction(
+        session.connectionId(), "MODE", channel.name(), "not a channel operator");
+    Replies.send(
+        session,
+        serverName.get(),
+        NumericReply.ERR_CHANOPRIVSNEEDED,
+        channel.name(),
+        "You're not channel operator");
   }
 
   private void applyChanges(ClientSession session, Channel channel, Message message) {
@@ -170,7 +178,11 @@ public final class ModeCommandHandler implements CommandHandler {
       }
 
       if (mode.kind() == ChannelMode.Kind.BOOLEAN) {
-        applyBoolean(channel, mode, change);
+        beforeChange.run();
+        if (!applyOrRefuse(
+            session, channel, new ChannelModeChange.Flag(mode, change.sign() == '+'))) {
+          break;
+        }
         applied.add(change);
         continue;
       }
@@ -179,7 +191,10 @@ public final class ModeCommandHandler implements CommandHandler {
       // parameter at all, the same no-parameter shape BOOLEAN unsetting already has; only setting
       // it consumes one, below.
       if (mode.kind() == ChannelMode.Kind.VALUE_SET_ONLY && change.sign() == '-') {
-        channel.setMemberLimit(0);
+        beforeChange.run();
+        if (!applyOrRefuse(session, channel, new ChannelModeChange.Limit(0))) {
+          break;
+        }
         applied.add(change);
         continue;
       }
@@ -223,8 +238,16 @@ public final class ModeCommandHandler implements CommandHandler {
           }
           break;
         }
-        beforeMemberChange.run();
-        if (!applyMember(channel, mode, change, target.get())) {
+        beforeChange.run();
+        ChannelModeChange.Privilege privilege =
+            new ChannelModeChange.Privilege(target.get(), privilegeOf(mode), change.sign() == '+');
+        // A member's already-unset privilege is still a valid, echoable revoke.
+        Channel.ModeChangeResult result = channel.applyAsOperator(session, privilege);
+        if (result == Channel.ModeChangeResult.NOT_OPERATOR) {
+          refuse(session, channel);
+          break;
+        }
+        if (result == Channel.ModeChangeResult.NOT_A_MEMBER) {
           Replies.send(
               session,
               serverName.get(),
@@ -248,7 +271,10 @@ public final class ModeCommandHandler implements CommandHandler {
         if (limit <= 0) {
           break;
         }
-        channel.setMemberLimit(limit);
+        beforeChange.run();
+        if (!applyOrRefuse(session, channel, new ChannelModeChange.Limit(limit))) {
+          break;
+        }
         appliedParam = rawParam;
       } else if (mode.kind() == ChannelMode.Kind.VALUE_ALWAYS) {
         // +k/-k both always take a parameter; -k's value is
@@ -261,14 +287,25 @@ public final class ModeCommandHandler implements CommandHandler {
         if (change.sign() == '+' && (rawParam.isEmpty() || rawParam.indexOf(' ') >= 0)) {
           break;
         }
-        channel.setKey(change.sign() == '+' ? rawParam : null);
+        beforeChange.run();
+        String newKey = change.sign() == '+' ? rawParam : null;
+        if (!applyOrRefuse(session, channel, new ChannelModeChange.Key(newKey))) {
+          break;
+        }
         appliedParam = rawParam;
       } else {
         // LIST-kind — only ban-mask exists this release.
         String normalized = NickMask.normalize(rawParam);
+        beforeChange.run();
         if (change.sign() == '+') {
-          boolean ok = channel.addBan(new BanEntry(normalized, session.nickname(), Instant.now()));
-          if (!ok) {
+          BanEntry entry = new BanEntry(normalized, session.nickname(), Instant.now());
+          Channel.ModeChangeResult result =
+              channel.applyAsOperator(session, new ChannelModeChange.BanAdd(entry));
+          if (result == Channel.ModeChangeResult.NOT_OPERATOR) {
+            refuse(session, channel);
+            break;
+          }
+          if (result == Channel.ModeChangeResult.BAN_LIST_FULL) {
             Replies.send(
                 session,
                 serverName.get(),
@@ -278,8 +315,8 @@ public final class ModeCommandHandler implements CommandHandler {
                 "Channel ban list is full");
             break;
           }
-        } else {
-          channel.removeBan(normalized);
+        } else if (!applyOrRefuse(session, channel, new ChannelModeChange.BanRemove(normalized))) {
+          break;
         }
         appliedParam = normalized;
       }
@@ -292,22 +329,19 @@ public final class ModeCommandHandler implements CommandHandler {
     }
   }
 
-  private static void applyBoolean(Channel channel, ChannelMode mode, ModeChange change) {
-    if (change.sign() == '+') {
-      channel.setMode(mode);
-    } else {
-      channel.clearMode(mode);
+  // Applies a change that can only be refused for lack of operator status; true if applied.
+  private boolean applyOrRefuse(ClientSession session, Channel channel, ChannelModeChange change) {
+    if (channel.applyAsOperator(session, change) == Channel.ModeChangeResult.NOT_OPERATOR) {
+      refuse(session, channel);
+      return false;
     }
+    return true;
   }
 
-  private static boolean applyMember(
-      Channel channel, ChannelMode mode, ModeChange change, ClientSession target) {
-    Channel.MemberPrivilege privilege =
-        CoreChannelModes.OPERATOR.equals(mode)
-            ? Channel.MemberPrivilege.OPERATOR
-            : Channel.MemberPrivilege.VOICE;
-    // A member's already-unset privilege is still a valid, echoable revoke.
-    return channel.setMemberPrivilege(target, privilege, change.sign() == '+');
+  private static Channel.MemberPrivilege privilegeOf(ChannelMode mode) {
+    return CoreChannelModes.OPERATOR.equals(mode)
+        ? Channel.MemberPrivilege.OPERATOR
+        : Channel.MemberPrivilege.VOICE;
   }
 
   private static ChannelMode resolve(Collection<ChannelMode> recognized, char flag) {

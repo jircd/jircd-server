@@ -400,6 +400,150 @@ class ChannelTest {
     assertThat(channel.voiced()).isEmpty();
   }
 
+  @Test
+  void applyAsOperatorRefusesANonOperatorForEveryChangeKind() {
+    Channel channel = new Channel("#c");
+    ClientSession op = member("op");
+    ClientSession plain = member("plain");
+    channel.addMember(op);
+    channel.addMember(plain);
+    BanEntry seeded = new BanEntry("*!*@seeded", "op", Instant.now());
+    channel.addBan(seeded);
+    channel.grantVoice(op);
+
+    List<ChannelModeChange> changes =
+        List.of(
+            new ChannelModeChange.Flag(CoreChannelModes.MODERATED, true),
+            new ChannelModeChange.Limit(5),
+            new ChannelModeChange.Key("k"),
+            new ChannelModeChange.BanAdd(new BanEntry("*!*@bad", "op", Instant.now())),
+            new ChannelModeChange.Privilege(plain, Channel.MemberPrivilege.OPERATOR, true),
+            new ChannelModeChange.Privilege(plain, Channel.MemberPrivilege.VOICE, true));
+    for (ChannelModeChange change : changes) {
+      assertThat(channel.applyAsOperator(plain, change))
+          .isEqualTo(Channel.ModeChangeResult.NOT_OPERATOR);
+    }
+    assertThat(channel.activeModes()).isEmpty();
+    assertThat(channel.memberLimit()).isZero();
+    assertThat(channel.key()).isNull();
+    assertThat(channel.bans()).containsExactly(seeded);
+    assertThat(channel.operators()).containsExactly(op);
+    assertThat(channel.voiced()).containsExactly(op);
+  }
+
+  @Test
+  void applyAsOperatorRefusesARequesterWhoLeft() {
+    Channel channel = new Channel("#c");
+    ClientSession op = member("op");
+    channel.addMember(op);
+    channel.removeMember(op);
+
+    assertThat(channel.applyAsOperator(op, new ChannelModeChange.Key("k")))
+        .isEqualTo(Channel.ModeChangeResult.NOT_OPERATOR);
+    assertThat(channel.key()).isNull();
+  }
+
+  @Test
+  void applyAsOperatorAppliesEveryChangeKindForAnOperator() {
+    Channel channel = new Channel("#c");
+    ClientSession op = member("op");
+    ClientSession other = member("other");
+    channel.addMember(op);
+    channel.addMember(other);
+    BanEntry ban = new BanEntry("*!*@bad", "op", Instant.now());
+
+    applied(channel, op, new ChannelModeChange.Flag(CoreChannelModes.MODERATED, true));
+    assertThat(channel.activeModes()).contains(CoreChannelModes.MODERATED);
+    applied(channel, op, new ChannelModeChange.Flag(CoreChannelModes.MODERATED, false));
+    assertThat(channel.activeModes()).isEmpty();
+
+    applied(channel, op, new ChannelModeChange.Limit(5));
+    assertThat(channel.memberLimit()).isEqualTo(5);
+    applied(channel, op, new ChannelModeChange.Limit(0));
+    assertThat(channel.memberLimit()).isZero();
+
+    applied(channel, op, new ChannelModeChange.Key("k"));
+    assertThat(channel.key()).isEqualTo("k");
+    applied(channel, op, new ChannelModeChange.Key(null));
+    assertThat(channel.key()).isNull();
+
+    applied(channel, op, new ChannelModeChange.BanAdd(ban));
+    assertThat(channel.bans()).containsExactly(ban);
+    applied(channel, op, new ChannelModeChange.BanRemove("*!*@bad"));
+    assertThat(channel.bans()).isEmpty();
+
+    applied(
+        channel,
+        op,
+        new ChannelModeChange.Privilege(other, Channel.MemberPrivilege.OPERATOR, true));
+    applied(
+        channel, op, new ChannelModeChange.Privilege(other, Channel.MemberPrivilege.VOICE, true));
+    assertThat(channel.operators()).contains(other);
+    assertThat(channel.voiced()).contains(other);
+    applied(
+        channel,
+        op,
+        new ChannelModeChange.Privilege(other, Channel.MemberPrivilege.OPERATOR, false));
+    applied(
+        channel, op, new ChannelModeChange.Privilege(other, Channel.MemberPrivilege.VOICE, false));
+    assertThat(channel.operators()).doesNotContain(other);
+    assertThat(channel.voiced()).doesNotContain(other);
+  }
+
+  @Test
+  void aFlagChangeRequiresABooleanMode() {
+    for (ChannelMode mode :
+        List.of(
+            CoreChannelModes.BAN_MASK,
+            CoreChannelModes.OPERATOR,
+            CoreChannelModes.USER_LIMIT,
+            CoreChannelModes.CHANNEL_KEY)) {
+      assertThatThrownBy(() -> new ChannelModeChange.Flag(mode, true))
+          .isInstanceOf(IllegalArgumentException.class);
+    }
+  }
+
+  @Test
+  void aLimitChangeRejectsNegativeValuesAndAllowsZeroToClear() {
+    assertThatThrownBy(() -> new ChannelModeChange.Limit(-1))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThat(new ChannelModeChange.Limit(0).limit()).isZero();
+  }
+
+  @Test
+  void applyAsOperatorReportsANonMemberTargetAndAFullBanList() {
+    Channel channel = new Channel("#c");
+    ClientSession op = member("op");
+    channel.addMember(op);
+
+    ClientSession outsider = member("outsider");
+    for (Channel.MemberPrivilege privilege : Channel.MemberPrivilege.values()) {
+      assertThat(
+              channel.applyAsOperator(
+                  op, new ChannelModeChange.Privilege(outsider, privilege, true)))
+          .isEqualTo(Channel.ModeChangeResult.NOT_A_MEMBER);
+    }
+    assertThat(channel.operators()).containsExactly(op);
+    assertThat(channel.voiced()).isEmpty();
+
+    for (int i = 0; i < Channel.MAX_BANS; i++) {
+      applied(
+          channel,
+          op,
+          new ChannelModeChange.BanAdd(new BanEntry("*!*@h" + i, "op", Instant.now())));
+    }
+    List<BanEntry> before = List.copyOf(channel.bans());
+    BanEntry extra = new BanEntry("*!*@one-more", "op", Instant.now());
+    assertThat(channel.applyAsOperator(op, new ChannelModeChange.BanAdd(extra)))
+        .isEqualTo(Channel.ModeChangeResult.BAN_LIST_FULL);
+    assertThat(channel.bans()).containsExactlyElementsOf(before).doesNotContain(extra);
+  }
+
+  private static void applied(Channel channel, ClientSession requester, ChannelModeChange change) {
+    assertThat(channel.applyAsOperator(requester, change))
+        .isEqualTo(Channel.ModeChangeResult.APPLIED);
+  }
+
   private static ClientSession member(String nick) {
     ClientSession member = new ClientSession(nick, "host.example", RateLimitBucket.withDefaults());
     member.setNickname(nick);
