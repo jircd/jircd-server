@@ -243,6 +243,8 @@ public final class ConnectionHandler {
                   .name("sendq-disconnect-" + connectionId)
                   .unstarted(
                       () -> {
+                        ConnectionMonitorLog.sendqOverflow(
+                            connectionId, writer.limitBytes(), writer.overflowQueuedBytes());
                         try {
                           disconnectCleanup.cleanup(session, "SendQ exceeded");
                         } finally {

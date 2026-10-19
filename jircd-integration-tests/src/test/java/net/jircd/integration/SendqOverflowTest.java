@@ -29,6 +29,8 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import net.jircd.core.session.ClientSession;
 import net.jircd.core.session.ConnectionMonitorLog;
 import net.jircd.core.session.SessionWriterTestAccess;
@@ -134,6 +136,51 @@ class SendqOverflowTest {
                           line.contains("connection-event=disconnected")
                               && line.contains("connection=" + session.connectionId() + " ")))
           .hasSize(1);
+    }
+  }
+
+  @Test
+  void overflowLogsOneSendqEntryAndOneDisconnectWithTheConfiguredLimit() throws Exception {
+    long firstTotal = -1;
+    for (int round = 0; round < 2; round++) {
+      SocketBuffers buffers = new SocketBuffers();
+      try (TestServer server = TestServer.start(CONFIG, buffers);
+          RawIrcClient stuck = RawIrcClient.connectPlaintext(server.plaintextPort());
+          RawIrcClient sender = RawIrcClient.connectPlaintext(server.plaintextPort());
+          RawIrcClient reader = RawIrcClient.connectPlaintext(server.plaintextPort());
+          LogCapture log = new LogCapture(ConnectionMonitorLog.class)) {
+        join(stuck, "stuck");
+        join(sender, "sender");
+        join(reader, "reader");
+        stuck.readThroughPong(STEP);
+        sender.readThroughPong(STEP);
+        reader.readThroughPong(STEP);
+        ClientSession session = server.application.nicknameRegistry().lookup("stuck").orElseThrow();
+        buffers.constrainReceiver(stuck);
+        floodUntil(sender, reader, session, 0);
+        reader.readThroughPong(STEP);
+        server.application.stop();
+        String token = "connection=" + session.connectionId() + " ";
+        List<String> overflow =
+            log.messages().stream()
+                .filter(m -> m.startsWith("connection-event=sendq-overflow") && m.contains(token))
+                .toList();
+        assertThat(overflow).hasSize(1);
+        assertThat(overflow.get(0)).contains(" limitBytes=16384 ").contains(" queuedBytes=");
+        assertThat(
+                log.messages().stream()
+                    .filter(
+                        m ->
+                            m.startsWith("connection-event=disconnected")
+                                && m.contains(token)
+                                && m.endsWith("reason=SendQ exceeded")))
+            .hasSize(1);
+        Matcher total = Pattern.compile("overflowTotal=(\\d+)").matcher(overflow.get(0));
+        assertThat(total.find()).isTrue();
+        long value = Long.parseLong(total.group(1));
+        if (round == 0) firstTotal = value;
+        else assertThat(value).isEqualTo(firstTotal + 1);
+      }
     }
   }
 

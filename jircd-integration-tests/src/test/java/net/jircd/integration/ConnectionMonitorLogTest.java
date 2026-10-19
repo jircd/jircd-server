@@ -67,4 +67,27 @@ class ConnectionMonitorLogTest {
       assertThat(disconnectedMessage).contains("durationMs=").contains("reason=");
     }
   }
+
+  @Test
+  void sendqOverflowLineFollowsContractAndTotalGrowsByOnePerCall() throws Exception {
+    Pattern line =
+        Pattern.compile(
+            "connection-event=sendq-overflow connection=conn-x limitBytes=16384 queuedBytes=(\\d+)"
+                + " overflowTotal=(\\d+)");
+    try (LogCapture capture = new LogCapture(ConnectionMonitorLog.class)) {
+      ConnectionMonitorLog.sendqOverflow("conn-x", 16384, 16900L);
+      ConnectionMonitorLog.sendqOverflow("conn-x", 16384, 17000L);
+      var entries =
+          capture.messages().stream()
+              .filter(m -> m.startsWith("connection-event=sendq-overflow"))
+              .toList();
+      assertThat(entries).hasSize(2);
+      Matcher first = line.matcher(entries.get(0));
+      Matcher second = line.matcher(entries.get(1));
+      assertThat(first.matches()).as(entries.get(0)).isTrue();
+      assertThat(second.matches()).as(entries.get(1)).isTrue();
+      assertThat(first.group(1)).isEqualTo("16900");
+      assertThat(Long.parseLong(second.group(2))).isEqualTo(Long.parseLong(first.group(2)) + 1);
+    }
+  }
 }

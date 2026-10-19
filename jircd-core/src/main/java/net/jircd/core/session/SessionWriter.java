@@ -69,6 +69,7 @@ public final class SessionWriter implements AutoCloseable {
   private final Object enqueueLock = new Object();
   private final AtomicLong queuedBytes = new AtomicLong();
   private final int limitBytes;
+  private volatile long overflowQueuedBytes;
   private final Thread writerThread;
   private final AtomicBoolean closing = new AtomicBoolean();
   private final AtomicBoolean overflowed = new AtomicBoolean();
@@ -131,6 +132,15 @@ public final class SessionWriter implements AutoCloseable {
     return queuedBytes.get();
   }
 
+  int limitBytes() {
+    return limitBytes;
+  }
+
+  /** Queued charge, including the rejected line, captured before the backlog was discarded. */
+  long overflowQueuedBytes() {
+    return overflowQueuedBytes;
+  }
+
   private void enqueueEntry(Entry entry) {
     synchronized (enqueueLock) {
       if (closing.get() || overflowed.get()) return;
@@ -138,8 +148,9 @@ public final class SessionWriter implements AutoCloseable {
         queue.add(entry);
         return;
       }
-      queuedBytes.addAndGet(-entry.bytes());
+      long attempted = queuedBytes.getAndAdd(-entry.bytes());
       if (!overflowed.compareAndSet(false, true)) return;
+      overflowQueuedBytes = attempted;
       // Subtract only entries actually removed: the drain thread may already own one entry.
       Entry discarded;
       while ((discarded = queue.poll()) != null) queuedBytes.addAndGet(-discarded.bytes());

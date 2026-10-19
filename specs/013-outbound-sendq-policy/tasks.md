@@ -101,14 +101,14 @@ Gradle multi-module. Core code: `jircd-core/src/main/java/net/jircd/core/...`; u
 
 ### Tests for User Story 3 (write first)
 
-- [ ] T022 [P] [US3] Extend `jircd-core/src/test/java/net/jircd/core/session/ConnectionMonitorLogTest.java` (check the existing location with `rg -l ConnectionMonitorLog jircd-core/src/test jircd-integration-tests/src/test`) for `sendqOverflow(connection, limitBytes, queuedBytes)`: line format matches `contracts/monitoring-log.md` and `overflowTotal` increases by one per call
-- [ ] T023 [US3] Add a case to `SendqOverflowTest.java` using `LogCapture`: one overflow produces exactly one `connection-event=sendq-overflow` entry with the configured `limitBytes` and one `disconnected ... reason=SendQ exceeded` entry; two overflows give `overflowTotal` differing by 1 (compare relative values, the counter is process-wide)
+- [x] T022 [P] [US3] Extend `jircd-core/src/test/java/net/jircd/core/session/ConnectionMonitorLogTest.java` (check the existing location with `rg -l ConnectionMonitorLog jircd-core/src/test jircd-integration-tests/src/test`) for `sendqOverflow(connection, limitBytes, queuedBytes)`: line format matches `contracts/monitoring-log.md` and `overflowTotal` increases by one per call
+- [x] T023 [US3] Add a case to `SendqOverflowTest.java` using `LogCapture`: one overflow produces exactly one `connection-event=sendq-overflow` entry with the configured `limitBytes` and one `disconnected ... reason=SendQ exceeded` entry; two overflows give `overflowTotal` differing by 1 (compare relative values, the counter is process-wide)
 
 ### Implementation for User Story 3
 
-- [ ] T024 [US3] Add `sendqOverflow(String connectionId, int limitBytes, long queuedBytes)` and a process-wide `AtomicLong` total to `jircd-core/src/main/java/net/jircd/core/session/ConnectionMonitorLog.java`; call it from the sendq overflow path in `ConnectionHandler.java` before `cleanup`
-- [ ] T025 [P] [US3] Document queued wire-data budgeting and additional JVM object/cache overhead, and the policy in `README.md` (FR-012): default, unit, key, minimum, ceiling, the exact `ERROR` text, QUIT/log reason, reload applies to new connections only, worst-case memory (`connections x limit`: 10,000 x 512 KiB = 5 GiB at the default, 10,000 x 2 MiB = 20 GiB at the ceiling), and guidance for raising it; add `sendqLimitBytes` to the example configuration if the README has one (the gitignored local `jircd-server/jircd.yaml` MUST NOT be touched)
-- [ ] T026 [US3] Run T022-T023 to green
+- [x] T024 [US3] Add `sendqOverflow(String connectionId, int limitBytes, long queuedBytes)` and a process-wide `AtomicLong` total to `jircd-core/src/main/java/net/jircd/core/session/ConnectionMonitorLog.java`; call it from the sendq overflow path in `ConnectionHandler.java` before `cleanup`
+- [x] T025 [P] [US3] Document queued wire-data budgeting and additional JVM object/cache overhead, and the policy in `README.md` (FR-012): default, unit, key, minimum, ceiling, the exact `ERROR` text, QUIT/log reason, reload applies to new connections only, worst-case memory (`connections x limit`: 10,000 x 512 KiB = 5 GiB at the default, 10,000 x 2 MiB = 20 GiB at the ceiling), and guidance for raising it; add `sendqLimitBytes` to the example configuration if the README has one (the gitignored local `jircd-server/jircd.yaml` MUST NOT be touched)
+- [x] T026 [US3] Run T022-T023 to green
 
 **Checkpoint**: all three stories complete
 
