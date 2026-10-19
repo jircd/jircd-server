@@ -91,7 +91,7 @@ class SessionWriterByteLimitTest {
     AtomicInteger overflows = new AtomicInteger();
     try (GatedOutput out = new GatedOutput();
         SessionWriter writer = new SessionWriter(session(), out, TagRenderer.NONE, LIMIT)) {
-      writer.setOnOverflow(overflows::incrementAndGet);
+      writer.setOnSendqOverflow(overflows::incrementAndGet);
       writer.enqueueRaw(blockLine());
       out.awaitWrite();
       try {
@@ -110,7 +110,7 @@ class SessionWriterByteLimitTest {
     AtomicInteger overflows = new AtomicInteger();
     try (GatedOutput out = new GatedOutput();
         SessionWriter writer = new SessionWriter(session(), out, TagRenderer.NONE, LIMIT)) {
-      writer.setOnOverflow(overflows::incrementAndGet);
+      writer.setOnSendqOverflow(overflows::incrementAndGet);
       writer.enqueueRaw(blockLine());
       out.awaitWrite();
       try {
@@ -119,7 +119,7 @@ class SessionWriterByteLimitTest {
         assertThat(overflows).hasValue(0);
         writer.enqueueRaw(Message.of(Command.PING, "x"));
         assertThat(overflows).hasValue(1);
-        assertThat(writer.queuedBytes()).isEqualTo(LIMIT);
+        assertThat(writer.queuedBytes()).isZero();
       } finally {
         out.releaseAll();
       }
@@ -131,7 +131,7 @@ class SessionWriterByteLimitTest {
     AtomicInteger overflows = new AtomicInteger();
     try (GatedOutput out = new GatedOutput();
         SessionWriter writer = new SessionWriter(session(), out, TagRenderer.NONE, LIMIT)) {
-      writer.setOnOverflow(overflows::incrementAndGet);
+      writer.setOnSendqOverflow(overflows::incrementAndGet);
       writer.enqueueRaw(blockLine());
       out.awaitWrite();
       try {

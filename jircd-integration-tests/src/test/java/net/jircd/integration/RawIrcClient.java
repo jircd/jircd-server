@@ -20,6 +20,7 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.Socket;
+import java.net.SocketException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
@@ -49,6 +50,11 @@ public final class RawIrcClient implements AutoCloseable {
 
   public static RawIrcClient connectPlaintext(int port) throws IOException {
     return new RawIrcClient(new Socket(TestServer.LOOPBACK, port));
+  }
+
+  /** Test seam to force receive-side backpressure independently of host TCP defaults. */
+  void setReceiveBufferSize(int bytes) throws SocketException {
+    socket.setReceiveBufferSize(bytes);
   }
 
   public static RawIrcClient connectTls(int port) throws Exception {

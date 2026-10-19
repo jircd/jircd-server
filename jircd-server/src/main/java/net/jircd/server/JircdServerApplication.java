@@ -19,6 +19,7 @@ import java.io.Closeable;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.Socket;
 import java.nio.file.Path;
 import java.security.GeneralSecurityException;
 import java.time.Duration;
@@ -27,6 +28,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
 import java.util.Set;
+import java.util.function.Consumer;
 import net.jircd.core.capability.CapabilityNegotiator;
 import net.jircd.core.config.ConfigurationException;
 import net.jircd.core.config.ConfigurationLoader;
@@ -91,6 +93,15 @@ public final class JircdServerApplication {
   private final List<Closeable> ownedListeners = new ArrayList<>();
 
   public JircdServerApplication(Path configPath) throws ConfigurationException, IOException {
+    this(configPath, socket -> {});
+  }
+
+  /**
+   * Test seam for accepted-socket setup, such as deterministic backpressure. This is not a server
+   * configuration setting; socket ownership stays with the application.
+   */
+  public JircdServerApplication(Path configPath, Consumer<Socket> acceptedSocketCustomizer)
+      throws ConfigurationException, IOException {
     extensionRegistry.discover(Thread.currentThread().getContextClassLoader());
 
     Set<String> knownCapabilityIds =
@@ -130,7 +141,8 @@ public final class JircdServerApplication {
             () -> serverName,
             () -> reloader.current().rateLimit(),
             () -> reloader.current().keepAliveFrequencySeconds(),
-            () -> reloader.current().sendqLimitBytes());
+            () -> reloader.current().sendqLimitBytes(),
+            acceptedSocketCustomizer);
     registerStory1Handlers();
 
     extensionRegistry.attachContext(
@@ -415,6 +427,11 @@ public final class JircdServerApplication {
 
   public int tlsPort() {
     return tlsListener.boundPort();
+  }
+
+  /** Test seam for exercising acceptance and connection-drain lifecycle independently. */
+  ConnectionHandler connectionHandlerForTesting() {
+    return connectionHandler;
   }
 
   public ExtensionRegistry extensionRegistry() {

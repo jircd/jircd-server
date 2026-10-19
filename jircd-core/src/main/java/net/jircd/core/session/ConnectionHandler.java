@@ -26,6 +26,8 @@ import java.time.Duration;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import java.util.function.Supplier;
 import net.jircd.core.config.ServerConfiguration;
 import net.jircd.core.extension.ConnectionAdmissionExtension;
@@ -99,6 +101,7 @@ public final class ConnectionHandler {
   private final Supplier<Integer> keepAliveFrequencySeconds;
   private final Supplier<Integer> sendqLimitBytes;
   private final TagRenderer tagRenderer;
+  private final Consumer<Socket> acceptedSocketCustomizer;
   private boolean accepting = true;
   private final Map<Thread, Socket> connections = new ConcurrentHashMap<>();
   private final Map<Command, CommandHandler> handlers = new ConcurrentHashMap<>();
@@ -110,6 +113,29 @@ public final class ConnectionHandler {
       Supplier<ServerConfiguration.RateLimit> rateLimit,
       Supplier<Integer> keepAliveFrequencySeconds,
       Supplier<Integer> sendqLimitBytes) {
+    this(
+        extensionRegistry,
+        disconnectCleanup,
+        serverName,
+        rateLimit,
+        keepAliveFrequencySeconds,
+        sendqLimitBytes,
+        socket -> {});
+  }
+
+  /**
+   * Test seam for constraining accepted sockets before protocol handling. The customizer runs on
+   * the tracked connection thread; socket ownership remains with this handler.
+   */
+  public ConnectionHandler(
+      ExtensionRegistry extensionRegistry,
+      DisconnectCleanup disconnectCleanup,
+      Supplier<String> serverName,
+      Supplier<ServerConfiguration.RateLimit> rateLimit,
+      Supplier<Integer> keepAliveFrequencySeconds,
+      Supplier<Integer> sendqLimitBytes,
+      Consumer<Socket> acceptedSocketCustomizer) {
+    this.acceptedSocketCustomizer = java.util.Objects.requireNonNull(acceptedSocketCustomizer);
     this.extensionRegistry = extensionRegistry;
     this.disconnectCleanup = disconnectCleanup;
     this.serverName = serverName;
@@ -180,6 +206,7 @@ public final class ConnectionHandler {
   }
 
   private void handleConnection(Socket socket, String connectionId) {
+    acceptedSocketCustomizer.accept(socket);
     String remoteAddress =
         socket.getInetAddress() == null ? "unknown" : socket.getInetAddress().getHostAddress();
     if (!isAdmitted(remoteAddress)) {
@@ -208,7 +235,27 @@ public final class ConnectionHandler {
       return;
     }
     session.attachWriter(writer);
-    writer.setOnOverflow(() -> disconnectCleanup.cleanup(session, "Excess Flood"));
+    AtomicReference<Thread> overflowCleanup = new AtomicReference<>();
+    writer.setOnSendqOverflow(
+        () -> {
+          Thread cleanup =
+              Thread.ofVirtual()
+                  .name("sendq-disconnect-" + connectionId)
+                  .unstarted(
+                      () -> {
+                        try {
+                          disconnectCleanup.cleanup(session, "SendQ exceeded");
+                        } finally {
+                          // A racing trigger may own cleanup. Drain its final lines before
+                          // closing this socket, without waiting for the liveness tick.
+                          writer.close();
+                          closeQuietly(socket);
+                        }
+                      });
+          overflowCleanup.set(cleanup);
+          cleanup.start();
+        });
+    writer.setOnWriteFailure(() -> disconnectCleanup.cleanup(session, "Excess Flood"));
 
     LivenessMonitor livenessMonitor =
         new LivenessMonitor(
@@ -252,6 +299,8 @@ public final class ConnectionHandler {
       try {
         liveness.join();
         writer.awaitTermination();
+        Thread cleanup = overflowCleanup.get();
+        if (cleanup != null) cleanup.join();
       } catch (InterruptedException e) {
         Thread.currentThread().interrupt();
       }
@@ -263,12 +312,10 @@ public final class ConnectionHandler {
    * main thread is blocked inside {@link #readLineBytes} waiting for socket input, so probing idle
    * connections needs a separate thread. {@link DisconnectCleanup#cleanup} only closes the writer
    * and marks the session {@code CLOSING}; it has no reference to the socket itself, so a
-   * disconnect triggered from any thread other than this connection's own main thread (a keep-alive
-   * timeout, here, or an outbound-queue overflow, {@code SessionWriter}'s {@code onOverflow}) would
-   * otherwise leave the main thread blocked in {@code read()} forever, waiting for input that will
-   * never arrive. This loop is this connection's single reliable backstop: whenever the session
-   * becomes {@code CLOSING} for any reason, it closes the socket directly, which unblocks that read
-   * and lets the main thread reach its own cleanup path.
+   * disconnect triggered from another thread could leave the main thread blocked in {@code read()}
+   * waiting for input that will never arrive. Sendq cleanup closes its socket directly after the
+   * final drain; this loop remains the backstop for other disconnect triggers. Whenever the session
+   * becomes {@code CLOSING}, it closes the socket, unblocking the read loop's cleanup path.
    */
   static void runLivenessLoop(
       ClientSession session, LivenessMonitor livenessMonitor, Socket socket) {

@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
@@ -70,7 +71,10 @@ public final class SessionWriter implements AutoCloseable {
   private final int limitBytes;
   private final Thread writerThread;
   private final AtomicBoolean closing = new AtomicBoolean();
-  private volatile Runnable onOverflow = () -> {};
+  private final AtomicBoolean overflowed = new AtomicBoolean();
+  private final CountDownLatch overflowDispatched = new CountDownLatch(1);
+  private volatile Runnable onSendqOverflow = () -> {};
+  private volatile Runnable onWriteFailure = () -> {};
 
   /** Creates a writer with the server's default outbound byte budget. */
   public SessionWriter(ClientSession session, OutputStream out, TagRenderer tagRenderer) {
@@ -92,28 +96,34 @@ public final class SessionWriter implements AutoCloseable {
     this.writerThread.start();
   }
 
-  public void setOnOverflow(Runnable onOverflow) {
-    this.onOverflow = onOverflow;
+  /** Installs the nonblocking handoff to sendq disconnect cleanup. */
+  public void setOnSendqOverflow(Runnable onSendqOverflow) {
+    this.onSendqOverflow = onSendqOverflow;
+  }
+
+  /** Installs cleanup for socket write failures unrelated to sendq overflow. */
+  public void setOnWriteFailure(Runnable onWriteFailure) {
+    this.onWriteFailure = onWriteFailure;
   }
 
   /**
    * Enqueues a fan-out message; capability-dependent tags are rendered per-recipient at drain time.
    */
   public void enqueue(OutboundMessage message) {
-    if (closing.get()) return;
+    if (closing.get() || overflowed.get()) return;
     TagRenderer.PreparedTags tags = tagRenderer.prepare(session, message);
     enqueueEntry(new Entry(message.componentBytes() + tags.wireBytes(), message, tags));
   }
 
   /** Enqueues a pre-built line, charging its escaped tag and component bytes including CRLF. */
   public void enqueueRaw(Message rawMessage) {
-    if (closing.get()) return;
+    if (closing.get() || overflowed.get()) return;
     enqueueRaw(rawMessage, WireBytes.raw(rawMessage));
   }
 
   /** Uses the shared charge computed once by raw broadcast delivery. */
   void enqueueRaw(Message rawMessage, long bytes) {
-    if (closing.get()) return;
+    if (closing.get() || overflowed.get()) return;
     enqueueEntry(new Entry(bytes, rawMessage, null));
   }
 
@@ -123,14 +133,29 @@ public final class SessionWriter implements AutoCloseable {
 
   private void enqueueEntry(Entry entry) {
     synchronized (enqueueLock) {
-      if (closing.get()) return;
+      if (closing.get() || overflowed.get()) return;
       if (queuedBytes.addAndGet(entry.bytes()) <= limitBytes) {
         queue.add(entry);
         return;
       }
       queuedBytes.addAndGet(-entry.bytes());
+      if (!overflowed.compareAndSet(false, true)) return;
+      // Subtract only entries actually removed: the drain thread may already own one entry.
+      Entry discarded;
+      while ((discarded = queue.poll()) != null) queuedBytes.addAndGet(-discarded.bytes());
+      Message error =
+          Message.of(
+              Command.ERROR, "Closing Link: " + session.realHostname() + " (SendQ exceeded)");
+      queue.add(new Entry(0, error, null));
+      queue.add(POISON_PILL);
     }
-    handleOverflow();
+    try {
+      handleOverflow();
+    } finally {
+      // The writer may consume ERROR + pill before this callback even gets scheduled. Shutdown
+      // must not relinquish the connection until its cleanup thread has been handed off.
+      overflowDispatched.countDown();
+    }
   }
 
   private static final String BATCH_TAG_KEY = "batch";
@@ -171,7 +196,7 @@ public final class SessionWriter implements AutoCloseable {
 
   private void handleOverflow() {
     LOG.warn("Outbound queue overflow for connection {}; closing", session.connectionId());
-    onOverflow.run();
+    onSendqOverflow.run();
   }
 
   private void writeFanOutMessage(OutboundMessage message, TagRenderer.PreparedTags prepared) {
@@ -223,7 +248,8 @@ public final class SessionWriter implements AutoCloseable {
       out.flush();
     } catch (IOException e) {
       LOG.debug("Write failed for connection {}: {}", session.connectionId(), e.toString());
-      onOverflow.run();
+      // A failed best-effort ERROR must not steal the SendQ reason from its pending cleanup.
+      if (!overflowed.get()) onWriteFailure.run();
     }
   }
 
@@ -266,7 +292,7 @@ public final class SessionWriter implements AutoCloseable {
       return;
     }
     synchronized (enqueueLock) {
-      queue.add(POISON_PILL);
+      if (!overflowed.get()) queue.add(POISON_PILL);
     }
     awaitDrain();
     if (writerThread.isAlive()) {
@@ -274,9 +300,10 @@ public final class SessionWriter implements AutoCloseable {
     }
   }
 
-  /** Waits for the writer's actual exit after its socket has been closed. */
+  /** Waits for the writer's actual exit and any overflow-cleanup handoff after socket closure. */
   void awaitTermination() throws InterruptedException {
     writerThread.join();
+    if (overflowed.get()) overflowDispatched.await();
   }
 
   private void awaitDrain() {

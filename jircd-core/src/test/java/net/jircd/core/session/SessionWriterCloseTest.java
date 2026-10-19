@@ -52,7 +52,7 @@ class SessionWriterCloseTest {
                 new ClientSession("failure", "host.example", RateLimitBucket.withDefaults()),
                 failing,
                 TagRenderer.NONE)) {
-      writer.setOnOverflow(
+      writer.setOnWriteFailure(
           () -> {
             writer.close();
             callbackReturned.countDown();

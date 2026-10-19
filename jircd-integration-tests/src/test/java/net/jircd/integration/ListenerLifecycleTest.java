@@ -37,6 +37,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import net.jircd.core.session.ConnectionHandler;
 import net.jircd.protocol.Command;
 import net.jircd.server.JircdServerApplication;
+import net.jircd.server.JircdServerTestAccess;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -97,9 +98,7 @@ class ListenerLifecycleTest {
   void stoppedApplicationRejectsLateAcceptsAndCanRestart() throws Exception {
     try (TestServer server = TestServer.start();
         Socket late = new Socket()) {
-      var field = JircdServerApplication.class.getDeclaredField("connectionHandler");
-      field.setAccessible(true);
-      ConnectionHandler handler = (ConnectionHandler) field.get(server.application);
+      ConnectionHandler handler = JircdServerTestAccess.connectionHandler(server.application);
       server.application.stop();
       handler.accept(late);
       assertThat(late.isClosed()).isTrue();
@@ -116,9 +115,7 @@ class ListenerLifecycleTest {
     CountDownLatch release = new CountDownLatch(1);
     try (TestServer server = TestServer.start();
         RawIrcClient client = RawIrcClient.connectPlaintext(server.plaintextPort())) {
-      var field = JircdServerApplication.class.getDeclaredField("connectionHandler");
-      field.setAccessible(true);
-      ConnectionHandler handler = (ConnectionHandler) field.get(server.application);
+      ConnectionHandler handler = JircdServerTestAccess.connectionHandler(server.application);
       handler.registerHandler(
           Command.PING,
           (_, _) -> {
