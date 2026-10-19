@@ -28,6 +28,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.LockSupport;
 import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -78,7 +79,8 @@ class SendqOverflowTest {
         assertThat(stuck.readLine()).isNull();
       }
       long deadline = start + STEP.toNanos();
-      while (!serverSocket.isClosed() && System.nanoTime() < deadline) Thread.sleep(5);
+      while (!serverSocket.isClosed() && System.nanoTime() < deadline)
+        LockSupport.parkNanos(5_000_000L);
       assertThat(serverSocket.isClosed()).isTrue();
       assertThat(Duration.ofNanos(System.nanoTime() - start)).isLessThan(STEP);
       assertThat(reader.readThroughPong(STEP)).anyMatch(line -> line.startsWith("PONG "));

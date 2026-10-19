@@ -22,6 +22,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.io.Closeable;
 import java.io.IOException;
 import java.net.BindException;
+import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.file.Files;
@@ -122,7 +123,7 @@ class ListenerLifecycleTest {
             entered.countDown();
             try {
               release.await();
-            } catch (InterruptedException e) {
+            } catch (InterruptedException _) {
               Thread.currentThread().interrupt();
             }
           });
@@ -177,6 +178,39 @@ class ListenerLifecycleTest {
         assertThatThrownBy(application::start).isInstanceOf(BindException.class);
         assertAvailable(firstPort);
         assertThatCode(application::stop).doesNotThrowAnyException();
+      } finally {
+        application.stop();
+      }
+    }
+  }
+
+  @Test
+  void startupFailureClosesConnectionsAcceptedDuringTheAttempt() throws Exception {
+    try (ServerSocket firstReservation = new ServerSocket(0);
+        ServerSocket occupied = new ServerSocket(0);
+        ServerSocket pairing = loopbackListener();
+        Socket client = new Socket(pairing.getInetAddress(), pairing.getLocalPort());
+        Socket accepted = pairing.accept()) {
+      int firstPort = firstReservation.getLocalPort();
+      var application =
+          application(listener(firstPort, false) + listener(occupied.getLocalPort(), false));
+      firstReservation.close();
+      ConnectionHandler handler = JircdServerTestAccess.connectionHandler(application);
+      // Deterministic stand-in for a client accepted by the first listener before the second fails.
+      handler.accept(accepted);
+      client.setSoTimeout(5000);
+      client
+          .getOutputStream()
+          .write("PING :up\r\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+      try {
+        assertThatThrownBy(application::start).isInstanceOf(BindException.class);
+        while (client.getInputStream().read() != -1) {
+          // read until the server closes the connection; the soTimeout fails the test otherwise
+        }
+        try (Socket late = new Socket()) {
+          handler.accept(late);
+          assertThat(late.isClosed()).isTrue();
+        }
       } finally {
         application.stop();
       }
@@ -413,5 +447,13 @@ class ListenerLifecycleTest {
     try (var socket = new ServerSocket(port)) {
       assertThat(socket.getLocalPort()).isEqualTo(port);
     }
+  }
+
+  // Bind to loopback, not the wildcard: on macOS a more specific bind of the same port by another
+  // process wins the connect, and accept() would then wait forever. The timeout bounds that case.
+  private static ServerSocket loopbackListener() throws IOException {
+    ServerSocket listener = new ServerSocket(0, 1, InetAddress.getLoopbackAddress());
+    listener.setSoTimeout(5000);
+    return listener;
   }
 }

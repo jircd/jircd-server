@@ -18,6 +18,8 @@ package net.jircd.core.session;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.io.IOException;
+import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
@@ -49,7 +51,7 @@ class OverflowShutdownTest {
               cleaning.countDown();
               try {
                 release.await();
-              } catch (InterruptedException e) {
+              } catch (InterruptedException _) {
                 Thread.currentThread().interrupt();
               }
             });
@@ -67,8 +69,8 @@ class OverflowShutdownTest {
           session.writer().enqueueRaw(Message.of(Command.PING, "x".repeat(20000)));
           senderReturned.countDown();
         });
-    try (ServerSocket listener = new ServerSocket(0);
-        Socket client = new Socket("127.0.0.1", listener.getLocalPort());
+    try (ServerSocket listener = loopbackListener();
+        Socket client = new Socket(listener.getInetAddress(), listener.getLocalPort());
         Socket accepted = listener.accept();
         var threads = Executors.newVirtualThreadPerTaskExecutor()) {
       handler.accept(accepted);
@@ -90,5 +92,13 @@ class OverflowShutdownTest {
         release.countDown();
       }
     }
+  }
+
+  // Bind to loopback, not the wildcard: on macOS a more specific bind of the same port by another
+  // process wins the connect, and accept() would then wait forever. The timeout bounds that case.
+  private static ServerSocket loopbackListener() throws IOException {
+    ServerSocket listener = new ServerSocket(0, 1, InetAddress.getLoopbackAddress());
+    listener.setSoTimeout(5000);
+    return listener;
   }
 }

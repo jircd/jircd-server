@@ -46,6 +46,8 @@ class SessionWriterOverflowTest {
         writer.enqueueRaw(Message.of(Command.PING, "ignored"));
         writer.enqueue(OutboundMessage.now("n!u@h", "PRIVMSG", "#c", "ignored"));
         assertThat(callbacks).hasValue(1);
+        // 14 (backlog) + 15 (rejected); the in-flight line was already released at dequeue.
+        assertThat(writer.overflowQueuedBytes()).isEqualTo(29);
       } finally {
         out.release.countDown();
       }
@@ -75,7 +77,7 @@ class SessionWriterOverflowTest {
                   () -> {
                     try {
                       gate.await();
-                    } catch (InterruptedException e) {
+                    } catch (InterruptedException _) {
                       Thread.currentThread().interrupt();
                     }
                     writer.enqueueRaw(Message.of(Command.PING, "x".repeat(32)));
@@ -132,7 +134,7 @@ class SessionWriterOverflowTest {
       started.countDown();
       try {
         release.await();
-      } catch (InterruptedException e) {
+      } catch (InterruptedException _) {
         Thread.currentThread().interrupt();
         throw new InterruptedIOException();
       }

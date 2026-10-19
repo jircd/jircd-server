@@ -29,6 +29,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import net.jircd.core.config.ServerConfiguration;
 import net.jircd.protocol.CapabilityName;
 import net.jircd.protocol.Command;
@@ -74,8 +75,8 @@ public final class SessionWriter implements AutoCloseable {
   private final AtomicBoolean closing = new AtomicBoolean();
   private final AtomicBoolean overflowed = new AtomicBoolean();
   private final CountDownLatch overflowDispatched = new CountDownLatch(1);
-  private volatile Runnable onSendqOverflow = () -> {};
-  private volatile Runnable onWriteFailure = () -> {};
+  private final AtomicReference<Runnable> onSendqOverflow = new AtomicReference<>(() -> {});
+  private final AtomicReference<Runnable> onWriteFailure = new AtomicReference<>(() -> {});
 
   /** Creates a writer with the server's default outbound byte budget. */
   public SessionWriter(ClientSession session, OutputStream out, TagRenderer tagRenderer) {
@@ -99,12 +100,12 @@ public final class SessionWriter implements AutoCloseable {
 
   /** Installs the nonblocking handoff to sendq disconnect cleanup. */
   public void setOnSendqOverflow(Runnable onSendqOverflow) {
-    this.onSendqOverflow = onSendqOverflow;
+    this.onSendqOverflow.set(onSendqOverflow);
   }
 
   /** Installs cleanup for socket write failures unrelated to sendq overflow. */
   public void setOnWriteFailure(Runnable onWriteFailure) {
-    this.onWriteFailure = onWriteFailure;
+    this.onWriteFailure.set(onWriteFailure);
   }
 
   /**
@@ -144,13 +145,14 @@ public final class SessionWriter implements AutoCloseable {
   private void enqueueEntry(Entry entry) {
     synchronized (enqueueLock) {
       if (closing.get() || overflowed.get()) return;
-      if (queuedBytes.addAndGet(entry.bytes()) <= limitBytes) {
+      long reserved = queuedBytes.addAndGet(entry.bytes());
+      if (reserved <= limitBytes) {
         queue.add(entry);
         return;
       }
-      long attempted = queuedBytes.getAndAdd(-entry.bytes());
+      queuedBytes.addAndGet(-entry.bytes());
       if (!overflowed.compareAndSet(false, true)) return;
-      overflowQueuedBytes = attempted;
+      overflowQueuedBytes = reserved;
       // Subtract only entries actually removed: the drain thread may already own one entry.
       Entry discarded;
       while ((discarded = queue.poll()) != null) queuedBytes.addAndGet(-discarded.bytes());
@@ -207,7 +209,7 @@ public final class SessionWriter implements AutoCloseable {
 
   private void handleOverflow() {
     LOG.warn("Outbound queue overflow for connection {}; closing", session.connectionId());
-    onSendqOverflow.run();
+    onSendqOverflow.get().run();
   }
 
   private void writeFanOutMessage(OutboundMessage message, TagRenderer.PreparedTags prepared) {
@@ -260,7 +262,7 @@ public final class SessionWriter implements AutoCloseable {
     } catch (IOException e) {
       LOG.debug("Write failed for connection {}: {}", session.connectionId(), e.toString());
       // A failed best-effort ERROR must not steal the SendQ reason from its pending cleanup.
-      if (!overflowed.get()) onWriteFailure.run();
+      if (!overflowed.get()) onWriteFailure.get().run();
     }
   }
 

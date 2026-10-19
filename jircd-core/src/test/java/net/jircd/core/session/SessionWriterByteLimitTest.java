@@ -55,12 +55,13 @@ class SessionWriterByteLimitTest {
   }
 
   @Test
-  void rejectsNonpositiveWriterLimits() {
-    assertThatThrownBy(
-            () ->
-                new SessionWriter(session(), OutputStream.nullOutputStream(), TagRenderer.NONE, 0))
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("limitBytes");
+  void rejectsNonpositiveWriterLimits() throws IOException {
+    ClientSession session = session();
+    try (OutputStream out = OutputStream.nullOutputStream()) {
+      assertThatThrownBy(() -> new SessionWriter(session, out, TagRenderer.NONE, 0))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessageContaining("limitBytes");
+    }
   }
 
   @Test
@@ -80,8 +81,7 @@ class SessionWriterByteLimitTest {
         .isEqualTo(equal)
         .hasSameHashCodeAs(equal)
         .isNotEqualTo(null)
-        .isNotEqualTo("other");
-    assertThat(first)
+        .isNotEqualTo("other")
         .isEqualTo(first)
         .isNotEqualTo(OutboundMessage.now("n!u@h", "PRIVMSG", "#c", "different"));
   }
@@ -454,7 +454,7 @@ class SessionWriterByteLimitTest {
       started.release();
       try {
         permits.acquire();
-      } catch (InterruptedException e) {
+      } catch (InterruptedException _) {
         Thread.currentThread().interrupt();
         throw new InterruptedIOException();
       }

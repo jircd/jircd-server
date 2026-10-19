@@ -156,13 +156,15 @@ public final class ConnectionHandler {
       return;
     }
     String connectionId = UUID.randomUUID().toString();
+    // Read at accept time so a later reload cannot change this connection's limit.
+    int acceptedSendqLimit = sendqLimitBytes.get();
     Thread connection =
         Thread.ofVirtual()
             .name("connection-" + connectionId)
             .unstarted(
                 () -> {
                   try {
-                    handleConnection(socket, connectionId);
+                    handleConnection(socket, connectionId, acceptedSendqLimit);
                   } finally {
                     closeQuietly(socket);
                     connections.remove(Thread.currentThread());
@@ -205,7 +207,7 @@ public final class ConnectionHandler {
     }
   }
 
-  private void handleConnection(Socket socket, String connectionId) {
+  private void handleConnection(Socket socket, String connectionId, int sendqLimit) {
     acceptedSocketCustomizer.accept(socket);
     String remoteAddress =
         socket.getInetAddress() == null ? "unknown" : socket.getInetAddress().getHostAddress();
@@ -228,8 +230,7 @@ public final class ConnectionHandler {
     @SuppressWarnings("PMD.CloseResource")
     SessionWriter writer;
     try {
-      writer =
-          new SessionWriter(session, socket.getOutputStream(), tagRenderer, sendqLimitBytes.get());
+      writer = new SessionWriter(session, socket.getOutputStream(), tagRenderer, sendqLimit);
     } catch (IOException e) {
       closeQuietly(socket);
       return;
@@ -237,26 +238,7 @@ public final class ConnectionHandler {
     session.attachWriter(writer);
     AtomicReference<Thread> overflowCleanup = new AtomicReference<>();
     writer.setOnSendqOverflow(
-        () -> {
-          Thread cleanup =
-              Thread.ofVirtual()
-                  .name("sendq-disconnect-" + connectionId)
-                  .unstarted(
-                      () -> {
-                        ConnectionMonitorLog.sendqOverflow(
-                            connectionId, writer.limitBytes(), writer.overflowQueuedBytes());
-                        try {
-                          disconnectCleanup.cleanup(session, "SendQ exceeded");
-                        } finally {
-                          // A racing trigger may own cleanup. Drain its final lines before
-                          // closing this socket, without waiting for the liveness tick.
-                          writer.close();
-                          closeQuietly(socket);
-                        }
-                      });
-          overflowCleanup.set(cleanup);
-          cleanup.start();
-        });
+        () -> startOverflowCleanup(session, writer, socket, connectionId, overflowCleanup));
     writer.setOnWriteFailure(() -> disconnectCleanup.cleanup(session, "Excess Flood"));
 
     LivenessMonitor livenessMonitor =
@@ -303,10 +285,37 @@ public final class ConnectionHandler {
         writer.awaitTermination();
         Thread cleanup = overflowCleanup.get();
         if (cleanup != null) cleanup.join();
-      } catch (InterruptedException e) {
+      } catch (InterruptedException _) {
         Thread.currentThread().interrupt();
       }
     }
+  }
+
+  /** Hands an overflow off to its own thread so the enqueueing sender never blocks on cleanup. */
+  private void startOverflowCleanup(
+      ClientSession session,
+      SessionWriter writer,
+      Socket socket,
+      String connectionId,
+      AtomicReference<Thread> overflowCleanup) {
+    Thread cleanup =
+        Thread.ofVirtual()
+            .name("sendq-disconnect-" + connectionId)
+            .unstarted(
+                () -> {
+                  ConnectionMonitorLog.sendqOverflow(
+                      connectionId, writer.limitBytes(), writer.overflowQueuedBytes());
+                  try {
+                    disconnectCleanup.cleanup(session, "SendQ exceeded");
+                  } finally {
+                    // A racing trigger may own cleanup. Drain its final lines before closing this
+                    // socket, without waiting for the liveness tick.
+                    writer.close();
+                    closeQuietly(socket);
+                  }
+                });
+    overflowCleanup.set(cleanup);
+    cleanup.start();
   }
 
   /**

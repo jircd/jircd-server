@@ -336,10 +336,19 @@ public final class JircdServerApplication {
         if (failure != cleanupFailure) {
           failure.addSuppressed(cleanupFailure);
         }
-      } finally {
-        plaintextListener = previousPlaintextListener;
-        tlsListener = previousTlsListener;
       }
+      if (previousListenerCount == 0) {
+        // Nothing else was serving, so every connection belongs to this failed attempt.
+        try {
+          connectionHandler.closeConnections(Duration.ofSeconds(3));
+        } catch (IOException | RuntimeException cleanupFailure) {
+          if (failure != cleanupFailure) {
+            failure.addSuppressed(cleanupFailure);
+          }
+        }
+      }
+      plaintextListener = previousPlaintextListener;
+      tlsListener = previousTlsListener;
       throw failure;
     }
   }
@@ -386,12 +395,10 @@ public final class JircdServerApplication {
     while (iterator.hasNext()) {
       Closeable listener = iterator.next();
       try {
-        if (listener instanceof PlaintextListener plaintext) {
-          plaintext.close(remainingShutdownTime(deadline));
-        } else if (listener instanceof TlsListener tls) {
-          tls.close(remainingShutdownTime(deadline));
-        } else {
-          listener.close();
+        switch (listener) {
+          case PlaintextListener plaintext -> plaintext.close(remainingShutdownTime(deadline));
+          case TlsListener tls -> tls.close(remainingShutdownTime(deadline));
+          default -> listener.close();
         }
         iterator.remove();
       } catch (IOException | RuntimeException closeFailure) {

@@ -73,17 +73,19 @@ final class WireBytes {
 
   private static long utf8(String text) {
     long bytes = 0;
-    for (int i = 0; i < text.length(); i++) {
+    int i = 0;
+    while (i < text.length()) {
       char c = text.charAt(i);
+      boolean pair =
+          Character.isHighSurrogate(c)
+              && i + 1 < text.length()
+              && Character.isLowSurrogate(text.charAt(i + 1));
       if (c < 0x80) bytes++;
       else if (c < 0x800) bytes += 2;
-      else if (Character.isHighSurrogate(c)
-          && i + 1 < text.length()
-          && Character.isLowSurrogate(text.charAt(i + 1))) {
-        bytes += 4;
-        i++;
-      } else if (Character.isSurrogate(c)) bytes++;
+      else if (pair) bytes += 4;
+      else if (Character.isSurrogate(c)) bytes++;
       else bytes += 3;
+      i += pair ? 2 : 1;
     }
     return bytes;
   }
