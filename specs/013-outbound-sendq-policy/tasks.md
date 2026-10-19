@@ -116,12 +116,12 @@ Gradle multi-module. Core code: `jircd-core/src/main/java/net/jircd/core/...`; u
 
 ## Phase 6: Polish and cross-cutting
 
-- [ ] T027 [P] Check that no other code path assumes the removed 256-entry capacity or the old shared overflow callback: `rg 'setOnOverflow|QUEUE_CAPACITY|Excess Flood' --glob '*.java'`
-- [ ] T028 `./gradlew --no-daemon spotlessApply` then `./gradlew --no-daemon build` (tests, Spotless, SpotBugs, PMD, coverage 85% line / 75% branch); fix findings without suppressions
-- [ ] T029 Run `./gradlew --no-daemon loadTest` once end to end and the quickstart.md steps; paste the before/after medians into the PR description
+- [x] T027 [P] Check that no other code path assumes the removed 256-entry capacity or the old shared overflow callback: `rg 'setOnOverflow|QUEUE_CAPACITY|Excess Flood' --glob '*.java'`
+- [x] T028 `./gradlew --no-daemon spotlessApply` then `./gradlew --no-daemon build` (tests, Spotless, SpotBugs, PMD, coverage 85% line / 75% branch); fix findings without suppressions
+- [x] T029 Run `./gradlew --no-daemon loadTest` once end to end and the quickstart.md steps; paste the before/after medians into the PR description
   - [x] Grouped-suite validation: Round 2: five consecutive executed passes after shared-deadline shutdown and unconditional connection cleanup (48 s / 49 s / 44 s / 45 s / 50 s); all use `--rerun-tasks`, with no `Timed out` log matches.
-  - [ ] Quickstart steps and PR before/after medians remain pending.
-- [ ] T030 Mark completed tasks here and in `baseline.md` with the results; leave the docs commit separate from code per the repo's convention (do not commit without the user's review)
+  - [x] Final forced `loadTest --rerun-tasks` exit 0 (43 s, no `Timed out`); quickstart steps 1-4, 6, 7 re-run green; PR body drafted from the baseline medians.
+- [x] T030 Mark completed tasks here and in `baseline.md` with the results; leave the docs commit separate from code per the repo's convention (do not commit without the user's review)
 
 ---
 

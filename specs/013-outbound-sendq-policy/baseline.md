@@ -230,3 +230,10 @@ failures are suppressed; genuinely stuck listeners still throw. Five consecutive
 runs pass (exit 0; 48 s, 49 s, 44 s, 45 s, 50 s); `rg -n 'Timed out'` finds no matches in each log
 (exit 1 for no matches). Load-test latency bounds, ordering, exclusions and retry behavior are
 unchanged. The coordinator's Duration import is retained. Quickstart and PR medians remain pending.
+
+### T027-T030 final validation (2026-10-19)
+
+- T027: `rg 'setOnOverflow|QUEUE_CAPACITY|Excess Flood'` finds only `ConnectionHandler` `setOnWriteFailure(... "Excess Flood")`, the intended plain-write-failure reason.
+- T028: `spotlessApply` then `build` exit 0.
+- T029: `./gradlew --no-daemon loadTest --rerun-tasks` exit 0 (43 s, no `Timed out`). Quickstart steps 1-4 and 7 pass; step 6 with temporary configs outside the repo (`sendqLimitBytes: 100` and `2097153`) exits 1 at startup naming the setting. Medians above are used in the PR description.
+- T030: tasks T027-T030 and the T029 sub-items are marked complete.
