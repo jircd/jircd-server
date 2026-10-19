@@ -49,6 +49,28 @@ subsequent messages continue to be delivered. Tags have a separate 8191-byte
 wire allowance, with up to 4094 escaped data bytes from each client/server
 origin. Tags are never truncated.
 
+`nicknameMaxLength` (default 9) bounds ASCII nicknames. `channelNameMaxLength`
+(default 50, including `#`) bounds both UTF-16 code units and UTF-8 bytes at
+JOIN and SAJOIN admission; ISUPPORT still advertises that value as `CHANNELLEN`.
+Multibyte names that previously fit only the character limit now receive
+`476 ERR_BADCHANMASK`; shorten the name or increase the configured limit within
+the reply budget. Existing nicknames and memberships survive a limit-lowering
+reload.
+
+Startup and reload reject unsafe combinations of the resolved server-name byte
+length `S`, nickname limit `N`, and channel byte limit `Cmax`: both
+`S + 2N + Cmax + 14 <= 512` (353) and `S + N + Cmax + 29 <= 512` (366)
+must hold. Validation names the keys, computed reply sizes, and available channel
+byte budget. Reduce the configured limits or use a shorter server name to migrate
+an incompatible configuration; a failed reload keeps the previous settings.
+NAMES never splits or truncates member identities. A grandfathered item that
+cannot fit is skipped with a WARN giving the channel, item bytes and singleton
+budget; fitting neighbors continue. An oversized fixed header is logged
+separately. The closing 366 is still attempted, and the writer logs and drops it
+if its own size exceeds 512 bytes. See the
+[configuration contract](specs/001-ircv3-server/contracts/server-configuration.md)
+for the limits and reload behavior.
+
 ## Project status
 
 This project is being built with a spec-driven workflow

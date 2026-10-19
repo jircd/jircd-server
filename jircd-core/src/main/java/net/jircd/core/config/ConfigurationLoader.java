@@ -18,6 +18,7 @@ package net.jircd.core.config;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.security.GeneralSecurityException;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -26,6 +27,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import net.jircd.protocol.MessageSerializer;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.error.MarkedYAMLException;
 import org.yaml.snakeyaml.error.YAMLException;
@@ -69,6 +71,8 @@ public final class ConfigurationLoader {
       throw new ConfigurationException("serverName must contain a '.': " + serverName);
     }
 
+    serverName = resolveServerName(serverName);
+
     int nicknameMaxLength =
         positiveIntWithinCeiling(
             root,
@@ -81,6 +85,8 @@ public final class ConfigurationLoader {
             "channelNameMaxLength",
             ServerConfiguration.DEFAULT_CHANNEL_NAME_MAX_LENGTH,
             ServerConfiguration.LENGTH_CEILING);
+    validateReplyBudgets(serverName, nicknameMaxLength, channelNameMaxLength);
+
     int topicMaxLength =
         positiveIntWithinCeiling(
             root,
@@ -148,6 +154,55 @@ public final class ConfigurationLoader {
         operFailureThreshold,
         whowasHistorySize,
         keepAliveFrequencySeconds);
+  }
+
+  /** Checks complete NAMES items and their closing numeric against the running server prefix. */
+  static void validateReplyBudgets(
+      String serverName, int nicknameMaxLength, int channelNameMaxLength)
+      throws ConfigurationException {
+    int serverBytes = MessageSerializer.utf8Bytes(serverName);
+    int namesBytes = serverBytes + 2 * nicknameMaxLength + channelNameMaxLength + 14;
+    int endBytes = serverBytes + nicknameMaxLength + channelNameMaxLength + 29;
+    int maximum = MessageSerializer.MAX_COMMAND_BYTES;
+    if (namesBytes > maximum || endBytes > maximum) {
+      int channelBudget =
+          Math.min(
+              maximum - serverBytes - 2 * nicknameMaxLength - 14,
+              maximum - serverBytes - nicknameMaxLength - 29);
+      throw new ConfigurationException(
+          "serverName (S="
+              + serverBytes
+              + " bytes), nicknameMaxLength (N="
+              + nicknameMaxLength
+              + "), channelNameMaxLength (Cmax="
+              + channelNameMaxLength
+              + " bytes) exceed the "
+              + maximum
+              + "-byte reply limit: 353="
+              + namesBytes
+              + ", 366="
+              + endBytes
+              + "; channel byte budget="
+              + channelBudget
+              + ". Reduce nicknameMaxLength, channelNameMaxLength or serverName bytes.");
+    }
+  }
+
+  private static String resolveServerName(String configured) {
+    if (configured != null) {
+      return configured;
+    }
+    try {
+      return dottedServerName(InetAddress.getLocalHost().getHostName());
+    } catch (UnknownHostException _) {
+      return dottedServerName(null);
+    }
+  }
+
+  /** Falls back to {@code localhost} without a hostname and appends {@code .local} if undotted. */
+  static String dottedServerName(String hostname) {
+    String name = hostname == null ? "localhost" : hostname;
+    return name.contains(".") ? name : name + ".local";
   }
 
   private static int positiveIntWithinCeiling(

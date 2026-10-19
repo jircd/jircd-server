@@ -17,9 +17,9 @@ package net.jircd.protocol;
 
 /**
  * Channel name grammar (FR-048): a leading {@code #} followed by additional characters excluding
- * space, comma, and control characters, up to a caller-supplied maximum length (FR-056). No {@code
- * &}/{@code +}/{@code !} channel-type variants — {@code #} only, matching {@code CHANTYPES=#}
- * (FR-055).
+ * space, comma, and control characters, up to a caller-supplied maximum length in both UTF-16 code
+ * units and UTF-8 bytes (FR-056). No {@code &}/{@code +}/{@code !} channel-type variants — {@code
+ * #} only, matching {@code CHANTYPES=#} (FR-055).
  */
 public final class ChannelName {
 
@@ -27,6 +27,9 @@ public final class ChannelName {
 
   public static boolean isValid(String name, int maxLength) {
     if (name == null || name.isEmpty() || name.length() > maxLength) {
+      return false;
+    }
+    if (MessageSerializer.utf8Bytes(name) > maxLength) {
       return false;
     }
     if (name.charAt(0) != '#') {
