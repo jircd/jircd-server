@@ -676,7 +676,14 @@ conflicting listener ports, malformed rate-limit values, a
 positive integer or exceeds `400` (FR-056), a `maxModesPerCommand`
 that isn't a positive integer or exceeds `20` (FR-064), or an
 `operFailureThreshold` that isn't a positive integer or exceeds `20`
-(FR-034)) MUST be rejected
+(FR-034), or a `serverName`/`nicknameMaxLength`/`channelNameMaxLength`
+combination that cannot fit a complete `353 RPL_NAMREPLY` entry and `366
+RPL_ENDOFNAMES` within the 512-byte wire limit — with `S` the UTF-8 byte
+length of the resolved `serverName` (explicit or defaulted),
+`S + 2*nicknameMaxLength + channelNameMaxLength + 14 > 512` for `353` or
+`S + nicknameMaxLength + channelNameMaxLength + 29 > 512` for `366` — each
+field may be individually within range and the set still rejected; the
+message reports both totals and the remaining channel byte budget) MUST be rejected
 with a specific, actionable error identifying the problem field (FR-012,
 SC-008) rather than falling back to a partially-applied state. An id MUST
 appear in the field matching its actual kind: a `CapabilityExtension` id

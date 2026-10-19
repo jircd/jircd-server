@@ -20,9 +20,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.nio.file.Files;
 import java.time.Duration;
 import net.jircd.core.session.command.Replies;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 class ReplyBudgetReloadTest {
+  @BeforeEach
+  void forgetEarlierWarnings() {
+    Replies.resetOversizedWarnings();
+  }
+
   private static final Duration TIMEOUT = Duration.ofSeconds(5);
 
   @Test

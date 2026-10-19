@@ -192,13 +192,17 @@ public final class ConfigurationLoader {
     if (configured != null) {
       return configured;
     }
-    String hostname;
     try {
-      hostname = InetAddress.getLocalHost().getHostName();
-    } catch (UnknownHostException e) {
-      hostname = "localhost";
+      return dottedServerName(InetAddress.getLocalHost().getHostName());
+    } catch (UnknownHostException _) {
+      return dottedServerName(null);
     }
-    return hostname.contains(".") ? hostname : hostname + ".local";
+  }
+
+  /** Falls back to {@code localhost} without a hostname and appends {@code .local} if undotted. */
+  static String dottedServerName(String hostname) {
+    String name = hostname == null ? "localhost" : hostname;
+    return name.contains(".") ? name : name + ".local";
   }
 
   private static int positiveIntWithinCeiling(

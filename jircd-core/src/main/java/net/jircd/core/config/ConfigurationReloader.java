@@ -60,8 +60,12 @@ public final class ConfigurationReloader {
     return configPath;
   }
 
-  /** Re-reads and re-validates the configuration file, reconciling extension state on success. */
-  public ServerConfiguration reload() throws ConfigurationException, IOException {
+  /**
+   * Re-reads and re-validates the configuration file, reconciling extension state on success.
+   * Serialized, so validation, reconciliation, publication of {@link #current()} and the advertised
+   * lengths happen as one ordered operation per reload.
+   */
+  public synchronized ServerConfiguration reload() throws ConfigurationException, IOException {
     ServerConfiguration reloaded;
     try (InputStream in = new FileInputStream(configPath.toFile())) {
       reloaded = loader.load(in);

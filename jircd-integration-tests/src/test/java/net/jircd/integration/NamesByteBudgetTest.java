@@ -33,6 +33,7 @@ import net.jircd.protocol.Command;
 import net.jircd.protocol.Message;
 import net.jircd.protocol.MessageParser;
 import net.jircd.protocol.MessageSerializer;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -40,6 +41,27 @@ import org.junit.jupiter.params.provider.ValueSource;
 class NamesByteBudgetTest {
   private static final String SERVER = "test.jircd.local";
   private static final String CHANNEL = "#ébudget";
+
+  @BeforeEach
+  void forgetEarlierWarnings() {
+    Replies.resetOversizedWarnings();
+  }
+
+  @Test
+  void repeatedNamesLogOneWarningPerChannelAndFailureTypeAndCountTheRest() throws Exception {
+    String oversized = "x".repeat(600);
+    try (LogCapture logs = new LogCapture(Replies.class)) {
+      for (int i = 0; i < 5; i++) {
+        send("requester", CHANNEL, List.of(oversized));
+      }
+      send("requester", "#other", List.of(oversized));
+      assertThat(logs.messages()).hasSize(2);
+      assertThat(logs.messages().get(0).toString())
+          .contains(
+              "Dropping oversized listed item", CHANNEL, "itemBytes=600", "suppressedSinceLast=0");
+      assertThat(logs.messages().get(1).toString()).contains("#other");
+    }
+  }
 
   private static int budget(String nickname, String channel) {
     return 512

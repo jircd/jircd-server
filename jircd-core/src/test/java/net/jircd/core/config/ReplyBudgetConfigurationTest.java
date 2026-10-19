@@ -19,6 +19,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.ByteArrayInputStream;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -87,7 +89,21 @@ class ReplyBudgetConfigurationTest {
 
   @Test
   void resolvesAnOmittedServerNameBeforeValidation() throws Exception {
-    assertThat(load("{}").serverName()).contains(".");
+    String hostname;
+    try {
+      hostname = InetAddress.getLocalHost().getHostName();
+    } catch (UnknownHostException _) {
+      hostname = null;
+    }
+    assertThat(load("{}").serverName()).isEqualTo(ConfigurationLoader.dottedServerName(hostname));
+  }
+
+  @Test
+  void dottedServerNameKeepsDottedHostnamesAndFallsBackOtherwise() {
+    assertThat(ConfigurationLoader.dottedServerName("irc.example.org"))
+        .isEqualTo("irc.example.org");
+    assertThat(ConfigurationLoader.dottedServerName("box")).isEqualTo("box.local");
+    assertThat(ConfigurationLoader.dottedServerName(null)).isEqualTo("localhost.local");
   }
 
   @Test

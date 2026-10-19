@@ -18,6 +18,7 @@ package net.jircd.core.session.command;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import net.jircd.core.session.ClientSession;
 import net.jircd.protocol.Message;
 import net.jircd.protocol.MessageSerializer;
@@ -33,7 +34,17 @@ public final class Replies {
 
   private static final Logger LOG = LoggerFactory.getLogger(Replies.class);
 
+  private static final long WARN_INTERVAL_NANOS = TimeUnit.MINUTES.toNanos(1);
+  private static final int WARN_MAX_KEYS = 256;
+  private static final WarningThrottle OVERSIZED_WARNINGS =
+      new WarningThrottle(WARN_INTERVAL_NANOS, WARN_MAX_KEYS, System::nanoTime);
+
   private Replies() {}
+
+  /** Makes the next oversized-reply warning for every channel log again; for tests. */
+  public static void resetOversizedWarnings() {
+    OVERSIZED_WARNINGS.reset();
+  }
 
   public static void send(
       ClientSession session, String serverName, NumericReply numeric, String... trailingParams) {
@@ -66,12 +77,19 @@ public final class Replies {
     int budget = MessageSerializer.MAX_COMMAND_BYTES - headerBytes;
     String channel = fixedParams.isEmpty() ? "*" : fixedParams.getLast();
     if (budget < 0) {
-      LOG.warn(
-          "Dropping oversized listed reply header: numeric={}, channel={}, headerBytes={}, limit={}",
-          numeric.wireCode(),
-          channel,
-          headerBytes,
-          MessageSerializer.MAX_COMMAND_BYTES);
+      long suppressed =
+          LOG.isWarnEnabled()
+              ? OVERSIZED_WARNINGS.admit("header|" + numeric.wireCode() + "|" + channel)
+              : -1;
+      if (suppressed >= 0) {
+        LOG.warn(
+            "Dropping oversized listed reply header: numeric={}, channel={}, headerBytes={}, limit={}, suppressedSinceLast={}",
+            numeric.wireCode(),
+            channel,
+            headerBytes,
+            MessageSerializer.MAX_COMMAND_BYTES,
+            suppressed);
+      }
       return;
     }
     StringBuilder listed = new StringBuilder();
@@ -89,12 +107,19 @@ public final class Replies {
         Message singleton = new Message(Map.of(), serverName, null, numeric.wireCode(), params);
         int singletonBytes = MessageSerializer.commandBytes(singleton);
         if (singletonBytes > MessageSerializer.MAX_COMMAND_BYTES) {
-          LOG.warn(
-              "Dropping oversized listed item: numeric={}, channel={}, itemBytes={}, budget={}",
-              numeric.wireCode(),
-              channel,
-              bytes,
-              MessageSerializer.MAX_COMMAND_BYTES - (singletonBytes - bytes));
+          long suppressed =
+              LOG.isWarnEnabled()
+                  ? OVERSIZED_WARNINGS.admit("item|" + numeric.wireCode() + "|" + channel)
+                  : -1;
+          if (suppressed >= 0) {
+            LOG.warn(
+                "Dropping oversized listed item: numeric={}, channel={}, itemBytes={}, budget={}, suppressedSinceLast={}",
+                numeric.wireCode(),
+                channel,
+                bytes,
+                MessageSerializer.MAX_COMMAND_BYTES - (singletonBytes - bytes),
+                suppressed);
+          }
           continue;
         }
       }

@@ -80,7 +80,7 @@ class Story4LengthLimitConfigTest {
   }
 
   @Test
-  void coupledLengthBudgetsAreRejectedAtStartup() throws Exception {
+  void coupledLengthBudgetsAreRejectedAtStartup() {
     assertThatThrownBy(() -> startWith("nicknameMaxLength: 217\nchannelNameMaxLength: 50"))
         .isInstanceOf(ConfigurationException.class)
         .hasMessageContaining("353=514");
