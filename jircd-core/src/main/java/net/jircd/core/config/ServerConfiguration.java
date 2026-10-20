@@ -62,6 +62,12 @@ public record ServerConfiguration(
       String keystorePassword,
       int backlog) {
 
+    public Listener {
+      if (backlog <= 0) {
+        throw new IllegalArgumentException("backlog must be a positive integer, got: " + backlog);
+      }
+    }
+
     public Listener(
         int port,
         boolean tls,
