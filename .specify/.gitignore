@@ -8,5 +8,13 @@ feature.json
 # Per-machine extension config overrides.
 extensions/*/local-config.yml
 
+# Executable adapter packages and their per-checkout provenance registry.
+# Execution consent is stored separately in the user's local trust registry.
+integrations/packages/
+integrations/packages.json
+
 # Extension catalog fetch cache — regenerated on demand, not shared state.
 extensions/.cache/
+
+# Per-bug assess/fix/test reports from the bug extension — local working notes.
+bugs/
