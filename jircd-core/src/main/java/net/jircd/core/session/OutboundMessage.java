@@ -16,40 +16,129 @@
 package net.jircd.core.session;
 
 import java.time.Instant;
+import java.util.IdentityHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
+import net.jircd.core.extension.CapabilityExtension;
 
 /**
- * One message on its way to one recipient, holding only the parts that are the same for every
- * recipient of a single fan-out (data-model.md "OutboundMessage"). Immutable and
- * capability-agnostic by construction — capability-dependent decoration ({@code
- * message-tags}/{@code server-time}) happens per-recipient at drain time in {@link SessionWriter},
- * never here.
- *
- * @param clientTags the sender's own tags (e.g. a {@code TAGMSG}'s vendor tags,
- *     002-extended-irc-commands FR-020), empty for every other command — kept separate from
- *     capability-contributed tags ({@code msgid}/{@code time}) so a client-supplied tag can never
- *     clobber a server-reserved one (merge order in {@link SessionWriter})
+ * Immutable fan-out content shared by recipients, with message-scoped contribution byte metadata.
+ * Recipient selection and rendering remain in the tag renderer; metadata never changes content.
  */
-public record OutboundMessage(
-    String senderPresentedForm,
-    String command,
-    String target,
-    String body,
-    Map<String, String> clientTags,
-    Instant sentAt,
-    UUID messageId) {
+public final class OutboundMessage {
+  private final String senderPresentedForm;
+  private final String command;
+  private final String target;
+  private final String body;
+  private final Map<String, String> clientTags;
+  private final Instant sentAt;
+  private final UUID messageId;
+  private final long componentBytes;
+  private final Map<String, String> forwardedClientTags;
+  private final WireBytes.Tags clientTagBytes;
+  private Map<CapabilityExtension, WireBytes.Tags> contributions;
 
-  public OutboundMessage {
-    clientTags = Map.copyOf(clientTags);
+  /** Creates shared message content, defensively copying client tags. */
+  public OutboundMessage(
+      String senderPresentedForm,
+      String command,
+      String target,
+      String body,
+      Map<String, String> clientTags,
+      Instant sentAt,
+      UUID messageId) {
+    this.senderPresentedForm = senderPresentedForm;
+    this.command = command;
+    this.target = target;
+    this.body = body;
+    this.clientTags = Map.copyOf(clientTags);
+    this.sentAt = sentAt;
+    this.messageId = messageId;
+    this.componentBytes =
+        WireBytes.components(
+            senderPresentedForm, command, body == null ? List.of(target) : List.of(target, body));
+    Map<String, String> forwarded = new java.util.LinkedHashMap<>();
+    this.clientTags.forEach(
+        (key, value) -> {
+          if (key.startsWith("+")) forwarded.put(key, value);
+        });
+    this.forwardedClientTags = Map.copyOf(forwarded);
+    this.clientTagBytes = WireBytes.tags(forwardedClientTags);
   }
 
+  public String senderPresentedForm() {
+    return senderPresentedForm;
+  }
+
+  public String command() {
+    return command;
+  }
+
+  public String target() {
+    return target;
+  }
+
+  public String body() {
+    return body;
+  }
+
+  public Map<String, String> clientTags() {
+    return clientTags;
+  }
+
+  public Instant sentAt() {
+    return sentAt;
+  }
+
+  public UUID messageId() {
+    return messageId;
+  }
+
+  long componentBytes() {
+    return componentBytes;
+  }
+
+  Map<String, String> forwardedClientTags() {
+    return forwardedClientTags;
+  }
+
+  WireBytes.Tags clientTagBytes() {
+    return clientTagBytes;
+  }
+
+  synchronized WireBytes.Tags contributionBytes(CapabilityExtension capability) {
+    if (contributions == null) contributions = new IdentityHashMap<>();
+    return contributions.computeIfAbsent(
+        capability, key -> WireBytes.tags(key.contributeTags(this)));
+  }
+
+  @Override
+  public boolean equals(Object other) {
+    if (this == other) return true;
+    if (!(other instanceof OutboundMessage message)) return false;
+    return Objects.equals(senderPresentedForm, message.senderPresentedForm)
+        && Objects.equals(command, message.command)
+        && Objects.equals(target, message.target)
+        && Objects.equals(body, message.body)
+        && Objects.equals(clientTags, message.clientTags)
+        && Objects.equals(sentAt, message.sentAt)
+        && Objects.equals(messageId, message.messageId);
+  }
+
+  @Override
+  public int hashCode() {
+    return Objects.hash(senderPresentedForm, command, target, body, clientTags, sentAt, messageId);
+  }
+
+  /** Creates a message with a fresh identifier and send time. */
   public static OutboundMessage now(
       String senderPresentedForm, String command, String target, String body) {
-    return new OutboundMessage(
-        senderPresentedForm, command, target, body, Map.of(), Instant.now(), UUID.randomUUID());
+    return now(senderPresentedForm, command, target, body, Map.of());
   }
 
+  /** Creates a message with immutable client tags, a fresh identifier and send time. */
   public static OutboundMessage now(
       String senderPresentedForm,
       String command,

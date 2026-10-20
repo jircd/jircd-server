@@ -16,6 +16,7 @@
 package net.jircd.core.session;
 
 import java.time.Duration;
+import java.util.concurrent.atomic.AtomicLong;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -27,6 +28,8 @@ import org.slf4j.LoggerFactory;
 public final class ConnectionMonitorLog {
 
   private static final Logger LOG = LoggerFactory.getLogger(ConnectionMonitorLog.class);
+
+  private static final AtomicLong SENDQ_OVERFLOW_TOTAL = new AtomicLong();
 
   private ConnectionMonitorLog() {}
 
@@ -41,5 +44,20 @@ public final class ConnectionMonitorLog {
         connectionId,
         duration.toMillis(),
         reason);
+  }
+
+  /**
+   * Logs one outbound-queue overflow disconnect. {@code queuedBytes} is the conservative wire-byte
+   * charge at the moment of overflow, including the rejected line; the process-wide total lets a
+   * rate be derived from the log.
+   */
+  public static void sendqOverflow(String connectionId, int limitBytes, long queuedBytes) {
+    LOG.info(
+        "connection-event=sendq-overflow connection={} limitBytes={} queuedBytes={}"
+            + " overflowTotal={}",
+        connectionId,
+        limitBytes,
+        queuedBytes,
+        SENDQ_OVERFLOW_TOTAL.incrementAndGet());
   }
 }

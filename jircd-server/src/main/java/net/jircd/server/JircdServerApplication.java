@@ -19,13 +19,16 @@ import java.io.Closeable;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.Socket;
 import java.nio.file.Path;
 import java.security.GeneralSecurityException;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
 import java.util.Set;
+import java.util.function.Consumer;
 import net.jircd.core.capability.CapabilityNegotiator;
 import net.jircd.core.config.ConfigurationException;
 import net.jircd.core.config.ConfigurationLoader;
@@ -90,6 +93,15 @@ public final class JircdServerApplication {
   private final List<Closeable> ownedListeners = new ArrayList<>();
 
   public JircdServerApplication(Path configPath) throws ConfigurationException, IOException {
+    this(configPath, socket -> {});
+  }
+
+  /**
+   * Test seam for accepted-socket setup, such as deterministic backpressure. This is not a server
+   * configuration setting; socket ownership stays with the application.
+   */
+  public JircdServerApplication(Path configPath, Consumer<Socket> acceptedSocketCustomizer)
+      throws ConfigurationException, IOException {
     extensionRegistry.discover(Thread.currentThread().getContextClassLoader());
 
     Set<String> knownCapabilityIds =
@@ -128,7 +140,9 @@ public final class JircdServerApplication {
             disconnectCleanup,
             () -> serverName,
             () -> reloader.current().rateLimit(),
-            () -> reloader.current().keepAliveFrequencySeconds());
+            () -> reloader.current().keepAliveFrequencySeconds(),
+            () -> reloader.current().sendqLimitBytes(),
+            acceptedSocketCustomizer);
     registerStory1Handlers();
 
     extensionRegistry.attachContext(
@@ -285,6 +299,7 @@ public final class JircdServerApplication {
   }
 
   public synchronized void start() throws IOException, GeneralSecurityException {
+    connectionHandler.startAccepting();
     // No TLS entry in the zero-config default (004-fix-tls-certificate, research.md "The
     // zero-config default listener list") — a TLS listener with no certificate configured now
     // refuses to start, so defaulting to one here would break the simplest possible quickstart.
@@ -299,47 +314,104 @@ public final class JircdServerApplication {
     @SuppressWarnings("PMD.CloseResource")
     TlsListener previousTlsListener = tlsListener;
     try {
-      for (ServerConfiguration.Listener listener : listeners) {
-        if (listener.tls()) {
-          tlsListener = new TlsListener(listener, connectionHandler);
-          ownedListeners.add(tlsListener::close);
-          tlsListener.start();
-          LOG.info("TLS listener started on port {}", listener.port());
-        } else {
-          plaintextListener = new PlaintextListener(listener, connectionHandler);
-          ownedListeners.add(plaintextListener::close);
-          plaintextListener.start();
-          LOG.info("Plaintext listener started on port {}", listener.port());
-        }
-      }
+      startListeners(listeners);
     } catch (IOException | GeneralSecurityException | RuntimeException failure) {
-      try {
-        closeListeners(ownedListeners.subList(previousListenerCount, ownedListeners.size()));
-      } catch (IOException | RuntimeException cleanupFailure) {
-        if (failure != cleanupFailure) {
-          failure.addSuppressed(cleanupFailure);
-        }
-      } finally {
-        plaintextListener = previousPlaintextListener;
-        tlsListener = previousTlsListener;
-      }
+      rollbackStart(failure, previousListenerCount);
+      plaintextListener = previousPlaintextListener;
+      tlsListener = previousTlsListener;
       throw failure;
     }
   }
 
+  private void startListeners(List<ServerConfiguration.Listener> listeners)
+      throws IOException, GeneralSecurityException {
+    for (ServerConfiguration.Listener listener : listeners) {
+      if (listener.tls()) {
+        tlsListener = new TlsListener(listener, connectionHandler);
+        ownedListeners.add(tlsListener);
+        tlsListener.start();
+        LOG.info("TLS listener started on port {}", listener.port());
+      } else {
+        plaintextListener = new PlaintextListener(listener, connectionHandler);
+        ownedListeners.add(plaintextListener);
+        plaintextListener.start();
+        LOG.info("Plaintext listener started on port {}", listener.port());
+      }
+    }
+  }
+
+  /** Closes listeners and connections from a failed start; cleanup failures are suppressed. */
+  private void rollbackStart(Exception failure, int previousListenerCount) {
+    try {
+      closeListeners(
+          ownedListeners.subList(previousListenerCount, ownedListeners.size()),
+          System.nanoTime() + Duration.ofSeconds(3).toNanos());
+    } catch (IOException | RuntimeException cleanupFailure) {
+      suppressUnlessSame(failure, cleanupFailure);
+    }
+    if (previousListenerCount == 0) {
+      // Nothing else was serving, so every connection belongs to this failed attempt.
+      try {
+        connectionHandler.closeConnections(Duration.ofSeconds(3));
+      } catch (IOException | RuntimeException cleanupFailure) {
+        suppressUnlessSame(failure, cleanupFailure);
+      }
+    }
+  }
+
+  private static void suppressUnlessSame(Exception failure, Exception cleanupFailure) {
+    if (failure != cleanupFailure) {
+      failure.addSuppressed(cleanupFailure);
+    }
+  }
+
+  /**
+   * Stops listeners and accepted connections within one 30-second budget. Connection cleanup is
+   * attempted even when a listener fails; additional failures are suppressed on the first failure.
+   */
   public synchronized void stop() throws IOException {
-    closeListeners(ownedListeners);
+    long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
+    connectionHandler.stopAccepting();
+    Exception failure = null;
+    try {
+      closeListeners(ownedListeners, deadline);
+    } catch (IOException | RuntimeException listenerFailure) {
+      failure = listenerFailure;
+    }
+    try {
+      connectionHandler.closeConnections(remainingShutdownTime(deadline));
+    } catch (IOException | RuntimeException connectionFailure) {
+      if (failure == null) {
+        failure = connectionFailure;
+      } else if (failure != connectionFailure) {
+        failure.addSuppressed(connectionFailure);
+      }
+    }
+    if (failure instanceof IOException ioFailure) {
+      throw ioFailure;
+    }
+    if (failure instanceof RuntimeException runtimeFailure) {
+      throw runtimeFailure;
+    }
+  }
+
+  private static Duration remainingShutdownTime(long deadline) {
+    return Duration.ofNanos(Math.max(1, deadline - System.nanoTime()));
   }
 
   // Successful closes relinquish ownership; failed resources remain available for a retry.
   @SuppressWarnings("PMD.CloseResource")
-  private static void closeListeners(List<Closeable> listeners) throws IOException {
+  private static void closeListeners(List<Closeable> listeners, long deadline) throws IOException {
     List<Exception> failures = new ArrayList<>();
     var iterator = listeners.iterator();
     while (iterator.hasNext()) {
       Closeable listener = iterator.next();
       try {
-        listener.close();
+        switch (listener) {
+          case PlaintextListener plaintext -> plaintext.close(remainingShutdownTime(deadline));
+          case TlsListener tls -> tls.close(remainingShutdownTime(deadline));
+          default -> listener.close();
+        }
         iterator.remove();
       } catch (IOException | RuntimeException closeFailure) {
         failures.add(closeFailure);
@@ -374,6 +446,11 @@ public final class JircdServerApplication {
 
   public int tlsPort() {
     return tlsListener.boundPort();
+  }
+
+  /** Test seam for exercising acceptance and connection-drain lifecycle independently. */
+  ConnectionHandler connectionHandlerForTesting() {
+    return connectionHandler;
   }
 
   public ExtensionRegistry extensionRegistry() {

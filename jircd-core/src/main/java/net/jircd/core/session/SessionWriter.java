@@ -24,9 +24,13 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
+import net.jircd.core.config.ServerConfiguration;
 import net.jircd.protocol.CapabilityName;
 import net.jircd.protocol.Command;
 import net.jircd.protocol.Message;
@@ -44,7 +48,8 @@ import org.slf4j.LoggerFactory;
 public final class SessionWriter implements AutoCloseable {
 
   private static final Logger LOG = LoggerFactory.getLogger(SessionWriter.class);
-  private static final int QUEUE_CAPACITY = 256;
+
+  private record Entry(long bytes, Object message, TagRenderer.PreparedTags tags) {}
 
   /**
    * Sentinel that tells {@link #drainLoop} to stop after everything queued ahead of it has been
@@ -54,19 +59,35 @@ public final class SessionWriter implements AutoCloseable {
    * before the socket goes away, instead of racing an immediate {@code interrupt()} against the
    * writer thread's next queue drain.
    */
-  private static final Runnable POISON_PILL = () -> {};
+  private static final Entry POISON_PILL = new Entry(0, null, null);
 
   private static final Duration CLOSE_DRAIN_TIMEOUT = Duration.ofSeconds(2);
 
   private final ClientSession session;
   private final OutputStream out;
   private final TagRenderer tagRenderer;
-  private final BlockingQueue<Runnable> queue = new ArrayBlockingQueue<>(QUEUE_CAPACITY);
+  private final BlockingQueue<Entry> queue = new LinkedBlockingQueue<>();
+  private final Object enqueueLock = new Object();
+  private final AtomicLong queuedBytes = new AtomicLong();
+  private final int limitBytes;
+  private volatile long overflowQueuedBytes;
   private final Thread writerThread;
   private final AtomicBoolean closing = new AtomicBoolean();
-  private volatile Runnable onOverflow = () -> {};
+  private final AtomicBoolean overflowed = new AtomicBoolean();
+  private final CountDownLatch overflowDispatched = new CountDownLatch(1);
+  private final AtomicReference<Runnable> onSendqOverflow = new AtomicReference<>(() -> {});
+  private final AtomicReference<Runnable> onWriteFailure = new AtomicReference<>(() -> {});
 
+  /** Creates a writer with the server's default outbound byte budget. */
   public SessionWriter(ClientSession session, OutputStream out, TagRenderer tagRenderer) {
+    this(session, out, tagRenderer, ServerConfiguration.DEFAULT_SENDQ_LIMIT_BYTES);
+  }
+
+  /** Creates a writer with a fixed per-connection outbound byte budget. */
+  public SessionWriter(
+      ClientSession session, OutputStream out, TagRenderer tagRenderer, int limitBytes) {
+    if (limitBytes <= 0) throw new IllegalArgumentException("limitBytes must be positive");
+    this.limitBytes = limitBytes;
     this.session = session;
     this.out = out;
     this.tagRenderer = tagRenderer;
@@ -77,28 +98,76 @@ public final class SessionWriter implements AutoCloseable {
     this.writerThread.start();
   }
 
-  public void setOnOverflow(Runnable onOverflow) {
-    this.onOverflow = onOverflow;
+  /** Installs the nonblocking handoff to sendq disconnect cleanup. */
+  public void setOnSendqOverflow(Runnable onSendqOverflow) {
+    this.onSendqOverflow.set(onSendqOverflow);
+  }
+
+  /** Installs cleanup for socket write failures unrelated to sendq overflow. */
+  public void setOnWriteFailure(Runnable onWriteFailure) {
+    this.onWriteFailure.set(onWriteFailure);
   }
 
   /**
    * Enqueues a fan-out message; capability-dependent tags are rendered per-recipient at drain time.
    */
   public void enqueue(OutboundMessage message) {
-    boolean offered = queue.offer(() -> writeFanOutMessage(message));
-    if (!offered) {
-      handleOverflow();
-    }
+    if (closing.get() || overflowed.get()) return;
+    TagRenderer.PreparedTags tags = tagRenderer.prepare(session, message);
+    enqueueEntry(new Entry(message.componentBytes() + tags.wireBytes(), message, tags));
   }
 
-  /**
-   * Enqueues a pre-built raw protocol line (numeric replies, echoes) — no tag decoration applied.
-   * Any pre-built tags are server-originated and share the 4094-byte escaped-data allowance.
-   */
+  /** Enqueues a pre-built line, charging its escaped tag and component bytes including CRLF. */
   public void enqueueRaw(Message rawMessage) {
-    boolean offered = queue.offer(() -> writeMessage(rawMessage, true));
-    if (!offered) {
+    if (closing.get() || overflowed.get()) return;
+    enqueueRaw(rawMessage, WireBytes.raw(rawMessage));
+  }
+
+  /** Uses the shared charge computed once by raw broadcast delivery. */
+  void enqueueRaw(Message rawMessage, long bytes) {
+    if (closing.get() || overflowed.get()) return;
+    enqueueEntry(new Entry(bytes, rawMessage, null));
+  }
+
+  long queuedBytes() {
+    return queuedBytes.get();
+  }
+
+  int limitBytes() {
+    return limitBytes;
+  }
+
+  /** Queued charge, including the rejected line, captured before the backlog was discarded. */
+  long overflowQueuedBytes() {
+    return overflowQueuedBytes;
+  }
+
+  private void enqueueEntry(Entry entry) {
+    synchronized (enqueueLock) {
+      if (closing.get() || overflowed.get()) return;
+      long reserved = queuedBytes.addAndGet(entry.bytes());
+      if (reserved <= limitBytes) {
+        queue.add(entry);
+        return;
+      }
+      queuedBytes.addAndGet(-entry.bytes());
+      if (!overflowed.compareAndSet(false, true)) return;
+      overflowQueuedBytes = reserved;
+      // Subtract only entries actually removed: the drain thread may already own one entry.
+      Entry discarded;
+      while ((discarded = queue.poll()) != null) queuedBytes.addAndGet(-discarded.bytes());
+      Message error =
+          Message.of(
+              Command.ERROR, "Closing Link: " + session.realHostname() + " (SendQ exceeded)");
+      queue.add(new Entry(0, error, null));
+      queue.add(POISON_PILL);
+    }
+    try {
       handleOverflow();
+    } finally {
+      // The writer may consume ERROR + pill before this callback even gets scheduled. Shutdown
+      // must not relinquish the connection until its cleanup thread has been handed off.
+      overflowDispatched.countDown();
     }
   }
 
@@ -140,17 +209,14 @@ public final class SessionWriter implements AutoCloseable {
 
   private void handleOverflow() {
     LOG.warn("Outbound queue overflow for connection {}; closing", session.connectionId());
-    onOverflow.run();
+    onSendqOverflow.get().run();
   }
 
-  private void writeFanOutMessage(OutboundMessage message) {
-    // tagRenderer.render() is the sole source of tags here — it already seeds the (recipient-
-    // filtered) client tags before merging in capability-contributed ones (CapabilityTagRenderer,
-    // 005-fix-batch-conformance FR-010), so this call must not re-seed unfiltered client tags on
-    // top of it.
+  private void writeFanOutMessage(OutboundMessage message, TagRenderer.PreparedTags prepared) {
+    // The selection matches the enqueue reservation; decoration stays on the writer thread.
     Map<String, String> tags;
     try {
-      tags = new java.util.LinkedHashMap<>(tagRenderer.render(session, message));
+      tags = new java.util.LinkedHashMap<>(prepared.tags().get());
     } catch (MessageSerializer.MessageTooLongException e) {
       LOG.warn(
           "Dropping oversized outbound tags for connection {}: {}",
@@ -195,18 +261,24 @@ public final class SessionWriter implements AutoCloseable {
       out.flush();
     } catch (IOException e) {
       LOG.debug("Write failed for connection {}: {}", session.connectionId(), e.toString());
-      onOverflow.run();
+      // A failed best-effort ERROR must not steal the SendQ reason from its pending cleanup.
+      if (!overflowed.get()) onWriteFailure.get().run();
     }
   }
 
   private void drainLoop() {
     try {
       while (!Thread.currentThread().isInterrupted()) {
-        Runnable task = queue.take();
-        if (task == POISON_PILL) {
+        Entry entry = queue.take();
+        queuedBytes.addAndGet(-entry.bytes());
+        if (entry == POISON_PILL) {
           return;
         }
-        task.run();
+        if (entry.message() instanceof Message raw) {
+          writeMessage(raw, true);
+        } else {
+          writeFanOutMessage((OutboundMessage) entry.message(), entry.tags());
+        }
       }
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
@@ -217,14 +289,14 @@ public final class SessionWriter implements AutoCloseable {
    * Lets everything already queued drain before this session's writer thread stops — enqueues
    * {@link #POISON_PILL} and waits (bounded) for the writer thread to reach it, rather than
    * interrupting immediately, so a message queued just before {@code close()} (e.g. {@code KILL}'s
-   * {@code ERROR} line) is guaranteed written first, not racing the writer thread's next drain. If
-   * the queue is already full — the same "we're overwhelmed, drop what's left" case an overflow
-   * disconnect already accepts — falls back to an immediate interrupt rather than blocking here.
+   * {@code ERROR} line) is guaranteed written first, not racing the writer thread's next drain. The
+   * poison pill uses a reserved closing allowance outside the data budget, so a full data queue
+   * still preserves final lines. A stuck stream is interrupted after the bounded drain wait.
    *
    * <p>Only the first call does this. A later call (the liveness thread closes after {@code
    * DisconnectCleanup} does) only waits, bounded the same way, for the drain the first call
-   * started. It never offers its own pill or interrupts: the first call's pill can fill the queue,
-   * and an interrupt then would cut off the lines still draining ahead of it.
+   * started. It never offers its own pill or interrupts: an interrupt would cut off the lines still
+   * draining ahead of the first call's pill.
    */
   @Override
   public void close() {
@@ -232,15 +304,24 @@ public final class SessionWriter implements AutoCloseable {
       awaitDrain();
       return;
     }
-    if (queue.offer(POISON_PILL)) {
-      awaitDrain();
+    synchronized (enqueueLock) {
+      if (!overflowed.get()) queue.add(POISON_PILL);
     }
+    awaitDrain();
     if (writerThread.isAlive()) {
       writerThread.interrupt();
     }
   }
 
+  /** Waits for the writer's actual exit and any overflow-cleanup handoff after socket closure. */
+  void awaitTermination() throws InterruptedException {
+    writerThread.join();
+    if (overflowed.get()) overflowDispatched.await();
+  }
+
   private void awaitDrain() {
+    // A failed socket write can invoke cleanup on this writer; joining itself cannot drain it.
+    if (Thread.currentThread() == writerThread) return;
     try {
       writerThread.join(CLOSE_DRAIN_TIMEOUT);
     } catch (InterruptedException e) {

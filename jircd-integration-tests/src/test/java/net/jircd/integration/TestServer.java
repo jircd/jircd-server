@@ -17,9 +17,11 @@ package net.jircd.integration;
 
 import com.password4j.Password;
 import java.io.IOException;
+import java.net.Socket;
 import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.function.Consumer;
 import net.jircd.server.JircdServerApplication;
 
 /**
@@ -116,9 +118,16 @@ public final class TestServer implements AutoCloseable {
   }
 
   public static TestServer start(String extraYaml) throws Exception {
+    return start(extraYaml, socket -> {});
+  }
+
+  /** Test seam for configuring accepted sockets before registration, without private access. */
+  static TestServer start(String extraYaml, Consumer<Socket> acceptedSocketCustomizer)
+      throws Exception {
     Path configPath = Files.createTempFile("jircd-test-", ".yaml");
     Files.writeString(configPath, baseYaml() + extraYaml);
-    JircdServerApplication application = new JircdServerApplication(configPath);
+    JircdServerApplication application =
+        new JircdServerApplication(configPath, acceptedSocketCustomizer);
     application.start();
     return new TestServer(application, configPath);
   }

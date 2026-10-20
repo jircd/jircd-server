@@ -58,14 +58,23 @@ class ConcurrentConnectionScaleLoadTest {
 
         // Paced below the server's per-connection rate limit (FR-016, 20-token bucket refilling
         // at 10/sec — Story5BanCapTest) so this loop measures delivery latency, not throttling.
+        List<Long> samples = new ArrayList<>();
         for (int i = 0; i < 20; i++) {
           Instant sentAt = Instant.now();
           alice.send("PRIVMSG #lobby :message " + i);
           bob.readUntil("message " + i, Duration.ofSeconds(2));
           Duration elapsed = Duration.between(sentAt, Instant.now());
+          samples.add(elapsed.toNanos());
           assertThat(elapsed).isLessThan(Duration.ofSeconds(1));
           Thread.sleep(110);
         }
+        long[] sorted = samples.stream().mapToLong(Long::longValue).sorted().toArray();
+        System.out.printf(
+            "ConcurrentConnectionScaleLoadTest: messages=%d p50Ms=%.3f p99Ms=%.3f maxMs=%.3f%n",
+            sorted.length,
+            sorted[sorted.length / 2] / 1e6,
+            sorted[(int) Math.ceil(sorted.length * 0.99) - 1] / 1e6,
+            sorted[sorted.length - 1] / 1e6);
       } finally {
         for (RawIrcClient idle : idleConnections) {
           idle.close();

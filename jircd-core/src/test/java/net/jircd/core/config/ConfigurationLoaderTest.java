@@ -42,6 +42,45 @@ class ConfigurationLoaderTest {
     return loader().load(new ByteArrayInputStream(yaml.getBytes(StandardCharsets.UTF_8)));
   }
 
+  @Test
+  void defaultSendqLimitStaysWithinBounds() {
+    assertThat(ServerConfiguration.DEFAULT_SENDQ_LIMIT_BYTES)
+        .isBetween(
+            ServerConfiguration.MIN_SENDQ_LIMIT_BYTES,
+            ServerConfiguration.SENDQ_LIMIT_CEILING_BYTES);
+  }
+
+  @Test
+  void sendqLimitDefaultsWhenUnset() throws Exception {
+    assertThat(load("").sendqLimitBytes()).isEqualTo(524288);
+  }
+
+  @ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(ints = {16384, 524288, 2097152})
+  void sendqLimitAcceptsValuesWithinBounds(int value) throws Exception {
+    assertThat(load("sendqLimitBytes: " + value).sendqLimitBytes()).isEqualTo(value);
+  }
+
+  @ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(
+      strings = {
+        "16383",
+        "2097153",
+        "0",
+        "-1",
+        "big",
+        "1.5",
+        "null",
+        "'16384'",
+        "true",
+        "2147483648"
+      })
+  void sendqLimitRejectsInvalidValues(String value) {
+    assertThatThrownBy(() -> load("sendqLimitBytes: " + value))
+        .isInstanceOf(ConfigurationException.class)
+        .hasMessageContaining("sendqLimitBytes");
+  }
+
   @ParameterizedTest
   @MethodSource("malformedConfigurations")
   void rejectsMalformedConfigurationWithKey(String yaml, String key) {

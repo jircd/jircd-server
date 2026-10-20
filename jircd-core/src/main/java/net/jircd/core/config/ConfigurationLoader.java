@@ -118,6 +118,14 @@ public final class ConfigurationLoader {
             ServerConfiguration.DEFAULT_KEEP_ALIVE_FREQUENCY_SECONDS,
             ServerConfiguration.KEEP_ALIVE_FREQUENCY_CEILING_SECONDS);
 
+    int sendqLimitBytes =
+        intWithinBounds(
+            root,
+            "sendqLimitBytes",
+            ServerConfiguration.DEFAULT_SENDQ_LIMIT_BYTES,
+            ServerConfiguration.MIN_SENDQ_LIMIT_BYTES,
+            ServerConfiguration.SENDQ_LIMIT_CEILING_BYTES);
+
     boolean whoMaskEnabled =
         !root.containsKey(WHO_MASK_ENABLED_KEY)
             || asBoolean(root.get(WHO_MASK_ENABLED_KEY), WHO_MASK_ENABLED_KEY);
@@ -153,7 +161,8 @@ public final class ConfigurationLoader {
         maxModesPerCommand,
         operFailureThreshold,
         whowasHistorySize,
-        keepAliveFrequencySeconds);
+        keepAliveFrequencySeconds,
+        sendqLimitBytes);
   }
 
   /** Checks complete NAMES items and their closing numeric against the running server prefix. */
@@ -216,6 +225,26 @@ public final class ConfigurationLoader {
       throw new ConfigurationException(
           key
               + " must be a positive integer no greater than "
+              + ceiling
+              + ", got: "
+              + redactSecrets(raw));
+    }
+    return value;
+  }
+
+  private static int intWithinBounds(
+      Map<String, Object> root, String key, int defaultValue, int floor, int ceiling)
+      throws ConfigurationException {
+    if (!root.containsKey(key)) {
+      return defaultValue;
+    }
+    Object raw = root.get(key);
+    if (!(raw instanceof Integer value) || value < floor || value > ceiling) {
+      throw new ConfigurationException(
+          key
+              + " must be an integer from "
+              + floor
+              + " to "
               + ceiling
               + ", got: "
               + redactSecrets(raw));

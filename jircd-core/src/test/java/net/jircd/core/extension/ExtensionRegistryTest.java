@@ -18,10 +18,14 @@ package net.jircd.core.extension;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import net.jircd.core.config.ConfigurationException;
 import net.jircd.core.config.ConfigurationLoader;
 import net.jircd.core.config.ConfigurationReloader;
 import net.jircd.core.config.ServerConfiguration;
@@ -30,6 +34,7 @@ import net.jircd.core.session.DisconnectCleanup;
 import net.jircd.core.session.NicknameRegistry;
 import net.jircd.core.session.WhowasHistory;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class ExtensionRegistryTest {
 
@@ -84,7 +89,8 @@ class ExtensionRegistryTest {
             ServerConfiguration.DEFAULT_MAX_MODES_PER_COMMAND,
             ServerConfiguration.DEFAULT_OPER_FAILURE_THRESHOLD,
             ServerConfiguration.DEFAULT_WHOWAS_HISTORY_SIZE,
-            ServerConfiguration.DEFAULT_KEEP_ALIVE_FREQUENCY_SECONDS);
+            ServerConfiguration.DEFAULT_KEEP_ALIVE_FREQUENCY_SECONDS,
+            ServerConfiguration.DEFAULT_SENDQ_LIMIT_BYTES);
     registry.attachContext(
         new ServerContext(
             nicknameRegistry,
@@ -100,6 +106,27 @@ class ExtensionRegistryTest {
                 nicknameRegistry, channelRegistry, new WhowasHistory(() -> 100), registry),
             (command, handler) -> {}));
     return registry;
+  }
+
+  @Test
+  void invalidSendqReloadKeepsPreviousConfiguration(@TempDir Path directory) throws Exception {
+    ConfigurationLoader loader = new ConfigurationLoader(Set.of(), Set.of());
+    ServerConfiguration initial =
+        loader.load(
+            new ByteArrayInputStream("sendqLimitBytes: 32768".getBytes(StandardCharsets.UTF_8)));
+    Path configPath = directory.resolve("reload.yaml");
+    ConfigurationReloader reloader =
+        new ConfigurationReloader(configPath, loader, newRegistry(), initial);
+    Files.writeString(configPath, "sendqLimitBytes: 65536");
+    ServerConfiguration valid = reloader.reload();
+    assertThat(valid.sendqLimitBytes()).isEqualTo(65536);
+    Files.writeString(configPath, "sendqLimitBytes: 16383");
+
+    assertThatThrownBy(reloader::reload)
+        .isInstanceOf(ConfigurationException.class)
+        .hasMessageContaining("sendqLimitBytes");
+    assertThat(reloader.current()).isSameAs(valid);
+    assertThat(reloader.current().sendqLimitBytes()).isEqualTo(65536);
   }
 
   @Test

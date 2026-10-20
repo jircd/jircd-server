@@ -26,6 +26,8 @@ import java.time.Duration;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import java.util.function.Supplier;
 import net.jircd.core.config.ServerConfiguration;
 import net.jircd.core.extension.ConnectionAdmissionExtension;
@@ -97,7 +99,11 @@ public final class ConnectionHandler {
   private final Supplier<String> serverName;
   private final Supplier<ServerConfiguration.RateLimit> rateLimit;
   private final Supplier<Integer> keepAliveFrequencySeconds;
+  private final Supplier<Integer> sendqLimitBytes;
   private final TagRenderer tagRenderer;
+  private final Consumer<Socket> acceptedSocketCustomizer;
+  private boolean accepting = true;
+  private final Map<Thread, Socket> connections = new ConcurrentHashMap<>();
   private final Map<Command, CommandHandler> handlers = new ConcurrentHashMap<>();
 
   public ConnectionHandler(
@@ -105,12 +111,37 @@ public final class ConnectionHandler {
       DisconnectCleanup disconnectCleanup,
       Supplier<String> serverName,
       Supplier<ServerConfiguration.RateLimit> rateLimit,
-      Supplier<Integer> keepAliveFrequencySeconds) {
+      Supplier<Integer> keepAliveFrequencySeconds,
+      Supplier<Integer> sendqLimitBytes) {
+    this(
+        extensionRegistry,
+        disconnectCleanup,
+        serverName,
+        rateLimit,
+        keepAliveFrequencySeconds,
+        sendqLimitBytes,
+        socket -> {});
+  }
+
+  /**
+   * Test seam for constraining accepted sockets before protocol handling. The customizer runs on
+   * the tracked connection thread; socket ownership remains with this handler.
+   */
+  public ConnectionHandler(
+      ExtensionRegistry extensionRegistry,
+      DisconnectCleanup disconnectCleanup,
+      Supplier<String> serverName,
+      Supplier<ServerConfiguration.RateLimit> rateLimit,
+      Supplier<Integer> keepAliveFrequencySeconds,
+      Supplier<Integer> sendqLimitBytes,
+      Consumer<Socket> acceptedSocketCustomizer) {
+    this.acceptedSocketCustomizer = java.util.Objects.requireNonNull(acceptedSocketCustomizer);
     this.extensionRegistry = extensionRegistry;
     this.disconnectCleanup = disconnectCleanup;
     this.serverName = serverName;
     this.rateLimit = rateLimit;
     this.keepAliveFrequencySeconds = keepAliveFrequencySeconds;
+    this.sendqLimitBytes = sendqLimitBytes;
     this.tagRenderer = new CapabilityTagRenderer(extensionRegistry);
   }
 
@@ -119,14 +150,65 @@ public final class ConnectionHandler {
   }
 
   /** Spawns one virtual thread to own this connection's lifetime end to end. */
-  public void accept(Socket socket) {
+  public synchronized void accept(Socket socket) {
+    if (!accepting) {
+      closeQuietly(socket);
+      return;
+    }
     String connectionId = UUID.randomUUID().toString();
-    Thread.ofVirtual()
-        .name("connection-" + connectionId)
-        .start(() -> handleConnection(socket, connectionId));
+    // Read at accept time so a later reload cannot change this connection's limit.
+    int acceptedSendqLimit = sendqLimitBytes.get();
+    Thread connection =
+        Thread.ofVirtual()
+            .name("connection-" + connectionId)
+            .unstarted(
+                () -> {
+                  try {
+                    handleConnection(socket, connectionId, acceptedSendqLimit);
+                  } finally {
+                    closeQuietly(socket);
+                    connections.remove(Thread.currentThread());
+                  }
+                });
+    connections.put(connection, socket);
+    connection.start();
   }
 
-  private void handleConnection(Socket socket, String connectionId) {
+  /** Allows listener accepts when the application starts again. */
+  public synchronized void startAccepting() {
+    accepting = true;
+  }
+
+  /** Rejects late accepts before shutdown starts draining owned connections. */
+  public synchronized void stopAccepting() {
+    accepting = false;
+  }
+
+  /**
+   * Closes accepted sockets and waits for their connection, liveness and writer work to finish.
+   * Rejects late accepts even if a listener failed to stop. A timeout leaves outstanding
+   * connections tracked so a subsequent call can wait again.
+   */
+  public void closeConnections(Duration timeout) throws IOException {
+    long deadline = System.nanoTime() + timeout.toNanos();
+    stopAccepting();
+    connections.values().forEach(ConnectionHandler::closeQuietly);
+    for (Thread connection : connections.keySet()) {
+      try {
+        long remaining = deadline - System.nanoTime();
+        if (remaining <= 0 || !connection.join(Duration.ofNanos(remaining))) {
+          throw new IOException(
+              "Timed out waiting for " + connections.size() + " connections to stop");
+        }
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        throw new IOException("Interrupted waiting for connections to stop", e);
+      }
+    }
+  }
+
+  private void handleConnection(Socket socket, String connectionId, int sendqLimit) {
+    acceptedSocketCustomizer.accept(socket);
     String remoteAddress =
         socket.getInetAddress() == null ? "unknown" : socket.getInetAddress().getHostAddress();
     if (!isAdmitted(remoteAddress)) {
@@ -148,13 +230,16 @@ public final class ConnectionHandler {
     @SuppressWarnings("PMD.CloseResource")
     SessionWriter writer;
     try {
-      writer = new SessionWriter(session, socket.getOutputStream(), tagRenderer);
+      writer = new SessionWriter(session, socket.getOutputStream(), tagRenderer, sendqLimit);
     } catch (IOException e) {
       closeQuietly(socket);
       return;
     }
     session.attachWriter(writer);
-    writer.setOnOverflow(() -> disconnectCleanup.cleanup(session, "Excess Flood"));
+    AtomicReference<Thread> overflowCleanup = new AtomicReference<>();
+    writer.setOnSendqOverflow(
+        () -> startOverflowCleanup(session, writer, socket, connectionId, overflowCleanup));
+    writer.setOnWriteFailure(() -> disconnectCleanup.cleanup(session, "Excess Flood"));
 
     LivenessMonitor livenessMonitor =
         new LivenessMonitor(
@@ -164,10 +249,20 @@ public final class ConnectionHandler {
             KEEP_ALIVE_TIMEOUT,
             Clock.systemUTC());
     session.attachLivenessMonitor(livenessMonitor);
-    Thread.ofVirtual()
-        .name("liveness-" + connectionId)
-        .start(() -> runLivenessLoop(session, livenessMonitor, socket));
+    Thread liveness =
+        Thread.ofVirtual()
+            .name("liveness-" + connectionId)
+            .start(() -> runLivenessLoop(session, livenessMonitor, socket));
 
+    try {
+      readCommands(session, socket);
+    } finally {
+      awaitTeardown(socket, liveness, writer, overflowCleanup);
+    }
+  }
+
+  /** Reads and dispatches client lines until EOF, close or I/O failure, then cleans up. */
+  private void readCommands(ClientSession session, Socket socket) {
     try (BufferedInputStream in = new BufferedInputStream(socket.getInputStream())) {
       byte[] lineBytes;
       while ((lineBytes = readLineBytes(in)) != null) {
@@ -191,9 +286,51 @@ public final class ConnectionHandler {
       if (!session.lifecycle().isClosing()) {
         disconnectCleanup.cleanup(session, "Connection reset by peer");
       }
-    } finally {
-      closeQuietly(socket);
     }
+  }
+
+  private static void awaitTeardown(
+      Socket socket,
+      Thread liveness,
+      SessionWriter writer,
+      AtomicReference<Thread> overflowCleanup) {
+    closeQuietly(socket);
+    liveness.interrupt();
+    try {
+      liveness.join();
+      writer.awaitTermination();
+      Thread cleanup = overflowCleanup.get();
+      if (cleanup != null) cleanup.join();
+    } catch (InterruptedException _) {
+      Thread.currentThread().interrupt();
+    }
+  }
+
+  /** Hands an overflow off to its own thread so the enqueueing sender never blocks on cleanup. */
+  private void startOverflowCleanup(
+      ClientSession session,
+      SessionWriter writer,
+      Socket socket,
+      String connectionId,
+      AtomicReference<Thread> overflowCleanup) {
+    Thread cleanup =
+        Thread.ofVirtual()
+            .name("sendq-disconnect-" + connectionId)
+            .unstarted(
+                () -> {
+                  ConnectionMonitorLog.sendqOverflow(
+                      connectionId, writer.limitBytes(), writer.overflowQueuedBytes());
+                  try {
+                    disconnectCleanup.cleanup(session, "SendQ exceeded");
+                  } finally {
+                    // A racing trigger may own cleanup. Drain its final lines before closing this
+                    // socket, without waiting for the liveness tick.
+                    writer.close();
+                    closeQuietly(socket);
+                  }
+                });
+    overflowCleanup.set(cleanup);
+    cleanup.start();
   }
 
   /**
@@ -201,12 +338,10 @@ public final class ConnectionHandler {
    * main thread is blocked inside {@link #readLineBytes} waiting for socket input, so probing idle
    * connections needs a separate thread. {@link DisconnectCleanup#cleanup} only closes the writer
    * and marks the session {@code CLOSING}; it has no reference to the socket itself, so a
-   * disconnect triggered from any thread other than this connection's own main thread (a keep-alive
-   * timeout, here, or an outbound-queue overflow, {@code SessionWriter}'s {@code onOverflow}) would
-   * otherwise leave the main thread blocked in {@code read()} forever, waiting for input that will
-   * never arrive. This loop is this connection's single reliable backstop: whenever the session
-   * becomes {@code CLOSING} for any reason, it closes the socket directly, which unblocks that read
-   * and lets the main thread reach its own cleanup path.
+   * disconnect triggered from another thread could leave the main thread blocked in {@code read()}
+   * waiting for input that will never arrive. Sendq cleanup closes its socket directly after the
+   * final drain; this loop remains the backstop for other disconnect triggers. Whenever the session
+   * becomes {@code CLOSING}, it closes the socket, unblocking the read loop's cleanup path.
    */
   static void runLivenessLoop(
       ClientSession session, LivenessMonitor livenessMonitor, Socket socket) {

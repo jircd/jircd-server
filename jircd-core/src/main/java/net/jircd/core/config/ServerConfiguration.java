@@ -37,7 +37,8 @@ public record ServerConfiguration(
     int maxModesPerCommand,
     int operFailureThreshold,
     int whowasHistorySize,
-    int keepAliveFrequencySeconds) {
+    int keepAliveFrequencySeconds,
+    int sendqLimitBytes) {
 
   /**
    * {@code certPath}/{@code keyPath} (a PEM certificate/chain and its PEM private key) and {@code
@@ -72,6 +73,15 @@ public record ServerConfiguration(
   public record RateLimit(int bucketSize, double refillRatePerSecond) {}
 
   public record AdministratorCredential(String username, String hashedPassword) {}
+
+  /** Default outbound queue budget per connection, in bytes. */
+  public static final int DEFAULT_SENDQ_LIMIT_BYTES = 524288;
+
+  /** Minimum outbound queue budget, large enough for one maximum-size protocol line. */
+  public static final int MIN_SENDQ_LIMIT_BYTES = 16384;
+
+  /** Maximum administrator-configurable outbound queue budget per connection, in bytes. */
+  public static final int SENDQ_LIMIT_CEILING_BYTES = 2097152;
 
   public static final int DEFAULT_NICKNAME_MAX_LENGTH = 9;
   public static final int DEFAULT_CHANNEL_NAME_MAX_LENGTH = 50;

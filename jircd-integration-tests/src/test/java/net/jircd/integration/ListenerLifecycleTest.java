@@ -22,9 +22,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.io.Closeable;
 import java.io.IOException;
 import java.net.BindException;
+import java.net.InetAddress;
 import java.net.ServerSocket;
+import java.net.Socket;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -32,7 +35,10 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
+import net.jircd.core.session.ConnectionHandler;
+import net.jircd.protocol.Command;
 import net.jircd.server.JircdServerApplication;
+import net.jircd.server.JircdServerTestAccess;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -41,6 +47,99 @@ import org.junit.jupiter.params.provider.ValueSource;
 class ListenerLifecycleTest {
 
   @TempDir Path temporaryDirectory;
+
+  @Test
+  void stopWaitsForRegisteredAndUnregisteredConnectionsToClose() throws Exception {
+    try (TestServer server = TestServer.start();
+        RawIrcClient registered = RawIrcClient.connectPlaintext(server.plaintextPort());
+        RawIrcClient unregistered = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+      registered.registerAndAwaitWelcome("shutdown", "shutdown");
+      registered.readThroughPong(Duration.ofSeconds(5));
+      unregistered.send("PING :accepted");
+      unregistered.readUntil("PONG", Duration.ofSeconds(5));
+      server.application.stop();
+      assertThat(server.application.nicknameRegistry().all()).isEmpty();
+      assertThat(registered.readLine()).isNull();
+      assertThat(unregistered.readLine()).isNull();
+    }
+  }
+
+  @Test
+  void listenerFailureStillDrainsConnectionsAndReportsAllFailures() throws Exception {
+    try (TestServer server = TestServer.start();
+        RawIrcClient client = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+      client.registerAndAwaitWelcome("failstop", "failstop");
+      client.readThroughPong(Duration.ofSeconds(5));
+      IOException first = new IOException("first listener failure");
+      IOException second = new IOException("second listener failure");
+      ownedListeners(server.application)
+          .add(
+              () -> {
+                throw first;
+              });
+      ownedListeners(server.application)
+          .add(
+              () -> {
+                throw second;
+              });
+      try {
+        assertThatThrownBy(server.application::stop)
+            .isSameAs(first)
+            .satisfies(failure -> assertThat(failure.getSuppressed()).containsExactly(second));
+        assertThat(server.application.nicknameRegistry().all()).isEmpty();
+        assertThat(client.readLine()).isNull();
+      } finally {
+        // Injected failures are permanent; remove them before the fixture's final close.
+        ownedListeners(server.application).clear();
+      }
+    }
+  }
+
+  @Test
+  void stoppedApplicationRejectsLateAcceptsAndCanRestart() throws Exception {
+    try (TestServer server = TestServer.start();
+        Socket late = new Socket()) {
+      ConnectionHandler handler = JircdServerTestAccess.connectionHandler(server.application);
+      server.application.stop();
+      handler.accept(late);
+      assertThat(late.isClosed()).isTrue();
+      server.application.start();
+      try (RawIrcClient client = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+        client.registerAndAwaitWelcome("restart", "restart");
+      }
+    }
+  }
+
+  @Test
+  void connectionShutdownTimesOutLoudlyAndCanBeWaitedForAgain() throws Exception {
+    CountDownLatch entered = new CountDownLatch(1);
+    CountDownLatch release = new CountDownLatch(1);
+    try (TestServer server = TestServer.start();
+        RawIrcClient client = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+      ConnectionHandler handler = JircdServerTestAccess.connectionHandler(server.application);
+      handler.registerHandler(
+          Command.PING,
+          (_, _) -> {
+            entered.countDown();
+            try {
+              release.await();
+            } catch (InterruptedException _) {
+              Thread.currentThread().interrupt();
+            }
+          });
+      try {
+        client.send("PING :block");
+        assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
+        assertThatThrownBy(() -> handler.closeConnections(Duration.ofMillis(20)))
+            .isInstanceOf(IOException.class)
+            .hasMessageContaining("Timed out waiting for 1 connections to stop");
+      } finally {
+        release.countDown();
+      }
+      server.application.stop();
+      assertThat(client.readLine()).isNull();
+    }
+  }
 
   @ParameterizedTest
   @ValueSource(booleans = {false, true})
@@ -79,6 +178,39 @@ class ListenerLifecycleTest {
         assertThatThrownBy(application::start).isInstanceOf(BindException.class);
         assertAvailable(firstPort);
         assertThatCode(application::stop).doesNotThrowAnyException();
+      } finally {
+        application.stop();
+      }
+    }
+  }
+
+  @Test
+  void startupFailureClosesConnectionsAcceptedDuringTheAttempt() throws Exception {
+    try (ServerSocket firstReservation = new ServerSocket(0);
+        ServerSocket occupied = new ServerSocket(0);
+        ServerSocket pairing = loopbackListener();
+        Socket client = new Socket(pairing.getInetAddress(), pairing.getLocalPort());
+        Socket accepted = pairing.accept()) {
+      int firstPort = firstReservation.getLocalPort();
+      var application =
+          application(listener(firstPort, false) + listener(occupied.getLocalPort(), false));
+      firstReservation.close();
+      ConnectionHandler handler = JircdServerTestAccess.connectionHandler(application);
+      // Deterministic stand-in for a client accepted by the first listener before the second fails.
+      handler.accept(accepted);
+      client.setSoTimeout(5000);
+      client
+          .getOutputStream()
+          .write("PING :up\r\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+      try {
+        assertThatThrownBy(application::start).isInstanceOf(BindException.class);
+        while (client.getInputStream().read() != -1) {
+          // read until the server closes the connection; the soTimeout fails the test otherwise
+        }
+        try (Socket late = new Socket()) {
+          handler.accept(late);
+          assertThat(late.isClosed()).isTrue();
+        }
       } finally {
         application.stop();
       }
@@ -315,5 +447,13 @@ class ListenerLifecycleTest {
     try (var socket = new ServerSocket(port)) {
       assertThat(socket.getLocalPort()).isEqualTo(port);
     }
+  }
+
+  // Bind to loopback, not the wildcard: on macOS a more specific bind of the same port by another
+  // process wins the connect, and accept() would then wait forever. The timeout bounds that case.
+  private static ServerSocket loopbackListener() throws IOException {
+    ServerSocket listener = new ServerSocket(0, 1, InetAddress.getLoopbackAddress());
+    listener.setSoTimeout(5000);
+    return listener;
   }
 }

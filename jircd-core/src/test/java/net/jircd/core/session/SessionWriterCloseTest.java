@@ -25,6 +25,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import net.jircd.protocol.Command;
 import net.jircd.protocol.Message;
 import org.junit.jupiter.api.Test;
@@ -32,8 +33,34 @@ import org.junit.jupiter.api.Test;
 /** {@link SessionWriter#close()} called twice, as DisconnectCleanup and the liveness thread do. */
 class SessionWriterCloseTest {
 
-  /** One line the writer takes off the queue and blocks on, plus enough to fill the queue. */
-  private static final int LINES = 256;
+  private static final int LIMIT_BYTES = 16384;
+  private static final int LINES = 1 + LIMIT_BYTES / 512;
+
+  @Test
+  void writeFailureCallbackClosesWithoutWaitingForItsOwnWriterThread() throws Exception {
+    CountDownLatch callbackReturned = new CountDownLatch(1);
+    OutputStream failing =
+        new OutputStream() {
+          @Override
+          public void write(int value) throws IOException {
+            throw new IOException("socket closed");
+          }
+        };
+    try (failing;
+        SessionWriter writer =
+            new SessionWriter(
+                new ClientSession("failure", "host.example", RateLimitBucket.withDefaults()),
+                failing,
+                TagRenderer.NONE)) {
+      writer.setOnWriteFailure(
+          () -> {
+            writer.close();
+            callbackReturned.countDown();
+          });
+      writer.enqueueRaw(line(0));
+      assertThat(callbackReturned.await(1, TimeUnit.SECONDS)).isTrue();
+    }
+  }
 
   @Test
   void secondCloseOnAFullQueueWaitsForTheDrainInsteadOfInterrupting() throws Exception {
@@ -42,14 +69,15 @@ class SessionWriterCloseTest {
             new SessionWriter(
                 new ClientSession("c1", "host.example", RateLimitBucket.withDefaults()),
                 out,
-                TagRenderer.NONE)) {
+                TagRenderer.NONE,
+                LIMIT_BYTES)) {
       writer.enqueueRaw(line(0));
       out.firstWriteStarted.await();
       for (int i = 1; i < LINES; i++) {
         writer.enqueueRaw(line(i));
       }
 
-      // The first close's poison pill takes the queue's last free slot.
+      // The poison pill uses its reserved closing allowance outside the data budget.
       Thread firstClose = Thread.ofPlatform().start(writer::close);
       awaitWaiting(firstClose);
       Thread secondClose = Thread.ofPlatform().start(writer::close);
@@ -58,12 +86,19 @@ class SessionWriterCloseTest {
       firstClose.join();
       secondClose.join();
 
-      assertThat(out.lines()).hasSize(LINES).endsWith("ERROR :line " + (LINES - 1));
+      assertThat(out.lines())
+          .hasSize(LINES)
+          .endsWith("ERROR " + ("line" + (LINES - 1)).repeat(100).substring(0, 504));
     }
   }
 
   private static Message line(int number) {
-    return new Message(Map.of(), null, Command.ERROR, "ERROR", List.of("line " + number));
+    return new Message(
+        Map.of(),
+        null,
+        Command.ERROR,
+        "ERROR",
+        List.of(("line" + number).repeat(101).substring(0, 504)));
   }
 
   private static void awaitWaiting(Thread thread) {
