@@ -76,29 +76,31 @@ public final class CapCommandHandler implements CommandHandler {
     enqueue(
         session,
         CapabilityNegotiationGrammar.ls(
-            serverName.get(), negotiator.currentlyOfferedCapabilityNames()));
+            serverName.get(), target(session), negotiator.currentlyOfferedCapabilityNames()));
   }
 
   private void handleList(ClientSession session) {
     enqueue(
         session,
         CapabilityNegotiationGrammar.list(
-            serverName.get(), List.copyOf(session.negotiatedCapabilities())));
+            serverName.get(), target(session), List.copyOf(session.negotiatedCapabilities())));
   }
 
   private void handleReq(ClientSession session, Message message) {
     List<String> requested = CapabilityNegotiationGrammar.parseCapabilityList(message);
-    CapabilityNegotiator.NegotiationResult result = negotiator.request(session, requested);
-    if (!result.accepted().isEmpty()) {
-      enqueue(
-          session,
-          CapabilityNegotiationGrammar.ack(serverName.get(), List.copyOf(result.accepted())));
-    }
-    if (!result.declined().isEmpty()) {
-      enqueue(
-          session,
-          CapabilityNegotiationGrammar.nak(serverName.get(), List.copyOf(result.declined())));
-    }
+    String target = target(session);
+    boolean accepted = negotiator.request(session, requested);
+    enqueue(
+        session,
+        accepted
+            ? CapabilityNegotiationGrammar.ack(serverName.get(), target, requested)
+            : CapabilityNegotiationGrammar.nak(serverName.get(), target, requested));
+  }
+
+  /** The client's nickname once it has one, else {@code *}. */
+  private static String target(ClientSession session) {
+    String nickname = session.nickname();
+    return nickname == null ? "*" : nickname;
   }
 
   private void handleEnd(ClientSession session) {

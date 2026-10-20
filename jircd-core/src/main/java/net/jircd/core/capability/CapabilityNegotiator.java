@@ -15,7 +15,6 @@
  */
 package net.jircd.core.capability;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import net.jircd.core.extension.ExtensionRegistry;
@@ -45,28 +44,35 @@ public final class CapabilityNegotiator {
   }
 
   /**
-   * Which requested capabilities were accepted (currently offered) vs. declined (FR-007) — a {@link
-   * List}, not a {@link Set}: the {@code ACK}/{@code NAK} reply echo MUST preserve the client's
-   * original request order and any duplicates (005-fix-batch-conformance FR-009), even though
-   * {@link ClientSession#negotiatedCapabilities()} (actual state) is a deduplicating {@link Set}
-   * underneath.
+   * Applies a {@code CAP REQ} atomically: every name is validated against the live offered list
+   * first (a {@code -name} removal is validated by its bare name), and the session changes only if
+   * all of them pass. Returns whether the request was accepted; the {@code ACK}/{@code NAK} echo is
+   * the caller's, built from the client's original list so it keeps order and duplicates
+   * (005-fix-batch-conformance FR-009).
    */
-  public record NegotiationResult(List<String> accepted, List<String> declined) {}
-
-  /** Requests the given capabilities, recording each accepted one on the session. */
-  public NegotiationResult request(ClientSession session, List<String> requested) {
+  public boolean request(ClientSession session, List<String> requested) {
     Set<String> offered = Set.copyOf(currentlyOfferedCapabilityNames());
-    List<String> accepted = new ArrayList<>();
-    List<String> declined = new ArrayList<>();
     for (String name : requested) {
-      if (offered.contains(name)) {
-        accepted.add(name);
-        session.negotiatedCapabilities().add(name);
-      } else {
-        declined.add(name);
+      if (!offered.contains(bareName(name))) {
+        return false;
       }
     }
-    return new NegotiationResult(accepted, declined);
+    for (String name : requested) {
+      if (isRemoval(name)) {
+        session.negotiatedCapabilities().remove(bareName(name));
+      } else {
+        session.negotiatedCapabilities().add(name);
+      }
+    }
+    return true;
+  }
+
+  private static boolean isRemoval(String name) {
+    return name.startsWith("-");
+  }
+
+  private static String bareName(String name) {
+    return isRemoval(name) ? name.substring(1) : name;
   }
 
   public void endNegotiation(ClientSession session) {
