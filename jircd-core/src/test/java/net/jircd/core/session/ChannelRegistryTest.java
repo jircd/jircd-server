@@ -39,39 +39,96 @@ import org.junit.jupiter.api.Test;
 
 class ChannelRegistryTest {
 
+  /**
+   * Serialized outcome only: the last member's removal completes, then a JOIN of the same folded
+   * name registers one fresh channel. It does not force any overlap; see {@link
+   * #joinArrivingMidRemovalWaitsAndRegistersOneChannel()} for that.
+   */
   @Test
-  void joiningDuringLastMemberRemovalKeepsOneRegisteredChannel() throws Exception {
+  void joinAfterLastMemberRemovalRegistersOneChannelForTheName() {
     ChannelRegistry registry = new ChannelRegistry();
     ClientSession departing = newSession("departing");
     Channel original = registry.join("#lobby", departing, ignored -> true).orElseThrow().channel();
     ClientSession joining = newSession("joining");
-    CountDownLatch retrieved = new CountDownLatch(1);
-    CountDownLatch resumeJoin = new CountDownLatch(1);
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      var pendingJoin =
+    registry.part(original, departing).orElseThrow();
+    assertThat(registry.lookup("#lobby")).isEmpty();
+    Channel joined = registry.join("#lobby", joining, ignored -> true).orElseThrow().channel();
+    ClientSession laterJoiner = newSession("later");
+    Channel next = registry.join("#LOBBY", laterJoiner, ignored -> true).orElseThrow().channel();
+
+    assertThat(registry.lookup("#lobby")).containsSame(joined);
+    assertThat(next).isSameAs(joined);
+    assertThat(next.members()).containsExactlyInAnyOrder(joining, laterJoiner);
+    assertThat(joining.channelMemberships()).containsExactly(joined);
+    assertThat(departing.channelMemberships()).isEmpty();
+    assertThat(registry.all()).containsExactly(joined);
+  }
+
+  /**
+   * Forced contention: the last member's PART holds the registry monitor and waits for the channel
+   * monitor (held by the test), so its removal is in flight but not applied. A JOIN for the same
+   * name then arrives and must wait on the registry monitor. Once the channel monitor is released,
+   * the removal completes first and the JOIN registers exactly one channel that it alone populates.
+   */
+  @Test
+  void joinArrivingMidRemovalWaitsAndRegistersOneChannel() throws Exception {
+    ChannelRegistry registry = new ChannelRegistry();
+    ClientSession departing = newSession("departing");
+    Channel original = registry.join("#lobby", departing, ignored -> true).orElseThrow().channel();
+    ClientSession joining = newSession("joining");
+    CountDownLatch holding = new CountDownLatch(1);
+    CountDownLatch releaseChannel = new CountDownLatch(1);
+    AtomicReference<Thread> partThread = new AtomicReference<>();
+    AtomicReference<Thread> joinThread = new AtomicReference<>();
+
+    try (var executor = Executors.newCachedThreadPool()) {
+      var holder =
           executor.submit(
               () -> {
-                retrieved.countDown();
-                if (!resumeJoin.await(5, TimeUnit.SECONDS)) {
-                  throw new IllegalStateException("Timed out waiting to resume JOIN");
+                synchronized (original) {
+                  holding.countDown();
+                  await(releaseChannel);
                 }
-                return registry.join("#lobby", joining, ignored -> true).orElseThrow();
+                return null;
               });
       try {
-        assertThat(retrieved.await(5, TimeUnit.SECONDS)).isTrue();
-        registry.part(original, departing);
-      } finally {
-        resumeJoin.countDown();
-      }
-      Channel joined = pendingJoin.get(5, TimeUnit.SECONDS).channel();
-      ClientSession laterJoiner = newSession("later");
-      Channel next = registry.join("#LOBBY", laterJoiner, ignored -> true).orElseThrow().channel();
+        assertThat(holding.await(5, TimeUnit.SECONDS)).isTrue();
+        var part =
+            executor.submit(
+                () -> {
+                  partThread.set(Thread.currentThread());
+                  return registry.part(original, departing);
+                });
+        // Only the registry monitor is free, so a BLOCKED PART already owns it and waits on the
+        // channel monitor.
+        awaitBlocked(partThread);
+        var join =
+            executor.submit(
+                () -> {
+                  joinThread.set(Thread.currentThread());
+                  return registry.join("#lobby", joining, ignored -> true);
+                });
+        awaitBlocked(joinThread);
+        assertThat(join.isDone()).isFalse();
+        assertThat(part.isDone()).isFalse();
+        assertThat(joining.channelMemberships()).isEmpty();
 
-      assertThat(registry.lookup("#lobby")).containsSame(joined);
-      assertThat(next).isSameAs(joined);
-      assertThat(next.members()).containsExactlyInAnyOrder(joining, laterJoiner);
-      assertThat(joining.channelMemberships()).containsExactly(joined);
+        releaseChannel.countDown();
+        assertThat(part.get(5, TimeUnit.SECONDS)).isPresent();
+        Channel joined = join.get(5, TimeUnit.SECONDS).orElseThrow().channel();
+
+        assertThat(joined).isNotSameAs(original);
+        assertThat(registry.all()).containsExactly(joined);
+        assertThat(registry.lookup("#lobby")).containsSame(joined);
+        assertThat(joined.members()).containsExactly(joining);
+        assertThat(joined.isEmpty()).isFalse();
+        assertThat(joining.channelMemberships()).containsExactly(joined);
+        assertThat(departing.channelMemberships()).isEmpty();
+      } finally {
+        releaseChannel.countDown();
+      }
+      holder.get(5, TimeUnit.SECONDS);
     }
   }
 
@@ -642,6 +699,18 @@ class ChannelRegistryTest {
     assertThat(registry.lookup("#lobby")).containsSame(existing);
     assertThat(existing.members()).containsExactly(member);
     assertThat(joiner.channelMemberships()).isEmpty();
+  }
+
+  private static void awaitBlocked(AtomicReference<Thread> reference) {
+    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+    while (System.nanoTime() < deadline) {
+      Thread thread = reference.get();
+      if (thread != null && thread.getState() == Thread.State.BLOCKED) {
+        return;
+      }
+      Thread.onSpinWait();
+    }
+    throw new AssertionError("Thread never became BLOCKED: " + reference.get());
   }
 
   private static void await(CountDownLatch latch) {
