@@ -19,6 +19,7 @@ import java.io.IOException;
 import java.net.Socket;
 import java.security.GeneralSecurityException;
 import javax.net.ssl.SSLServerSocket;
+import javax.net.ssl.SSLServerSocketFactory;
 import net.jircd.core.config.ServerConfiguration;
 
 /**
@@ -30,13 +31,16 @@ public final class TlsListener extends AbstractListener<SSLServerSocket> {
   public TlsListener(ServerConfiguration.Listener listener, ConnectionHandler connectionHandler)
       throws IOException, GeneralSecurityException {
     super(
-        (SSLServerSocket)
-            TlsSupport.buildServerContext(listener)
-                .getServerSocketFactory()
-                // Backlog 0 keeps the default; a null bindAddress binds the wildcard address.
-                .createServerSocket(listener.port(), 0, listener.bindAddress()),
+        openServerSocket(
+            listener, TlsSupport.buildServerContext(listener).getServerSocketFactory()),
         connectionHandler::accept,
         "tls-listener");
+  }
+
+  static SSLServerSocket openServerSocket(
+      ServerConfiguration.Listener listener, SSLServerSocketFactory factory) throws IOException {
+    return (SSLServerSocket)
+        factory.createServerSocket(listener.port(), listener.backlog(), listener.bindAddress());
   }
 
   @Override

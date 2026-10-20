@@ -63,7 +63,9 @@ public final class ConfigurationReloader {
   /**
    * Re-reads and re-validates the configuration file, reconciling extension state on success.
    * Serialized, so validation, reconciliation, publication of {@link #current()} and the advertised
-   * lengths happen as one ordered operation per reload.
+   * lengths happen as one ordered operation per reload. Listener settings (including backlog) are
+   * validated and published here, but sockets are only bound at application startup; applying
+   * listener changes requires a server restart.
    */
   public synchronized ServerConfiguration reload() throws ConfigurationException, IOException {
     ServerConfiguration reloaded;

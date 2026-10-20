@@ -394,6 +394,27 @@ class ListenerLifecycleTest {
     }
   }
 
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void reloadPublishesBacklogWithoutRebindingRunningListener(boolean tls) throws Exception {
+    var application = application(listener(0, tls) + "    backlog: 16\n");
+    try {
+      application.start();
+      int boundPort = tls ? application.tlsPort() : application.plaintextPort();
+      Files.writeString(
+          application.reloader().configPath(),
+          "serverName: test.jircd.local\nlisteners:\n" + listener(0, tls) + "    backlog: 2048\n");
+      assertThat(application.reloader().reload().listeners().getFirst().backlog()).isEqualTo(2048);
+      assertThat(tls ? application.tlsPort() : application.plaintextPort()).isEqualTo(boundPort);
+      try (RawIrcClient client =
+          tls ? RawIrcClient.connectTls(boundPort) : RawIrcClient.connectPlaintext(boundPort)) {
+        client.registerAndAwaitWelcome("backlog", "backlog");
+      }
+    } finally {
+      application.stop();
+    }
+  }
+
   @Test
   void stopBeforeStartIsHarmless() throws Exception {
     var application = application(listener(0, false));

@@ -119,6 +119,43 @@ administration (`OPER`, `REHASH`, etc.), see the full annotated schema in
 For a guided, story-by-story walkthrough of every feature, see
 [`quickstart.md`](specs/001-ircv3-server/quickstart.md).
 
+### Listener accept backlog
+
+Each plaintext or TLS listener accepts an optional positive integer `backlog`,
+defaulting to `1024` (also used by the zero-config listener):
+
+```yaml
+listeners:
+  - port: 6667
+    tls: false
+    backlog: 1024
+```
+
+The effective accept queue limit is `min(backlog, OS somaxconn)`; the OS may
+silently cap the request. A larger queue helps absorb bursts while connections
+wait to be accepted. Listener settings, including `backlog`, `port`, and
+`bindAddress`, are validated on `REHASH`/`SIGHUP` but require a server restart
+to take effect because reload does not rebind the listening sockets.
+
+Check the OS limit before raising it. For example, to raise a lower limit to
+1024 on macOS:
+
+```bash
+sysctl kern.ipc.somaxconn
+sudo sysctl -w kern.ipc.somaxconn=1024
+```
+
+On Linux:
+
+```bash
+sysctl net.core.somaxconn
+sudo sysctl -w net.core.somaxconn=1024
+```
+
+These commands change the running system; use your OS's sysctl configuration
+mechanism to persist the value across reboots. Set the OS limit before starting
+jircd. See the [Linux kernel socket limit documentation](https://docs.kernel.org/networking/ip-sysctl.html#somaxconn-integer).
+
 ### Generating an administrator credential
 
 `administratorCredentials` entries (see the config schema link above) store a
