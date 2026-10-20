@@ -89,19 +89,15 @@ public final class ChannelRegistry {
         }
         alreadyMember = channel.members().contains(session);
         if (!alreadyMember) {
-          boolean admitted;
+          boolean admitted = false;
           try {
             admitted = admission.test(channel);
-          } catch (RuntimeException | Error failure) {
-            if (created) {
+          } finally {
+            if (!admitted && created) {
               removeIfEmpty(channel);
             }
-            throw failure;
           }
           if (!admitted) {
-            if (created) {
-              removeIfEmpty(channel);
-            }
             return Optional.empty();
           }
           grantedOperator = channel.addMember(session);
