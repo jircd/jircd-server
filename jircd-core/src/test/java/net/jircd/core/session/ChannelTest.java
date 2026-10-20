@@ -539,6 +539,34 @@ class ChannelTest {
     assertThat(channel.bans()).containsExactlyElementsOf(before).doesNotContain(extra);
   }
 
+  @ParameterizedTest
+  @CsvSource({"Nick!User@Host,nICK!uSER@hOST", "N[ck!u\\ser@h^st,n{ck!u|ser@h~st"})
+  void duplicateBanPreservesOriginalEntryAndDoesNotConsumeCapacity(
+      String original, String variant) {
+    Channel channel = new Channel("#c");
+    BanEntry first = new BanEntry(original, "first", Instant.EPOCH);
+    assertThat(channel.addBan(first)).isTrue();
+    assertThat(channel.addBan(new BanEntry(variant, "second", Instant.now()))).isTrue();
+    assertThat(channel.bans()).containsExactly(first);
+    for (int i = 1; i < Channel.MAX_BANS; i++) {
+      assertThat(channel.addBan(new BanEntry("*!*@host" + i, "op", Instant.EPOCH))).isTrue();
+    }
+    assertThat(channel.addBan(new BanEntry(variant, "third", Instant.now()))).isTrue();
+    assertThat(channel.addBan(new BanEntry("*!*@extra", "op", Instant.EPOCH))).isFalse();
+    assertThat(channel.bans()).hasSize(Channel.MAX_BANS).startsWith(first);
+  }
+
+  @ParameterizedTest
+  @CsvSource({"Nick!User@Host,nICK!uSER@hOST", "N[ck!u\\ser@h^st,n{ck!u|ser@h~st"})
+  void removeBanUsesIrcCaseMapping(String original, String variant) {
+    Channel channel = new Channel("#c");
+    BanEntry other = new BanEntry("other!*@*", "op", Instant.EPOCH);
+    channel.addBan(new BanEntry(original, "op", Instant.EPOCH));
+    channel.addBan(other);
+    channel.removeBan(variant);
+    assertThat(channel.bans()).containsExactly(other);
+  }
+
   private static void applied(Channel channel, ClientSession requester, ChannelModeChange change) {
     assertThat(channel.applyAsOperator(requester, change))
         .isEqualTo(Channel.ModeChangeResult.APPLIED);

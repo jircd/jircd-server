@@ -361,11 +361,12 @@ public final class Channel {
 
   /**
    * Adds a ban mask, enforcing the 100-entry cap atomically — {@code true} if the mask is now
-   * present (including already-present, a no-op success), {@code false} if adding it would exceed
-   * the cap.
+   * present (including already-present under RFC1459 case folding, a no-op success), {@code false}
+   * if adding it would exceed the cap.
    */
   public synchronized boolean addBan(BanEntry entry) {
-    if (bans.stream().anyMatch(b -> b.mask().equals(entry.mask()))) {
+    String folded = CaseMapping.fold(entry.mask());
+    if (bans.stream().anyMatch(b -> CaseMapping.fold(b.mask()).equals(folded))) {
       return true;
     }
     if (bans.size() >= MAX_BANS) {
@@ -375,9 +376,10 @@ public final class Channel {
     return true;
   }
 
-  /** Removes a ban mask — a silent no-op if not present. */
+  /** Removes a ban mask using RFC1459 case folding — a silent no-op if not present. */
   public synchronized void removeBan(String mask) {
-    bans.removeIf(b -> b.mask().equals(mask));
+    String folded = CaseMapping.fold(mask);
+    bans.removeIf(b -> CaseMapping.fold(b.mask()).equals(folded));
   }
 
   @Override

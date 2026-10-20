@@ -26,51 +26,11 @@ public final class CaseMapping {
   private CaseMapping() {}
 
   public static String fold(String value) {
-    StringBuilder result = new StringBuilder(value.length());
-    for (int i = 0; i < value.length(); i++) {
-      result.append(foldChar(value.charAt(i)));
-    }
-    return result.toString();
-  }
-
-  private static char foldChar(char c) {
-    if (c >= 'A' && c <= 'Z') {
-      return (char) (c + 'a' - 'A');
-    }
-    return switch (c) {
-      case '[' -> '{';
-      case ']' -> '}';
-      case '\\' -> '|';
-      case '^' -> '~';
-      default -> c;
-    };
+    return net.jircd.protocol.CaseMapping.fold(value);
   }
 
   /** Case-insensitive (rfc1459-folded) {@code *}/{@code ?} wildcard match (FR-052/FR-061). */
   public static boolean matches(String value, String mask) {
-    return wildcardMatch(fold(value), fold(mask), 0, 0);
-  }
-
-  private static boolean wildcardMatch(String text, String pattern, int ti, int pi) {
-    while (pi < pattern.length() && pattern.charAt(pi) != '*') {
-      if (ti >= text.length()) {
-        return false;
-      }
-      char pc = pattern.charAt(pi);
-      if (pc != '?' && pc != text.charAt(ti)) {
-        return false;
-      }
-      ti++;
-      pi++;
-    }
-    if (pi == pattern.length()) {
-      return ti == text.length();
-    }
-    for (int nextTi = ti; nextTi <= text.length(); nextTi++) {
-      if (wildcardMatch(text, pattern, nextTi, pi + 1)) {
-        return true;
-      }
-    }
-    return false;
+    return net.jircd.protocol.CaseMapping.matches(value, mask);
   }
 }

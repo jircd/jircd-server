@@ -56,34 +56,10 @@ public final class NickMask {
   }
 
   /**
-   * Case-insensitive {@code *}/{@code ?} wildcard match of a full {@code nickname!ident@hostname}
-   * identity string against a normalized mask.
+   * Case-insensitive (rfc1459-folded) {@code *}/{@code ?} wildcard match of a full {@code
+   * nickname!ident@hostname} identity string against a normalized mask.
    */
   public static boolean matches(String identity, String mask) {
-    return wildcardMatch(identity.toLowerCase(), mask.toLowerCase(), 0, 0);
-  }
-
-  private static boolean wildcardMatch(String text, String pattern, int ti, int pi) {
-    while (pi < pattern.length() && pattern.charAt(pi) != '*') {
-      if (ti >= text.length()) {
-        return false;
-      }
-      char pc = pattern.charAt(pi);
-      if (pc != '?' && pc != text.charAt(ti)) {
-        return false;
-      }
-      ti++;
-      pi++;
-    }
-    if (pi == pattern.length()) {
-      return ti == text.length();
-    }
-    // pattern.charAt(pi) == '*'
-    for (int nextTi = ti; nextTi <= text.length(); nextTi++) {
-      if (wildcardMatch(text, pattern, nextTi, pi + 1)) {
-        return true;
-      }
-    }
-    return false;
+    return CaseMapping.matches(identity, mask);
   }
 }
