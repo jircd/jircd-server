@@ -89,10 +89,15 @@ public final class ChannelRegistry {
         }
         alreadyMember = channel.members().contains(session);
         if (!alreadyMember) {
-          if (!admission.test(channel)) {
-            if (created) {
+          boolean admitted = false;
+          try {
+            admitted = admission.test(channel);
+          } finally {
+            if (!admitted && created) {
               removeIfEmpty(channel);
             }
+          }
+          if (!admitted) {
             return Optional.empty();
           }
           grantedOperator = channel.addMember(session);

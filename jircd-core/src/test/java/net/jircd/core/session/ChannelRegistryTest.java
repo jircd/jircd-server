@@ -600,6 +600,50 @@ class ChannelRegistryTest {
     }
   }
 
+  @Test
+  void admissionFailureOnNewChannelRemovesItAndRethrows() {
+    ChannelRegistry registry = new ChannelRegistry();
+    ClientSession joiner = newSession("joiner");
+    IllegalStateException failure = new IllegalStateException("admission failed");
+
+    assertThatThrownBy(
+            () ->
+                registry.join(
+                    "#fresh",
+                    joiner,
+                    ignored -> {
+                      throw failure;
+                    }))
+        .isSameAs(failure);
+
+    assertThat(registry.lookup("#fresh")).isEmpty();
+    assertThat(registry.all()).isEmpty();
+    assertThat(joiner.channelMemberships()).isEmpty();
+  }
+
+  @Test
+  void admissionFailureOnExistingChannelKeepsIt() {
+    ChannelRegistry registry = new ChannelRegistry();
+    ClientSession member = newSession("member");
+    Channel existing = registry.join("#lobby", member, ignored -> true).orElseThrow().channel();
+    ClientSession joiner = newSession("joiner");
+    IllegalStateException failure = new IllegalStateException("admission failed");
+
+    assertThatThrownBy(
+            () ->
+                registry.join(
+                    "#lobby",
+                    joiner,
+                    ignored -> {
+                      throw failure;
+                    }))
+        .isSameAs(failure);
+
+    assertThat(registry.lookup("#lobby")).containsSame(existing);
+    assertThat(existing.members()).containsExactly(member);
+    assertThat(joiner.channelMemberships()).isEmpty();
+  }
+
   private static void await(CountDownLatch latch) {
     try {
       assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
