@@ -31,4 +31,15 @@ class NickMaskTest {
   void matchingUsesIrcCaseMapping(String identity, String mask) {
     assertThat(NickMask.matches(identity, mask)).isTrue();
   }
+
+  @ParameterizedTest
+  @CsvSource({
+    "Nick!User@Host,Other!User@Host",
+    "N(ck!User@Host,N[ck!User@Host",
+    "Nick!User@Host,Ni?!User@Host",
+    "Nick!User@Host,*!User@Elsewhere"
+  })
+  void matchingRejectsDifferentIdentities(String identity, String mask) {
+    assertThat(NickMask.matches(identity, mask)).isFalse();
+  }
 }
