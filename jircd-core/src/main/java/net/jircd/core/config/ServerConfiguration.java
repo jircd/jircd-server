@@ -49,7 +49,8 @@ public record ServerConfiguration(
    * false} listener.
    *
    * <p>{@code bindAddress} is the one local address the listener binds; {@code null} binds the
-   * wildcard address (every local address).
+   * wildcard address (every local address). {@code backlog} is the requested positive accept queue
+   * capacity, capped by the operating system; changes take effect after a server restart.
    */
   public record Listener(
       int port,
@@ -58,7 +59,33 @@ public record ServerConfiguration(
       String certPath,
       String keyPath,
       String keystorePath,
-      String keystorePassword) {
+      String keystorePassword,
+      int backlog) {
+
+    public Listener {
+      if (backlog <= 0) {
+        throw new IllegalArgumentException("backlog must be a positive integer, got: " + backlog);
+      }
+    }
+
+    public Listener(
+        int port,
+        boolean tls,
+        InetAddress bindAddress,
+        String certPath,
+        String keyPath,
+        String keystorePath,
+        String keystorePassword) {
+      this(
+          port,
+          tls,
+          bindAddress,
+          certPath,
+          keyPath,
+          keystorePath,
+          keystorePassword,
+          DEFAULT_LISTENER_BACKLOG);
+    }
 
     public Listener(int port, boolean tls) {
       this(port, tls, null, null, null, null, null);
@@ -73,6 +100,9 @@ public record ServerConfiguration(
   public record RateLimit(int bucketSize, double refillRatePerSecond) {}
 
   public record AdministratorCredential(String username, String hashedPassword) {}
+
+  /** Default requested accept queue capacity for each plaintext or TLS listener. */
+  public static final int DEFAULT_LISTENER_BACKLOG = 1024;
 
   /** Default outbound queue budget per connection, in bytes. */
   public static final int DEFAULT_SENDQ_LIMIT_BYTES = 524288;

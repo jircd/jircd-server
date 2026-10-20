@@ -43,6 +43,33 @@ class ConfigurationLoaderTest {
   }
 
   @Test
+  void listenerBacklogDefaultsWhenUnset() throws Exception {
+    assertThat(load("listeners: [{port: 6667}]").listeners().getFirst().backlog()).isEqualTo(1024);
+    assertThat(new ServerConfiguration.Listener(6667, false).backlog()).isEqualTo(1024);
+  }
+
+  @ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(ints = {1, 2048, Integer.MAX_VALUE})
+  void listenerBacklogAcceptsPositiveIntegers(int value) throws Exception {
+    assertThat(
+            load("listeners: [{port: 6667, backlog: " + value + "}]")
+                .listeners()
+                .getFirst()
+                .backlog())
+        .isEqualTo(value);
+  }
+
+  @ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(
+      strings = {"0", "-1", "big", "1.5", "null", "'1024'", "true", "2147483648", "[]", "{}"})
+  void listenerBacklogRejectsInvalidValues(String value) {
+    assertThatThrownBy(() -> load("listeners: [{port: 6667, backlog: " + value + "}]"))
+        .isInstanceOf(ConfigurationException.class)
+        .hasMessageContaining("listeners[0].backlog must be a positive integer")
+        .hasMessageContaining("got:");
+  }
+
+  @Test
   void defaultSendqLimitStaysWithinBounds() {
     assertThat(ServerConfiguration.DEFAULT_SENDQ_LIMIT_BYTES)
         .isBetween(

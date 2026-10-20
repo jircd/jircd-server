@@ -44,6 +44,7 @@ maxModesPerCommand: 6    # optional (FR-064) — defaults to 6, a long-standing 
 listeners:
   - port: 6667
     tls: false
+    backlog: 1024     # optional — positive integer; defaults to 1024 for plaintext and TLS
     # bindAddress: 127.0.0.1  # optional — a literal IPv4 or IPv6 address (quote an IPv6 one:
     #                         # '::1'), never a hostname, so startup does no DNS lookup. The
     #                         # listener accepts on that one local address only. If omitted, it
@@ -240,6 +241,16 @@ administratorCredentials:
   which section it belongs in instead — not silently accepted or moved.
   This is the config-file expression of the `CapabilityExtension`/
   `ServerExtension` distinction (data-model.md "Extension").
+- **Listener accept backlog (#58)**: each listener's optional `backlog` MUST be
+  a positive 32-bit integer (1 through 2147483647); omission defaults to `1024`,
+  including the zero-config plaintext listener. Zero, negative, non-integer,
+  and out-of-range values fail validation with `listeners[index].backlog` in
+  the error. Both plaintext and TLS binds request this capacity. The effective
+  limit is `min(backlog, OS somaxconn)`. See the [README tuning instructions](../../../README.md#listener-accept-backlog)
+  for checking and raising `kern.ipc.somaxconn` on macOS or `net.core.somaxconn`
+  on Linux. Listener settings are validated and published on reload, but the
+  application's existing sockets are not rebound: changing `backlog`, `port`,
+  `bindAddress`, TLS, or certificate settings requires a server restart.
 - **Live reload is manually triggered, never automatic** (research.md
   "Configuration reload mechanism"): editing this file alone does nothing
   until the administrator explicitly triggers a reload — either by

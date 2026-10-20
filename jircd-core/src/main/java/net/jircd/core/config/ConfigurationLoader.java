@@ -268,6 +268,11 @@ public final class ConfigurationLoader {
       }
       boolean tls = map.containsKey("tls") && asBoolean(map.get("tls"), path + ".tls");
       InetAddress bindAddress = asBindAddress(map, path + ".bindAddress");
+      Object rawBacklog = map.getOrDefault("backlog", ServerConfiguration.DEFAULT_LISTENER_BACKLOG);
+      if (!(rawBacklog instanceof Integer backlog) || backlog <= 0) {
+        throw new ConfigurationException(
+            path + ".backlog must be a positive integer, got: " + redactSecrets(rawBacklog));
+      }
       String certPath = asString(map.get("certPath"), path + ".certPath");
       String keyPath = asString(map.get("keyPath"), path + ".keyPath");
       String keystorePath = asString(map.get("keystorePath"), path + ".keystorePath");
@@ -275,7 +280,14 @@ public final class ConfigurationLoader {
 
       ServerConfiguration.Listener listener =
           new ServerConfiguration.Listener(
-              (Integer) port, tls, bindAddress, certPath, keyPath, keystorePath, keystorePassword);
+              (Integer) port,
+              tls,
+              bindAddress,
+              certPath,
+              keyPath,
+              keystorePath,
+              keystorePassword,
+              backlog);
       rejectPortConflict(listeners, listener, path);
 
       // Cert fields on a tls: false listener are left untouched, not validated — the same

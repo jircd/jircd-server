@@ -35,10 +35,15 @@ public final class PlaintextListener extends AbstractListener<ServerSocketChanne
 
   private static ServerSocketChannel openServerChannel(ServerConfiguration.Listener listener)
       throws IOException {
-    var channel = ServerSocketChannel.open();
+    return openServerChannel(listener, ServerSocketChannel.open());
+  }
+
+  static ServerSocketChannel openServerChannel(
+      ServerConfiguration.Listener listener, ServerSocketChannel channel) throws IOException {
     try {
       // A null bindAddress makes this the wildcard address.
-      channel.bind(new InetSocketAddress(listener.bindAddress(), listener.port()));
+      channel.bind(
+          new InetSocketAddress(listener.bindAddress(), listener.port()), listener.backlog());
       return channel;
     } catch (IOException | RuntimeException failure) {
       try {
