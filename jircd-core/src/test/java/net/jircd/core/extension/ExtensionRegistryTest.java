@@ -98,7 +98,11 @@ class ExtensionRegistryTest {
             ServerConfiguration.DEFAULT_MAX_CONNECTIONS_PER_IP,
             ServerConfiguration.DEFAULT_IPV6_CONNECTION_LIMIT_PREFIX,
             List.of(),
-            ServerConfiguration.DEFAULT_REGISTRATION_TIMEOUT_SECONDS);
+            ServerConfiguration.DEFAULT_REGISTRATION_TIMEOUT_SECONDS,
+            null,
+            null,
+            null,
+            null);
     registry.attachContext(
         new ServerContext(
             nicknameRegistry,

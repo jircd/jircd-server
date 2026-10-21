@@ -58,6 +58,46 @@ public final class Replies {
   }
 
   /**
+   * Sends a numeric whose last parameter is free text of unknown length (an administrator's MOTD
+   * line, say), cut on a code-point boundary so the line fits the 512-byte limit. Line breaks and
+   * NUL in the text become spaces, since they would end or corrupt the wire line.
+   */
+  public static void sendFitted(
+      ClientSession session,
+      String serverName,
+      NumericReply numeric,
+      List<String> fixedParams,
+      String text) {
+    List<String> params = new ArrayList<>();
+    params.add(target(session));
+    params.addAll(fixedParams);
+    params.add("");
+    int budget =
+        MessageSerializer.MAX_COMMAND_BYTES
+            - MessageSerializer.commandBytes(
+                new Message(Map.of(), serverName, null, numeric.wireCode(), params));
+    StringBuilder fitted = new StringBuilder();
+    int used = 0;
+    for (int i = 0; i < text.length(); ) {
+      int cp = text.codePointAt(i);
+      i += Character.charCount(cp);
+      String ch = (cp == '\r' || cp == '\n' || cp == 0) ? " " : Character.toString(cp);
+      int bytes = MessageSerializer.utf8Bytes(ch);
+      if (used + bytes > budget) {
+        break;
+      }
+      fitted.append(ch);
+      used += bytes;
+    }
+    params.set(params.size() - 1, fitted.toString());
+    if (session.writer() != null) {
+      session
+          .writer()
+          .enqueueRaw(new Message(Map.of(), serverName, null, numeric.wireCode(), params));
+    }
+  }
+
+  /**
    * Sends a space-separated list across byte-budgeted numeric replies, including an empty list.
    * Unrepresentable headers and indivisible items are logged and skipped; later items still send.
    */

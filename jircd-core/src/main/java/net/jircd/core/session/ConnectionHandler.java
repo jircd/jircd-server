@@ -112,7 +112,13 @@ public final class ConnectionHandler {
   /** Commands valid before registration completes (FR-001, FR-060, FR-039, FR-006). */
   private static final java.util.Set<Command> PRE_REGISTRATION_COMMANDS =
       java.util.Set.of(
-          Command.NICK, Command.USER, Command.CAP, Command.PING, Command.PONG, Command.QUIT);
+          Command.PASS,
+          Command.NICK,
+          Command.USER,
+          Command.CAP,
+          Command.PING,
+          Command.PONG,
+          Command.QUIT);
 
   /** Reasonable, industry-standard keep-alive response-timeout default (FR-039). */
   private static final Duration KEEP_ALIVE_TIMEOUT = Duration.ofSeconds(10);

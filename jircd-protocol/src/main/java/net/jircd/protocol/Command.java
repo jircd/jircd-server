@@ -73,7 +73,9 @@ public enum Command {
   EXTENSION,
   WHOHOST,
   SAJOIN,
-  SAMODE;
+  SAMODE,
+  HELP,
+  HELPOP;
 
   /**
    * Resolves a wire command token to its {@link Command}, matched case-insensitively (FR-015 —
