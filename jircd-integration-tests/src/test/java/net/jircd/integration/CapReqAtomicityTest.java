@@ -34,8 +34,13 @@ class CapReqAtomicityTest {
         RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
       alice.send("CAP REQ :echo-message batch labeled-response");
-      String nak = alice.readUntil("CAP * NAK", TIMEOUT);
-      assertThat(nak).contains("CAP * NAK :echo-message batch labeled-response");
+      var lines = alice.readThroughPong(TIMEOUT);
+      assertThat(lines).filteredOn(l -> l.contains(" ACK")).isEmpty();
+      assertThat(lines)
+          .filteredOn(l -> l.contains("CAP * NAK"))
+          .singleElement()
+          .asString()
+          .contains("CAP * NAK :echo-message batch labeled-response");
 
       alice.send("CAP LIST");
       String list = alice.readUntil("CAP * LIST", TIMEOUT);
@@ -49,8 +54,13 @@ class CapReqAtomicityTest {
         RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
       alice.send("CAP REQ :message-tags echo-message");
-      String ack = alice.readUntil("CAP * ACK", TIMEOUT);
-      assertThat(ack).contains("CAP * ACK :message-tags echo-message");
+      var lines = alice.readThroughPong(TIMEOUT);
+      assertThat(lines).filteredOn(l -> l.contains(" NAK")).isEmpty();
+      assertThat(lines)
+          .filteredOn(l -> l.contains("CAP * ACK"))
+          .singleElement()
+          .asString()
+          .contains("CAP * ACK :message-tags echo-message");
     }
   }
 
@@ -63,8 +73,13 @@ class CapReqAtomicityTest {
       alice.readUntil("CAP * ACK", TIMEOUT);
 
       alice.send("CAP REQ :echo-message -message-tags");
-      String ack = alice.readUntil("CAP * ACK", TIMEOUT);
-      assertThat(ack).contains("CAP * ACK :echo-message -message-tags");
+      var lines = alice.readThroughPong(TIMEOUT);
+      assertThat(lines).filteredOn(l -> l.contains(" NAK")).isEmpty();
+      assertThat(lines)
+          .filteredOn(l -> l.contains("CAP * ACK"))
+          .singleElement()
+          .asString()
+          .contains("CAP * ACK :echo-message -message-tags");
 
       alice.send("CAP LIST");
       String list = alice.readUntil("CAP * LIST", TIMEOUT);
@@ -78,7 +93,13 @@ class CapReqAtomicityTest {
         RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
       alice.send("CAP REQ :echo-message -nope");
-      assertThat(alice.readUntil("CAP * NAK", TIMEOUT)).contains(":echo-message -nope");
+      var lines = alice.readThroughPong(TIMEOUT);
+      assertThat(lines).filteredOn(l -> l.contains(" ACK")).isEmpty();
+      assertThat(lines)
+          .filteredOn(l -> l.contains("CAP * NAK"))
+          .singleElement()
+          .asString()
+          .contains(":echo-message -nope");
 
       alice.send("CAP LIST");
       assertThat(alice.readUntil("CAP * LIST", TIMEOUT)).doesNotContain("echo-message");
@@ -93,16 +114,59 @@ class CapReqAtomicityTest {
       alice.registerAndAwaitWelcome("alice", "alice");
 
       alice.send("CAP REQ :echo-message");
-      alice.readUntil("CAP alice ACK", TIMEOUT);
+      assertThat(alice.readThroughPong(TIMEOUT))
+          .filteredOn(l -> l.contains("CAP "))
+          .singleElement()
+          .asString()
+          .contains("CAP alice ACK");
 
       alice.send("CAP REQ :bogus");
-      alice.readUntil("CAP alice NAK", TIMEOUT);
+      assertThat(alice.readThroughPong(TIMEOUT))
+          .filteredOn(l -> l.contains("CAP "))
+          .singleElement()
+          .asString()
+          .contains("CAP alice NAK");
 
       alice.send("CAP LIST");
       assertThat(alice.readUntil("CAP alice LIST", TIMEOUT)).contains("echo-message");
 
       alice.send("CAP LS");
       alice.readUntil("CAP alice LS", TIMEOUT);
+    }
+  }
+
+  @Test
+  void emptyRequestIsNakedWithAnEmptyListAndChangesNothing() throws Exception {
+    try (TestServer server = TestServer.start(TestServer.ALL_CAPABILITIES_ENABLED_YAML);
+        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+
+      alice.send("CAP REQ :message-tags");
+      alice.readUntil("CAP * ACK", TIMEOUT);
+
+      alice.send("CAP REQ :");
+      alice.send("CAP REQ");
+      var lines = alice.readThroughPong(TIMEOUT);
+      assertThat(lines).filteredOn(l -> l.contains(" ACK")).isEmpty();
+      assertThat(lines).filteredOn(l -> l.contains("CAP * NAK")).hasSize(2);
+
+      alice.send("CAP LIST");
+      assertThat(alice.readUntil("CAP * LIST", TIMEOUT)).contains("message-tags");
+    }
+  }
+
+  @Test
+  void replyThatCannotFitIn512BytesGets417AndChangesNothing() throws Exception {
+    try (TestServer server = TestServer.start(TestServer.ALL_CAPABILITIES_ENABLED_YAML);
+        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+
+      // 38 x "echo-message" fits inbound (504 bytes) but the echoed ACK, with its prefix, does not.
+      alice.send("CAP REQ :" + String.join(" ", java.util.Collections.nCopies(38, "echo-message")));
+      var lines = alice.readThroughPong(TIMEOUT);
+      assertThat(lines).filteredOn(l -> l.contains(" CAP ")).isEmpty();
+      assertThat(lines).filteredOn(l -> l.contains(" 417 ")).hasSize(1);
+
+      alice.send("CAP LIST");
+      assertThat(alice.readUntil("CAP * LIST", TIMEOUT)).doesNotContain("echo-message");
     }
   }
 }

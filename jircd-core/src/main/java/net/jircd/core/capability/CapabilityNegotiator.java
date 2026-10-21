@@ -15,6 +15,7 @@
  */
 package net.jircd.core.capability;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import net.jircd.core.extension.ExtensionRegistry;
@@ -44,27 +45,39 @@ public final class CapabilityNegotiator {
   }
 
   /**
-   * Applies a {@code CAP REQ} atomically: every name is validated against the live offered list
-   * first (a {@code -name} removal is validated by its bare name), and the session changes only if
-   * all of them pass. Returns whether the request was accepted; the {@code ACK}/{@code NAK} echo is
-   * the caller's, built from the client's original list so it keeps order and duplicates
-   * (005-fix-batch-conformance FR-009).
+   * Whether every requested name (a {@code -name} removal is checked by its bare name) is currently
+   * offered. Changes nothing, so the caller can size the reply before committing.
+   */
+  public boolean isAcceptable(List<String> requested) {
+    Set<String> offered = new HashSet<>(currentlyOfferedCapabilityNames());
+    return requested.stream().allMatch(name -> offered.contains(bareName(name)));
+  }
+
+  /**
+   * Applies a {@code CAP REQ} atomically: the session changes only if {@link #isAcceptable}, and
+   * then through one swap of the whole negotiated set. Returns whether the request was accepted;
+   * the {@code ACK}/{@code NAK} echo is the caller's, built from the client's original list so it
+   * keeps order and duplicates (005-fix-batch-conformance FR-009).
    */
   public boolean request(ClientSession session, List<String> requested) {
-    Set<String> offered = Set.copyOf(currentlyOfferedCapabilityNames());
-    for (String name : requested) {
-      if (!offered.contains(bareName(name))) {
-        return false;
-      }
+    if (!isAcceptable(requested)) {
+      return false;
     }
+    apply(session, requested);
+    return true;
+  }
+
+  /** Applies already-validated additions and removals as a single set replacement. */
+  public void apply(ClientSession session, List<String> requested) {
+    Set<String> updated = new HashSet<>(session.negotiatedCapabilities());
     for (String name : requested) {
       if (isRemoval(name)) {
-        session.negotiatedCapabilities().remove(bareName(name));
+        updated.remove(bareName(name));
       } else {
-        session.negotiatedCapabilities().add(name);
+        updated.add(name);
       }
     }
-    return true;
+    session.replaceNegotiatedCapabilities(updated);
   }
 
   private static boolean isRemoval(String name) {

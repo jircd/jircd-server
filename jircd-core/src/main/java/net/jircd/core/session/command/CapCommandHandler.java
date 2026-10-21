@@ -21,6 +21,7 @@ import net.jircd.core.capability.CapabilityNegotiator;
 import net.jircd.core.session.ClientSession;
 import net.jircd.protocol.CapabilityNegotiationGrammar;
 import net.jircd.protocol.Message;
+import net.jircd.protocol.MessageSerializer;
 import net.jircd.protocol.NumericReply;
 
 /**
@@ -76,31 +77,43 @@ public final class CapCommandHandler implements CommandHandler {
     enqueue(
         session,
         CapabilityNegotiationGrammar.ls(
-            serverName.get(), target(session), negotiator.currentlyOfferedCapabilityNames()));
+            serverName.get(),
+            Replies.target(session),
+            negotiator.currentlyOfferedCapabilityNames()));
   }
 
   private void handleList(ClientSession session) {
     enqueue(
         session,
         CapabilityNegotiationGrammar.list(
-            serverName.get(), target(session), List.copyOf(session.negotiatedCapabilities())));
+            serverName.get(),
+            Replies.target(session),
+            List.copyOf(session.negotiatedCapabilities())));
   }
 
+  /**
+   * The reply is built and size-checked before any state changes: an echo that cannot fit the
+   * 512-byte outbound limit would be dropped by the writer after the change, leaving the client
+   * unaware of it, so that case gets {@code 417} and changes nothing. An empty request is never
+   * ACKed.
+   */
   private void handleReq(ClientSession session, Message message) {
     List<String> requested = CapabilityNegotiationGrammar.parseCapabilityList(message);
-    String target = target(session);
-    boolean accepted = negotiator.request(session, requested);
-    enqueue(
-        session,
+    String target = Replies.target(session);
+    boolean accepted = !requested.isEmpty() && negotiator.isAcceptable(requested);
+    Message reply =
         accepted
             ? CapabilityNegotiationGrammar.ack(serverName.get(), target, requested)
-            : CapabilityNegotiationGrammar.nak(serverName.get(), target, requested));
-  }
-
-  /** The client's nickname once it has one, else {@code *}. */
-  private static String target(ClientSession session) {
-    String nickname = session.nickname();
-    return nickname == null ? "*" : nickname;
+            : CapabilityNegotiationGrammar.nak(serverName.get(), target, requested);
+    if (MessageSerializer.commandBytes(reply) > MessageSerializer.MAX_COMMAND_BYTES) {
+      Replies.send(
+          session, serverName.get(), NumericReply.ERR_INPUTTOOLONG, "Input line was too long");
+      return;
+    }
+    if (accepted) {
+      negotiator.apply(session, requested);
+    }
+    enqueue(session, reply);
   }
 
   private void handleEnd(ClientSession session) {

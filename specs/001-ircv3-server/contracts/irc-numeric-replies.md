@@ -85,8 +85,8 @@ during that window.
 | `482` | `ERR_CHANOPRIVSNEEDED` | `KICK`/`MODE` attempted by a non-operator; `INVITE` on an `invite-only` channel by a non-operator member (FR-065) | FR-014, FR-065 |
 | `501` | `ERR_UMODEUNKNOWNFLAG` | `MODE <nickname>` given a flag letter no currently-recognized `UserMode` defines (FR-044) | FR-044 |
 | `502` | `ERR_USERSDONTMATCH` | `MODE <nickname>` (query or set) naming a nickname other than the sender's own current one — self-only in this release (FR-044) | FR-044 |
-| `CAP * LS` | (IRCv3, not a numeric) | `CAP LS` | FR-006 |
-| `CAP * ACK` / `CAP * NAK` | (IRCv3) | `CAP REQ` | FR-007 |
+| `CAP <nick\|*> LS` | (IRCv3, not a numeric) | `CAP LS` (target is the nick once set, else `*`) | FR-006 |
+| `CAP <nick\|*> ACK` / `CAP <nick\|*> NAK` | (IRCv3) | `CAP REQ` (target is the nick once set, else `*`) | FR-007 |
 
 ## Full Numeric Catalog (`jircd-protocol` — Wire-Protocol Recognition)
 
