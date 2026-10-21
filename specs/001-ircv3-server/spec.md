@@ -1200,7 +1200,17 @@ their presented (not real) hostname.
   interval (administrator-configurable since 009-connection-monitoring-log),
   this specific ceiling is a fixed value, not administrator-configurable
   — see Assumptions for why a ban list gets a hard number where those
-  others don't.
+  others don't. The operator MUST also be able to maintain two exception
+  lists: `e` (ban exceptions) and `I` (invite exceptions), using the same
+  partial-mask normalization, casefolding and matching rules as `b`, with
+  independent 100-entry caps. A matching `e` mask against either presented
+  or real identity exempts that identity from `b` for both JOIN and channel
+  SEND. A matching `I` mask bypasses `invite-only` (`+i`) only; it MUST NOT
+  bypass a channel key (`+k`) or user limit (`+l`). Existing JOIN/SEND
+  latency budgets remain unchanged; each relevant list scan is bounded to
+  100 masks. `MODE <channel> e`/`I` list queries use `348`/`349` and
+  `346`/`347`, respectively. ISUPPORT advertises `EXCEPTS=e`, `INVEX=I`,
+  `MAXLIST=Ibe:100`, and catalog-derived `CHANMODES=Ibe,k,l,imnpst`.
 - **FR-064**: The server's channel `MODE` command MUST accept multiple
   mode-flag changes in a single invocation — multiple letters after one
   sign (e.g., `+bbb` naming three ban masks), multiple signed groups in

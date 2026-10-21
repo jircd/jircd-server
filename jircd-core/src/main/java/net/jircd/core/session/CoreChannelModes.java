@@ -50,6 +50,10 @@ public final class CoreChannelModes {
           ChannelMode.Kind.LIST,
           Set.of(GateAction.SEND, GateAction.JOIN),
           ChannelMode.CORE);
+  public static final ChannelMode BAN_EXCEPTION =
+      new ChannelMode("ban-exception", 'e', ChannelMode.Kind.LIST, Set.of(), ChannelMode.CORE);
+  public static final ChannelMode INVITE_EXCEPTION =
+      new ChannelMode("invite-exception", 'I', ChannelMode.Kind.LIST, Set.of(), ChannelMode.CORE);
   public static final ChannelMode OPERATOR =
       new ChannelMode("operator", 'o', ChannelMode.Kind.MEMBER, Set.of(), ChannelMode.CORE);
   public static final ChannelMode VOICE =
@@ -96,6 +100,8 @@ public final class CoreChannelModes {
           new LinkedHashSet<>(
               Set.of(
                   BAN_MASK,
+                  BAN_EXCEPTION,
+                  INVITE_EXCEPTION,
                   INVITE_ONLY,
                   MODERATED,
                   MEMBERS_ONLY,

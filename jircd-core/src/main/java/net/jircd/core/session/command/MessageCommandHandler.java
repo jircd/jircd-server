@@ -28,7 +28,6 @@ import net.jircd.core.session.NicknameRegistry;
 import net.jircd.core.session.OutboundMessage;
 import net.jircd.core.session.PresentedIdentity;
 import net.jircd.protocol.Hostmask;
-import net.jircd.protocol.NickMask;
 import net.jircd.protocol.NumericReply;
 
 /**
@@ -213,11 +212,8 @@ public final class MessageCommandHandler implements CommandHandler {
     if (!channel.bans().isEmpty()) {
       String presented = PresentedIdentity.presentedForm(session, extensionRegistry);
       String real = Hostmask.format(session.nickname(), session.ident(), session.realHostname());
-      for (var ban : channel.bans()) {
-        if (NickMask.matches(presented, ban.mask()) || NickMask.matches(real, ban.mask())) {
-          return false;
-        }
-      }
+      return !channel.matchesMask(CoreChannelModes.BAN_MASK, presented, real)
+          || channel.matchesMask(CoreChannelModes.BAN_EXCEPTION, presented, real);
     }
     return true;
   }
