@@ -146,8 +146,10 @@ class ConnectionLimitsTest {
           Thread acceptor = Thread.ofVirtual().start(() -> handler.accept(socket));
           firstBatch.acceptors.add(acceptor);
           // accept must return while the rejection write is still blocked.
-          assertThat(acceptor.join(Duration.ofMillis(200))).isTrue();
+          assertThat(acceptor.join(Duration.ofSeconds(10))).isTrue();
           assertThat(socket.writing.await(5, TimeUnit.SECONDS)).isTrue();
+          assertThat(release.getCount()).isEqualTo(1);
+          assertThat(socket.worker.get()).isNotEqualTo(acceptor);
         }
         handler.accept(overflow);
         assertThat(overflow.isClosed()).isTrue();

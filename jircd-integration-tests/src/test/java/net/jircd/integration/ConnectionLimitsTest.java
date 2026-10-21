@@ -16,10 +16,10 @@
 package net.jircd.integration;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import java.net.Socket;
-import java.net.SocketTimeoutException;
+import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
+import java.nio.channels.SocketChannel;
 import java.nio.file.Files;
 import java.time.Duration;
 import java.util.concurrent.atomic.AtomicReference;
@@ -95,42 +95,43 @@ class ConnectionLimitsTest {
     }
   }
 
-  // The loop's socket aliases are borrowed from the four try-with-resources declarations below.
+  // The loop's channel aliases are borrowed from the four try-with-resources declarations below.
   @SuppressWarnings("PMD.CloseResource")
   @Test
   void silentTlsRejectionsDoNotDelayAValidTlsClient() throws Exception {
     AtomicReference<Thread> owner = new AtomicReference<>();
     try (LogCapture logs = new LogCapture(SecurityEventLog.class);
         TestServer server =
-            TestServer.start("maxConnections: 1\n", socket -> owner.set(Thread.currentThread()));
+            TestServer.start(
+                "maxConnections: 1\n",
+                socket -> owner.set(Thread.currentThread()),
+                Duration.ofSeconds(30));
         RawIrcClient first = RawIrcClient.connectTls(server.tlsPort())) {
-      // Warm up TLS before measuring admission; this connection occupies the sole slot.
       first.registerAndAwaitWelcome("first", "first");
       Thread firstOwner = owner.get();
-      long started = System.nanoTime();
-      try (Socket silent1 = new Socket(TestServer.LOOPBACK, server.tlsPort());
-          Socket silent2 = new Socket(TestServer.LOOPBACK, server.tlsPort());
-          Socket silent3 = new Socket(TestServer.LOOPBACK, server.tlsPort());
-          Socket silent4 = new Socket(TestServer.LOOPBACK, server.tlsPort())) {
+      InetSocketAddress address = new InetSocketAddress(TestServer.LOOPBACK, server.tlsPort());
+      try (SocketChannel silent1 = SocketChannel.open(address);
+          SocketChannel silent2 = SocketChannel.open(address);
+          SocketChannel silent3 = SocketChannel.open(address);
+          SocketChannel silent4 = SocketChannel.open(address)) {
         logs.awaitMessage(
             message ->
                 logs.messages().stream()
-                        .filter(line -> line.contains("security-event=connection-limit"))
+                        .filter(line -> line.startsWith("security-event=connection-limit "))
                         .count()
                     == 4,
-            Duration.ofMillis(200));
+            WAIT);
         first.close();
-        assertThat(firstOwner.join(Duration.ofMillis(200))).isTrue();
+        assertThat(firstOwner.join(Duration.ofSeconds(10))).isTrue();
         try (RawIrcClient valid = RawIrcClient.connectTls(server.tlsPort())) {
           valid.registerAndAwaitWelcome("valid", "valid");
-          assertThat(Duration.ofNanos(System.nanoTime() - started))
-              .isLessThan(Duration.ofMillis(200));
-        }
-        // All four rejected peers must still be pending, rather than having timed out in series.
-        for (Socket silent : java.util.List.of(silent1, silent2, silent3, silent4)) {
-          silent.setSoTimeout(1);
-          assertThatThrownBy(() -> silent.getInputStream().read())
-              .isInstanceOf(SocketTimeoutException.class);
+          // No ClientHello was sent: each rejected peer must still be open and awaiting input.
+          // A nonblocking zero-byte read distinguishes that state from EOF without a timed probe.
+          for (SocketChannel silent : java.util.List.of(silent1, silent2, silent3, silent4)) {
+            silent.configureBlocking(false);
+            assertThat(silent.isOpen()).isTrue();
+            assertThat(silent.read(ByteBuffer.allocate(1))).isZero();
+          }
         }
       }
     }

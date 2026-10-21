@@ -15,11 +15,24 @@
  */
 package net.jircd.server;
 
+import java.io.IOException;
+import java.net.Socket;
+import java.nio.file.Path;
+import java.time.Duration;
+import java.util.function.Consumer;
+import net.jircd.core.config.ConfigurationException;
 import net.jircd.core.session.ConnectionHandler;
 
 /** Test-only bridge to package-private application lifecycle seams. */
 public final class JircdServerTestAccess {
   private JircdServerTestAccess() {}
+
+  /** Constructs an application with a test-only rejection deadline. */
+  public static JircdServerApplication createApplication(
+      Path configPath, Consumer<Socket> acceptedSocketCustomizer, Duration rejectionDeadline)
+      throws ConfigurationException, IOException {
+    return new JircdServerApplication(configPath, acceptedSocketCustomizer, rejectionDeadline);
+  }
 
   /** Returns the handler for controlled acceptance and drain lifecycle tests. */
   public static ConnectionHandler connectionHandler(JircdServerApplication application) {

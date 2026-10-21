@@ -53,16 +53,17 @@ class ConnectionAdmissionLoggingTest {
       // All rejection workers are blocked inside the appender. The next drops must only count.
       for (int i = 0; i < 20; i++) {
         Socket dropped = pending.open(server.tlsPort());
-        dropped.setSoTimeout(200);
+        dropped.setSoTimeout(5000);
         assertThat(dropped.getInputStream().read()).isEqualTo(-1);
       }
-      long started = System.nanoTime();
       first.close();
-      assertThat(firstOwner.join(Duration.ofMillis(200))).isTrue();
+      assertThat(firstOwner.join(Duration.ofSeconds(10))).isTrue();
       try (RawIrcClient valid = RawIrcClient.connectTls(server.tlsPort())) {
         valid.registerAndAwaitWelcome("valid", "valid");
-        assertThat(Duration.ofNanos(System.nanoTime() - started))
-            .isLessThan(Duration.ofMillis(200));
+        // Registration completed before any blocked rejection log was allowed to return.
+        assertThat(logs.release.getCount()).isEqualTo(1);
+        assertThat(logs.allWorkersLogging.getCount()).isZero();
+        assertThat(logs.individualEvents.get()).isEqualTo(64);
       }
       assertThat(logs.summaries.poll(3, TimeUnit.SECONDS))
           .isEqualTo("security-event=connection-limit-suppressed count=20");

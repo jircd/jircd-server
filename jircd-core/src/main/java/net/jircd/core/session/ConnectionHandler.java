@@ -69,6 +69,9 @@ public final class ConnectionHandler {
 
   private static final Logger LOG = LoggerFactory.getLogger(ConnectionHandler.class);
 
+  /** Production rejection deadline; tests can override it through {@link Settings}. */
+  public static final Duration DEFAULT_REJECTION_DEADLINE = Duration.ofSeconds(1);
+
   // A TLS error write implicitly handshakes. Bound the entire rejection, even if a peer drips
   // handshake bytes or never reads. One shared daemon timer bounds the rejection workers.
   private static final ScheduledThreadPoolExecutor REJECTION_TIMER =
@@ -125,6 +128,7 @@ public final class ConnectionHandler {
   // Guarded by this, together with admission and connection removal.
   private final Map<String, Integer> connectionsPerBucket = new HashMap<>();
   private final ThreadFactory workers;
+  private final Duration rejectionDeadline;
   private final SuppressedConnectionLog suppressedLog =
       new SuppressedConnectionLog(
           SUPPRESSED_LOG_TIMER, SecurityEventLog::connectionLimitSuppressed);
@@ -153,17 +157,35 @@ public final class ConnectionHandler {
         socket -> {});
   }
 
-  /** Reloadable settings supplied by the current configuration for each new connection. */
+  /** Live configuration suppliers and a test-overridable rejection deadline. */
   public record Settings(
       Supplier<ServerConfiguration.RateLimit> rateLimit,
       Supplier<Integer> keepAliveFrequencySeconds,
       Supplier<Integer> sendqLimitBytes,
-      Supplier<ServerConfiguration.ConnectionLimits> connectionLimits) {
+      Supplier<ServerConfiguration.ConnectionLimits> connectionLimits,
+      Duration rejectionDeadline) {
+    /** Uses the production one-second rejection deadline. */
+    public Settings(
+        Supplier<ServerConfiguration.RateLimit> rateLimit,
+        Supplier<Integer> keepAliveFrequencySeconds,
+        Supplier<Integer> sendqLimitBytes,
+        Supplier<ServerConfiguration.ConnectionLimits> connectionLimits) {
+      this(
+          rateLimit,
+          keepAliveFrequencySeconds,
+          sendqLimitBytes,
+          connectionLimits,
+          DEFAULT_REJECTION_DEADLINE);
+    }
+
     public Settings {
       java.util.Objects.requireNonNull(rateLimit);
       java.util.Objects.requireNonNull(keepAliveFrequencySeconds);
       java.util.Objects.requireNonNull(sendqLimitBytes);
       java.util.Objects.requireNonNull(connectionLimits);
+      java.util.Objects.requireNonNull(rejectionDeadline);
+      if (rejectionDeadline.isZero() || rejectionDeadline.isNegative())
+        throw new IllegalArgumentException("rejectionDeadline must be positive");
     }
   }
 
@@ -216,6 +238,7 @@ public final class ConnectionHandler {
       Consumer<Socket> acceptedSocketCustomizer,
       ThreadFactory workers) {
     this.workers = java.util.Objects.requireNonNull(workers);
+    this.rejectionDeadline = settings.rejectionDeadline();
     this.connectionLimits = settings.connectionLimits();
     this.acceptedSocketCustomizer = java.util.Objects.requireNonNull(acceptedSocketCustomizer);
     this.extensionRegistry = extensionRegistry;
@@ -338,9 +361,11 @@ public final class ConnectionHandler {
     connectionsPerBucket.computeIfPresent(bucket, (_, count) -> count == 1 ? null : count - 1);
   }
 
-  private static void rejectConnection(
+  private void rejectConnection(
       Socket socket, String remoteAddress, String exceeded, String bucket, int appliedLimit) {
-    var deadline = REJECTION_TIMER.schedule(() -> closeQuietly(socket), 1, TimeUnit.SECONDS);
+    var deadline =
+        REJECTION_TIMER.schedule(
+            () -> closeQuietly(socket), rejectionDeadline.toNanos(), TimeUnit.NANOSECONDS);
     try {
       SecurityEventLog.connectionLimit(remoteAddress, exceeded, bucket, appliedLimit);
       socket
