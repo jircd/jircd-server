@@ -75,6 +75,15 @@ public final class DisconnectCleanup {
     if (!session.lifecycle().closeIfNotAlreadyClosing()) {
       return;
     }
+    cleanupClaimed(session, reason);
+  }
+
+  /**
+   * Runs the cleanup for a session whose caller has already claimed CLOSING itself (for example
+   * {@link ConnectionLifecycle#closeIfUnregistered()}), so that nothing can complete registration
+   * between the claim and the final lines it queued.
+   */
+  public void cleanupClaimed(ClientSession session, String reason) {
     afterClaim.run();
     ConnectionMonitorLog.disconnected(
         session.connectionId(),

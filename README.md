@@ -172,6 +172,19 @@ connections are not moved into the new buckets. Lowering a limit below a bucket'
 current usage blocks new connections to that bucket until usage falls below it. Raise the
 per-IP limit for deployments with many clients behind one NAT and for localhost load tests.
 
+### Registration timeout
+
+```yaml
+registrationTimeoutSeconds: 60   # positive integer, 1-3600
+```
+
+A connection that has not completed registration within this many seconds of being
+accepted receives `ERROR :Registration timeout` and is closed. Registration means
+`NICK` and `USER` plus, if the client started capability negotiation, `CAP END`: a
+client parked after `CAP LS` counts as unregistered. Answering `PING`s does not extend
+the deadline. A registered client is never affected. A reload applies to connections
+accepted afterwards only.
+
 ### Listener accept backlog
 
 Each plaintext or TLS listener accepts an optional positive integer `backlog`,

@@ -42,7 +42,8 @@ public record ServerConfiguration(
     int maxConnections,
     int maxConnectionsPerIp,
     int ipv6ConnectionLimitPrefix,
-    List<ConnectionLimitPolicy.AddressOverride> connectionLimitOverrides) {
+    List<ConnectionLimitPolicy.AddressOverride> connectionLimitOverrides,
+    int registrationTimeoutSeconds) {
 
   public ServerConfiguration {
     connectionLimitOverrides = List.copyOf(connectionLimitOverrides);
@@ -125,6 +126,12 @@ public record ServerConfiguration(
       this(maxConnections, maxConnectionsPerIp, DEFAULT_IPV6_CONNECTION_LIMIT_PREFIX, List.of());
     }
   }
+
+  /** Default time a connection has to complete registration before it is disconnected. */
+  public static final int DEFAULT_REGISTRATION_TIMEOUT_SECONDS = 60;
+
+  /** Upper bound for {@code registrationTimeoutSeconds}, one hour. */
+  public static final int REGISTRATION_TIMEOUT_CEILING_SECONDS = 3600;
 
   /** Default IPv6 counting prefix; /128 restores per-address counting. */
   public static final int DEFAULT_IPV6_CONNECTION_LIMIT_PREFIX = 64;

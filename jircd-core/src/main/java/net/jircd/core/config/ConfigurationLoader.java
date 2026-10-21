@@ -176,7 +176,12 @@ public final class ConfigurationLoader {
             "ipv6ConnectionLimitPrefix",
             ServerConfiguration.DEFAULT_IPV6_CONNECTION_LIMIT_PREFIX,
             128),
-        parseConnectionLimitOverrides(root));
+        parseConnectionLimitOverrides(root),
+        positiveIntWithinCeiling(
+            root,
+            "registrationTimeoutSeconds",
+            ServerConfiguration.DEFAULT_REGISTRATION_TIMEOUT_SECONDS,
+            ServerConfiguration.REGISTRATION_TIMEOUT_CEILING_SECONDS));
   }
 
   private static List<ConnectionLimitPolicy.AddressOverride> parseConnectionLimitOverrides(

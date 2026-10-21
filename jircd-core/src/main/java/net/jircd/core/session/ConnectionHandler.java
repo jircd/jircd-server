@@ -23,6 +23,7 @@ import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -124,6 +125,7 @@ public final class ConnectionHandler {
   private final Supplier<ServerConfiguration.RateLimit> rateLimit;
   private final Supplier<Integer> keepAliveFrequencySeconds;
   private final Supplier<Integer> sendqLimitBytes;
+  private final Supplier<Duration> registrationTimeout;
   private final Supplier<ServerConfiguration.ConnectionLimits> connectionLimits;
   // Guarded by this, together with admission and connection removal.
   private final Map<String, Integer> connectionsPerBucket = new HashMap<>();
@@ -157,14 +159,19 @@ public final class ConnectionHandler {
         socket -> {});
   }
 
-  /** Live configuration suppliers and a test-overridable rejection deadline. */
+  /**
+   * Live configuration suppliers and a test-overridable rejection deadline. {@code
+   * registrationTimeout} is read once per accepted connection, so a reload affects new connections
+   * only.
+   */
   public record Settings(
       Supplier<ServerConfiguration.RateLimit> rateLimit,
       Supplier<Integer> keepAliveFrequencySeconds,
       Supplier<Integer> sendqLimitBytes,
       Supplier<ServerConfiguration.ConnectionLimits> connectionLimits,
-      Duration rejectionDeadline) {
-    /** Uses the production one-second rejection deadline. */
+      Duration rejectionDeadline,
+      Supplier<Duration> registrationTimeout) {
+    /** Uses the production one-second rejection deadline and the default registration timeout. */
     public Settings(
         Supplier<ServerConfiguration.RateLimit> rateLimit,
         Supplier<Integer> keepAliveFrequencySeconds,
@@ -178,12 +185,29 @@ public final class ConnectionHandler {
           DEFAULT_REJECTION_DEADLINE);
     }
 
+    /** Uses the default registration timeout. */
+    public Settings(
+        Supplier<ServerConfiguration.RateLimit> rateLimit,
+        Supplier<Integer> keepAliveFrequencySeconds,
+        Supplier<Integer> sendqLimitBytes,
+        Supplier<ServerConfiguration.ConnectionLimits> connectionLimits,
+        Duration rejectionDeadline) {
+      this(
+          rateLimit,
+          keepAliveFrequencySeconds,
+          sendqLimitBytes,
+          connectionLimits,
+          rejectionDeadline,
+          () -> Duration.ofSeconds(ServerConfiguration.DEFAULT_REGISTRATION_TIMEOUT_SECONDS));
+    }
+
     public Settings {
       java.util.Objects.requireNonNull(rateLimit);
       java.util.Objects.requireNonNull(keepAliveFrequencySeconds);
       java.util.Objects.requireNonNull(sendqLimitBytes);
       java.util.Objects.requireNonNull(connectionLimits);
       java.util.Objects.requireNonNull(rejectionDeadline);
+      java.util.Objects.requireNonNull(registrationTimeout);
       if (rejectionDeadline.isZero() || rejectionDeadline.isNegative())
         throw new IllegalArgumentException("rejectionDeadline must be positive");
     }
@@ -247,6 +271,7 @@ public final class ConnectionHandler {
     this.rateLimit = settings.rateLimit();
     this.keepAliveFrequencySeconds = settings.keepAliveFrequencySeconds();
     this.sendqLimitBytes = settings.sendqLimitBytes();
+    this.registrationTimeout = settings.registrationTimeout();
     this.tagRenderer = new CapabilityTagRenderer(extensionRegistry);
   }
 
@@ -329,11 +354,18 @@ public final class ConnectionHandler {
       String connectionId = UUID.randomUUID().toString();
       // Capture the sendq budget at accept time, independently of subsequent reloads.
       int acceptedSendqLimit = sendqLimitBytes.get();
+      Duration acceptedRegistrationTimeout = registrationTimeout.get();
+      Instant acceptedAt = Clock.systemUTC().instant();
       connection =
           workers.newThread(
               () -> {
                 try {
-                  handleConnection(socket, connectionId, acceptedSendqLimit);
+                  handleConnection(
+                      socket,
+                      connectionId,
+                      acceptedSendqLimit,
+                      acceptedRegistrationTimeout,
+                      acceptedAt);
                 } finally {
                   try {
                     closeQuietly(socket);
@@ -419,7 +451,12 @@ public final class ConnectionHandler {
     }
   }
 
-  private void handleConnection(Socket socket, String connectionId, int sendqLimit) {
+  private void handleConnection(
+      Socket socket,
+      String connectionId,
+      int sendqLimit,
+      Duration registrationTimeout,
+      Instant acceptedAt) {
     acceptedSocketCustomizer.accept(socket);
     String remoteAddress =
         socket.getInetAddress() == null ? "unknown" : socket.getInetAddress().getHostAddress();
@@ -459,6 +496,8 @@ public final class ConnectionHandler {
             disconnectCleanup,
             Duration.ofSeconds(keepAliveFrequencySeconds.get()),
             KEEP_ALIVE_TIMEOUT,
+            registrationTimeout,
+            acceptedAt,
             Clock.systemUTC());
     session.attachLivenessMonitor(livenessMonitor);
     Thread liveness =
@@ -553,13 +592,15 @@ public final class ConnectionHandler {
    * disconnect triggered from another thread could leave the main thread blocked in {@code read()}
    * waiting for input that will never arrive. Sendq cleanup closes its socket directly after the
    * final drain; this loop remains the backstop for other disconnect triggers. Whenever the session
-   * becomes {@code CLOSING}, it closes the socket, unblocking the read loop's cleanup path.
+   * becomes {@code CLOSING}, it closes the socket, unblocking the read loop's cleanup path. It also
+   * wakes at the registration deadline of an unregistered session, so that deadline is not rounded
+   * up to the next tick; once the session registers, the loop falls back to the tick.
    */
   static void runLivenessLoop(
       ClientSession session, LivenessMonitor livenessMonitor, Socket socket) {
     while (!session.lifecycle().isClosing()) {
       try {
-        Thread.sleep(LIVENESS_CHECK_TICK);
+        Thread.sleep(livenessMonitor.nextCheckDelay(LIVENESS_CHECK_TICK));
       } catch (InterruptedException e) {
         Thread.currentThread().interrupt();
         break;

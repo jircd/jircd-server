@@ -58,8 +58,9 @@ public final class RegistrationCompletion {
         || session.isNegotiatingCapabilities()) {
       return;
     }
-    session.lifecycle().completeRegistration();
-    sendBurst(session);
+    if (session.lifecycle().completeRegistration()) {
+      sendBurst(session);
+    }
   }
 
   private void sendBurst(ClientSession session) {

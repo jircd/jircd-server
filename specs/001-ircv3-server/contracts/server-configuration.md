@@ -45,6 +45,7 @@ maxConnections: 10000    # optional — positive integer, maximum live connectio
 maxConnectionsPerIp: 20  # optional — positive integer, maximum live connections per client bucket
 ipv6ConnectionLimitPrefix: 64 # optional — integer 1-128; 128 means per IPv6 address
 connectionLimitOverrides: []  # optional — list, defaults to no overrides
+registrationTimeoutSeconds: 60  # optional — positive integer 1-3600, seconds a connection has to register
 # Example replacement for the empty list above:
 # connectionLimitOverrides:
 #   - cidr: 203.0.113.0/24
@@ -121,6 +122,13 @@ administratorCredentials:
   bucket selected by `ipv6ConnectionLimitPrefix` (default `64`, integer `1`-`128`).
   A value of `128` counts each IPv6 address separately. IPv4-mapped IPv6 clients
   normalize to IPv4 before both bucketing and override matching.
+- **Registration timeout (#73)**: `registrationTimeoutSeconds` defaults to `60` and
+  MUST be a positive YAML integer no greater than `3600`; anything else is rejected
+  naming the key. A connection that has not completed registration (`NICK`/`USER`
+  and, if capability negotiation was started, `CAP END`) within that many seconds of
+  being accepted receives `ERROR :Registration timeout` and is closed. `PING`/`PONG`
+  traffic does not extend the deadline. Registered connections are unaffected.
+  Reload applies to connections accepted afterwards only.
 - **Per-address overrides**: `connectionLimitOverrides` defaults to an empty list.
   Each entry MUST be a mapping with a string `cidr` and positive integer
   `maxConnectionsPerIp` (at most `2147483647`). CIDRs MUST use unscoped, unbracketed
