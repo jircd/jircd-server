@@ -77,7 +77,7 @@ public final class JircdServerApplication {
 
   private final NicknameRegistry nicknameRegistry = new NicknameRegistry();
   private final net.jircd.core.session.UserStatistics userStatistics =
-      new net.jircd.core.session.UserStatistics(nicknameRegistry);
+      new net.jircd.core.session.UserStatistics();
   private final ChannelRegistry channelRegistry = new ChannelRegistry();
   private final ExtensionRegistry extensionRegistry = new ExtensionRegistry();
   private final WhowasHistory whowasHistory;
@@ -141,7 +141,8 @@ public final class JircdServerApplication {
     this.reloader = new ConfigurationReloader(configPath, loader, extensionRegistry, configuration);
     this.whowasHistory = new WhowasHistory(() -> reloader.current().whowasHistorySize());
     this.disconnectCleanup =
-        new DisconnectCleanup(nicknameRegistry, channelRegistry, whowasHistory, extensionRegistry);
+        new DisconnectCleanup(
+            nicknameRegistry, channelRegistry, whowasHistory, extensionRegistry, userStatistics);
 
     this.connectionHandler =
         new ConnectionHandler(

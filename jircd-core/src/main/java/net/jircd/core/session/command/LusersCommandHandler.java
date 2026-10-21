@@ -59,8 +59,11 @@ public final class LusersCommandHandler implements CommandHandler {
   public void handle(ClientSession session, Message message) {
     String server = serverName.get();
     List<ClientSession> users =
-        nicknameRegistry.all().stream().filter(s -> s.lifecycle().isRegistered()).toList();
-    int clientCount = users.size();
+        nicknameRegistry.all().stream()
+            .distinct() // a rename briefly holds the session under both nickname keys
+            .filter(s -> s.lifecycle().isRegistered())
+            .toList();
+    int clientCount = Math.max(0, userStatistics.registeredCount());
     long invisibleCount =
         users.stream().filter(s -> s.userModes().contains(UserMode.INVISIBLE)).count();
     long operatorCount =

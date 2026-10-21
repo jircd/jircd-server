@@ -63,7 +63,7 @@ public final class RegistrationCompletion {
       return;
     }
     if (session.lifecycle().completeRegistration()) {
-      userStatistics.recordRegistration();
+      userStatistics.userRegistered();
       sendBurst(session);
     }
   }

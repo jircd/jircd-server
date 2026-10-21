@@ -491,6 +491,28 @@ public final class ConnectionHandler {
             socket instanceof javax.net.ssl.SSLSocket,
             socket.getInetAddress());
     liveSessions.add(session);
+    try {
+      serveSession(
+          session,
+          socket,
+          connectionId,
+          remoteAddress,
+          sendqLimit,
+          registrationTimeout,
+          acceptedAt);
+    } finally {
+      liveSessions.remove(session);
+    }
+  }
+
+  private void serveSession(
+      ClientSession session,
+      Socket socket,
+      String connectionId,
+      String remoteAddress,
+      int sendqLimit,
+      Duration registrationTimeout,
+      Instant acceptedAt) {
     ConnectionMonitorLog.connected(connectionId, remoteAddress);
     // Attached to the session and closed later via DisconnectCleanup, not in this method.
     @SuppressWarnings("PMD.CloseResource")
@@ -498,7 +520,6 @@ public final class ConnectionHandler {
     try {
       writer = new SessionWriter(session, socket.getOutputStream(), tagRenderer, sendqLimit);
     } catch (IOException e) {
-      liveSessions.remove(session);
       closeQuietly(socket);
       return;
     }
@@ -527,7 +548,6 @@ public final class ConnectionHandler {
       readCommands(session, socket);
     } finally {
       awaitTeardown(socket, liveness, writer, overflowCleanup);
-      liveSessions.remove(session);
     }
   }
 

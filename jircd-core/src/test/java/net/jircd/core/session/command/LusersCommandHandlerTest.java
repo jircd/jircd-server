@@ -43,7 +43,7 @@ final class LusersCommandHandlerTest {
 
   private final NicknameRegistry nicknames = new NicknameRegistry();
   private final ChannelRegistry channels = new ChannelRegistry();
-  private final UserStatistics statistics = new UserStatistics(nicknames);
+  private final UserStatistics statistics = new UserStatistics();
   private final AtomicInteger unregistered = new AtomicInteger();
   private final LusersCommandHandler handler =
       new LusersCommandHandler(nicknames, channels, statistics, unregistered::get, () -> "server");
@@ -79,6 +79,7 @@ final class LusersCommandHandlerTest {
     ClientSession carol = register("carol");
     for (ClientSession gone : List.of(bob, carol)) {
       gone.lifecycle().closeIfNotAlreadyClosing();
+      statistics.userLeft();
       nicknames.release(gone.nickname(), gone);
     }
 
@@ -134,13 +135,29 @@ final class LusersCommandHandlerTest {
         .isEqualTo("There are 1 users and 1 invisible on 1 servers");
   }
 
+  @Test
+  void aSessionPresentUnderTwoNicknameKeysDuringARenameIsCountedOnce() throws Exception {
+    ClientSession alice = register("alice");
+    alice.setUserMode(UserMode.INVISIBLE);
+    alice.grantAdministratorPrivilege();
+    // NickCommandHandler claims the new key before releasing the old one.
+    assertThat(nicknames.claim("alicia", alice)).isTrue();
+    assertThat(nicknames.all()).hasSize(2);
+
+    List<Message> replies = lusers(alice);
+
+    assertThat(byCode(replies, "251").params().getLast())
+        .isEqualTo("There are 1 users and 1 invisible on 1 servers");
+    assertThat(byCode(replies, "252").params()).containsExactly("alice", "1", "operator(s) online");
+  }
+
   private ClientSession register(String nick) {
     ClientSession session = newSession(nick);
     session.setNickname(nick);
     nicknames.claim(nick, session);
     session.setIdent(nick);
     assertThat(session.lifecycle().completeRegistration()).isTrue();
-    statistics.recordRegistration();
+    statistics.userRegistered();
     return session;
   }
 

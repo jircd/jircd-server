@@ -55,7 +55,7 @@ class NickAfterCloseTest {
                 "test",
                 java.time.Instant.now(),
                 extensions,
-                new net.jircd.core.session.UserStatistics(nicknames)),
+                new net.jircd.core.session.UserStatistics()),
             extensions);
     ClientSession session = new ClientSession("c1", "host.example", RateLimitBucket.withDefaults());
     session.setIdent("user"); // USER already processed: the NICK would complete registration

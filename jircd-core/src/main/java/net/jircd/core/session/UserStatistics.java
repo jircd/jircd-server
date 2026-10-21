@@ -18,32 +18,35 @@ package net.jircd.core.session;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Registered-user count and its high-water mark, for {@code LUSERS}' {@code RPL_LOCALUSERS} and
- * {@code RPL_GLOBALUSERS}. A session counts only once it is {@code REGISTERED}: a nickname claimed
- * before {@code USER} arrives, or by a connection that then times out, is not a user yet. The peak
- * is raised at each registration so a spike between two {@code LUSERS} queries is not lost.
+ * Registered-user count and its high-water mark, for {@code LUSERS}. The count moves exactly once
+ * per session: up when registration wins the {@code CONNECTING} to {@code REGISTERED} transition,
+ * down when disconnect cleanup claims {@code CLOSING} from {@code REGISTERED}. The peak is raised
+ * from the value that increment produced, so a count that was reached is never missed and no
+ * registry scan is needed. A disconnect racing its own registration may decrement before the
+ * increment lands; the counter is momentarily low but ends exact.
  */
 public final class UserStatistics {
 
-  private final NicknameRegistry nicknameRegistry;
+  private final AtomicInteger registered = new AtomicInteger();
   private final AtomicInteger peak = new AtomicInteger();
-
-  public UserStatistics(NicknameRegistry nicknameRegistry) {
-    this.nicknameRegistry = nicknameRegistry;
-  }
 
   /** Currently registered users. */
   public int registeredCount() {
-    return (int) nicknameRegistry.all().stream().filter(s -> s.lifecycle().isRegistered()).count();
+    return registered.get();
   }
 
-  /** Raises the high-water mark to the current registered count; call after a session registers. */
-  public void recordRegistration() {
-    peak.accumulateAndGet(registeredCount(), Math::max);
+  /** Call once for the session that won the transition to {@code REGISTERED}. */
+  public void userRegistered() {
+    peak.accumulateAndGet(registered.incrementAndGet(), Math::max);
+  }
+
+  /** Call once for a session that was {@code REGISTERED} when it claimed {@code CLOSING}. */
+  public void userLeft() {
+    registered.decrementAndGet();
   }
 
   /** The most registered users seen at once; never decreases. */
   public int peak() {
-    return peak.accumulateAndGet(registeredCount(), Math::max);
+    return peak.get();
   }
 }
