@@ -148,4 +148,100 @@ class LivenessMonitorTest {
 
     assertThat(session.lifecycle().isClosing()).isTrue();
   }
+
+  private LivenessMonitor registrationMonitor(MutableClock clock, ClientSession session) {
+    DisconnectCleanup cleanup =
+        new DisconnectCleanup(
+            new NicknameRegistry(),
+            new ChannelRegistry(),
+            new WhowasHistory(() -> 100),
+            new net.jircd.core.extension.ExtensionRegistry());
+    LivenessMonitor monitor =
+        new LivenessMonitor(
+            session,
+            cleanup,
+            Duration.ofSeconds(60),
+            Duration.ofSeconds(30),
+            Duration.ofSeconds(20),
+            clock);
+    session.attachLivenessMonitor(monitor);
+    return monitor;
+  }
+
+  @Test
+  void unregisteredSessionIsClosedOnceTheRegistrationTimeoutElapses() {
+    MutableClock clock = new MutableClock(Instant.now());
+    ClientSession session = newSession(clock);
+    LivenessMonitor monitor = registrationMonitor(clock, session);
+
+    clock.advance(Duration.ofSeconds(19));
+    monitor.checkNow();
+    assertThat(session.lifecycle().isClosing()).isFalse();
+
+    clock.advance(Duration.ofSeconds(1));
+    monitor.checkNow();
+    assertThat(session.lifecycle().isClosing()).isTrue();
+  }
+
+  @Test
+  void registeredSessionIsNotClosedByTheRegistrationTimeout() {
+    MutableClock clock = new MutableClock(Instant.now());
+    ClientSession session = newSession(clock);
+    LivenessMonitor monitor = registrationMonitor(clock, session);
+
+    session.lifecycle().completeRegistration();
+    clock.advance(Duration.ofSeconds(30));
+    monitor.checkNow();
+
+    assertThat(session.lifecycle().isClosing()).isFalse();
+  }
+
+  @Test
+  void answeringPingsDoesNotExtendTheRegistrationDeadline() {
+    MutableClock clock = new MutableClock(Instant.now());
+    ClientSession session = newSession(clock);
+    DisconnectCleanup cleanup =
+        new DisconnectCleanup(
+            new NicknameRegistry(),
+            new ChannelRegistry(),
+            new WhowasHistory(() -> 100),
+            new net.jircd.core.extension.ExtensionRegistry());
+    LivenessMonitor monitor =
+        new LivenessMonitor(
+            session,
+            cleanup,
+            Duration.ofSeconds(5),
+            Duration.ofSeconds(30),
+            Duration.ofSeconds(20),
+            clock);
+    session.attachLivenessMonitor(monitor);
+
+    for (int i = 0; i < 3; i++) {
+      clock.advance(Duration.ofSeconds(5));
+      monitor.checkNow(); // idle: sends PING
+      monitor.onPongReceived();
+    }
+    assertThat(session.lifecycle().isClosing()).isFalse();
+
+    clock.advance(Duration.ofSeconds(5));
+    monitor.checkNow();
+    assertThat(session.lifecycle().isClosing()).isTrue();
+  }
+
+  @Test
+  void nextCheckDelayWakesAtTheRegistrationDeadlineOnlyWhileUnregistered() {
+    MutableClock clock = new MutableClock(Instant.now());
+    ClientSession session = newSession(clock);
+    LivenessMonitor monitor = registrationMonitor(clock, session);
+    Duration tick = Duration.ofSeconds(5);
+
+    assertThat(monitor.nextCheckDelay(tick)).isEqualTo(tick);
+    clock.advance(Duration.ofSeconds(18));
+    assertThat(monitor.nextCheckDelay(tick)).isEqualTo(Duration.ofSeconds(2));
+    clock.advance(Duration.ofSeconds(5));
+    assertThat(monitor.nextCheckDelay(tick)).isEqualTo(Duration.ofMillis(1));
+
+    session.lifecycle().completeRegistration();
+    assertThat(monitor.nextCheckDelay(tick)).isEqualTo(tick);
+  }
 }

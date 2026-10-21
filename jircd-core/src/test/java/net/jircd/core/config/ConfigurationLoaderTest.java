@@ -205,6 +205,27 @@ class ConfigurationLoaderTest {
     assertThat(load("").sendqLimitBytes()).isEqualTo(524288);
   }
 
+  @Test
+  void registrationTimeoutDefaultsToSixtySeconds() throws Exception {
+    assertThat(load("").registrationTimeoutSeconds()).isEqualTo(60);
+  }
+
+  @ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(ints = {1, 30, 3600})
+  void registrationTimeoutAcceptsPositiveValues(int value) throws Exception {
+    assertThat(load("registrationTimeoutSeconds: " + value).registrationTimeoutSeconds())
+        .isEqualTo(value);
+  }
+
+  @ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(
+      strings = {"0", "-1", "3601", "soon", "1.5", "null", "'30'"})
+  void registrationTimeoutRejectsInvalidValues(String value) {
+    assertThatThrownBy(() -> load("registrationTimeoutSeconds: " + value))
+        .isInstanceOf(ConfigurationException.class)
+        .hasMessageContaining("registrationTimeoutSeconds");
+  }
+
   @ParameterizedTest
   @org.junit.jupiter.params.provider.ValueSource(ints = {16384, 524288, 2097152})
   void sendqLimitAcceptsValuesWithinBounds(int value) throws Exception {
