@@ -102,6 +102,13 @@ public final class JircdServerApplication {
    */
   public JircdServerApplication(Path configPath, Consumer<Socket> acceptedSocketCustomizer)
       throws ConfigurationException, IOException {
+    this(configPath, acceptedSocketCustomizer, ConnectionHandler.DEFAULT_REJECTION_DEADLINE);
+  }
+
+  /** Test-only deadline override, kept separate from the administrator configuration. */
+  JircdServerApplication(
+      Path configPath, Consumer<Socket> acceptedSocketCustomizer, Duration rejectionDeadline)
+      throws ConfigurationException, IOException {
     extensionRegistry.discover(Thread.currentThread().getContextClassLoader());
 
     Set<String> knownCapabilityIds =
@@ -139,9 +146,12 @@ public final class JircdServerApplication {
             extensionRegistry,
             disconnectCleanup,
             () -> serverName,
-            () -> reloader.current().rateLimit(),
-            () -> reloader.current().keepAliveFrequencySeconds(),
-            () -> reloader.current().sendqLimitBytes(),
+            new ConnectionHandler.Settings(
+                () -> reloader.current().rateLimit(),
+                () -> reloader.current().keepAliveFrequencySeconds(),
+                () -> reloader.current().sendqLimitBytes(),
+                () -> reloader.current().connectionLimits(),
+                rejectionDeadline),
             acceptedSocketCustomizer);
     registerStory1Handlers();
 

@@ -652,7 +652,7 @@ the exact recovery UX here).
 ## ServerConfiguration — *Aggregate Root, Server Extensibility (config) / Administration*
 
 The administrator-controlled settings loaded at startup and re-applied on
-extension state changes.
+configuration reload.
 
 | Field | Type | Notes |
 |---|---|---|
@@ -660,6 +660,10 @@ extension state changes.
 | `serverExtensionStates` | map of `ServerExtension` `id` → desired `state` | Config-file section `server-extensions`. Same reconciliation contract as `capabilityStates`, kept as a separate field because the two id spaces are validated against different `Extension` specializations (see Validation rules). |
 | `listeners` | list of {port, tlsEnabled, bindAddress?, backlog?, certPath?, keyPath?, keystorePath?, keystorePassword?} | Plaintext and/or TLS listeners (FR-018 — both may coexist). `bindAddress` is an optional literal IPv4/IPv6 address the listener binds instead of the wildcard address (contracts/server-configuration.md). `backlog` is an optional positive integer (1 through 2147483647), defaulting to `1024`; changes require a server restart to apply because reload does not rebind existing sockets (contracts/server-configuration.md). A `tls: true` listener MUST have exactly one certificate form configured — `certPath`+`keyPath` (PEM certificate/chain and private key) or `keystorePath`(+`keystorePassword`, PKCS12) — validated and loaded at startup, never both, never neither (004-fix-tls-certificate FR-001 through FR-006); a `tls: false` listener ignores any of the four fields if present. No certificate is ever generated automatically. |
 | `rateLimit` | {bucketSize, refillRate} | FR-016; see research.md "Rate limiting". |
+| `maxConnections` | positive integer | YAML `maxConnections`, defaults to `10000`, range `1`-`2147483647`. Total live registered/unregistered connections shared by every plaintext/TLS listener. Reload gates new accepts only. |
+| `maxConnectionsPerIp` | positive integer | YAML `maxConnectionsPerIp`, defaults to `20`, range `1`-`2147483647`. Default threshold per client bucket: IPv4 /32 or the configured IPv6 prefix. Reload gates new accepts only; existing counts remain. |
+| `ipv6ConnectionLimitPrefix` | integer, `1`-`128` | Same YAML key; defaults to `64`. IPv6 counting prefix (`128` means per address). IPv4-mapped IPv6 clients normalize to IPv4 before matching and bucketing. Reload affects new reservations; each existing connection releases its original bucket key. |
+| `connectionLimitOverrides` | list of {cidr, maxConnectionsPerIp} | Same YAML key; defaults to `[]`. Each CIDR must be an unscoped/unbracketed IP literal with zero host bits and a valid IPv4 /0-/32 or IPv6 /0-/128 prefix; each limit is an integer in `1`-`2147483647`. Duplicate normalized ranges are invalid, including equivalent IPv6 spellings and mapped IPv6 /96-/128 aliases of IPv4 ranges. Most specific match against the client address wins regardless of order; its threshold applies to the client bucket, not the entire range. A large limit is a per-bucket exemption; the global limit still applies. Reload replaces matching policy for new accepts only. |
 | `administratorCredentials` | list of {username, hashedPassword} | Verified by FR-034's in-band privilege command; hashed per research.md "Administrator credential storage" — never stored or logged in plain text. |
 | `serverName` | string, 0..1 | FR-050. The source/prefix on every server-originated message (numeric replies, `RPL_WELCOME`, etc.) — the server-side counterpart to a client's `nickname!ident@hostname` (FR-030). Absent (not set by the administrator) is valid; `jircd-server` MUST then fall back to the deployment host's network hostname, appending a fixed synthetic suffix if that hostname itself has no `.` (research.md "Server identity"), never an empty prefix. MUST contain at least one `.` in either case — nicknames (FR-002's grammar) never can, so this is what keeps a server-originated prefix unambiguous from a client one when a message has no `!`/`@` component. |
 | `serverVersion` | string | FR-051. Not administrator-configurable — sourced at startup from a Gradle-generated `net/jircd/server/version.properties` classpath resource, itself fed by the root build's `project.version` (research.md "Server identity"), included in the registration-completion burst (`RPL_YOURHOST`/`RPL_MYINFO`) alongside `serverName`. |
@@ -669,6 +673,16 @@ extension state changes.
 | `whoMaskEnabled` | boolean, 0..1 | FR-061. Optional; defaults to `true` if unset. Gates `WHO`'s wildcard-mask and no-argument forms for non-administrator sessions only — `false` makes both return a bare `315 RPL_ENDOFWHO` (no `352` lines), indistinguishable from a real zero-match search. An administrator's `WHO` is never affected, checked before this setting (research.md "WHO and invisibility"). The channel-name and exact-nickname forms are never affected by it either way. |
 | `maxModesPerCommand` | positive integer, 0..1 | FR-064. Optional; defaults to `6` if unset. The maximum number of parameter-consuming channel-mode flags (`MEMBER`/`LIST`-kind) a single `MODE` command applies — flags beyond it within the same command are silently not applied (no error; the `MODE` echo reflects only what was applied). Advertised as `MODES` (`SupportedFeatures`). MUST NOT exceed `20` (research.md "MODE command grouping"). |
 | `operFailureThreshold` | positive integer, 0..1 | FR-034. Optional; defaults to `5` if unset. The number of consecutive `OPER` credential failures a single connection may accrue (`ClientSession.failedOperAttempts`) before the server disconnects it, the same "reasonable, administrator-configurable default" posture `rateLimit` already uses for abuse protection (FR-016). MUST NOT exceed `20`, the same ceiling `maxModesPerCommand` uses to catch a clearly-mistaken configuration value (research.md "OPER failed-attempt lockout"). |
+
+Admission settings are validated together at startup and `REHASH`/`SIGHUP`; invalid
+integers, out-of-range prefixes, malformed override entries, host bits, or duplicate
+ranges reject the complete configuration with an indexed field error. The compact
+`ConnectionLimits` value also enforces positive global/per-bucket limits, IPv6 prefix
+`1`-`128`, and a non-null immutable override list for direct programmatic construction.
+A successful reload affects only new accepts and never disconnects existing clients;
+a failed reload leaves all settings intact. Every admitted connection retains its
+bucket key until teardown. Changing the IPv6 prefix does not transfer its reservation
+to a new bucket; old and new bucket keys coexist during the transition.
 
 **Validation rules**: An invalid configuration (unknown extension id,
 conflicting listener ports, malformed rate-limit values, a

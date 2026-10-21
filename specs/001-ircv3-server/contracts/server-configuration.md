@@ -41,6 +41,17 @@ maxModesPerCommand: 6    # optional (FR-064) — defaults to 6, a long-standing 
                           # applied (no error — the MODE echo reflects only what was applied).
                           # Advertised as MODES.
 
+maxConnections: 10000    # optional — positive integer, maximum live connections across all listeners
+maxConnectionsPerIp: 20  # optional — positive integer, maximum live connections per client bucket
+ipv6ConnectionLimitPrefix: 64 # optional — integer 1-128; 128 means per IPv6 address
+connectionLimitOverrides: []  # optional — list, defaults to no overrides
+# Example replacement for the empty list above:
+# connectionLimitOverrides:
+#   - cidr: 203.0.113.0/24
+#     maxConnectionsPerIp: 200
+#   - cidr: "2001:db8::/32"
+#     maxConnectionsPerIp: 1000000
+
 listeners:
   - port: 6667
     tls: false
@@ -103,6 +114,41 @@ administratorCredentials:
   `rateLimit` value MUST cause the server to refuse to start with an error
   naming the exact offending key/value (FR-012, SC-008) — not a stack
   trace, not a silent default substitution.
+- **Connection admission limits (#72)**: `maxConnections` defaults to `10000` and
+  `maxConnectionsPerIp` to `20`; both MUST be positive YAML integers no greater
+  than `2147483647`. Registered and unregistered connections count across all
+  plaintext and TLS listeners. IPv4 clients count per /32; IPv6 clients share a
+  bucket selected by `ipv6ConnectionLimitPrefix` (default `64`, integer `1`-`128`).
+  A value of `128` counts each IPv6 address separately. IPv4-mapped IPv6 clients
+  normalize to IPv4 before both bucketing and override matching.
+- **Per-address overrides**: `connectionLimitOverrides` defaults to an empty list.
+  Each entry MUST be a mapping with a string `cidr` and positive integer
+  `maxConnectionsPerIp` (at most `2147483647`). CIDRs MUST use unscoped, unbracketed
+  IPv4/IPv6 literals with zero host bits, and prefix lengths `0`-`32` / `0`-`128`.
+  Hostnames, malformed CIDRs, nonzero host bits, wrong YAML types, and duplicate
+  ranges MUST be rejected with the offending indexed field path, such as
+  `connectionLimitOverrides[1].cidr`. Equivalent IPv6 spellings are duplicates;
+  mapped IPv6 CIDRs with /96-/128 normalize to IPv4 /0-/32 before duplicate
+  detection. Among matching entries, the most specific prefix wins regardless of
+  list order. Matching uses the client's address; the replacement threshold counts
+  its client bucket, never the whole override range. A large threshold such as
+  `1000000` provides a practical exemption from the per-bucket limit, while the
+  global `maxConnections` still applies.
+- **Admission enforcement and reload**: an over-limit accept receives
+  `ERROR :Too many connections` and closes. Rejection writes and individual
+  `security-event=connection-limit` logs run on bounded workers, with a one-second
+  socket deadline and at most 64 rejection workers across the listeners. When
+  all workers are occupied, sockets close immediately without writing or logging
+  each rejection; dropped rejections are counted and summarized off the accept
+  thread as `security-event=connection-limit-suppressed count=N`, at most once
+  per second. Normal rejection logs include the client address, exceeded setting,
+  counting bucket, and applied threshold. `REHASH` and `SIGHUP` validate and publish
+  all four admission settings for new accepts. Failed reloads preserve every prior
+  setting. Existing connections remain connected and release the same bucket key
+  they reserved at accept time. Prefix changes do not migrate existing counts;
+  old and new buckets coexist until their reservations end. Lowering a limit
+  blocks new accepts at or above the applicable threshold without disconnecting
+  existing clients.
 - **Every value MUST have its declared YAML type** (issue #25): the root
   and each section MUST be a mapping (`listeners` and
   `administratorCredentials` a list of mappings), and each scalar MUST be

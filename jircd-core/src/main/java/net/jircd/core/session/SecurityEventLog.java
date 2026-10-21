@@ -28,6 +28,22 @@ public final class SecurityEventLog {
 
   private SecurityEventLog() {}
 
+  /** Records a rejection on its worker, outside the listener's admission lock. */
+  public static void connectionLimit(
+      String remoteAddress, String limit, String bucket, int appliedLimit) {
+    LOG.info(
+        "security-event=connection-limit remoteAddress={} limit={} bucket={} limitApplied={}",
+        remoteAddress,
+        limit,
+        bucket,
+        appliedLimit);
+  }
+
+  /** Summarizes rejections dropped because every rejection worker is occupied. */
+  public static void connectionLimitSuppressed(long count) {
+    LOG.info("security-event=connection-limit-suppressed count={}", count);
+  }
+
   public static void failedAuthentication(String connectionId, String username, String reason) {
     LOG.info(
         "security-event=failed-authentication connection={} username={} reason={}",

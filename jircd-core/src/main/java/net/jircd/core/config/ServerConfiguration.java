@@ -38,7 +38,15 @@ public record ServerConfiguration(
     int operFailureThreshold,
     int whowasHistorySize,
     int keepAliveFrequencySeconds,
-    int sendqLimitBytes) {
+    int sendqLimitBytes,
+    int maxConnections,
+    int maxConnectionsPerIp,
+    int ipv6ConnectionLimitPrefix,
+    List<ConnectionLimitPolicy.AddressOverride> connectionLimitOverrides) {
+
+  public ServerConfiguration {
+    connectionLimitOverrides = List.copyOf(connectionLimitOverrides);
+  }
 
   /**
    * {@code certPath}/{@code keyPath} (a PEM certificate/chain and its PEM private key) and {@code
@@ -96,6 +104,44 @@ public record ServerConfiguration(
       return bindAddress == null || bindAddress.isAnyLocalAddress();
     }
   }
+
+  /** Admission limits, read together from one configuration snapshot for each new connection. */
+  public record ConnectionLimits(
+      int maxConnections,
+      int maxConnectionsPerIp,
+      int ipv6ConnectionLimitPrefix,
+      List<ConnectionLimitPolicy.AddressOverride> overrides) {
+    public ConnectionLimits {
+      if (maxConnections <= 0)
+        throw new IllegalArgumentException("maxConnections must be positive");
+      if (maxConnectionsPerIp <= 0)
+        throw new IllegalArgumentException("maxConnectionsPerIp must be positive");
+      if (ipv6ConnectionLimitPrefix < 1 || ipv6ConnectionLimitPrefix > 128)
+        throw new IllegalArgumentException("ipv6ConnectionLimitPrefix must be between 1 and 128");
+      overrides = List.copyOf(java.util.Objects.requireNonNull(overrides, "overrides"));
+    }
+
+    public ConnectionLimits(int maxConnections, int maxConnectionsPerIp) {
+      this(maxConnections, maxConnectionsPerIp, DEFAULT_IPV6_CONNECTION_LIMIT_PREFIX, List.of());
+    }
+  }
+
+  /** Default IPv6 counting prefix; /128 restores per-address counting. */
+  public static final int DEFAULT_IPV6_CONNECTION_LIMIT_PREFIX = 64;
+
+  /** Limits shared by every listener; reloading affects new connections only. */
+  public ConnectionLimits connectionLimits() {
+    return new ConnectionLimits(
+        maxConnections, maxConnectionsPerIp, ipv6ConnectionLimitPrefix, connectionLimitOverrides);
+  }
+
+  /**
+   * Default maximum number of live connections across all listeners, including unregistered ones.
+   */
+  public static final int DEFAULT_MAX_CONNECTIONS = 10000;
+
+  /** Default maximum number of live connections from one source IP across all listeners. */
+  public static final int DEFAULT_MAX_CONNECTIONS_PER_IP = 20;
 
   public record RateLimit(int bucketSize, double refillRatePerSecond) {}
 

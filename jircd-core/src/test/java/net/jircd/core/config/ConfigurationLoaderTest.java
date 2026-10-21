@@ -43,6 +43,129 @@ class ConfigurationLoaderTest {
   }
 
   @Test
+  void connectionLimitsDefaultWhenUnset() throws Exception {
+    assertThat(load("").maxConnections()).isEqualTo(10000);
+    assertThat(load("").maxConnectionsPerIp()).isEqualTo(20);
+    assertThat(load("").ipv6ConnectionLimitPrefix()).isEqualTo(64);
+    assertThat(load("").connectionLimitOverrides()).isEmpty();
+  }
+
+  @ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(ints = {1, 10000, Integer.MAX_VALUE})
+  void connectionLimitsAcceptPositiveIntegers(int value) throws Exception {
+    ServerConfiguration config =
+        load("maxConnections: " + value + "\nmaxConnectionsPerIp: " + value);
+    assertThat(config.maxConnections()).isEqualTo(value);
+    assertThat(config.maxConnectionsPerIp()).isEqualTo(value);
+  }
+
+  @ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(
+      strings = {"0", "-1", "big", "1.5", "null", "'20'", "true", "2147483648", "[]", "{}"})
+  void connectionLimitsRejectInvalidValues(String value) {
+    for (String key : java.util.List.of("maxConnections", "maxConnectionsPerIp")) {
+      assertThatThrownBy(() -> load(key + ": " + value))
+          .isInstanceOf(ConfigurationException.class)
+          .hasMessageContaining(key);
+    }
+  }
+
+  @ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(ints = {1, 64, 128})
+  void acceptsIpv6ConnectionLimitPrefix(int prefix) throws Exception {
+    assertThat(load("ipv6ConnectionLimitPrefix: " + prefix).ipv6ConnectionLimitPrefix())
+        .isEqualTo(prefix);
+  }
+
+  @ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(
+      strings = {"0", "129", "-1", "null", "true", "1.5", "'64'", "2147483648"})
+  void rejectsInvalidIpv6ConnectionLimitPrefix(String value) {
+    assertThatThrownBy(() -> load("ipv6ConnectionLimitPrefix: " + value))
+        .isInstanceOf(ConfigurationException.class)
+        .hasMessageContaining("ipv6ConnectionLimitPrefix");
+  }
+
+  @ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(
+      strings = {
+        "example.com/24",
+        "203.0.113/24",
+        "203.0.113.256/24",
+        "203.0.113.0",
+        "203.0.113.0/33",
+        "2001:db8::/129",
+        "203.0.113.1/24",
+        "2001:db8::1/64",
+        "203.0.113.0/-1",
+        "203.0.113.0/x",
+        "203.0.113.0/24/1",
+        "[2001:db8::]/32",
+        "fe80::%en0/64",
+        "::ffff:203.0.113.0/80"
+      })
+  void rejectsInvalidConnectionOverrideCidr(String cidr) {
+    assertThatThrownBy(
+            () ->
+                load(
+                    "connectionLimitOverrides: [{cidr: '" + cidr + "', maxConnectionsPerIp: 200}]"))
+        .isInstanceOf(ConfigurationException.class)
+        .hasMessageContaining("connectionLimitOverrides[0].cidr");
+  }
+
+  @ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(
+      strings = {
+        "null",
+        "{}",
+        "[null]",
+        "[{}]",
+        "[{cidr: 12, maxConnectionsPerIp: 1}]",
+        "[{cidr: '203.0.113.0/24'}]",
+        "[{cidr: '203.0.113.0/24', maxConnectionsPerIp: 0}]",
+        "[{cidr: '203.0.113.0/24', maxConnectionsPerIp: -1}]",
+        "[{cidr: '203.0.113.0/24', maxConnectionsPerIp: 1.5}]",
+        "[{cidr: '203.0.113.0/24', maxConnectionsPerIp: null}]",
+        "[{cidr: '203.0.113.0/24', maxConnectionsPerIp: '200'}]"
+      })
+  void rejectsMalformedConnectionOverrides(String value) {
+    assertThatThrownBy(() -> load("connectionLimitOverrides: " + value))
+        .isInstanceOf(ConfigurationException.class)
+        .hasMessageContaining("connectionLimitOverrides");
+  }
+
+  @ParameterizedTest
+  @org.junit.jupiter.params.provider.CsvSource(
+      delimiter = ';',
+      value = {
+        "203.0.113.0/24;203.0.113.0/24",
+        "2001:db8::/64;2001:0db8:0:0::/64",
+        "203.0.113.0/24;::ffff:203.0.113.0/120"
+      })
+  void rejectsDuplicateConnectionOverrideRanges(String first, String second) {
+    assertThatThrownBy(
+            () ->
+                load(
+                    "connectionLimitOverrides: [{cidr: '"
+                        + first
+                        + "', maxConnectionsPerIp: 1}, {cidr: '"
+                        + second
+                        + "', maxConnectionsPerIp: 2}]"))
+        .isInstanceOf(ConfigurationException.class)
+        .hasMessageContaining("connectionLimitOverrides[1].cidr")
+        .hasMessageContaining("duplicate");
+  }
+
+  @Test
+  void acceptsIpv4AndIpv6OverridesAndLargeExemptions() throws Exception {
+    ServerConfiguration config =
+        load(
+            "connectionLimitOverrides: [{cidr: '203.0.113.0/24', maxConnectionsPerIp: 200}, {cidr: '2001:db8::/32', maxConnectionsPerIp: 1000000}]");
+    assertThat(config.connectionLimitOverrides()).hasSize(2);
+    assertThat(config.connectionLimitOverrides().get(1).maxConnectionsPerIp()).isEqualTo(1000000);
+  }
+
+  @Test
   void listenerBacklogDefaultsWhenUnset() throws Exception {
     assertThat(load("listeners: [{port: 6667}]").listeners().getFirst().backlog()).isEqualTo(1024);
     assertThat(new ServerConfiguration.Listener(6667, false).backlog()).isEqualTo(1024);

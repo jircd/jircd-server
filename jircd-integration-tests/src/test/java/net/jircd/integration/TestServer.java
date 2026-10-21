@@ -21,8 +21,10 @@ import java.net.Socket;
 import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.function.Consumer;
 import net.jircd.server.JircdServerApplication;
+import net.jircd.server.JircdServerTestAccess;
 
 /**
  * Starts a real {@link JircdServerApplication} on ephemeral ports for protocol-level integration
@@ -128,6 +130,19 @@ public final class TestServer implements AutoCloseable {
     Files.writeString(configPath, baseYaml() + extraYaml);
     JircdServerApplication application =
         new JircdServerApplication(configPath, acceptedSocketCustomizer);
+    application.start();
+    return new TestServer(application, configPath);
+  }
+
+  /** Test-only rejection deadline override; ordinary starts exercise the production default. */
+  static TestServer start(
+      String extraYaml, Consumer<Socket> acceptedSocketCustomizer, Duration rejectionDeadline)
+      throws Exception {
+    Path configPath = Files.createTempFile("jircd-test-", ".yaml");
+    Files.writeString(configPath, baseYaml() + extraYaml);
+    JircdServerApplication application =
+        JircdServerTestAccess.createApplication(
+            configPath, acceptedSocketCustomizer, rejectionDeadline);
     application.start();
     return new TestServer(application, configPath);
   }
