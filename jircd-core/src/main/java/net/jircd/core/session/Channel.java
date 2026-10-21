@@ -26,6 +26,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
+import net.jircd.protocol.NickMask;
 
 /**
  * A named, joinable group through which members exchange messages. {@code name} is its identity;
@@ -38,11 +39,11 @@ import java.util.function.Supplier;
  *
  * <p>C-1: {@code operators} and {@code voiced} are subsets of {@code members}; granting either to a
  * non-member is refused and changes nothing. C-2: {@code secret} and {@code private} are never both
- * active; setting one clears the other in the same step. C-3: at most {@link #MAX_BANS} bans, with
- * unique masks. C-4: the first member added to an empty channel becomes an operator. C-5: {@link
- * #memberListing} is a weakly consistent traversal taken without the monitor. It never lists a
- * session twice but is not a snapshot of one instant, and a prefix may come from two separate reads
- * of the operator and voice sets.
+ * active; setting one clears the other in the same step. C-3: at most {@link #MAX_BANS} entries per
+ * mask list, with unique masks under RFC1459 case folding. C-4: the first member added to an empty
+ * channel becomes an operator. C-5: {@link #memberListing} is a weakly consistent traversal taken
+ * without the monitor. It never lists a session twice but is not a snapshot of one instant, and a
+ * prefix may come from two separate reads of the operator and voice sets.
  *
  * <p>The collection accessors return unmodifiable views. Membership changes arrive only through
  * {@link ChannelRegistry} transitions.
@@ -63,6 +64,8 @@ public final class Channel {
   private final Set<ChannelMode> activeModesView = Collections.unmodifiableSet(activeModes);
   private final List<BanEntry> bans = new CopyOnWriteArrayList<>();
   private final List<BanEntry> bansView = Collections.unmodifiableList(bans);
+  private final List<BanEntry> banExceptions = new CopyOnWriteArrayList<>();
+  private final List<BanEntry> inviteExceptions = new CopyOnWriteArrayList<>();
   private final Set<String> invited = ConcurrentHashMap.newKeySet();
 
   /** An immutable snapshot of a topic and the identity and Unix time captured when it was set. */
@@ -203,10 +206,10 @@ public final class Channel {
         setKey(newKey);
         yield ModeChangeResult.APPLIED;
       }
-      case ChannelModeChange.BanAdd(BanEntry entry) ->
-          addBan(entry) ? ModeChangeResult.APPLIED : ModeChangeResult.BAN_LIST_FULL;
-      case ChannelModeChange.BanRemove(String mask) -> {
-        removeBan(mask);
+      case ChannelModeChange.ListAdd(ChannelMode mode, BanEntry entry) ->
+          addMask(mode, entry) ? ModeChangeResult.APPLIED : ModeChangeResult.BAN_LIST_FULL;
+      case ChannelModeChange.ListRemove(ChannelMode mode, String mask) -> {
+        removeMask(mode, mask);
         yield ModeChangeResult.APPLIED;
       }
       case ChannelModeChange.Privilege(
@@ -379,21 +382,53 @@ public final class Channel {
    * if adding it would exceed the cap.
    */
   public synchronized boolean addBan(BanEntry entry) {
+    return addMask(CoreChannelModes.BAN_MASK, entry);
+  }
+
+  /** Adds a mask with the same per-list cap and duplicate semantics as bans. */
+  private synchronized boolean addMask(ChannelMode mode, BanEntry entry) {
+    List<BanEntry> masks = mutableMasks(mode);
     String folded = CaseMapping.fold(entry.mask());
-    if (bans.stream().anyMatch(b -> CaseMapping.fold(b.mask()).equals(folded))) {
+    if (masks.stream().anyMatch(b -> CaseMapping.fold(b.mask()).equals(folded))) {
       return true;
     }
-    if (bans.size() >= MAX_BANS) {
+    if (masks.size() >= MAX_BANS) {
       return false;
     }
-    bans.add(entry);
+    masks.add(entry);
     return true;
   }
 
   /** Removes a ban mask using RFC1459 case folding — a silent no-op if not present. */
   public synchronized void removeBan(String mask) {
+    removeMask(CoreChannelModes.BAN_MASK, mask);
+  }
+
+  private synchronized void removeMask(ChannelMode mode, String mask) {
     String folded = CaseMapping.fold(mask);
-    bans.removeIf(b -> CaseMapping.fold(b.mask()).equals(folded));
+    mutableMasks(mode).removeIf(b -> CaseMapping.fold(b.mask()).equals(folded));
+  }
+
+  /** Returns an unmodifiable, safely traversable view of a core mask list. */
+  public List<BanEntry> masks(ChannelMode mode) {
+    return Collections.unmodifiableList(mutableMasks(mode));
+  }
+
+  private List<BanEntry> mutableMasks(ChannelMode mode) {
+    return switch (mode.flag()) {
+      case 'b' -> bans;
+      case 'e' -> banExceptions;
+      case 'I' -> inviteExceptions;
+      default -> throw new IllegalArgumentException("not a core mask list: " + mode.flag());
+    };
+  }
+
+  /** Matches either the presented or real identity against the given mask list. */
+  public boolean matchesMask(ChannelMode mode, String presented, String real) {
+    return mutableMasks(mode).stream()
+        .anyMatch(
+            entry ->
+                NickMask.matches(presented, entry.mask()) || NickMask.matches(real, entry.mask()));
   }
 
   @Override

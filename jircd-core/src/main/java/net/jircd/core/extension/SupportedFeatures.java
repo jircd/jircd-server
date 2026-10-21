@@ -18,6 +18,7 @@ package net.jircd.core.extension;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import net.jircd.core.session.Channel;
 import net.jircd.core.session.ChannelMode;
 import net.jircd.core.session.CoreChannelModes;
 
@@ -109,6 +110,9 @@ public record SupportedFeatures(
         "MODES=" + maxModesPerCommand,
         "CHANMODES=" + chanModes,
         "PREFIX=" + prefix,
+        "EXCEPTS=e",
+        "INVEX=I",
+        "MAXLIST=" + letters(CoreChannelModes.ALL, ChannelMode.Kind.LIST) + ":" + Channel.MAX_BANS,
         "UTF8ONLY");
   }
 }

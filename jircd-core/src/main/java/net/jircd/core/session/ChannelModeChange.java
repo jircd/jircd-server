@@ -49,16 +49,18 @@ public sealed interface ChannelModeChange {
   /** Sets the channel key, or clears it with {@code null}. */
   record Key(String key) implements ChannelModeChange {}
 
-  /** Adds a ban mask; an already-present mask is a successful no-op. */
-  record BanAdd(BanEntry entry) implements ChannelModeChange {
-    public BanAdd {
+  /** Adds a mask to a channel list mode; duplicates are successful no-ops. */
+  record ListAdd(ChannelMode mode, BanEntry entry) implements ChannelModeChange {
+    public ListAdd {
+      Objects.requireNonNull(mode);
       Objects.requireNonNull(entry);
     }
   }
 
-  /** Removes a ban mask; an absent mask is a no-op. */
-  record BanRemove(String mask) implements ChannelModeChange {
-    public BanRemove {
+  /** Removes a mask from a channel list mode using RFC1459 case folding. */
+  record ListRemove(ChannelMode mode, String mask) implements ChannelModeChange {
+    public ListRemove {
+      Objects.requireNonNull(mode);
       Objects.requireNonNull(mask);
     }
   }

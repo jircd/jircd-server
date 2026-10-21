@@ -30,7 +30,6 @@ import net.jircd.protocol.ChannelName;
 import net.jircd.protocol.Command;
 import net.jircd.protocol.Hostmask;
 import net.jircd.protocol.Message;
-import net.jircd.protocol.NickMask;
 import net.jircd.protocol.NumericReply;
 
 /**
@@ -100,8 +99,8 @@ public final class JoinCommandHandler implements CommandHandler {
 
     // Sampled before any registry monitor, because it may run hostname-display extension code. The
     // ban check uses this sample; an administrator toggling cloaking meanwhile is not re-checked. A
-    // failed sample is kept and rethrown only if a nonempty ban list needs it, so a failed sample
-    // cannot bypass the bans; with no bans it is not needed and is discarded.
+    // failed sample is kept and rethrown only if a ban or invite-exception check needs it, so
+    // identity failures cannot bypass mask checks.
     AdmissionIdentity admissionIdentity = AdmissionIdentity.sample(session, extensionRegistry);
     var failure = new java.util.concurrent.atomic.AtomicReference<AdmissionFailure>();
     var joined =
@@ -182,7 +181,9 @@ public final class JoinCommandHandler implements CommandHandler {
     // gate has passed.
     boolean invited = channel.isInvited(session.nickname());
 
-    if (!invited && channel.activeModes().contains(CoreChannelModes.INVITE_ONLY)) {
+    if (!invited
+        && channel.activeModes().contains(CoreChannelModes.INVITE_ONLY)
+        && !matchesInviteException(channel, session, identity)) {
       return new AdmissionFailure(
           NumericReply.ERR_INVITEONLYCHAN, channel.name(), "Cannot join channel (+i)");
     }
@@ -254,11 +255,18 @@ public final class JoinCommandHandler implements CommandHandler {
     }
     String presented = identity.require();
     String real = Hostmask.format(session.nickname(), session.ident(), session.realHostname());
-    for (var ban : channel.bans()) {
-      if (NickMask.matches(presented, ban.mask()) || NickMask.matches(real, ban.mask())) {
-        return false;
-      }
+    return !channel.matchesMask(CoreChannelModes.BAN_MASK, presented, real)
+        || channel.matchesMask(CoreChannelModes.BAN_EXCEPTION, presented, real);
+  }
+
+  private static boolean matchesInviteException(
+      Channel channel, ClientSession session, AdmissionIdentity identity) {
+    if (channel.masks(CoreChannelModes.INVITE_EXCEPTION).isEmpty()) {
+      return false;
     }
-    return true;
+    return channel.matchesMask(
+        CoreChannelModes.INVITE_EXCEPTION,
+        identity.require(),
+        Hostmask.format(session.nickname(), session.ident(), session.realHostname()));
   }
 }

@@ -442,7 +442,8 @@ class ChannelTest {
             new ChannelModeChange.Flag(CoreChannelModes.MODERATED, true),
             new ChannelModeChange.Limit(5),
             new ChannelModeChange.Key("k"),
-            new ChannelModeChange.BanAdd(new BanEntry("*!*@bad", "op", Instant.now())),
+            new ChannelModeChange.ListAdd(
+                CoreChannelModes.BAN_MASK, new BanEntry("*!*@bad", "op", Instant.now())),
             new ChannelModeChange.Privilege(plain, Channel.MemberPrivilege.OPERATOR, true),
             new ChannelModeChange.Privilege(plain, Channel.MemberPrivilege.VOICE, true));
     for (ChannelModeChange change : changes) {
@@ -493,9 +494,9 @@ class ChannelTest {
     applied(channel, op, new ChannelModeChange.Key(null));
     assertThat(channel.key()).isNull();
 
-    applied(channel, op, new ChannelModeChange.BanAdd(ban));
+    applied(channel, op, new ChannelModeChange.ListAdd(CoreChannelModes.BAN_MASK, ban));
     assertThat(channel.bans()).containsExactly(ban);
-    applied(channel, op, new ChannelModeChange.BanRemove("*!*@bad"));
+    applied(channel, op, new ChannelModeChange.ListRemove(CoreChannelModes.BAN_MASK, "*!*@bad"));
     assertThat(channel.bans()).isEmpty();
 
     applied(
@@ -556,11 +557,14 @@ class ChannelTest {
       applied(
           channel,
           op,
-          new ChannelModeChange.BanAdd(new BanEntry("*!*@h" + i, "op", Instant.now())));
+          new ChannelModeChange.ListAdd(
+              CoreChannelModes.BAN_MASK, new BanEntry("*!*@h" + i, "op", Instant.now())));
     }
     List<BanEntry> before = List.copyOf(channel.bans());
     BanEntry extra = new BanEntry("*!*@one-more", "op", Instant.now());
-    assertThat(channel.applyAsOperator(op, new ChannelModeChange.BanAdd(extra)))
+    assertThat(
+            channel.applyAsOperator(
+                op, new ChannelModeChange.ListAdd(CoreChannelModes.BAN_MASK, extra)))
         .isEqualTo(Channel.ModeChangeResult.BAN_LIST_FULL);
     assertThat(channel.bans()).containsExactlyElementsOf(before).doesNotContain(extra);
   }

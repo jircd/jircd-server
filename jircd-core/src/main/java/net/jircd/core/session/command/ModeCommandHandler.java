@@ -127,10 +127,13 @@ public final class ModeCommandHandler implements CommandHandler {
     }
 
     String modeStringArg = message.params().get(1);
-    // Both accepted RFC forms of a bare ban-list query.
-    if (message.params().size() == 2 && (modeStringArg.equals("b") || modeStringArg.equals("+b"))) {
-      sendBanList(session, channel);
-      return;
+    String queryFlag = modeStringArg.startsWith("+") ? modeStringArg.substring(1) : modeStringArg;
+    if (message.params().size() == 2 && queryFlag.length() == 1) {
+      ChannelMode queryMode = resolve(CoreChannelModes.ALL, queryFlag.charAt(0));
+      if (queryMode != null && queryMode.kind() == ChannelMode.Kind.LIST) {
+        sendMaskList(session, channel, queryMode);
+        return;
+      }
     }
 
     if (!channel.operators().contains(session)) {
@@ -294,13 +297,13 @@ public final class ModeCommandHandler implements CommandHandler {
         }
         appliedParam = rawParam;
       } else {
-        // LIST-kind — only ban-mask exists this release.
+        // All mask lists share normalization, limits and operator checks.
         String normalized = NickMask.normalize(rawParam);
         beforeChange.run();
         if (change.sign() == '+') {
           BanEntry entry = new BanEntry(normalized, session.nickname(), Instant.now());
           Channel.ModeChangeResult result =
-              channel.applyAsOperator(session, new ChannelModeChange.BanAdd(entry));
+              channel.applyAsOperator(session, new ChannelModeChange.ListAdd(mode, entry));
           if (result == Channel.ModeChangeResult.NOT_OPERATOR) {
             refuse(session, channel);
             break;
@@ -312,10 +315,11 @@ public final class ModeCommandHandler implements CommandHandler {
                 NumericReply.ERR_BANLISTFULL,
                 channel.name(),
                 normalized,
-                "Channel ban list is full");
+                "Channel list is full (+" + mode.flag() + ")");
             break;
           }
-        } else if (!applyOrRefuse(session, channel, new ChannelModeChange.BanRemove(normalized))) {
+        } else if (!applyOrRefuse(
+            session, channel, new ChannelModeChange.ListRemove(mode, normalized))) {
           break;
         }
         appliedParam = normalized;
@@ -411,23 +415,36 @@ public final class ModeCommandHandler implements CommandHandler {
         String.valueOf(channel.createdAt().getEpochSecond()));
   }
 
-  private void sendBanList(ClientSession session, Channel channel) {
-    for (BanEntry ban : channel.bans()) {
+  private void sendMaskList(ClientSession session, Channel channel, ChannelMode mode) {
+    NumericReply entryReply =
+        switch (mode.flag()) {
+          case 'e' -> NumericReply.RPL_EXCEPTLIST;
+          case 'I' -> NumericReply.RPL_INVITELIST;
+          default -> NumericReply.RPL_BANLIST;
+        };
+    NumericReply endReply =
+        switch (mode.flag()) {
+          case 'e' -> NumericReply.RPL_ENDOFEXCEPTLIST;
+          case 'I' -> NumericReply.RPL_ENDOFINVITELIST;
+          default -> NumericReply.RPL_ENDOFBANLIST;
+        };
+    for (BanEntry ban : channel.masks(mode)) {
       Replies.send(
           session,
           serverName.get(),
-          NumericReply.RPL_BANLIST,
+          entryReply,
           channel.name(),
           ban.mask(),
           ban.setBy(),
           String.valueOf(ban.setAt().getEpochSecond()));
     }
-    Replies.send(
-        session,
-        serverName.get(),
-        NumericReply.RPL_ENDOFBANLIST,
-        channel.name(),
-        "End of channel ban list");
+    String endText =
+        switch (mode.flag()) {
+          case 'e' -> "End of channel exception list";
+          case 'I' -> "End of channel invite list";
+          default -> "End of channel ban list";
+        };
+    Replies.send(session, serverName.get(), endReply, channel.name(), endText);
   }
 
   private void broadcastEcho(
