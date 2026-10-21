@@ -66,6 +66,14 @@ public final class ConnectionLifecycle {
    * TCP-level close of the same socket) must run cleanup exactly once, not once per trigger.
    */
   public boolean closeIfNotAlreadyClosing() {
-    return state.getAndSet(State.CLOSING) != State.CLOSING;
+    return claimClosing() != State.CLOSING;
+  }
+
+  /**
+   * Any state -&gt; CLOSING, returning the state it replaced; {@link State#CLOSING} means another
+   * caller already claimed it. Lets the one winner tell whether the session was {@code REGISTERED}.
+   */
+  public State claimClosing() {
+    return state.getAndSet(State.CLOSING);
   }
 }

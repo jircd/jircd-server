@@ -25,17 +25,18 @@ whose Full Numeric Catalog already reserves every numeric this feature claims (`
 |---|---|---|---|---|
 | `VERSION` | C→S | `REGISTERED` session | Returns server name/version, then a fresh `RPL_ISUPPORT` burst (Clarifications, 2026-08-19) | `351 RPL_VERSION`, then one or more `005 RPL_ISUPPORT` lines — identical rendering to the registration completion burst's own `005` (`001-ircv3-server` "Registration Completion Burst"), via the shared helper research.md "VERSION + ISUPPORT reuse" describes |
 | `TIME` | C→S | `REGISTERED` session | Returns the server's current local time | `391 RPL_TIME` |
-| `LUSERS` | C→S | `REGISTERED` session | Returns current connected-client, connected-operator, and active-channel counts (server-wide totals only — spec.md Assumptions) | `251 RPL_LUSERCLIENT` (`"There are <clients> users and <invisible> invisible on 1 servers"` — the conventional, widely-parsed text shape, 003-irctest-conformance-fixes FR-004), `252 RPL_LUSEROP` (connected-operator count, 006-complete-core-protocol FR-011), `254 RPL_LUSERCHANNELS` (channel count), then `255 RPL_LUSERME` (`"I have <clients> clients and 1 servers"`, always sent, 006-complete-core-protocol FR-012) |
+| `LUSERS` | C→S | `REGISTERED` session | Returns current connected-client, connected-operator, and active-channel counts (server-wide totals only — spec.md Assumptions) | `251 RPL_LUSERCLIENT` (`"There are <clients> users and <invisible> invisible on 1 servers"` — the conventional, widely-parsed text shape, 003-irctest-conformance-fixes FR-004), `252 RPL_LUSEROP` (connected-operator count, 006-complete-core-protocol FR-011), `254 RPL_LUSERCHANNELS` (channel count), `253 RPL_LUSERUNKNOWN` (only when unregistered connections exist), then `255 RPL_LUSERME` (`"I have <clients> clients and 1 servers"`, always sent, 006-complete-core-protocol FR-012), `265 RPL_LOCALUSERS` and `266 RPL_GLOBALUSERS` |
 
 **Contract notes**:
-- `LUSERS` still does not send `253 RPL_LUSERUNKNOWN` — this server has no unknown-connection
-  concept (every accepted connection becomes a `ClientSession`, `001-ircv3-server` data-model.md),
-  so that specific numeric has no meaningful value to report; reserved in the numeric catalog,
-  still unused. `252`/`255` were reserved for the same reason `253` originally was
-  (`003-irctest-conformance-fixes`'s and this file's own earlier text) but that blocking reasoning
-  no longer holds for them specifically — `UserMode.OPERATOR` is already tracked per-session
-  (used throughout `WHOIS`/`WHO`/`MODE +o`), and `RPL_LUSERME`'s client count needs no new concept
-  at all.
+- `LUSERS` sends `253 RPL_LUSERUNKNOWN` (`<nick> <n> :unknown connection(s)`) when `n > 0`, where
+  `n` counts accepted connections not yet `REGISTERED` (issue #76); it is omitted when there are
+  none. A connection stops counting the moment it starts closing. `265 RPL_LOCALUSERS` and `266
+  RPL_GLOBALUSERS` follow `255` as `<nick> <u> <m> :Current local|global users <u>, max <m>`, `u`
+  being the registered-user count and `m` its high-water mark; the reply order is 251, 252, 253,
+  254, 255, 265, 266. `252`/`255` were once reserved for the same reason `253` originally was, but
+  that blocking reasoning did not hold for them — `UserMode.OPERATOR` is already tracked
+  per-session (used throughout `WHOIS`/`WHO`/`MODE +o`), and `RPL_LUSERME`'s client count needs no
+  new concept at all.
 - `252`'s operator count is a real, live filter over connected sessions holding the `operator`
   user mode, the identical filtering shape `251`'s `<invisible>` count already uses against
   `UserMode.INVISIBLE`.

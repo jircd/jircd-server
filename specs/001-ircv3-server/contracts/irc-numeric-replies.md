@@ -43,6 +43,13 @@ during that window.
 | `003` | `RPL_CREATED` | Registration Completion Burst | FR-051 |
 | `004` | `RPL_MYINFO` | Registration Completion Burst | FR-043, FR-044, FR-050, FR-051 |
 | `005` | `RPL_ISUPPORT` | Registration Completion Burst — one or more lines (data-model.md `SupportedFeatures`); de facto meaning, not RFC 2812's `RPL_BOUNCE` | FR-051, FR-055 |
+| `251` | `RPL_LUSERCLIENT` | `LUSERS` — registered users and how many are invisible | FR-003 |
+| `252` | `RPL_LUSEROP` | `LUSERS` — operators online | FR-011 |
+| `253` | `RPL_LUSERUNKNOWN` | `LUSERS` — connections accepted but not yet `REGISTERED` (including any that already claimed a nickname); omitted when there are none (issue #76) | FR-003 |
+| `254` | `RPL_LUSERCHANNELS` | `LUSERS` — channels formed | FR-003 |
+| `255` | `RPL_LUSERME` | `LUSERS` — `I have <n> clients and 1 servers` | FR-012 |
+| `265` | `RPL_LOCALUSERS` | `LUSERS` — `<nick> <u> <m> :Current local users <u>, max <m>`; `u` is the registered users, `m` the high-water mark of `u` since startup, which never decreases (issue #76) | FR-003 |
+| `266` | `RPL_GLOBALUSERS` | `LUSERS` — same shape and values as `265`; this is a single server, so global equals local (issue #76) | FR-003 |
 | `422` | `ERR_NOMOTD` | Registration Completion Burst (this release implements no MOTD content) | FR-051 |
 | `322` | `RPL_LIST` | `LIST` (one per active channel) | FR-042 |
 | `323` | `RPL_LISTEND` | End of a `LIST` reply | FR-042 |
@@ -110,17 +117,17 @@ trigger them is "Recognized only" per irc-protocol-commands.md).
 | | | | | `331` | `RPL_NOTOPIC` *(Used)* |
 | `201` | `RPL_TRACECONNECTING` | `242` | `RPL_STATSUPTIME` | `332` | `RPL_TOPIC` *(Used)* |
 | `202` | `RPL_TRACEHANDSHAKE` | `243` | `RPL_STATSOLINE` | `341` | `RPL_INVITING` *(Used)* |
-| `203` | `RPL_TRACEUNKNOWN` | `251` | `RPL_LUSERCLIENT` | `342` | `RPL_SUMMONING` |
-| `204` | `RPL_TRACEOPERATOR` | `252` | `RPL_LUSEROP` | `346` | `RPL_INVITELIST` |
-| `205` | `RPL_TRACEUSER` | `253` | `RPL_LUSERUNKNOWN` | `347` | `RPL_ENDOFINVITELIST` |
-| `206` | `RPL_TRACESERVER` | `254` | `RPL_LUSERCHANNELS` | `348` | `RPL_EXCEPTLIST` |
-| `207` | `RPL_TRACESERVICE` | `255` | `RPL_LUSERME` | `349` | `RPL_ENDOFEXCEPTLIST` |
+| `203` | `RPL_TRACEUNKNOWN` | `251` | `RPL_LUSERCLIENT` *(Used)* | `342` | `RPL_SUMMONING` |
+| `204` | `RPL_TRACEOPERATOR` | `252` | `RPL_LUSEROP` *(Used)* | `346` | `RPL_INVITELIST` |
+| `205` | `RPL_TRACEUSER` | `253` | `RPL_LUSERUNKNOWN` *(Used)* | `347` | `RPL_ENDOFINVITELIST` |
+| `206` | `RPL_TRACESERVER` | `254` | `RPL_LUSERCHANNELS` *(Used)* | `348` | `RPL_EXCEPTLIST` |
+| `207` | `RPL_TRACESERVICE` | `255` | `RPL_LUSERME` *(Used)* | `349` | `RPL_ENDOFEXCEPTLIST` |
 | `208` | `RPL_TRACENEWTYPE` | `256` | `RPL_ADMINME` | `351` | `RPL_VERSION` |
 | `209` | `RPL_TRACECLASS` | `257` | `RPL_ADMINLOC1` | `352` | `RPL_WHOREPLY` *(Used)* |
 | `210` | `RPL_TRACERECONNECT` | `258` | `RPL_ADMINLOC2` | `353` | `RPL_NAMREPLY` *(Used)* |
 | `261` | `RPL_TRACELOG` | `259` | `RPL_ADMINEMAIL` | `364` | `RPL_LINKS` |
-| `262` | `RPL_TRACEEND` | `265` | `RPL_LOCALUSERS` | `365` | `RPL_ENDOFLINKS` |
-| `263` | `RPL_TRYAGAIN` | `266` | `RPL_GLOBALUSERS` | `366` | `RPL_ENDOFNAMES` *(Used)* |
+| `262` | `RPL_TRACEEND` | `265` | `RPL_LOCALUSERS` *(Used)* | `365` | `RPL_ENDOFLINKS` |
+| `263` | `RPL_TRYAGAIN` | `266` | `RPL_GLOBALUSERS` *(Used)* | `366` | `RPL_ENDOFNAMES` *(Used)* |
 | `300` | `RPL_NONE` | `301` | `RPL_AWAY` | `367` | `RPL_BANLIST` *(Used)* |
 | `302` | `RPL_USERHOST` | `303` | `RPL_ISON` | `368` | `RPL_ENDOFBANLIST` *(Used)* |
 | `305` | `RPL_UNAWAY` | `306` | `RPL_NOWAWAY` | `369` | `RPL_ENDOFWHOWAS` |

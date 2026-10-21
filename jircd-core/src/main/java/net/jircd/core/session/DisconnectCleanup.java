@@ -37,6 +37,7 @@ public final class DisconnectCleanup {
   private final ChannelRegistry channelRegistry;
   private final WhowasHistory whowasHistory;
   private final ExtensionRegistry extensionRegistry;
+  private final UserStatistics userStatistics;
   private final Runnable afterClaim;
 
   public DisconnectCleanup(
@@ -44,7 +45,22 @@ public final class DisconnectCleanup {
       ChannelRegistry channelRegistry,
       WhowasHistory whowasHistory,
       ExtensionRegistry extensionRegistry) {
-    this(nicknameRegistry, channelRegistry, whowasHistory, extensionRegistry, () -> {});
+    this(nicknameRegistry, channelRegistry, whowasHistory, extensionRegistry, new UserStatistics());
+  }
+
+  public DisconnectCleanup(
+      NicknameRegistry nicknameRegistry,
+      ChannelRegistry channelRegistry,
+      WhowasHistory whowasHistory,
+      ExtensionRegistry extensionRegistry,
+      UserStatistics userStatistics) {
+    this(
+        nicknameRegistry,
+        channelRegistry,
+        whowasHistory,
+        extensionRegistry,
+        userStatistics,
+        () -> {});
   }
 
   /**
@@ -58,6 +74,23 @@ public final class DisconnectCleanup {
       WhowasHistory whowasHistory,
       ExtensionRegistry extensionRegistry,
       Runnable afterClaim) {
+    this(
+        nicknameRegistry,
+        channelRegistry,
+        whowasHistory,
+        extensionRegistry,
+        new UserStatistics(),
+        afterClaim);
+  }
+
+  private DisconnectCleanup(
+      NicknameRegistry nicknameRegistry,
+      ChannelRegistry channelRegistry,
+      WhowasHistory whowasHistory,
+      ExtensionRegistry extensionRegistry,
+      UserStatistics userStatistics,
+      Runnable afterClaim) {
+    this.userStatistics = userStatistics;
     this.nicknameRegistry = nicknameRegistry;
     this.channelRegistry = channelRegistry;
     this.whowasHistory = whowasHistory;
@@ -72,8 +105,12 @@ public final class DisconnectCleanup {
     // line's own cleanup call has finished, or vice versa). Whichever call actually claims the
     // CLOSING transition proceeds; every other call for this session is a no-op — otherwise a
     // WHOWAS entry (among other things) could be recorded twice for one logical disconnect.
-    if (!session.lifecycle().closeIfNotAlreadyClosing()) {
+    ConnectionLifecycle.State previous = session.lifecycle().claimClosing();
+    if (previous == ConnectionLifecycle.State.CLOSING) {
       return;
+    }
+    if (previous == ConnectionLifecycle.State.REGISTERED) {
+      userStatistics.userLeft();
     }
     cleanupClaimed(session, reason);
   }

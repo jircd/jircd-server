@@ -259,7 +259,11 @@ class LivenessMonitorTest {
     var extensions = new net.jircd.core.extension.ExtensionRegistry();
     var completion =
         new net.jircd.core.session.command.RegistrationCompletion(
-            () -> "server", "test", Instant.now(), extensions);
+            () -> "server",
+            "test",
+            Instant.now(),
+            extensions,
+            new net.jircd.core.session.UserStatistics());
     // The hook runs between the timeout claiming CLOSING and the writer closing: the exact window
     // in which a concurrent NICK/USER/CAP END would call tryComplete.
     DisconnectCleanup cleanup =
