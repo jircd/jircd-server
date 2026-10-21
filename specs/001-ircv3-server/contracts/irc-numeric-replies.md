@@ -47,7 +47,8 @@ during that window.
 | `322` | `RPL_LIST` | `LIST` (one per active channel) | FR-042 |
 | `323` | `RPL_LISTEND` | End of a `LIST` reply | FR-042 |
 | `331` | `RPL_NOTOPIC` | `TOPIC` query on a channel with no topic set | FR-040 |
-| `332` | `RPL_TOPIC` | `TOPIC` query on a channel with a topic set | FR-040 |
+| `332` | `RPL_TOPIC` | `JOIN` or `TOPIC` query on a channel with a topic set; immediately followed by `333` | FR-014, FR-040 |
+| `333` | `RPL_TOPICWHOTIME` | Immediately after `332`: `<nick> <channel> <setter> <unix-ts>`, where setter is the stored `nick!user@host` as presented when the topic was set (including cloaking), and timestamp is Unix seconds. Never sent without a topic. | FR-014, FR-040 |
 | `311` | `RPL_WHOISUSER` | Successful `WHOIS` | FR-037, FR-038 |
 | `312` | `RPL_WHOISSERVER` | `WHOIS`, sent immediately after `311` — this server's own name, restored per 003-irctest-conformance-fixes FR-006 (there being no federation, no other server name could ever appear here) | 003-irctest-conformance-fixes FR-006 |
 | `313` | `RPL_WHOISOPERATOR` | `WHOIS` for a target currently holding the `operator` user mode — visible to any querying client, not gated by administrator privilege or self-lookup (FR-037, FR-044) | FR-037, FR-044 |

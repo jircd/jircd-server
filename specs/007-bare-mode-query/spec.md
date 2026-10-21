@@ -20,8 +20,10 @@ fresh, full irctest sweep (excluding Ergo/Sable-specific tests) run immediately 
 — this is the only new, actionable finding out of 51 failures; every other failure traces to an
 already-documented exclusion (`metadata`/`multiline`/`draft/message-redaction` extensions,
 `labeled-response`/`batch`/`multi-prefix`/`userhost-in-names` capabilities never implemented,
-Modern-only `RPL_LOCALUSERS`/`RPL_GLOBALUSERS`, deprecated-marked irctest tests, `RPL_TOPICTIME`,
-`INFO`'s remote-server-target routing) — none of that reopens.
+Modern-only `RPL_LOCALUSERS`/`RPL_GLOBALUSERS`, deprecated-marked irctest tests,
+`INFO`'s remote-server-target routing) — none of that reopens. The historical
+`333 RPL_TOPICWHOTIME` gap has since been implemented in #75: JOIN and TOPIC queries
+now return the stored presented setter and Unix timestamp immediately after `332 RPL_TOPIC`.
 
 ## User Scenarios & Testing *(mandatory)*
 

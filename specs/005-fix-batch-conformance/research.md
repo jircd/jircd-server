@@ -115,7 +115,7 @@ left-to-right application).
 
 **Decision (FR-014)**: `JoinCommandHandler.handle()`, after the existing `JOIN` notification
 fan-out and before `sendNamesReply`, checks `channel.topic()` and — if present — sends
-`332 RPL_TOPIC`/`333 RPL_TOPICTIME` to the joining session only, the same two-numeric pair
+`332 RPL_TOPIC`/`333 RPL_TOPICWHOTIME` to the joining session only, the same two-numeric pair
 `TopicCommandHandler`'s own query path already sends.
 
 **Decision (FR-015)**: `KickCommandHandler.handle()`'s `reason = params.size() > 2 ?
