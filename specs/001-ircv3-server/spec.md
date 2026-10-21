@@ -36,7 +36,7 @@
 
 - Q: When every operator of a channel revokes their own operator status (or leaves) without granting it to anyone else first, what should happen to that channel? → A: Leaderless until admin intervenes — the channel is left with members but no operator; only an administrator can restore order (force-join via FR-057, then self-op via FR-058). No automatic promotion occurs.
 - Q: FR-011 requires a configuration-file change (enabling/disabling an extension) to take effect without a server restart — how does the running server learn the file changed? → A: Explicit reload trigger only, via two equivalent paths — a `SIGHUP` signal sent to the process, and an in-band, administrator-privileged `REHASH` command (FR-032/FR-033) for when file-system/host access isn't available (Story 6's peer-tier path to Story 4's). No automatic file-watching; editing the file alone has no effect until one of these two triggers fires.
-- Q: When a client issues the administrator-privilege command (`OPER`, FR-034) with invalid credentials, what should the server do beyond rejecting it? → A: Refuse the attempt with a clear error and log it as a security-relevant event (FR-019), the same as every other permission error — but additionally track failed `OPER` attempts per connection and disconnect the client once an administrator-configurable threshold is exceeded (brute-force lockout), the same "reasonable, administrator-configurable default" posture FR-016's rate limiting already uses.
+- Q: When a client issues the administrator-privilege command (`OPER`, FR-034) with invalid credentials, what should the server do beyond rejecting it? → A: Refuse the attempt with a clear error and log it as a security-relevant event (FR-019), the same as every other permission error — but additionally track failed `OPER` attempts per normalized source-address bucket across reconnects and usernames, and disconnect the client when an administrator-configurable threshold is reached within the lockout window (brute-force lockout), the same "reasonable, administrator-configurable default" posture FR-016's rate limiting already uses.
 - Q: When a member with the voice privilege (FR-045) leaves a channel and later rejoins, do they keep voice, or does an operator need to grant it again? → A: Lost on part, must be re-granted — voice (and, symmetrically, operator status) is tied to current membership, not the nickname's history with the channel; leaving clears all per-member privileges, the classic IRC behavior.
 - Q: When the hostname-cloaking extension is disabled while a client is still connected and was already benefiting from it, does that client's presented hostname change immediately, or stay cloaked until they reconnect? → A: Immediate — the moment the extension is disabled (via FR-011's `SIGHUP`/`REHASH` reload), every currently-connected cloaked client's presented hostname reverts to the real value right away, consistent with SC-005's "connected and new clients" wording.
 
@@ -699,11 +699,21 @@ their presented (not real) hostname.
   (invalid credentials) MUST be rejected with a clear error and logged
   as a security-relevant event (FR-019), the same as any other
   permission error (FR-014/FR-033) — but the server MUST additionally
-  track failed `OPER` attempts per connection and disconnect the client
-  once an administrator-configurable threshold of consecutive failures
-  is exceeded, the same "reasonable, administrator-configurable default"
-  posture FR-016's rate limiting already establishes for abuse
-  protection.
+  track failed `OPER` attempts per normalized source-address bucket across
+  connections and usernames. IPv4 uses /32; IPv6 uses the configured
+  `ipv6ConnectionLimitPrefix` (default /64); IPv4-mapped addresses normalize
+  to IPv4. The server MUST disconnect the client when the administrator-
+  configurable `operFailureThreshold` is reached within the fixed
+  `operLockoutSeconds` window, starting when the first failed verification
+  completes. Reconnecting MUST NOT reset that source's failures. During
+  lockout, OPER MUST be refused without password verification and the
+  client disconnected. Success below threshold MUST clear that source's
+  failures; window expiry permits verification again. The tracker is capped
+  at 10,000 entries; new sources use per-session failure counting at capacity,
+  still verifying credentials and disconnecting at the threshold. An absent
+  source address uses a per-connection key. This follows the same
+  "reasonable, administrator-configurable default" posture FR-016's rate
+  limiting already establishes for abuse protection.
 - **FR-035**: The capability-negotiation mechanism itself (FR-006, FR-007,
   FR-008 — a client's ability to request the capability list and negotiate
   a subset) MUST always be available and MUST NOT be an optional extension
