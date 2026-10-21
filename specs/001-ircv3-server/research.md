@@ -1766,16 +1766,27 @@ reason to weaken it for this one credential type.
 
 ## OPER failed-attempt lockout (FR-034)
 
-**Decision**: Track consecutive `OPER` credential failures per connection
-(`ClientSession.failedOperAttempts`, data-model.md); once a connection
-reaches `ServerConfiguration.operFailureThreshold` (administrator-
-configurable, defaulting to `5`, capped at `20` — the same ceiling
-`maxModesPerCommand` uses), the server disconnects it after the final
-`464 ERR_PASSWDMISMATCH` reply and security-event log entry (FR-019),
-running the same FR-017 cleanup path any other connection loss uses. The
-counter resets to `0` on that connection's next successful `OPER` and is
-scoped per-connection, never per-nickname or per-IP — a client that
-reconnects starts fresh, the same scope `rateLimitBucket` already uses.
+**Decision**: Track `OPER` credential failures in a shared, bounded
+`OperAttemptTracker` keyed by the accepted socket's normalized source-address
+bucket, across reconnects and usernames. IPv4 uses /32; IPv6 uses
+`ipv6ConnectionLimitPrefix` (default /64); IPv4-mapped addresses normalize to
+IPv4. If the address is unavailable, use a per-connection key rather than
+parsing the display hostname. On reaching `ServerConfiguration.operFailureThreshold`
+(default `5`, maximum `20`), reply `464 ERR_PASSWDMISMATCH`, log the verified
+failure, and disconnect through normal FR-017 cleanup. Subsequent OPER attempts
+in the locked bucket skip credential verification, log `OPER source locked out`,
+and disconnect, including attempts with correct credentials.
+
+The fixed `operLockoutSeconds` window (default `300`, range `1`–`86400`) starts
+when the first failed verification completes. Slow password hashing therefore
+cannot consume the new window before its failure is recorded. Subsequent
+attempts do not extend the deadline. Success below threshold clears the source
+counter, and expiry allows verification again. Entries expire lazily; the map
+is capped at 10,000 entries. At capacity, new sources fall back to per-session
+failure counting, still verifying passwords and disconnecting at the threshold,
+without evicting live source lockouts. A successful OPER resets the fallback
+counter. `REHASH`/`SIGHUP` apply threshold changes immediately; window duration
+changes apply to new windows only.
 
 **Rationale**: `OPER` is a credential-verification command guarding
 server-wide administrative privilege — brute-forcing it is a real threat
@@ -1785,7 +1796,8 @@ limiting) is "reasonable, administrator-configurable default," not a
 fixed universal threshold or no protection at all. Disconnecting (rather
 than merely rate-limiting further attempts) matches how `LivenessMonitor`
 and other abuse-adjacent paths already terminate a misbehaving connection
-outright rather than degrading it in place.
+outright rather than degrading it in place. Sharing failure windows across
+connections prevents reconnects from resetting the password-guessing budget.
 
 **Alternatives considered**: *Rate-limiting `OPER` attempts via the
 existing `rateLimitBucket` (FR-016) instead of a dedicated counter* —
@@ -1793,7 +1805,7 @@ rejected because `rateLimitBucket` governs message/command throughput
 generally and slowing `OPER` attempts down doesn't bound how many a
 sufficiently patient attacker eventually gets to try; a hard disconnect
 after a fixed count is the stronger, simpler guarantee FR-034's own
-wording ("disconnect the client once a threshold is exceeded") calls
+wording ("disconnect the client when the threshold is reached") calls
 for. *No lockout at all, logging only* — rejected as insufficient given
 FR-034's explicit MUST for disconnection, not just visibility.
 

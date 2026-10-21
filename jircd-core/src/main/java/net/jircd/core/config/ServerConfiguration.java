@@ -22,6 +22,11 @@ import java.util.Map;
 /**
  * The administrator-controlled settings loaded at startup and re-applied on reload (data-model.md
  * "ServerConfiguration", Aggregate Root).
+ *
+ * <p>{@code operLockoutSeconds} is the fixed source-address OPER failure window (default 300, range
+ * 1–86400 seconds). {@code operRequireTls} defaults to false; when true, plaintext OPER is rejected
+ * without credential verification. Reload updates subsequent OPER commands, retaining existing
+ * failure-window deadlines.
  */
 public record ServerConfiguration(
     Map<String, Boolean> capabilityStates,
@@ -36,6 +41,8 @@ public record ServerConfiguration(
     boolean whoMaskEnabled,
     int maxModesPerCommand,
     int operFailureThreshold,
+    int operLockoutSeconds,
+    boolean operRequireTls,
     int whowasHistorySize,
     int keepAliveFrequencySeconds,
     int sendqLimitBytes,
@@ -171,6 +178,11 @@ public record ServerConfiguration(
   public static final int DEFAULT_TOPIC_MAX_LENGTH = 390;
   public static final int DEFAULT_MAX_MODES_PER_COMMAND = 6;
   public static final int DEFAULT_OPER_FAILURE_THRESHOLD = 5;
+
+  /** Fixed failure-counting and lockout window, starting at the first failure. */
+  public static final int DEFAULT_OPER_LOCKOUT_SECONDS = 300;
+
+  public static final int OPER_LOCKOUT_SECONDS_CEILING = 86400;
   public static final int LENGTH_CEILING = 400;
   public static final int MAX_MODES_CEILING = 20;
   public static final int OPER_FAILURE_THRESHOLD_CEILING = 20;

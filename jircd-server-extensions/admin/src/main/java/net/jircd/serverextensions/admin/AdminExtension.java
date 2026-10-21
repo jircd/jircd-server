@@ -15,6 +15,7 @@
  */
 package net.jircd.serverextensions.admin;
 
+import java.time.Clock;
 import net.jircd.core.extension.ServerContext;
 import net.jircd.core.extension.ServerExtension;
 import net.jircd.protocol.Command;
@@ -31,6 +32,8 @@ public final class AdminExtension implements ServerExtension {
 
   public static final String ID = "admin";
 
+  private final OperAttemptTracker attempts = new OperAttemptTracker(Clock.systemUTC(), 10_000);
+
   @Override
   public String id() {
     return ID;
@@ -45,7 +48,7 @@ public final class AdminExtension implements ServerExtension {
     registrar.register(
         Command.OPER,
         new OperCommandHandler(
-            serverName, context.configurationReloader(), context.disconnectCleanup()));
+            serverName, context.configurationReloader(), context.disconnectCleanup(), attempts));
     registrar.register(
         Command.EXTENSION, new ExtensionCommandHandler(extensionRegistry, serverName));
     registrar.register(

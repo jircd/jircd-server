@@ -629,4 +629,20 @@ class ConfigurationLoaderTest {
     assertThat(config.serverExtensionStates()).containsEntry("admin", true);
     assertThat(config.administratorCredentials()).hasSize(1);
   }
+
+  @Test
+  void operSecuritySettingsAreValidated() throws Exception {
+    var defaults = load("{}");
+    assertThat(defaults.operLockoutSeconds()).isEqualTo(300);
+    assertThat(defaults.operRequireTls()).isFalse();
+    var configured = load("operLockoutSeconds: 60\noperRequireTls: true\n");
+    assertThat(configured.operLockoutSeconds()).isEqualTo(60);
+    assertThat(configured.operRequireTls()).isTrue();
+    for (String value : new String[] {"0", "-1", "86401", "1.5", "wrong"}) {
+      assertThatThrownBy(() -> load("operLockoutSeconds: " + value))
+          .isInstanceOf(ConfigurationException.class);
+    }
+    assertThatThrownBy(() -> load("operRequireTls: wrong"))
+        .isInstanceOf(ConfigurationException.class);
+  }
 }

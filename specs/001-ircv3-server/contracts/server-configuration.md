@@ -101,6 +101,10 @@ rateLimit:
   bucketSize: 20        # tokens
   refillRatePerSecond: 5
 
+operFailureThreshold: 5  # 1–20 failures per source bucket, across connections/usernames
+operLockoutSeconds: 300  # 1–86400 seconds from first failure; fixed deadline
+operRequireTls: false   # true rejects plaintext OPER with 491 ERR_NOOPERHOST
+
 administratorCredentials:
   - username: root-admin
     hashedPassword: "<bcrypt/Argon2id hash — never plain text, see research.md 'Administrator credential storage' and 008-argon2-admin-verification research.md>"
@@ -115,6 +119,29 @@ administratorCredentials:
   `rateLimit` value MUST cause the server to refuse to start with an error
   naming the exact offending key/value (FR-012, SC-008) — not a stack
   trace, not a silent default substitution.
+- **OPER protection (#74)**: `operFailureThreshold` is an integer `1`–`20`
+  (default `5`); `operLockoutSeconds` is an integer `1`–`86400` (default `300`);
+  `operRequireTls` is a boolean (default `false`). Invalid types/ranges reject
+  startup/reload. Failure windows start at the first failure, span reconnects and
+  usernames, and use the same normalized IPv4 /32 / configured IPv6 prefix buckets
+  as connection admission. Connection-limit overrides do not exempt OPER failures.
+  At threshold, or during lockout, OPER returns `464` and disconnects without
+  checking another password. A successful OPER below threshold clears the bucket.
+  Plaintext OPER with TLS required returns `491 ERR_NOOPERHOST` with
+  `OPER requires TLS; reconnect using TLS`, without checking credentials or counting
+  a failure; an already locked source still receives `464` and disconnects.
+  `REHASH`/`SIGHUP` apply the TLS rule and threshold to subsequent OPER commands,
+  including existing sessions. Duration changes affect new windows only; existing
+  deadlines remain fixed. Changing `ipv6ConnectionLimitPrefix` selects new buckets
+  for subsequent OPER commands; old buckets expire normally. Reclamation is lazy
+  on subsequent attempts. At most 10,000 source buckets are retained; when full,
+  new sources fall back to per-session failure counting, still verifying passwords
+  and disconnecting at the threshold. Success clears the session counter. Existing
+  lockouts are preserved. The source address is captured from the accepted socket,
+  separately from the display hostname; if absent, a per-connection key is used.
+  Skipped verification during lockout logs `OPER source locked out`; verified
+  failures log `invalid OPER credentials`, including the threshold-reaching failure.
+  Server restart clears the in-memory tracker.
 - **Connection admission limits (#72)**: `maxConnections` defaults to `10000` and
   `maxConnectionsPerIp` to `20`; both MUST be positive YAML integers no greater
   than `2147483647`. Registered and unregistered connections count across all

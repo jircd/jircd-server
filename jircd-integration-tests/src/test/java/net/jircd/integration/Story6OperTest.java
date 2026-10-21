@@ -18,7 +18,9 @@ package net.jircd.integration;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.nio.file.Files;
 import java.time.Duration;
+import net.jircd.core.session.SecurityEventLog;
 import org.junit.jupiter.api.Test;
 
 class Story6OperTest {
@@ -66,6 +68,112 @@ class Story6OperTest {
       alice.send("OPER " + TestServer.ADMIN_USERNAME + " wrong-password");
       assertThatThrownBy(() -> alice.readUntil("_never_matches_", Duration.ofSeconds(5)))
           .hasMessageContaining("Connection closed");
+    }
+  }
+
+  @Test
+  void failuresAndLockoutSurviveReconnectEvenWithCorrectCredentials() throws Exception {
+    try (TestServer server =
+        TestServer.start(TestServer.adminEnabledYaml() + "operFailureThreshold: 2\n")) {
+      try (RawIrcClient first = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+        first.registerAndAwaitWelcome("first", "first");
+        first.send("OPER root wrong-password");
+        assertThat(first.readUntil("464", Duration.ofSeconds(5))).contains("464");
+      }
+      try (RawIrcClient second = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+        second.registerAndAwaitWelcome("second", "second");
+        second.send("OPER another-user wrong-password");
+        assertThatThrownBy(() -> second.readUntil("_never_matches_", Duration.ofSeconds(5)))
+            .hasMessageContaining("Connection closed");
+      }
+      try (RawIrcClient third = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+        third.registerAndAwaitWelcome("third", "third");
+        third.send("OPER " + TestServer.ADMIN_USERNAME + " :" + TestServer.ADMIN_PASSWORD);
+        assertThatThrownBy(() -> third.readUntil("381", Duration.ofSeconds(5)))
+            .hasMessageContaining("Connection closed");
+      }
+    }
+  }
+
+  @Test
+  void tlsRequirementRejectsPlaintextAndAcceptsTls() throws Exception {
+    try (TestServer server =
+            TestServer.start(TestServer.adminEnabledYaml() + "operRequireTls: true\n");
+        RawIrcClient plain = RawIrcClient.connectPlaintext(server.plaintextPort());
+        RawIrcClient tls = RawIrcClient.connectTls(server.tlsPort())) {
+      plain.registerAndAwaitWelcome("plain", "plain");
+      plain.send("OPER " + TestServer.ADMIN_USERNAME + " :" + TestServer.ADMIN_PASSWORD);
+      assertThat(plain.readUntil("491", Duration.ofSeconds(5))).contains("OPER requires TLS");
+      tls.registerAndAwaitWelcome("secure", "secure");
+      tls.send("OPER " + TestServer.ADMIN_USERNAME + " :" + TestServer.ADMIN_PASSWORD);
+      assertThat(tls.readUntil("381", Duration.ofSeconds(5))).contains("381");
+    }
+  }
+
+  @Test
+  void successfulOperClearsFailuresAcrossConnections() throws Exception {
+    try (TestServer server =
+        TestServer.start(TestServer.adminEnabledYaml() + "operFailureThreshold: 2\n")) {
+      try (RawIrcClient first = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+        first.registerAndAwaitWelcome("first", "first");
+        first.send("OPER root wrong-password");
+        first.readUntil("464", Duration.ofSeconds(5));
+        first.send("OPER " + TestServer.ADMIN_USERNAME + " :" + TestServer.ADMIN_PASSWORD);
+        first.readUntil("381", Duration.ofSeconds(5));
+      }
+      try (RawIrcClient second = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+        second.registerAndAwaitWelcome("second", "second");
+        second.send("OPER root wrong-password");
+        second.readUntil("464", Duration.ofSeconds(5));
+        second.send("PING still-connected");
+        assertThat(second.readUntil("PONG", Duration.ofSeconds(5))).contains("still-connected");
+      }
+    }
+  }
+
+  @Test
+  void rehashAppliesTlsRequirementToExistingConnections() throws Exception {
+    try (TestServer server = TestServer.start(TestServer.adminEnabledYaml());
+        RawIrcClient root = RawIrcClient.connectPlaintext(server.plaintextPort());
+        RawIrcClient probe = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+      root.registerAndAwaitWelcome("root", "root");
+      probe.registerAndAwaitWelcome("probe", "probe");
+      root.send("OPER " + TestServer.ADMIN_USERNAME + " :" + TestServer.ADMIN_PASSWORD);
+      root.readUntil("381", Duration.ofSeconds(5));
+      Files.writeString(
+          server.configPath,
+          TestServer.baseYaml()
+              + TestServer.adminEnabledYaml()
+              + "operRequireTls: true\noperLockoutSeconds: 60\noperFailureThreshold: 2\n");
+      root.send("REHASH");
+      root.readUntil("382", Duration.ofSeconds(5));
+      probe.send("OPER " + TestServer.ADMIN_USERNAME + " :" + TestServer.ADMIN_PASSWORD);
+      assertThat(probe.readUntil("491", Duration.ofSeconds(5))).contains("OPER requires TLS");
+    }
+  }
+
+  @Test
+  void skippedVerificationLogsLockoutRatherThanInvalidCredentials() throws Exception {
+    try (TestServer server =
+            TestServer.start(TestServer.adminEnabledYaml() + "operFailureThreshold: 1\n");
+        LogCapture logs = new LogCapture(SecurityEventLog.class)) {
+      try (RawIrcClient first = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+        first.registerAndAwaitWelcome("first", "first");
+        first.send("OPER root wrong");
+        assertThatThrownBy(() -> first.readUntil("_never_matches_", Duration.ofSeconds(5)))
+            .hasMessageContaining("Connection closed");
+      }
+      try (RawIrcClient second = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+        second.registerAndAwaitWelcome("second", "second");
+        second.send("OPER " + TestServer.ADMIN_USERNAME + " :" + TestServer.ADMIN_PASSWORD);
+        assertThatThrownBy(() -> second.readUntil("381", Duration.ofSeconds(5)))
+            .hasMessageContaining("Connection closed");
+      }
+      assertThat(
+              logs.messages().stream()
+                  .filter(message -> message.contains("security-event=failed-authentication"))
+                  .map(message -> message.substring(message.indexOf("reason="))))
+          .containsExactly("reason=invalid OPER credentials", "reason=OPER source locked out");
     }
   }
 }
