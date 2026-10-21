@@ -169,7 +169,7 @@ nickname.
   `jircd-core/src/main/java/net/jircd/core/session/command/JoinCommandHandler.java`
   (research.md "Story 4")
 - [X] T015 [US4] After the `JOIN` notification fan-out and before `sendNamesReply`, if
-  `channel.topic()` is present, send `332 RPL_TOPIC`/`333 RPL_TOPICTIME` to the joining session
+  `channel.topic()` is present, send `332 RPL_TOPIC`/`333 RPL_TOPICWHOTIME` to the joining session
   only, in the same file (same file as T014 — sequential)
 - [X] T016 [P] [US4] Change the no-comment branch's default from `null` (omitted parameter) to
   `session.nickname()`, in

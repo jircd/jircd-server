@@ -24,16 +24,17 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
 /**
  * A named, joinable group through which members exchange messages. {@code name} is its identity;
  * membership and moderation state are guarded by this aggregate. The mutators of the member,
  * operator, voice, mode, ban and invitation collections are {@code synchronized} on this monitor;
- * {@code topic}, {@code memberLimit} and {@code key} are single-field volatile values with
- * unsynchronized setters. Lock order: an operation that needs both monitors takes the {@link
- * ChannelRegistry} monitor first, one that needs only this monitor never takes the registry monitor
- * while holding it, and no operation holds two channel monitors.
+ * {@code topic} is an atomic snapshot; {@code memberLimit} and {@code key} are single-field
+ * volatile values with unsynchronized setters. Lock order: an operation that needs both monitors
+ * takes the {@link ChannelRegistry} monitor first, one that needs only this monitor never takes the
+ * registry monitor while holding it, and no operation holds two channel monitors.
  *
  * <p>C-1: {@code operators} and {@code voiced} are subsets of {@code members}; granting either to a
  * non-member is refused and changes nothing. C-2: {@code secret} and {@code private} are never both
@@ -67,7 +68,7 @@ public final class Channel {
   /** An immutable snapshot of a topic and the identity and Unix time captured when it was set. */
   public record Topic(String text, String setter, long setAt) {}
 
-  private volatile Topic topic;
+  private final AtomicReference<Topic> topic = new AtomicReference<>();
   private volatile int memberLimit;
   private volatile String key;
   private final Instant createdAt = Instant.now();
@@ -300,17 +301,20 @@ public final class Channel {
   }
 
   public String topic() {
-    Topic current = topic;
+    Topic current = topic.get();
     return current == null ? null : current.text();
   }
 
   public Topic topicState() {
-    return topic;
+    return topic.get();
   }
 
   /** An empty or absent topic clears its setter and timestamp as well. */
   public void setTopic(String text, String setter, long setAt) {
-    topic = text == null || text.isEmpty() ? null : new Topic(text, setter, setAt);
+    topic.set(
+        text == null || text.isEmpty()
+            ? null
+            : new Topic(text, Objects.requireNonNull(setter, "setter"), setAt));
   }
 
   /**

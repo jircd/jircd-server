@@ -108,11 +108,13 @@ channel, when RFC1459/RFC2812 both say there's no error reply for this) was also
 already in `NamesCommandHandler`, plus `ChannelRegistry` was changed to iterate channels in
 deterministic creation order (needed for a repeatable bare-`NAMES` response shape).
 
+**Topic metadata implemented (#75)**: `333 RPL_TOPICWHOTIME` now follows `332 RPL_TOPIC`
+on JOIN and TOPIC queries, with the stored presented setter and Unix timestamp. The missing-333
+exclusion for `topic.py::TopicPrivilegesTestCase::testTopicPrivileges` no longer applies; this
+follow-up was verified with unit and real-socket integration tests, without rerunning irctest.
+
 **Confirmed out of scope, not expected to pass** (each traced to a cause outside this feature's
-FRs, not a regression): `topic.py::TopicPrivilegesTestCase::testTopicPrivileges` (asserts
-`RPL_TOPICTIME`/`333`, a numeric this project has never implemented — no set-at timestamp is
-tracked, an already-documented `001-ircv3-server` design decision, unrelated to `+t` itself, which
-this same test's `+t`-privilege assertions correctly pass); `names.py::testNames1459`/
+FRs, not a regression): `names.py::testNames1459`/
 `testNamesNoArgumentPublic1459`/`testNamesNoArgumentPrivate1459` (all `deprecated=True` — the
 obsolete RFC1459-only no-`=`-symbol reply shape, superseded by the `2812`/`Modern` variants above,
 which pass); `lusers.py`'s `testLusersFull`-suffixed tests and any assertion requiring `265

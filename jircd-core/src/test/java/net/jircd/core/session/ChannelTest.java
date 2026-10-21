@@ -30,6 +30,32 @@ import org.junit.jupiter.params.provider.CsvSource;
 
 class ChannelTest {
 
+  @Test
+  void nonemptyTopicRequiresASetterAndPreservesThePreviousTopicOnRejection() {
+    Channel channel = new Channel("#topic");
+    channel.setTopic("old", "setter!user@host", 123L);
+    Channel.Topic previous = channel.topicState();
+
+    assertThatThrownBy(() -> channel.setTopic("new", null, 456L))
+        .isInstanceOf(NullPointerException.class)
+        .hasMessage("setter");
+    assertThat(channel.topicState()).isSameAs(previous);
+  }
+
+  @Test
+  void clearingATopicDoesNotRequireASetter() {
+    Channel channel = new Channel("#topic");
+    channel.setTopic("old", "setter!user@host", 123L);
+    channel.setTopic("", null, 456L);
+    assertThat(channel.topicState()).isNull();
+    assertThat(channel.topic()).isNull();
+
+    channel.setTopic("old", "setter!user@host", 123L);
+    channel.setTopic(null, null, 456L);
+    assertThat(channel.topicState()).isNull();
+    assertThat(channel.topic()).isNull();
+  }
+
   @ParameterizedTest
   @CsvSource(
       delimiter = ' ',
