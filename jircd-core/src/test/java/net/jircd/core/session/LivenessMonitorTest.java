@@ -246,7 +246,7 @@ class LivenessMonitorTest {
   }
 
   @Test
-  void registrationCompletingAfterTheTimeoutClaimedClosingSendsNoWelcome() throws Exception {
+  void registrationCompletingAfterTheTimeoutClaimedClosingSendsNoWelcome() {
     MutableClock clock = new MutableClock(Instant.now());
     java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
     ClientSession session = new ClientSession("c1", "host.example", RateLimitBucket.withDefaults());

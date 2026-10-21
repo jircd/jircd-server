@@ -109,7 +109,7 @@ public final class RawIrcClient implements AutoCloseable {
     try {
       reader.readLine();
       return false;
-    } catch (java.net.SocketTimeoutException quiet) {
+    } catch (java.net.SocketTimeoutException _) {
       return true;
     } finally {
       socket.setSoTimeout(0);
