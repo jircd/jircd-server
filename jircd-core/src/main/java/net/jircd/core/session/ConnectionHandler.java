@@ -26,6 +26,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
@@ -138,6 +139,7 @@ public final class ConnectionHandler {
   private final Consumer<Socket> acceptedSocketCustomizer;
   private boolean accepting = true;
   private final Map<Thread, Socket> connections = new ConcurrentHashMap<>();
+  private final Set<ClientSession> liveSessions = ConcurrentHashMap.newKeySet();
   private final Semaphore rejectionSlots = new Semaphore(64);
   private final Map<Thread, Socket> rejections = new ConcurrentHashMap<>();
   private final Map<Command, CommandHandler> handlers = new ConcurrentHashMap<>();
@@ -277,6 +279,18 @@ public final class ConnectionHandler {
 
   public void registerHandler(Command command, CommandHandler handler) {
     handlers.put(command, handler);
+  }
+
+  /**
+   * Connections accepted but not yet {@code REGISTERED} (for {@code RPL_LUSERUNKNOWN}). A session
+   * that is closing — a registration timeout, a QUIT, a socket error — stops counting the moment it
+   * claims {@code CLOSING}, before its thread is gone.
+   */
+  public int unregisteredConnectionCount() {
+    return (int)
+        liveSessions.stream()
+            .filter(s -> s.lifecycle().get() == ConnectionLifecycle.State.CONNECTING)
+            .count();
   }
 
   /** Reserves admission before spawning one virtual thread to own the connection's lifetime. */
@@ -476,6 +490,7 @@ public final class ConnectionHandler {
                 java.time.Clock.systemUTC()),
             socket instanceof javax.net.ssl.SSLSocket,
             socket.getInetAddress());
+    liveSessions.add(session);
     ConnectionMonitorLog.connected(connectionId, remoteAddress);
     // Attached to the session and closed later via DisconnectCleanup, not in this method.
     @SuppressWarnings("PMD.CloseResource")
@@ -483,6 +498,7 @@ public final class ConnectionHandler {
     try {
       writer = new SessionWriter(session, socket.getOutputStream(), tagRenderer, sendqLimit);
     } catch (IOException e) {
+      liveSessions.remove(session);
       closeQuietly(socket);
       return;
     }
@@ -511,6 +527,7 @@ public final class ConnectionHandler {
       readCommands(session, socket);
     } finally {
       awaitTeardown(socket, liveness, writer, overflowCleanup);
+      liveSessions.remove(session);
     }
   }
 

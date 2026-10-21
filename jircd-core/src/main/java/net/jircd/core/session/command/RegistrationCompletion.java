@@ -24,6 +24,7 @@ import net.jircd.core.extension.SupportedFeatures;
 import net.jircd.core.session.ClientSession;
 import net.jircd.core.session.CoreChannelModes;
 import net.jircd.core.session.UserMode;
+import net.jircd.core.session.UserStatistics;
 import net.jircd.protocol.Message;
 import net.jircd.protocol.NumericReply;
 
@@ -38,16 +39,19 @@ public final class RegistrationCompletion {
   private final String serverVersion;
   private final Instant serverStartedAt;
   private final ExtensionRegistry extensionRegistry;
+  private final UserStatistics userStatistics;
 
   public RegistrationCompletion(
       Supplier<String> serverName,
       String serverVersion,
       Instant serverStartedAt,
-      ExtensionRegistry extensionRegistry) {
+      ExtensionRegistry extensionRegistry,
+      UserStatistics userStatistics) {
     this.serverName = serverName;
     this.serverVersion = serverVersion;
     this.serverStartedAt = serverStartedAt;
     this.extensionRegistry = extensionRegistry;
+    this.userStatistics = userStatistics;
   }
 
   /** Sends the burst and marks the session REGISTERED if it is now ready and wasn't already. */
@@ -59,6 +63,7 @@ public final class RegistrationCompletion {
       return;
     }
     if (session.lifecycle().completeRegistration()) {
+      userStatistics.recordRegistration();
       sendBurst(session);
     }
   }

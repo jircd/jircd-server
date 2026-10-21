@@ -108,6 +108,14 @@ The tracker uses an injectable clock and is cleared on server restart.
 FR-017 cleanup: membership removal + notification to affected channels).
 There is no path back from `CLOSING`.
 
+**Counting for `LUSERS`** (issue #76): a session counts as a *user* only
+while `REGISTERED`, and as an *unknown connection* only while `CONNECTING`
+— `CLOSING` counts as neither, so a registration timeout or disconnect
+cannot leave a stale count. `UserStatistics` derives the user count from
+`NicknameRegistry` and keeps the high-water mark (`peak`), raised at each
+registration and never lowered; `ConnectionHandler` tracks its live
+sessions and reports how many are still `CONNECTING`.
+
 ## UserIdentity — *Value Object, Session & Messaging*
 
 The nickname-level identity a session presents. Has no identity of its own

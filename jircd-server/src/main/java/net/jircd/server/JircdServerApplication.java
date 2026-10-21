@@ -76,6 +76,8 @@ public final class JircdServerApplication {
   private static final Logger LOG = LoggerFactory.getLogger(JircdServerApplication.class);
 
   private final NicknameRegistry nicknameRegistry = new NicknameRegistry();
+  private final net.jircd.core.session.UserStatistics userStatistics =
+      new net.jircd.core.session.UserStatistics(nicknameRegistry);
   private final ChannelRegistry channelRegistry = new ChannelRegistry();
   private final ExtensionRegistry extensionRegistry = new ExtensionRegistry();
   private final WhowasHistory whowasHistory;
@@ -191,7 +193,7 @@ public final class JircdServerApplication {
   private void registerStory1Handlers() {
     var registrationCompletion =
         new net.jircd.core.session.command.RegistrationCompletion(
-            () -> serverName, serverVersion, startedAt, extensionRegistry);
+            () -> serverName, serverVersion, startedAt, extensionRegistry, userStatistics);
     connectionHandler.registerHandler(
         Command.NICK,
         new NickCommandHandler(
@@ -268,7 +270,12 @@ public final class JircdServerApplication {
         new net.jircd.core.session.command.InfoCommandHandler(() -> serverName, serverVersion));
     connectionHandler.registerHandler(
         Command.LUSERS,
-        new LusersCommandHandler(nicknameRegistry, channelRegistry, () -> serverName));
+        new LusersCommandHandler(
+            nicknameRegistry,
+            channelRegistry,
+            userStatistics,
+            connectionHandler::unregisteredConnectionCount,
+            () -> serverName));
     connectionHandler.registerHandler(
         Command.AWAY, new AwayCommandHandler(() -> serverName, extensionRegistry));
     connectionHandler.registerHandler(
