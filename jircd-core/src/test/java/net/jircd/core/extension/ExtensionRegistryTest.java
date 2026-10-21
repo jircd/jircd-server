@@ -88,6 +88,8 @@ class ExtensionRegistryTest {
             true,
             ServerConfiguration.DEFAULT_MAX_MODES_PER_COMMAND,
             ServerConfiguration.DEFAULT_OPER_FAILURE_THRESHOLD,
+            ServerConfiguration.DEFAULT_OPER_LOCKOUT_SECONDS,
+            false,
             ServerConfiguration.DEFAULT_WHOWAS_HISTORY_SIZE,
             ServerConfiguration.DEFAULT_KEEP_ALIVE_FREQUENCY_SECONDS,
             ServerConfiguration.DEFAULT_SENDQ_LIMIT_BYTES,

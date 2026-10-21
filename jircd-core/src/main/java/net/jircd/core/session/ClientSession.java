@@ -15,6 +15,7 @@
  */
 package net.jircd.core.session;
 
+import java.net.InetAddress;
 import java.time.Instant;
 import java.util.Collections;
 import java.util.Set;
@@ -59,13 +60,50 @@ public final class ClientSession {
   private volatile String realname;
   private volatile String awayReason;
   private final AtomicBoolean administratorPrivilege = new AtomicBoolean(false);
-  private final AtomicInteger failedOperAttempts = new AtomicInteger(0);
+  private final boolean tls;
+  private final InetAddress sourceAddress;
+  private final AtomicInteger fallbackOperFailures = new AtomicInteger();
   private final AtomicReference<Instant> lastLivenessAt = new AtomicReference<>(Instant.now());
 
   public ClientSession(String connectionId, String realHostname, RateLimitBucket rateLimitBucket) {
+    this(connectionId, realHostname, rateLimitBucket, false);
+  }
+
+  /** Transport security is fixed by the accepted socket, never by a client command. */
+  public ClientSession(
+      String connectionId, String realHostname, RateLimitBucket rateLimitBucket, boolean tls) {
+    this(connectionId, realHostname, rateLimitBucket, tls, null);
+  }
+
+  /** The socket's source address is independent of the display hostname; null means unavailable. */
+  public ClientSession(
+      String connectionId,
+      String realHostname,
+      RateLimitBucket rateLimitBucket,
+      boolean tls,
+      InetAddress sourceAddress) {
+    this.sourceAddress = sourceAddress;
+    this.tls = tls;
     this.connectionId = connectionId;
     this.realHostname = realHostname;
     this.rateLimitBucket = rateLimitBucket;
+  }
+
+  /**
+   * The accepted socket's address, or null when unavailable; never parsed from a display string.
+   */
+  public InetAddress sourceAddress() {
+    return sourceAddress;
+  }
+
+  /** Counts credential failures when the shared OPER source tracker is full. */
+  public int incrementFallbackOperFailures() {
+    return fallbackOperFailures.incrementAndGet();
+  }
+
+  /** A successful OPER clears the per-session capacity fallback counter. */
+  public void resetFallbackOperFailures() {
+    fallbackOperFailures.set(0);
   }
 
   public String connectionId() {
@@ -227,7 +265,6 @@ public final class ClientSession {
   public void grantAdministratorPrivilege() {
     administratorPrivilege.set(true);
     userModes.add(UserMode.OPERATOR);
-    failedOperAttempts.set(0);
   }
 
   /** Revokes administrator privilege and removes the operator user mode in the same act. */
@@ -236,8 +273,9 @@ public final class ClientSession {
     userModes.remove(UserMode.OPERATOR);
   }
 
-  public int incrementFailedOperAttempts() {
-    return failedOperAttempts.incrementAndGet();
+  /** Whether this session was accepted on a TLS socket. */
+  public boolean isTls() {
+    return tls;
   }
 
   public Instant lastLivenessAt() {

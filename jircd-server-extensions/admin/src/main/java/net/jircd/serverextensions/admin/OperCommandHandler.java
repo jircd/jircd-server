@@ -15,10 +15,13 @@
  */
 package net.jircd.serverextensions.admin;
 
+import java.time.Clock;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
 import net.jircd.core.config.ConfigurationReloader;
+import net.jircd.core.config.ConnectionLimitPolicy;
+import net.jircd.core.config.ServerConfiguration;
 import net.jircd.core.session.ClientSession;
 import net.jircd.core.session.DisconnectCleanup;
 import net.jircd.core.session.SecurityEventLog;
@@ -30,7 +33,7 @@ import net.jircd.protocol.NumericReply;
 
 /**
  * {@code OPER} — verifies administrator credentials (FR-034), granting privilege on success and
- * tracking consecutive failures toward a per-connection disconnect (research.md "OPER
+ * tracking failures across connections toward a source-address lockout (research.md "OPER
  * failed-attempt lockout"). Deliberately does not itself check {@link AdminPrivilege} — this is the
  * credential-verification entry point that grants privilege, not a privilege-gated action.
  */
@@ -39,11 +42,25 @@ public final class OperCommandHandler implements CommandHandler {
   private final Supplier<String> serverName;
   private final ConfigurationReloader configurationReloader;
   private final DisconnectCleanup disconnectCleanup;
+  private final OperAttemptTracker attempts;
 
   public OperCommandHandler(
       Supplier<String> serverName,
       ConfigurationReloader configurationReloader,
       DisconnectCleanup disconnectCleanup) {
+    this(
+        serverName,
+        configurationReloader,
+        disconnectCleanup,
+        new OperAttemptTracker(Clock.systemUTC(), 10_000));
+  }
+
+  OperCommandHandler(
+      Supplier<String> serverName,
+      ConfigurationReloader configurationReloader,
+      DisconnectCleanup disconnectCleanup,
+      OperAttemptTracker attempts) {
+    this.attempts = attempts;
     this.serverName = serverName;
     this.configurationReloader = configurationReloader;
     this.disconnectCleanup = disconnectCleanup;
@@ -64,7 +81,33 @@ public final class OperCommandHandler implements CommandHandler {
     String password = message.params().get(1);
     var config = configurationReloader.current();
 
-    if (AdminCredentialVerifier.verify(config.administratorCredentials(), username, password)) {
+    String source =
+        session.sourceAddress() == null
+            ? "connection:" + session.connectionId()
+            : ConnectionLimitPolicy.resolve(session.sourceAddress(), config.connectionLimits())
+                .bucket();
+    var result =
+        attempts.authenticate(
+            source,
+            config.operFailureThreshold(),
+            config.operLockoutSeconds(),
+            !config.operRequireTls() || session.isTls(),
+            () ->
+                AdminCredentialVerifier.verify(
+                    config.administratorCredentials(), username, password));
+    if (result == OperAttemptTracker.Result.CAPACITY_FULL) {
+      result = authenticateSession(session, config, username, password);
+    }
+    if (result == OperAttemptTracker.Result.TLS_REQUIRED) {
+      Replies.send(
+          session,
+          serverName.get(),
+          NumericReply.ERR_NOOPERHOST,
+          "OPER requires TLS; reconnect using TLS");
+      return;
+    }
+    if (result == OperAttemptTracker.Result.SUCCESS) {
+      session.resetFallbackOperFailures();
       session.grantAdministratorPrivilege();
       Replies.send(
           session, serverName.get(), NumericReply.RPL_YOUREOPER, "You are now an IRC operator");
@@ -86,11 +129,28 @@ public final class OperCommandHandler implements CommandHandler {
     }
 
     SecurityEventLog.failedAuthentication(
-        session.connectionId(), username, "invalid OPER credentials");
+        session.connectionId(),
+        username,
+        result == OperAttemptTracker.Result.LOCKED
+            ? "OPER source locked out"
+            : "invalid OPER credentials");
     Replies.send(session, serverName.get(), NumericReply.ERR_PASSWDMISMATCH, "Password incorrect");
-    int attempts = session.incrementFailedOperAttempts();
-    if (attempts >= config.operFailureThreshold()) {
+    if (result == OperAttemptTracker.Result.LOCKED
+        || result == OperAttemptTracker.Result.FAILURE_LIMIT_REACHED) {
       disconnectCleanup.cleanup(session, "Too many failed OPER attempts");
     }
+  }
+
+  private static OperAttemptTracker.Result authenticateSession(
+      ClientSession session, ServerConfiguration config, String username, String password) {
+    if (config.operRequireTls() && !session.isTls()) {
+      return OperAttemptTracker.Result.TLS_REQUIRED;
+    }
+    if (AdminCredentialVerifier.verify(config.administratorCredentials(), username, password)) {
+      return OperAttemptTracker.Result.SUCCESS;
+    }
+    return session.incrementFallbackOperFailures() >= config.operFailureThreshold()
+        ? OperAttemptTracker.Result.FAILURE_LIMIT_REACHED
+        : OperAttemptTracker.Result.FAILURE;
   }
 }

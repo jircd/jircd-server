@@ -28,11 +28,29 @@ guarded by this aggregate.
 | `channelMemberships` | set of `Channel` references | Channels this session has joined; drives cleanup on disconnect (FR-017). |
 | `rateLimitBucket` | token bucket state | Per-connection (FR-016); see research.md "Rate limiting". |
 | `ident` | string, 0..1 | Absent until this session's `USER` command is processed (FR-001), then derived from its username field (FR-030); not independently verified (see spec.md Assumptions re: RFC 1413). Its presence is also the source-of-truth signal for "this session has already processed a `USER` command" (FR-001's one-shot restriction, `UserCommandHandler` precondition) — no separate boolean field duplicates that fact. |
-| `realHostname` | string | The connection's actual hostname/IP; always populated regardless of cloaking; source of truth for FR-032 (`WHOHOST`) and FR-038's self-lookup/administrator `WHOIS` cases. Never sent to a non-administrator client looking up a *different* client — see `UserIdentity.presentedForm` for the *display* value that case uses instead. |
+| `realHostname` | string | The connection's actual display hostname/IP; always populated regardless of cloaking; source of truth for FR-032 (`WHOHOST`) and FR-038's self-lookup/administrator `WHOIS` cases. Never sent to a non-administrator client looking up a *different* client — see `UserIdentity.presentedForm` for the *display* value that case uses instead. |
 | `administratorPrivilege` | boolean | Granted via FR-034's in-band credential command; authorizes FR-032 administrative commands. Independent of `channelMemberships`/operator status. Kept in lockstep with `userModes`'s `operator` entry below — never an independent third source of truth (research.md "User mode: `operator`"). |
 | `userModes` | set of `UserMode` (below) | FR-044. This release's two possible members: `operator` (`o`), added the instant `administratorPrivilege` becomes `true` and removed the instant it becomes `false` — never independently toggled; and `invisible` (`i`, FR-061), freely set/cleared by the session itself via `MODE`, with no paired field to stay in sync with. See `UserMode` below and Validation rules. |
 | `lastLivenessAt` | instant | Updated whenever this connection is known to be alive — traffic received from it, or a `PONG` answering the server's own `PING`. Read by this session's `LivenessMonitor` (research.md "Connection keep-alive") to decide when to probe and when to time out (FR-039). |
-| `failedOperAttempts` | non-negative integer, defaults to `0` | Count of consecutive `OPER` credential failures on this connection since its last successful `OPER` (or since connecting, if none). Incremented on each `464 ERR_PASSWDMISMATCH`; reset to `0` on a successful `OPER`. Read by `OperCommandHandler` against `ServerConfiguration.operFailureThreshold` (FR-034) to decide when to disconnect. Never reset by anything other than a successful `OPER` — an unrelated command in between does not clear the count. |
+
+The session also holds an immutable `tls` boolean and nullable `sourceAddress`
+(`InetAddress`) from the accepted socket. The source address is independent of
+`realHostname` and never parsed from that display string. An absent address uses
+a per-connection OPER key. The session's atomic `fallbackOperFailures` counter is
+used only when the shared tracker is at capacity, increments on verified failures,
+and resets on successful OPER.
+OPER failure counts live in the admin extension's `OperAttemptTracker`, shared
+across sessions rather than in `ClientSession`. Each entry contains the normalized
+source bucket (IPv4 /32 or `ipv6ConnectionLimitPrefix`, mapped IPv4 normalized),
+a failure count, and a fixed expiry instant from the first failed attempt.
+Authentication and accounting are serialized per source to prevent concurrent connections
+from exceeding the verification threshold. Successful OPER removes the entry;
+locked attempts skip credential verification and disconnect. Expired entries are
+reclaimed lazily on subsequent OPER commands. The map holds at most 10,000 entries;
+new sources use per-session failure counting when full, preserving live lockouts
+while allowing credential verification. The threshold still disconnects that
+session, and success resets its counter.
+The tracker uses an injectable clock and is cleared on server restart.
 
 **Validation rules**:
 - `nickname` MUST be unique across all `ClientSession`s at the moment it is
@@ -66,17 +84,13 @@ guarded by this aggregate.
   path allowed to change it — and doing so MUST also remove `operator`
   from `userModes` in the same act, never leaving the two out of sync
   (research.md "User mode: `operator`").
-- `failedOperAttempts` MUST increment by exactly one on each `OPER`
-  credential failure (`464 ERR_PASSWDMISMATCH`) and MUST reset to `0` the
-  instant this session's `OPER` succeeds. Once it reaches
-  `ServerConfiguration.operFailureThreshold`, the *same* `OPER` command
-  that pushed it there MUST — after replying `464` and logging the
-  attempt via `SecurityEventLog` (FR-019) as usual — transition this
-  session to `CLOSING` and run the identical FR-017 cleanup any other
-  connection loss uses (FR-034, research.md "OPER failed-attempt
-  lockout"). This is evaluated per-connection, not per-nickname or
-  per-IP — a fresh connection always starts at `0`, the same scope
-  `rateLimitBucket` already uses.
+- OPER failures MUST accrue in the shared source bucket across reconnects and
+  usernames. At threshold, OPER sends `464` and invokes normal FR-017 cleanup.
+  Subsequent OPER commands during the window skip password verification and
+  disconnect even with correct credentials. Success below threshold clears the
+  bucket. The fixed deadline is never extended by attempts or configuration reload.
+- With `operRequireTls`, plaintext OPER returns `491` without checking credentials
+  or incrementing the counter; an already locked source still disconnects.
 - `outboundQueue` reaching capacity (a member too slow to keep up with
   fan-out) MUST transition that session to `CLOSING` and run the same
   FR-017 cleanup as any other connection loss — a sender MUST NOT block
@@ -673,7 +687,9 @@ configuration reload.
 | `topicMaxLength` | positive integer, 0..1 | FR-056. Optional; defaults to `390` if unset. Enforced by `TopicCommandHandler` on a `TOPIC`-set attempt (`417 ERR_INPUTTOOLONG`, not `421` — reuses FR-049's length-violation numeric) and advertised as `TOPICLEN` (`SupportedFeatures`). MUST NOT exceed `400`. |
 | `whoMaskEnabled` | boolean, 0..1 | FR-061. Optional; defaults to `true` if unset. Gates `WHO`'s wildcard-mask and no-argument forms for non-administrator sessions only — `false` makes both return a bare `315 RPL_ENDOFWHO` (no `352` lines), indistinguishable from a real zero-match search. An administrator's `WHO` is never affected, checked before this setting (research.md "WHO and invisibility"). The channel-name and exact-nickname forms are never affected by it either way. |
 | `maxModesPerCommand` | positive integer, 0..1 | FR-064. Optional; defaults to `6` if unset. The maximum number of parameter-consuming channel-mode flags (`MEMBER`/`LIST`-kind) a single `MODE` command applies — flags beyond it within the same command are silently not applied (no error; the `MODE` echo reflects only what was applied). Advertised as `MODES` (`SupportedFeatures`). MUST NOT exceed `20` (research.md "MODE command grouping"). |
-| `operFailureThreshold` | positive integer, 0..1 | FR-034. Optional; defaults to `5` if unset. The number of consecutive `OPER` credential failures a single connection may accrue (`ClientSession.failedOperAttempts`) before the server disconnects it, the same "reasonable, administrator-configurable default" posture `rateLimit` already uses for abuse protection (FR-016). MUST NOT exceed `20`, the same ceiling `maxModesPerCommand` uses to catch a clearly-mistaken configuration value (research.md "OPER failed-attempt lockout"). |
+| `operFailureThreshold` | integer, `1`–`20` | Default `5`. Maximum failures per source bucket across connections and usernames within a window; applies immediately on reload. |
+| `operLockoutSeconds` | integer, `1`–`86400` | Default `300`. Fixed failure/lockout window starting at first failure. Reload applies to new windows only. |
+| `operRequireTls` | boolean | Default `false`. Plaintext OPER returns `491 ERR_NOOPERHOST` without credential verification. Reload applies to existing connections. |
 
 Admission settings are validated together at startup and `REHASH`/`SIGHUP`; invalid
 integers, out-of-range prefixes, malformed override entries, host bits, or duplicate

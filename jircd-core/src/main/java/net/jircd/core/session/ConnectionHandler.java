@@ -473,7 +473,9 @@ public final class ConnectionHandler {
             new RateLimitBucket(
                 configuredRateLimit.bucketSize(),
                 configuredRateLimit.refillRatePerSecond(),
-                java.time.Clock.systemUTC()));
+                java.time.Clock.systemUTC()),
+            socket instanceof javax.net.ssl.SSLSocket,
+            socket.getInetAddress());
     ConnectionMonitorLog.connected(connectionId, remoteAddress);
     // Attached to the session and closed later via DisconnectCleanup, not in this method.
     @SuppressWarnings("PMD.CloseResource")

@@ -541,7 +541,7 @@ was previously missing and needed its own definition (FR-048).
 
 | Command | Direction | Preconditions | Effect | Replies |
 |---|---|---|---|---|
-| `OPER <username> <password>` | C→S | `REGISTERED` session | Verifies credentials against `ServerConfiguration.administratorCredentials` (FR-034); on success, grants administrator privilege to this session and resets `ClientSession.failedOperAttempts` to `0`; on failure, increments it | `381 RPL_YOUREOPER` on success; `464 ERR_PASSWDMISMATCH` on failure (also logged, FR-019) — if this failure brings `failedOperAttempts` to `ServerConfiguration.operFailureThreshold` (default `5`), the connection is also closed immediately after, per FR-017's cleanup (FR-034, research.md "OPER failed-attempt lockout") |
+| `OPER <username> <password>` | C→S | `REGISTERED` session; TLS when `operRequireTls` is true | Checks the shared source bucket before credential verification. Below threshold, verifies `administratorCredentials`; success grants administrator privilege and clears that bucket's failures. Failure increments its count in a fixed `operLockoutSeconds` window from the first failure. Buckets span reconnects/usernames: normalized IPv4 /32 or configured IPv6 prefix. | `381 RPL_YOUREOPER` on success; `464 ERR_PASSWDMISMATCH` on failure (also logged). Reaching `operFailureThreshold` or attempting OPER while locked returns `464` and runs FR-017 disconnect cleanup without another credential check. Plaintext when TLS is required returns `491 ERR_NOOPERHOST` (`OPER requires TLS; reconnect using TLS`) without verification/counting; an already locked source still receives `464` and disconnects. |
 | `EXTENSION <ENABLE\|DISABLE> <extension-id>` | C→S | Sender holds administrator privilege | Toggles the named `CapabilityExtension` or `ServerExtension`'s state, in effect immediately for all clients (FR-011, FR-032) | Confirmation notice on success; `481 ERR_NOPRIVILEGES` if sender lacks administrator privilege (FR-033); `421 ERR_UNKNOWNCOMMAND`-style error naming the extension id if it doesn't exist |
 | `WHOHOST <nickname>` | C→S | Sender holds administrator privilege | Returns the target's real, unobfuscated hostname/IP regardless of any active cloaking (FR-031, FR-032) | Notice containing the real hostname on success; `481 ERR_NOPRIVILEGES` if unauthorized; standard "no such nickname" error if the target isn't connected |
 | `REHASH` | C→S | Sender holds administrator privilege | Manually re-reads and re-validates the Server Configuration file and reconciles it against live state — the in-band equivalent of a `SIGHUP` (research.md "Configuration reload mechanism", contracts/server-configuration.md "Live reload") | `382 RPL_REHASHING` on success; on validation failure, the same specific, actionable error startup validation would report (FR-012, SC-008), and the previously-active configuration remains untouched; `481 ERR_NOPRIVILEGES` if unauthorized |
@@ -555,12 +555,17 @@ was previously missing and needed its own definition (FR-048).
 - These six commands are the FR-032/FR-057/FR-058 minimum; additional
   administrative commands MAY be added by future extensions without
   changing this contract.
-- `OPER`'s lockout counter (`failedOperAttempts`) is scoped to the
-  connection, not the username being attempted — a client that fails
-  five times as `root-admin` then tries a different configured username
-  on the same still-open connection continues incrementing the same
-  counter, not a fresh one per username (research.md "OPER failed-
-  attempt lockout").
+- OPER lockouts are shared across connections and usernames for a source bucket.
+  Success below threshold clears it; expiration permits authentication again.
+  Attempts do not extend the fixed deadline. Entries expire lazily and tracking
+  is capped at 10,000 sources. At capacity, new sources use per-session failure
+  counting: passwords are still verified, success clears the session counter,
+  and reaching the threshold disconnects. Existing lockouts are preserved. Source
+  keys use the accepted socket address independently of the display hostname;
+  an absent address uses a per-connection key. Skipped checks during lockout log
+  `OPER source locked out`, while verified failures log `invalid OPER credentials`.
+  `REHASH`/`SIGHUP` apply the current TLS requirement and threshold; existing window
+  deadlines retain their original duration. Server restart clears the tracker.
 - Command names (`EXTENSION`, `WHOHOST`, `REHASH`, `SAJOIN`, `SAMODE`)
   are illustrative for this plan; the tasks phase may finalize different
   verbs as long as the preconditions/effects/replies contract above

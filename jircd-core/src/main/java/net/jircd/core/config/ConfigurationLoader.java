@@ -161,6 +161,13 @@ public final class ConfigurationLoader {
         whoMaskEnabled,
         maxModesPerCommand,
         operFailureThreshold,
+        positiveIntWithinCeiling(
+            root,
+            "operLockoutSeconds",
+            ServerConfiguration.DEFAULT_OPER_LOCKOUT_SECONDS,
+            ServerConfiguration.OPER_LOCKOUT_SECONDS_CEILING),
+        root.containsKey("operRequireTls")
+            && asBoolean(root.get("operRequireTls"), "operRequireTls"),
         whowasHistorySize,
         keepAliveFrequencySeconds,
         sendqLimitBytes,
