@@ -40,7 +40,8 @@ public final class ClientSession {
 
   private final String connectionId;
   private final ConnectionLifecycle lifecycle = new ConnectionLifecycle();
-  private volatile Set<String> negotiatedCapabilities = ConcurrentHashMap.newKeySet();
+  private final AtomicReference<Set<String>> negotiatedCapabilities =
+      new AtomicReference<>(ConcurrentHashMap.newKeySet());
   private final Set<Channel> channelMemberships = ConcurrentHashMap.newKeySet();
   private final Set<Channel> channelMembershipsView =
       Collections.unmodifiableSet(channelMemberships);
@@ -150,7 +151,7 @@ public final class ClientSession {
   }
 
   public Set<String> negotiatedCapabilities() {
-    return negotiatedCapabilities;
+    return negotiatedCapabilities.get();
   }
 
   /**
@@ -160,7 +161,7 @@ public final class ClientSession {
   public void replaceNegotiatedCapabilities(java.util.Collection<String> capabilities) {
     Set<String> replacement = ConcurrentHashMap.newKeySet();
     replacement.addAll(capabilities);
-    this.negotiatedCapabilities = replacement;
+    negotiatedCapabilities.set(replacement);
   }
 
   public boolean isNegotiatingCapabilities() {

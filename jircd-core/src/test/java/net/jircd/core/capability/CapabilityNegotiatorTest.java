@@ -156,9 +156,13 @@ class CapabilityNegotiatorTest {
     }
 
     @Override
-    public void start(ServerContext context) {}
+    public void start(ServerContext context) {
+      // nothing to start: the stub only offers a capability name
+    }
 
     @Override
-    public void stop() {}
+    public void stop() {
+      // nothing to release: the stub holds no resources
+    }
   }
 }
