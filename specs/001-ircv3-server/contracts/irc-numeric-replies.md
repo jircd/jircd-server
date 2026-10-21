@@ -78,12 +78,16 @@ during that window.
 | `441` | `ERR_USERNOTINCHANNEL` | `MODE +v`/`-v` or `+o`/`-o <nickname>` naming a nickname that isn't a current member of the target channel | FR-045, FR-046 |
 | `442` | `ERR_NOTONCHANNEL` | `PART`/`KICK`/`MODE` on a channel the sender hasn't joined; `PRIVMSG`/`NOTICE` to a channel with `members-only` active that the sender hasn't joined (FR-004, FR-013/FR-043 — membership is not required for `PRIVMSG`/`NOTICE` otherwise); `SAMODE` from an administrator who isn't currently a member of the target channel (FR-058); `INVITE` from a sender who isn't currently a member of the named channel — also covers that channel not existing at all (FR-065) | FR-003, FR-004, FR-014, FR-058, FR-065 |
 | `443` | `ERR_USERONCHANNEL` | `INVITE` naming a nickname that's already a member of the target channel (FR-065) | FR-065 |
-| `404` | `ERR_CANNOTSENDTOCHAN` | `PRIVMSG`/`NOTICE` to a channel blocked by `moderated` (sender not an operator/voiced) or by an active `ban-mask` match (sender muted in place, not removed) — distinct from `442`'s "not even a member" case (FR-013, FR-062) | FR-013, FR-062 |
-| `474` | `ERR_BANNEDFROMCHAN` | `JOIN` naming a channel the joiner's presented identity matches an active `ban-mask` entry on — `SAJOIN` bypasses this check entirely (FR-057, FR-062) | FR-062 |
-| `473` | `ERR_INVITEONLYCHAN` | `JOIN` naming a channel with `invite-only` active that the joiner holds no current invitation for — `SAJOIN` bypasses this check entirely (FR-057, FR-065) | FR-065 |
+| `404` | `ERR_CANNOTSENDTOCHAN` | `PRIVMSG`/`NOTICE` blocked by `moderated` or by `b` without a matching `e` exception (either presented or real identity) (#78) | FR-013, FR-062, #78 |
+| `474` | `ERR_BANNEDFROMCHAN` | `JOIN` when either presented or real identity matches `b` and neither matches an `e` exception; `SAJOIN` bypasses the check (#78) | FR-062, #78 |
+| `473` | `ERR_INVITEONLYCHAN` | `JOIN` naming a channel with `invite-only` active and no matching `I` exception or current invitation — `I` bypasses only `+i`; `SAJOIN` bypasses this check entirely (FR-057, FR-065, #78) | FR-065 |
 | `367` | `RPL_BANLIST` | `MODE <channel> b`, one per currently-active ban mask (FR-062) | FR-062 |
 | `368` | `RPL_ENDOFBANLIST` | End of a `MODE <channel> b` reply, including a zero-ban one (FR-062) | FR-062 |
-| `478` | `ERR_BANLISTFULL` | `MODE <channel> +b <mask>` when the channel already has 100 active bans (FR-062) | FR-062 |
+| `346` | `RPL_INVITELIST` | One `MODE <channel> I` invite-exception entry (#78) | #78 |
+| `347` | `RPL_ENDOFINVITELIST` | End of a `MODE <channel> I` reply, including an empty list (#78) | #78 |
+| `348` | `RPL_EXCEPTLIST` | One `MODE <channel> e` ban-exception entry (#78) | #78 |
+| `349` | `RPL_ENDOFEXCEPTLIST` | End of a `MODE <channel> e` reply, including an empty list (#78) | #78 |
+| `478` | `ERR_BANLISTFULL` | `MODE <channel> +b/+e/+I <mask>` when the corresponding list already has 100 active entries (FR-062, #78) | FR-062 |
 | `476` | `ERR_BADCHANMASK` | `JOIN` or `SAJOIN` naming a channel that violates the Channel Name Grammar (irc-protocol-commands.md "Channel Operations") — `SAJOIN` bypasses `JOIN`-gating flags, not the name grammar itself (FR-057) | FR-048, FR-057 |
 | `461` | `ERR_NEEDMOREPARAMS` | Command missing required parameters | FR-015 |
 | `462` | `ERR_ALREADYREGISTRED` | `USER` from a session that has already processed one, before or after reaching `REGISTERED` (FR-001) | FR-001 |
@@ -118,10 +122,10 @@ trigger them is "Recognized only" per irc-protocol-commands.md).
 | `201` | `RPL_TRACECONNECTING` | `242` | `RPL_STATSUPTIME` | `332` | `RPL_TOPIC` *(Used)* |
 | `202` | `RPL_TRACEHANDSHAKE` | `243` | `RPL_STATSOLINE` | `341` | `RPL_INVITING` *(Used)* |
 | `203` | `RPL_TRACEUNKNOWN` | `251` | `RPL_LUSERCLIENT` *(Used)* | `342` | `RPL_SUMMONING` |
-| `204` | `RPL_TRACEOPERATOR` | `252` | `RPL_LUSEROP` *(Used)* | `346` | `RPL_INVITELIST` |
-| `205` | `RPL_TRACEUSER` | `253` | `RPL_LUSERUNKNOWN` *(Used)* | `347` | `RPL_ENDOFINVITELIST` |
-| `206` | `RPL_TRACESERVER` | `254` | `RPL_LUSERCHANNELS` *(Used)* | `348` | `RPL_EXCEPTLIST` |
-| `207` | `RPL_TRACESERVICE` | `255` | `RPL_LUSERME` *(Used)* | `349` | `RPL_ENDOFEXCEPTLIST` |
+| `204` | `RPL_TRACEOPERATOR` | `252` | `RPL_LUSEROP` *(Used)* | `346` | `RPL_INVITELIST` *(Used)* |
+| `205` | `RPL_TRACEUSER` | `253` | `RPL_LUSERUNKNOWN` *(Used)* | `347` | `RPL_ENDOFINVITELIST` *(Used)* |
+| `206` | `RPL_TRACESERVER` | `254` | `RPL_LUSERCHANNELS` *(Used)* | `348` | `RPL_EXCEPTLIST` *(Used)* |
+| `207` | `RPL_TRACESERVICE` | `255` | `RPL_LUSERME` *(Used)* | `349` | `RPL_ENDOFEXCEPTLIST` *(Used)* |
 | `208` | `RPL_TRACENEWTYPE` | `256` | `RPL_ADMINME` | `351` | `RPL_VERSION` |
 | `209` | `RPL_TRACECLASS` | `257` | `RPL_ADMINLOC1` | `352` | `RPL_WHOREPLY` *(Used)* |
 | `210` | `RPL_TRACERECONNECT` | `258` | `RPL_ADMINLOC2` | `353` | `RPL_NAMREPLY` *(Used)* |

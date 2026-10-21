@@ -192,11 +192,13 @@ enforced at channel-creation time, not left to callers).
 | `members` | set of `ClientSession` references | Current membership; drives message fan-out (FR-004). |
 | `operators` | set of `ClientSession` references (subset of `members`) | Who may perform moderation actions (FR-013, FR-014). |
 | `voiced` | set of `ClientSession` references (subset of `members`, independent of `operators`) | Who, in addition to `operators`, may send while `MODERATED` is active (FR-045). Granted/revoked only by an operator via `MODE +v`/`-v <nickname>` (FR-013, FR-045) — unlike `operators`, nothing grants this at JOIN time; a channel MAY have any number of voiced members, none of whom need to be operators. |
-| `activeModes` | set of `ChannelMode` (below) | Which recognized *channel-scoped* mode flags are currently set on this channel. `MEMBERS_ONLY` and `MODERATED` (FR-013) are the only two flags any code defines in this release, but the type is an open set, not a closed enum — see `ChannelMode` below for why (FR-043, research.md "Channel/user mode extensibility"). The two flags are independent: a channel MAY have neither, either, or both set at once (matches standard IRC's per-flag `MODE` semantics — this replaces an earlier, incorrect single-mutually-exclusive-state design). Set/cleared only by an operator via `MODE` (FR-013, FR-014). `voice` (FR-045) is a *`MEMBER`-scoped* `ChannelMode` (see `ChannelMode.kind` below) — its state lives in `voiced` above, not here, the same way `operator` status lives in `operators` rather than `activeModes`. |
+| `activeModes` | set of `ChannelMode` (below) | Which recognized *channel-scoped* mode flags are currently set on this channel. The type is an open set, not a closed enum — see `ChannelMode` below (FR-043, research.md "Channel/user mode extensibility"). Independent flags may be set in any combination except `private`/`secret`, which are mutually exclusive. Set/cleared only by an operator via `MODE`. `voice`/`operator` (`MEMBER` modes), `b`/`e`/`I` (`LIST` modes), and `k`/`l` (value modes) keep their state in dedicated channel storage rather than here. |
 | `topic` | string, 0..1 | Absent (no topic set) by default. Visible to any client via `TOPIC` regardless of membership (FR-041's discovery framing applies here too); settable only by an `operator` (FR-040). Distinct from `activeModes` — viewing/setting the topic is not a "who may send a `PRIVMSG`" concern. MUST be valid UTF-8 (FR-054) — a `TOPIC`-set attempt with an invalid byte sequence is rejected as malformed (FR-015), leaving the previous topic (or absence of one) unchanged. MUST NOT exceed `ServerConfiguration.topicMaxLength` (FR-056, default `390`) — a `TOPIC`-set attempt exceeding it is rejected with `417 ERR_INPUTTOOLONG`, leaving the previous topic unchanged, the same "reject, don't apply partially" treatment as the UTF-8 check. |
 | `topicSetter` | string, 0..1 | Setter's `nick!user@host` resolved through `PresentedIdentity` when the topic is set, respecting cloaking. Stored unchanged across subsequent nickname or cloak changes. Absent when there is no topic. |
 | `topicSetAt` | Unix timestamp, 0..1 | Seconds since the Unix epoch, captured with the topic and setter on each accepted topic change. Absent when there is no topic. |
-| `bans` | list of `BanEntry` (below) | The `ban-mask` `ChannelMode`'s `LIST`-kind state (FR-062) — unlike `activeModes`, this is its own dedicated field, the same "each `kind` gets appropriate storage" pattern `operators`/`voiced` already established for `MEMBER`-kind flags (research.md "Channel/user mode extensibility" — "`LIST`-kind flags in practice"). Set/cleared only by an operator via `MODE +b`/`-b <mask>` (FR-013, FR-062). Bounded to a fixed maximum of 100 entries — `478 ERR_BANLISTFULL` rejects an addition beyond it. |
+| `bans` | list of `BanEntry` (below) | The `ban-mask` (`b`) `LIST` state. `BanEntry` is also the element type for `e` and `I`. Each list is capped at 100 entries; `478 ERR_BANLISTFULL` rejects an addition beyond the relevant list's cap. Each list scan is bounded at 100 masks; existing JOIN/SEND latency budgets remain unchanged (#78). |
+| `banExceptions` | private list of `BanEntry` masks | Backing storage for `ban-exception` (`e`), independently capped at 100. Same `NickMask` normalization, RFC1459 casemapping and presented-or-real-identity matching as `b`; match exempts `b` for JOIN and channel SEND. |
+| `inviteExceptions` | private list of `BanEntry` masks | Backing storage for `invite-exception` (`I`), independently capped at 100. Same normalization and casemapping as `b`; match bypasses only `invite-only` (`i`), not `channel-key` (`k`) or `user-limit` (`l`). |
 | `invited` | set of string (casefolded nicknames) | The `invite-only` `ChannelMode`'s bookkeeping (FR-065) — a purpose-built field of its own, the same pattern `bans` established for `ban-mask` rather than a generic reusable invite-list mechanism (research.md "Channel invitations"). Populated by `INVITE`; consumed (entry removed) the moment the named nickname successfully `JOIN`s this channel, whether or not `invite-only` was active at that moment. No size cap and no expiration — unlike `bans`, this is self-bounding, transient state (research.md "Channel invitations" — Rationale). Not reset on a member's `PART`/disconnect the way `voiced`/`operators` are — an invitation targets a nickname a client hasn't joined under yet, so there is no membership to reset; it IS reset (cleared entirely), like every other per-channel field, when the channel is recreated from zero members. |
 
 **Validation rules**:
@@ -266,9 +268,11 @@ enforced at channel-creation time, not left to callers).
     just the operator half of it; `operators`-or-`voiced` *is* the one
     condition for `MODERATED`, not two independent ones — an operator
     does not additionally need to be voiced. `ban-mask`'s predicate
-    (FR-062): neither the sender's current `UserIdentity.presentedForm`
-    **nor** `nickname!ident@ClientSession.realHostname` MUST match any
-    entry in `bans` — checking both independently, not just the
+    (FR-062): if either the sender's current `UserIdentity.presentedForm`
+    or `nickname!ident@ClientSession.realHostname` matches an entry in
+    `bans`, the send is rejected unless either identity also matches an
+    entry in `banExceptions`. Both identities are checked independently,
+    not just the
     presented form, so a mask targeting a member's real, underlying
     identity still applies even if a cloaking extension currently
     presents something else (research.md "Channel/user mode
@@ -278,22 +282,19 @@ enforced at channel-creation time, not left to callers).
     independently (a banned member who also isn't a member at all,
     impossible by construction since a ban-mute only applies to someone
     already in `members`, is not a case that can arise).
-  - For `JOIN` today: two currently-defined `ChannelMode`s gate
-    `{JOIN}`, each checked independently — a `JOIN` succeeds only if
-    both pass. `ban-mask`'s predicate (FR-062) is the same dual check as
-    `SEND`'s: neither the joiner's `UserIdentity.presentedForm` nor
-    their real-hostname-based identity may match any entry in `bans`,
-    rejected with `474 ERR_BANNEDFROMCHAN` if either does. `invite-only`'s
-    predicate (FR-065): pass automatically if `invite-only` isn't
-    currently in `activeModes`; otherwise pass only if the joiner's
-    current casefolded nickname is present in `Channel.invited`
+  - JOIN gates are evaluated independently. The `ban-mask` predicate
+    (FR-062) rejects with `474 ERR_BANNEDFROMCHAN` when either presented
+    or real identity matches `b` and neither matches `e`. The `invite-only`
+    predicate (FR-065) is bypassed when either presented or real identity
+    matches `I`; this exception never bypasses `k` or `l`. Without an `I`
+    match, `invite-only` passes when inactive or when the joiner's current
+    casefolded nickname is present in `Channel.invited`
     (`BanEntry`'s sibling, above), rejected with `473
     ERR_INVITEONLYCHAN` if not — and, when it does pass this way, the
     matching `Channel.invited` entry is consumed (removed) as part of
-    the same successful `JOIN`. Because the two predicates are checked
-    independently rather than combined into one condition, a held
-    invitation never overrides an active ban targeting the same client
-    — it only ever satisfies `invite-only`'s own check (research.md
+    the same successful `JOIN`. Because gates are checked independently, an `I` mask exempts only
+    `invite-only`; it never overrides an active ban or another JOIN gate. A held
+    invitation likewise only satisfies `invite-only`'s own check (research.md
     "Channel invitations"). `ban-mask` was the first flag validated
     against this check point's design (research.md "Validating the
     extensibility promise against a future `JOIN`-gating flag");
@@ -374,21 +375,25 @@ membership reaches zero (no persistence across recreation, per above).
 
 ## BanEntry — *Value Object, Session & Messaging*
 
-One active ban-mask entry on a `Channel` (FR-062) — the element type of
-`Channel.bans`. Immutable once created; removing a ban deletes the
-entry rather than mutating it, and re-adding the same mask later
-creates a fresh one with a new `setBy`/`setAt`.
+One mask entry in a channel's `b`, `e`, or `I` list. The existing
+`BanEntry` value object remains the element type for all three lists.
+Entries are immutable once created; removing one deletes it rather than
+mutating it, and re-adding the same mask later creates a fresh entry with
+a new `setBy`/`setAt`.
 
 | Field | Type | Notes |
 |---|---|---|
-| `mask` | string | A `nick!user@host` pattern, `*`/`?` wildcards permitted in any segment — always fully normalized (no segment omitted) before storage; a partial mask supplied to `MODE +b` has its missing segment(s) filled with `*` first (`Channel` validation rules, above). Matched against a client's `UserIdentity.presentedForm` (FR-030/FR-031) **and**, independently, against `nickname!ident@ClientSession.realHostname` (FR-032) — a match on either applies the ban, case-insensitively (research.md "Channel/user mode extensibility" — "`LIST`-kind flags in practice"). |
-| `setBy` | string | The nickname of the operator whose `MODE +b` created this entry, captured at that moment — not updated if that operator later changes their own nickname. |
+| `mask` | string | A `nick!user@host` pattern, `*`/`?` wildcards permitted in any segment — always fully normalized (no segment omitted) before storage; a partial mask supplied to `MODE +b`, `+e`, or `+I` has its missing segment(s) filled with `*` first (`Channel` validation rules, above). Match evaluation uses RFC1459 casefolding. For `b` and `e`, compare against a client's `UserIdentity.presentedForm` (FR-030/FR-031) and independently against `nickname!ident@ClientSession.realHostname` (FR-032); `I` is used only for the invite gate. |
+| `setBy` | string | The nickname of the operator whose `MODE +b`, `+e`, or `+I` created this entry, captured at that moment — not updated if that operator later changes their own nickname. |
 | `setAt` | instant | When this entry was created. |
 
-**Validation rules**: `mask` uniqueness within one `Channel.bans` is
-enforced after normalization — two `MODE +b` calls that normalize to
-the same string MUST NOT produce two entries (`Channel` validation
-rules' idempotent-add behavior, above).
+**Validation rules**: `mask` uniqueness is enforced independently in
+each list after normalization — duplicate additions are harmless no-ops.
+`Channel.masks(mode)` selects and exposes a read-only list view for the
+corresponding core LIST mode; `banExceptions` and `inviteExceptions` are
+private backing lists. `ChannelModeChange.ListAdd(mode, entry)` and
+`ListRemove(mode, mask)` represent operator-authorized `MODE` additions
+and removals; each addition applies that mode's own 100-entry cap.
 
 ## ChannelMode — *Value Object, Session & Messaging*
 
@@ -403,28 +408,30 @@ the same role `Capability` plays for `CAP` (data-model.md "Capability").
 |---|---|---|
 | `id` | string | Stable, human-readable identifier (e.g. `moderated`, `members-only`), independent of `flag` — the same role `Extension.id`/`Capability.name` play elsewhere in this data model. Unique among every currently-recognized `ChannelMode`. Exists separately from `flag` because the wire-letter namespace is far scarcer (52 possible characters, shared across every current and future flag) than the id namespace, and because error messages and administrator-facing output need something more legible than a single letter (constitution Principle III). |
 | `flag` | character | The wire-protocol mode letter (`m` for `moderated`, `n` for `members-only` — RFC 2811 §4.2.6/§4.2.5). Unique among every currently-recognized flag — core's plus every currently-`ENABLED` extension's — independently of `id` uniqueness; a conflicting registration (either kind) is rejected the same way `Extension.extensionPoint` ownership conflicts are (research.md "Extension-point ownership"). |
-| `kind` | enum: `BOOLEAN`, `VALUE`, `LIST`, `MEMBER` | Classifies the flag's shape, per RFC 2811's own mode taxonomy (contracts/irc-protocol-commands.md "Full Channel Mode Catalog"). `BOOLEAN`: a per-channel on/off flag, represented in `Channel.activeModes`. `VALUE` (e.g. a channel key) still carries data no field on `Channel` holds — not implemented this release. `LIST` (ban-mask) is implemented for exactly the one `CORE` flag that needs it, state in `Channel.bans` (FR-062) — not a generic LIST-storage mechanism a future extension-contributed `LIST`-kind flag could reuse as-is (see Validation rules). `MEMBER` (operator, voice) is a per-nickname privilege, not a per-channel flag — its state lives in its own dedicated `Channel` field (`operators` for `operator`, FR-046; `voiced` for `voice`, FR-045), not in `activeModes`. |
-| `gates` | set of `GateableAction` (`SEND`, `JOIN`, `DISCOVER`), 0..* | Which command(s) this flag restricts, independent of `kind` — a `BOOLEAN` flag isn't assumed to gate `PRIVMSG`/`NOTICE` just because that's what this release's first two happen to do (FR-043's "Critically, the guarantee is not limited to..." clause). `moderated`/`members-only` gate `{SEND}`. `private`/`secret` gate `{DISCOVER}` (FR-047) — `TOPIC`-viewing, `NAMES`, and `LIST` for a non-member. `ban-mask` gates `{SEND, JOIN}` (FR-062) — the first flag to gate more than one action at once, muting an already-present match's `SEND` and rejecting a not-yet-present match's `JOIN`. `invite-only` gates `{JOIN}` alone (FR-065) — checked independently of `ban-mask`'s own `{JOIN}` predicate, never merged into one condition, so a held invitation never overrides an active ban. `voice`/`operator` gate `{}` (empty) — they're privileges other flags' gate checks *consult*, not gates in their own right; nothing directly requires having voice or being an operator to perform an action, except as an input to `moderated`'s `SEND` check or FR-014's operator-gated actions (which aren't `ChannelMode`-driven at all). `DISCOVER`'s gate-failure convention differs from `SEND`/`JOIN`'s: a failed `DISCOVER` check MUST produce the same response as "this channel does not exist," never a distinguishable permission error (FR-047) — the whole point is that a non-member can't tell the two apart. See `Channel.activeModes` validation rules for how a command handler uses this to decide which flags apply to it. |
-| `definedBy` | `CORE` or an `Extension` id | `CORE`-defined flags (`moderated`, `members-only`, `voice`, `operator`, `private`, `secret`, `ban-mask`, `invite-only`) are always recognized (FR-036). An extension-defined flag is only recognized while that extension is `ENABLED` — see `Channel.activeModes` validation rules above. No extension currently defines one; every implemented channel-mode flag so far has turned out to belong in `CORE` (research.md "Channel invitations" — "Core vs. extension, revisited"). |
+| `kind` | enum: `BOOLEAN`, `VALUE`, `LIST`, `MEMBER` | Classifies the flag's shape, per RFC 2811's own mode taxonomy (contracts/irc-protocol-commands.md "Full Channel Mode Catalog"). `BOOLEAN`: a per-channel on/off flag, represented in `Channel.activeModes`. `VALUE` state is stored in its dedicated channel field. Core `LIST` modes `b`, `e`, and `I` use the lists selected by `Channel.masks(mode)`; the backing lists for `e` and `I` are private, and all three use the existing `BanEntry` value object with independent 100-entry caps. This does not create generic extension LIST storage. `MEMBER` (operator, voice) is a per-nickname privilege, not a per-channel flag — its state lives in its own dedicated `Channel` field (`operators` for `operator`, FR-046; `voiced` for `voice`, FR-045), not in `activeModes`. |
+| `gates` | set of `GateableAction` (`SEND`, `JOIN`, `DISCOVER`), 0..* | Which command(s) this flag restricts, independent of `kind` — a `BOOLEAN` flag isn't assumed to gate `PRIVMSG`/`NOTICE` just because that's what this release's first two happen to do (FR-043's "Critically, the guarantee is not limited to..." clause). `moderated`/`members-only` gate `{SEND}`. `private`/`secret` gate `{DISCOVER}` (FR-047) — `TOPIC`-viewing, `NAMES`, and `LIST` for a non-member. `ban-mask` gates `{SEND, JOIN}` (FR-062) — the first flag to gate more than one action at once, muting an already-present match's `SEND` and rejecting a not-yet-present match's `JOIN`. `ban-exception` (`e`) and `invite-exception` (`I`) both have empty `gates` because they exempt rather than restrict: `e` LIST matches exempt either ban-gated action when presented or real identity matches; `I` exempts only the `invite-only` portion of JOIN admission, never `k`/`l`. `invite-only` gates `{JOIN}` alone (FR-065) — checked independently of `ban-mask`'s own `{JOIN}` predicate, never merged into one condition, so a held invitation never overrides an active ban. `voice`/`operator` gate `{}` (empty) — they're privileges other flags' gate checks *consult*, not gates in their own right; nothing directly requires having voice or being an operator to perform an action, except as an input to `moderated`'s `SEND` check or FR-014's operator-gated actions (which aren't `ChannelMode`-driven at all). `DISCOVER`'s gate-failure convention differs from `SEND`/`JOIN`'s: a failed `DISCOVER` check MUST produce the same response as "this channel does not exist," never a distinguishable permission error (FR-047) — the whole point is that a non-member can't tell the two apart. See `Channel.activeModes` validation rules for how a command handler uses this to decide which flags apply to it. |
+| `definedBy` | `CORE` or an `Extension` id | `CORE`-defined flags (`moderated`, `members-only`, `voice`, `operator`, `private`, `secret`, `ban-mask`, `ban-exception`, `invite-exception`, `invite-only`) are always recognized (FR-036). An extension-defined flag is only recognized while that extension is `ENABLED` — see `Channel.activeModes` validation rules above. No extension currently defines one; every implemented channel-mode flag so far has turned out to belong in `CORE` (research.md "Channel invitations" — "Core vs. extension, revisited"). |
 
 **Validation rules**:
 - `flag` uniqueness and `id` uniqueness are independent requirements, both
   enforced at all times: two flags MUST NOT share a `flag` character, and
   two flags MUST NOT share an `id`, regardless of whether one, both, or
   neither is core-defined (research.md "Channel/user mode extensibility").
-- This release populates exactly eight `ChannelMode`s, all `CORE`-defined:
-  five `BOOLEAN` (`id: moderated, flag: m`, `gates: {SEND}` and
+- This release populates thirteen `ChannelMode`s, all `CORE`-defined:
+  six `BOOLEAN` (`id: moderated, flag: m`, `gates: {SEND}` and
   `id: members-only, flag: n`, `gates: {SEND}`, FR-013/FR-043;
   `id: private, flag: p` and `id: secret, flag: s`, both `gates:
-  {DISCOVER}`, FR-047; `id: invite-only, flag: i`, `gates: {JOIN}`,
-  FR-065, set/cleared via `MODE +i`/`-i` like the other four, bookkeeping
-  in `Channel.invited` above), two `MEMBER`, `gates: {}` (`id: voice,
+  {DISCOVER}`, FR-047; `id: invite-only, flag: i`, `gates: {JOIN}`, FR-065; `id: topic-lock,
+  flag: t`, no generic gate (006-complete-core-protocol), two `VALUE`
+  (`user-limit`/`l` and `channel-key`/`k`, with their dedicated fields),
+  two `MEMBER`, `gates: {}` (`id: voice,
   flag: v`, FR-045, granted/revoked via `MODE +v`/`-v <nickname>`, state
   in `Channel.voiced`; `id: operator, flag: o`, FR-046, granted/revoked
-  via `MODE +o`/`-o <nickname>`, state in `Channel.operators`), and one
-  `LIST` (`id: ban-mask, flag: b`, `gates: {SEND, JOIN}`, FR-062,
-  granted/revoked via `MODE +b`/`-b <mask>`, state in `Channel.bans`); no
-  extension in this release contributes one. The mechanism exists now so
+  via `MODE +o`/`-o <nickname>`, state in `Channel.operators`), and three `LIST` modes: `ban-mask`/`b`,
+  `ban-exception`/`e`, and `invite-exception`/`I`, with their dedicated
+  fields. Only `b` declares gates (`{SEND, JOIN}`); `e` and `I` declare
+  empty gates and supply exemptions to other modes' admission checks. No extension in this release
+  contributes a LIST mode. The mechanism exists now so
   a future `BOOLEAN`, `gates: {SEND}` or `gates: {JOIN}` one (e.g., a
   registered-channel flag once the account module exists) doesn't
   require a `Channel`/`ChannelMode` data-model change to add — only a
@@ -461,10 +468,11 @@ the same role `Capability` plays for `CAP` (data-model.md "Capability").
   `ServerExtension` in this release — only `CORE`'s single `ban-mask`
   flag is implemented, backed by the purpose-built `Channel.bans`
   field (`BanEntry`, above), not a generic, reusable LIST-storage
-  mechanism. A future extension-contributed `LIST`-kind flag (e.g., an
-  invite-exception or ban-exception list) would need its own
-  purpose-built field the same way `ban-mask` got `bans`, designed
-  against that flag's actual requirements when it exists — this data
+  mechanism. The core `ban-exception` (`e`) and `invite-exception` (`I`) lists each
+  have their own purpose-built fields (`banExceptions`, `inviteExceptions`)
+  and independent 100-entry caps (#78). Extension-contributed `LIST` modes
+  remain unsupported and would need purpose-built storage designed for their
+  actual requirements — this data
   model does not attempt to generalize `bans` into a reusable
   "any `LIST`-kind flag's storage" shape speculatively, the same
   "don't guess the right general shape before a second concrete
@@ -572,12 +580,12 @@ convenient one.
 | `CHANNELLEN` | `ServerConfiguration.channelNameMaxLength` (FR-056; default `50`), same recomputation trigger as `NICKLEN` |
 | `TOPICLEN` | `ServerConfiguration.topicMaxLength` (FR-056; default `390`), same recomputation trigger as `NICKLEN` — newly introduced alongside `NICKLEN`/`CHANNELLEN` (research.md "Configurable protocol length limits"); no equivalent existed before FR-056 |
 | `MODES` | `ServerConfiguration.maxModesPerCommand` (FR-064; default `6`), recomputed whenever `ServerConfiguration` is (re)loaded — the same trigger `NICKLEN`/`CHANNELLEN`/`TOPICLEN` already use — not a fixed constant |
-| `CHANMODES` | Recomputed from the `ChannelMode` catalog whenever `ExtensionRegistry`'s state changes (FR-011/FR-012 — an `EXTENSION` command or config reload enabling/disabling a mode-contributing extension), not on every registration: every currently-recognized (core plus enabled-extension) flag, grouped into ISUPPORT's four parameter-behavior categories (`A,B,C,D`) by `kind` — `LIST` flags populate `A` (`ban-mask`/`b`, FR-062 — this release's one `A`-group member); `VALUE` flags would populate `B`/`C`, but none exist this release (`ChannelMode` validation rules); `BOOLEAN` flags populate `D` (`moderated`/`members-only`/`private`/`secret`/`invite-only` — `m`,`n`,`p`,`s`,`i`) — this release's value is `b,,,imnps` |
+| `CHANMODES` | Recomputed from the `ChannelMode` catalog whenever `ExtensionRegistry`'s state changes (FR-011/FR-012 — an `EXTENSION` command or config reload enabling/disabling a mode-contributing extension), not on every registration: every currently-recognized (core plus enabled-extension) flag, grouped into ISUPPORT's four parameter-behavior categories (`A,B,C,D`) by `kind` — `LIST` flags populate `A` (`invite-exception`/`I`, `ban-exception`/`e`, and `ban-mask`/`b`); `VALUE_ALWAYS`/`VALUE_SET_ONLY` flags populate `B`/`C` (`channel-key`/`k` and `user-limit`/`l`); `BOOLEAN` flags populate `D` (`moderated`/`members-only`/`private`/`secret`/`invite-only`/`topic-lock` — `m`,`n`,`p`,`s`,`i`,`t`) — this release's value is `Ibe,k,l,imnpst` |
 | `PREFIX` | Same recomputation trigger as `CHANMODES`, from the `MEMBER`-kind `ChannelMode` entries and their established prefix characters: `(ov)@+` this release (`operator`→`@`, `voice`→`+`, FR-045/FR-046, contracts/irc-protocol-commands.md "Channel Operations" `@`/`+` convention) — ordered highest-privilege first, the same order `353 RPL_NAMREPLY` already prefixes with |
 | `UTF8ONLY` | Fixed: present, no value (FR-054 — this server always enforces it, so the token is unconditional) |
 
-**Validation rules**: `CHANMODES`'s `A` group (`ban-mask`/`b`) and `D`
-group (and `B`/`C`, once either is non-empty) MUST list exactly the same
+**Validation rules**: `CHANMODES`'s `A` group (`invite-exception`/`I`, `ban-exception`/`e`,
+`ban-mask`/`b`) and `D` group (and `B`/`C`, once either is non-empty) MUST list exactly the same
 flags `004 RPL_MYINFO`'s channel-mode-letter list already does (FR-051)
 — both read the same `ChannelMode` catalog, recomputed on the same
 `ExtensionRegistry` state transitions, so they cannot disagree by
