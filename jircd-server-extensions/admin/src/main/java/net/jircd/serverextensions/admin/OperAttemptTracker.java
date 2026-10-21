@@ -87,7 +87,7 @@ final class OperAttemptTracker {
           return Result.SUCCESS;
         }
         if (entry.count == 0) {
-          entry.expiresAt = now.plusSeconds(windowSeconds);
+          entry.expiresAt = clock.instant().plusSeconds(windowSeconds);
         }
         entry.count++;
         return entry.count >= threshold ? Result.FAILURE_LIMIT_REACHED : Result.FAILURE;

@@ -51,6 +51,38 @@ class OperAttemptTrackerTest {
       };
 
   @Test
+  void slowVerificationStartsTheFailureWindowWhenVerificationCompletes() {
+    var tracker = new OperAttemptTracker(clock, 2);
+    assertThat(
+            tracker.authenticate(
+                "source",
+                1,
+                1,
+                true,
+                () -> {
+                  now.set(Instant.EPOCH.plusSeconds(2));
+                  return false;
+                }))
+        .isEqualTo(OperAttemptTracker.Result.FAILURE_LIMIT_REACHED);
+    AtomicBoolean checked = new AtomicBoolean();
+    assertThat(
+            tracker.authenticate(
+                "source",
+                1,
+                1,
+                true,
+                () -> {
+                  checked.set(true);
+                  return true;
+                }))
+        .isEqualTo(OperAttemptTracker.Result.LOCKED);
+    assertThat(checked).isFalse();
+    now.set(Instant.EPOCH.plusSeconds(3));
+    assertThat(tracker.authenticate("source", 1, 1, true, () -> true))
+        .isEqualTo(OperAttemptTracker.Result.SUCCESS);
+  }
+
+  @Test
   void thresholdSkipsPasswordVerificationUntilExactWindowExpiry() {
     var tracker = new OperAttemptTracker(clock, 2);
     assertThat(tracker.authenticate("source", 2, 60, true, () -> false))

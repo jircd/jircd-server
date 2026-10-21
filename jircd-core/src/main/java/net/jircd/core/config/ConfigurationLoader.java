@@ -41,6 +41,7 @@ import org.yaml.snakeyaml.error.YAMLException;
 public final class ConfigurationLoader {
 
   private static final String WHO_MASK_ENABLED_KEY = "whoMaskEnabled";
+  private static final String OPER_REQUIRE_TLS_KEY = "operRequireTls";
 
   private static final Set<String> BASE_64_HASH_PREFIXES =
       Set.of("$2a$", "$2b$", "$2y$", "$argon2id$");
@@ -166,8 +167,8 @@ public final class ConfigurationLoader {
             "operLockoutSeconds",
             ServerConfiguration.DEFAULT_OPER_LOCKOUT_SECONDS,
             ServerConfiguration.OPER_LOCKOUT_SECONDS_CEILING),
-        root.containsKey("operRequireTls")
-            && asBoolean(root.get("operRequireTls"), "operRequireTls"),
+        root.containsKey(OPER_REQUIRE_TLS_KEY)
+            && asBoolean(root.get(OPER_REQUIRE_TLS_KEY), OPER_REQUIRE_TLS_KEY),
         whowasHistorySize,
         keepAliveFrequencySeconds,
         sendqLimitBytes,
