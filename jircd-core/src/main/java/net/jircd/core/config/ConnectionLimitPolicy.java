@@ -51,7 +51,7 @@ public final class ConnectionLimitPolicy {
     /** Parses an unscoped IP literal/prefix without DNS; mapped IPv6 requires /96 through /128. */
     public static Cidr parse(String value) {
       String[] parts = value.split("/", -1);
-      if (parts.length != 2 || !parts[1].matches("[0-9]{1,3}")) {
+      if (parts.length != 2 || !parts[1].matches("\\d{1,3}")) {
         throw new IllegalArgumentException("CIDR must be an IP literal followed by /prefix");
       }
       String literal = parts[0];
@@ -59,7 +59,7 @@ public final class ConnectionLimitPolicy {
       if (literal.contains("%")
           || literal.contains("[")
           || literal.contains("]")
-          || (!ipv6 && !literal.matches("([0-9]{1,3}\\.){3}[0-9]{1,3}"))) {
+          || (!ipv6 && !literal.matches("(\\d{1,3}\\.){3}\\d{1,3}"))) {
         throw new IllegalArgumentException("CIDR must use an unscoped IPv4 or IPv6 literal");
       }
       InetAddress address = normalize(InetAddress.ofLiteral(literal));

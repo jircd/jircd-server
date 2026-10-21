@@ -160,7 +160,9 @@ limit receive `ERROR :Too many connections` and close; rejections are logged as
 `limitApplied` (the threshold of the exceeded setting). Rejection
 I/O runs on virtual threads with a one-second deadline and a shared cap of 64
 in-flight rejections across all listeners. When that cap is full, new rejected sockets
-close immediately without an error write. Peers that cannot finish the TLS handshake
+close immediately without an error write or individual log entry. Dropped rejections
+are counted and logged as `security-event=connection-limit-suppressed count=N`, at
+most once per second. Logging runs off the accept thread. Peers that cannot finish the TLS handshake
 or receive the error within the deadline are closed.
 Counts are released when connection teardown completes. `REHASH`/`SIGHUP` applies
 new limits, overrides, and IPv6 grouping to subsequent accepts without disconnecting

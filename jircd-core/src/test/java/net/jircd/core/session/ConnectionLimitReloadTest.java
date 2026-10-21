@@ -128,10 +128,11 @@ class ConnectionLimitReloadTest {
               extensions,
               cleanup,
               () -> "test.local",
-              () -> initial.rateLimit(),
-              () -> 60,
-              () -> initial.sendqLimitBytes(),
-              () -> reloader.current().connectionLimits(),
+              new ConnectionHandler.Settings(
+                  initial::rateLimit,
+                  () -> 60,
+                  initial::sendqLimitBytes,
+                  () -> reloader.current().connectionLimits()),
               socket -> {
                 ControlledSocket controlled = (ControlledSocket) socket;
                 controlled.owner.set(Thread.currentThread());

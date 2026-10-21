@@ -112,7 +112,13 @@ public record ServerConfiguration(
       int ipv6ConnectionLimitPrefix,
       List<ConnectionLimitPolicy.AddressOverride> overrides) {
     public ConnectionLimits {
-      overrides = List.copyOf(overrides);
+      if (maxConnections <= 0)
+        throw new IllegalArgumentException("maxConnections must be positive");
+      if (maxConnectionsPerIp <= 0)
+        throw new IllegalArgumentException("maxConnectionsPerIp must be positive");
+      if (ipv6ConnectionLimitPrefix < 1 || ipv6ConnectionLimitPrefix > 128)
+        throw new IllegalArgumentException("ipv6ConnectionLimitPrefix must be between 1 and 128");
+      overrides = List.copyOf(java.util.Objects.requireNonNull(overrides, "overrides"));
     }
 
     public ConnectionLimits(int maxConnections, int maxConnectionsPerIp) {

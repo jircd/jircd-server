@@ -58,10 +58,11 @@ class ConnectionLimitsTest {
             extensions,
             cleanup,
             () -> "test.local",
-            () -> new ServerConfiguration.RateLimit(100, 100),
-            () -> 60,
-            () -> 524288,
-            () -> new ServerConfiguration.ConnectionLimits(2, 1),
+            new ConnectionHandler.Settings(
+                () -> new ServerConfiguration.RateLimit(100, 100),
+                () -> 60,
+                () -> 524288,
+                () -> new ServerConfiguration.ConnectionLimits(2, 1)),
             socket -> {
               owner.set(Thread.currentThread());
               entered.countDown();
@@ -104,7 +105,7 @@ class ConnectionLimitsTest {
     }
   }
 
-  // The pending list owns its sockets; the finally block closes every entry after releasing writes.
+  // Socket aliases below are borrowed; each RejectionBatch owns and closes its entire collection.
   @SuppressWarnings("PMD.CloseResource")
   @Test
   void rejectionCapacityClosesOverflowImmediatelyAndReleasesPermits() throws Exception {
@@ -123,57 +124,73 @@ class ConnectionLimitsTest {
             extensions,
             cleanup,
             () -> "test.local",
-            () -> new ServerConfiguration.RateLimit(100, 100),
-            () -> 60,
-            () -> 524288,
-            () -> new ServerConfiguration.ConnectionLimits(1, 1),
+            new ConnectionHandler.Settings(
+                () -> new ServerConfiguration.RateLimit(100, 100),
+                () -> 60,
+                () -> 524288,
+                () -> new ServerConfiguration.ConnectionLimits(1, 1)),
             socket -> {
               try {
                 releaseAdmitted.await();
-              } catch (InterruptedException e) {
+              } catch (InterruptedException _) {
                 Thread.currentThread().interrupt();
               }
             });
-    List<BlockingRejectionSocket> pending = new ArrayList<>();
-    List<Thread> acceptors = new ArrayList<>();
     try (TestSocket admitted = new TestSocket("127.0.0.1", false);
-        TestSocket overflow = new TestSocket("127.0.0.1", false)) {
+        TestSocket overflow = new TestSocket("127.0.0.1", false);
+        RejectionBatch secondBatch = new RejectionBatch(releaseAdmitted)) {
       handler.accept(admitted);
-      try {
-        try {
-          for (int i = 0; i < 64; i++) {
-            BlockingRejectionSocket socket = new BlockingRejectionSocket(release);
-            pending.add(socket);
-            Thread acceptor = Thread.ofVirtual().start(() -> handler.accept(socket));
-            acceptors.add(acceptor);
-            // accept must return while the rejection write is still blocked.
-            assertThat(acceptor.join(Duration.ofMillis(200))).isTrue();
-            assertThat(socket.writing.await(5, TimeUnit.SECONDS)).isTrue();
-          }
-          handler.accept(overflow);
-          assertThat(overflow.isClosed()).isTrue();
-          assertThat(overflow.output.toString(StandardCharsets.UTF_8)).isEmpty();
-        } finally {
-          release.countDown();
-          for (Thread acceptor : acceptors)
-            assertThat(acceptor.join(Duration.ofSeconds(5))).isTrue();
-          for (BlockingRejectionSocket socket : pending) {
-            socket.close();
-            Thread worker = socket.worker.get();
-            if (worker != null) assertThat(worker.join(Duration.ofSeconds(5))).isTrue();
-          }
-        }
-        // With the original admitted connection still held, every freed permit can write again.
+      try (RejectionBatch firstBatch = new RejectionBatch(release)) {
         for (int i = 0; i < 64; i++) {
-          BlockingRejectionSocket socket = new BlockingRejectionSocket(releaseAdmitted);
-          pending.add(socket);
-          handler.accept(socket);
+          BlockingRejectionSocket socket = firstBatch.open();
+          Thread acceptor = Thread.ofVirtual().start(() -> handler.accept(socket));
+          firstBatch.acceptors.add(acceptor);
+          // accept must return while the rejection write is still blocked.
+          assertThat(acceptor.join(Duration.ofMillis(200))).isTrue();
           assertThat(socket.writing.await(5, TimeUnit.SECONDS)).isTrue();
         }
-      } finally {
-        releaseAdmitted.countDown();
-        for (BlockingRejectionSocket socket : pending) socket.close();
-        handler.closeConnections(Duration.ofSeconds(5));
+        handler.accept(overflow);
+        assertThat(overflow.isClosed()).isTrue();
+        assertThat(overflow.output.toString(StandardCharsets.UTF_8)).isEmpty();
+      }
+      // With the original admitted connection still held, every freed permit can write again.
+      for (int i = 0; i < 64; i++) {
+        BlockingRejectionSocket socket = secondBatch.open();
+        handler.accept(socket);
+        assertThat(socket.writing.await(5, TimeUnit.SECONDS)).isTrue();
+      }
+    } finally {
+      releaseAdmitted.countDown();
+      handler.closeConnections(Duration.ofSeconds(5));
+    }
+  }
+
+  private static final class RejectionBatch implements AutoCloseable {
+    private final CountDownLatch release;
+    private final List<BlockingRejectionSocket> sockets = new ArrayList<>();
+    private final List<Thread> acceptors = new ArrayList<>();
+
+    RejectionBatch(CountDownLatch release) {
+      this.release = release;
+    }
+
+    // The batch owns every returned socket and closes it after unblocking its worker.
+    @SuppressWarnings("PMD.CloseResource")
+    BlockingRejectionSocket open() {
+      BlockingRejectionSocket socket = new BlockingRejectionSocket(release);
+      sockets.add(socket);
+      return socket;
+    }
+
+    @Override
+    public void close() throws Exception {
+      release.countDown();
+      for (Thread acceptor : acceptors) assertThat(acceptor.join(Duration.ofSeconds(5))).isTrue();
+      for (BlockingRejectionSocket socket : sockets) {
+        try (socket) {
+          Thread worker = socket.worker.get();
+          if (worker != null) assertThat(worker.join(Duration.ofSeconds(5))).isTrue();
+        }
       }
     }
   }

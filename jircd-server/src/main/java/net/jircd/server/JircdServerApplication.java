@@ -139,10 +139,11 @@ public final class JircdServerApplication {
             extensionRegistry,
             disconnectCleanup,
             () -> serverName,
-            () -> reloader.current().rateLimit(),
-            () -> reloader.current().keepAliveFrequencySeconds(),
-            () -> reloader.current().sendqLimitBytes(),
-            () -> reloader.current().connectionLimits(),
+            new ConnectionHandler.Settings(
+                () -> reloader.current().rateLimit(),
+                () -> reloader.current().keepAliveFrequencySeconds(),
+                () -> reloader.current().sendqLimitBytes(),
+                () -> reloader.current().connectionLimits()),
             acceptedSocketCustomizer);
     registerStory1Handlers();
 
