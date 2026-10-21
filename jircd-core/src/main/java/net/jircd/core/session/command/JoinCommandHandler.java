@@ -133,11 +133,16 @@ public final class JoinCommandHandler implements CommandHandler {
         new Message(Map.of(), presentedForm, Command.JOIN, "JOIN", List.of(channel.name()));
     Recipients.deliver(result.recipients(), joinNotification);
 
-    // The same 332-only shape TopicCommandHandler's own
-    // query path already uses (this project tracks no set-at timestamp, so no 333 either).
-    if (channel.topic() != null) {
+    Channel.Topic topic = channel.topicState();
+    if (topic != null) {
+      Replies.send(session, serverName.get(), NumericReply.RPL_TOPIC, channel.name(), topic.text());
       Replies.send(
-          session, serverName.get(), NumericReply.RPL_TOPIC, channel.name(), channel.topic());
+          session,
+          serverName.get(),
+          NumericReply.RPL_TOPICWHOTIME,
+          channel.name(),
+          topic.setter(),
+          Long.toString(topic.setAt()));
     }
 
     sendNamesReply(session, channel, serverName.get(), result.memberListing());

@@ -63,7 +63,11 @@ public final class Channel {
   private final List<BanEntry> bans = new CopyOnWriteArrayList<>();
   private final List<BanEntry> bansView = Collections.unmodifiableList(bans);
   private final Set<String> invited = ConcurrentHashMap.newKeySet();
-  private volatile String topic;
+
+  /** An immutable snapshot of a topic and the identity and Unix time captured when it was set. */
+  public record Topic(String text, String setter, long setAt) {}
+
+  private volatile Topic topic;
   private volatile int memberLimit;
   private volatile String key;
   private final Instant createdAt = Instant.now();
@@ -296,11 +300,17 @@ public final class Channel {
   }
 
   public String topic() {
+    Topic current = topic;
+    return current == null ? null : current.text();
+  }
+
+  public Topic topicState() {
     return topic;
   }
 
-  public void setTopic(String topic) {
-    this.topic = topic;
+  /** An empty or absent topic clears its setter and timestamp as well. */
+  public void setTopic(String text, String setter, long setAt) {
+    topic = text == null || text.isEmpty() ? null : new Topic(text, setter, setAt);
   }
 
   /**

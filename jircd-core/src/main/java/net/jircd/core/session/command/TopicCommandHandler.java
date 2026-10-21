@@ -15,6 +15,7 @@
  */
 package net.jircd.core.session.command;
 
+import java.time.Clock;
 import java.util.List;
 import java.util.Map;
 import java.util.function.IntSupplier;
@@ -25,6 +26,7 @@ import net.jircd.core.session.ChannelRegistry;
 import net.jircd.core.session.ChannelVisibility;
 import net.jircd.core.session.ClientSession;
 import net.jircd.core.session.CoreChannelModes;
+import net.jircd.core.session.PresentedIdentity;
 import net.jircd.core.session.Recipients;
 import net.jircd.protocol.Command;
 import net.jircd.protocol.Message;
@@ -42,12 +44,23 @@ public final class TopicCommandHandler implements CommandHandler {
   private final ExtensionRegistry extensionRegistry;
   private final Supplier<String> serverName;
   private final IntSupplier topicMaxLength;
+  private final Clock clock;
 
   public TopicCommandHandler(
       ChannelRegistry channelRegistry,
       ExtensionRegistry extensionRegistry,
       Supplier<String> serverName,
       IntSupplier topicMaxLength) {
+    this(channelRegistry, extensionRegistry, serverName, topicMaxLength, Clock.systemUTC());
+  }
+
+  public TopicCommandHandler(
+      ChannelRegistry channelRegistry,
+      ExtensionRegistry extensionRegistry,
+      Supplier<String> serverName,
+      IntSupplier topicMaxLength,
+      Clock clock) {
+    this.clock = clock;
     this.channelRegistry = channelRegistry;
     this.extensionRegistry = extensionRegistry;
     this.serverName = serverName;
@@ -80,12 +93,20 @@ public final class TopicCommandHandler implements CommandHandler {
     Channel channel = found.get();
 
     if (message.params().size() < 2) {
-      if (channel.topic() == null) {
+      Channel.Topic topic = channel.topicState();
+      if (topic == null) {
         Replies.send(
             session, serverName.get(), NumericReply.RPL_NOTOPIC, channel.name(), "No topic is set");
       } else {
         Replies.send(
-            session, serverName.get(), NumericReply.RPL_TOPIC, channel.name(), channel.topic());
+            session, serverName.get(), NumericReply.RPL_TOPIC, channel.name(), topic.text());
+        Replies.send(
+            session,
+            serverName.get(),
+            NumericReply.RPL_TOPICWHOTIME,
+            channel.name(),
+            topic.setter(),
+            Long.toString(topic.setAt()));
       }
       return;
     }
@@ -109,7 +130,10 @@ public final class TopicCommandHandler implements CommandHandler {
       return;
     }
 
-    channel.setTopic(newTopic);
+    channel.setTopic(
+        newTopic,
+        PresentedIdentity.presentedForm(session, extensionRegistry),
+        clock.instant().getEpochSecond());
     Message topicNotification =
         new Message(
             Map.of(), serverName.get(), Command.TOPIC, "TOPIC", List.of(channel.name(), newTopic));
