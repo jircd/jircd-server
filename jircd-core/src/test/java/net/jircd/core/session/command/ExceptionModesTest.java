@@ -203,10 +203,14 @@ class ExceptionModesTest {
     }
 
     @Override
-    public void start(ServerContext context) {}
+    public void start(ServerContext context) {
+      // Stateless test cloak: no resources to initialize.
+    }
 
     @Override
-    public void stop() {}
+    public void stop() {
+      // Stateless test cloak: no resources to release.
+    }
 
     @Override
     public String display(String hostname) {

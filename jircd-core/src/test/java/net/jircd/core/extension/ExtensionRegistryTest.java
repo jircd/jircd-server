@@ -29,6 +29,7 @@ import net.jircd.core.config.ConfigurationException;
 import net.jircd.core.config.ConfigurationLoader;
 import net.jircd.core.config.ConfigurationReloader;
 import net.jircd.core.config.ServerConfiguration;
+import net.jircd.core.session.ChannelMode;
 import net.jircd.core.session.ChannelRegistry;
 import net.jircd.core.session.DisconnectCleanup;
 import net.jircd.core.session.NicknameRegistry;
@@ -134,6 +135,46 @@ class ExtensionRegistryTest {
         .hasMessageContaining("sendqLimitBytes");
     assertThat(reloader.current()).isSameAs(valid);
     assertThat(reloader.current().sendqLimitBytes()).isEqualTo(65536);
+  }
+
+  @Test
+  void listModeContributionIsRejectedBeforeRegistration() {
+    ExtensionRegistry registry = newRegistry();
+    FakeServerExtension extension =
+        new FakeServerExtension("list-mode", null) {
+          @Override
+          public Set<ChannelMode> contributedChannelModes() {
+            return Set.of(
+                new ChannelMode("custom-list", 'X', ChannelMode.Kind.LIST, Set.of(), id()));
+          }
+        };
+
+    assertThatThrownBy(() -> registry.register(extension))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("list-mode")
+        .hasMessageContaining("LIST")
+        .hasMessageContaining("X");
+    assertThat(registry.find(extension.id())).isEmpty();
+    assertThat(registry.stateOf(extension.id())).isNull();
+    assertThat(extension.started).isFalse();
+  }
+
+  @Test
+  void booleanModeContributionCanStillBeRegisteredAndEnabled() {
+    ExtensionRegistry registry = newRegistry();
+    ChannelMode mode =
+        new ChannelMode("custom-flag", 'X', ChannelMode.Kind.BOOLEAN, Set.of(), "flag-mode");
+    FakeServerExtension extension =
+        new FakeServerExtension("flag-mode", null) {
+          @Override
+          public Set<ChannelMode> contributedChannelModes() {
+            return Set.of(mode);
+          }
+        };
+    registry.register(extension);
+    registry.enable(extension.id());
+
+    assertThat(registry.recognizedChannelModes(Set.of())).containsExactly(mode);
   }
 
   @Test

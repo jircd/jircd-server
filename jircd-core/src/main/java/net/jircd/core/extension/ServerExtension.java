@@ -36,7 +36,11 @@ public interface ServerExtension extends Extension {
     return null;
   }
 
-  /** {@code BOOLEAN}-kind channel-mode flags this extension contributes. Empty by default. */
+  /**
+   * {@code BOOLEAN}-kind channel-mode flags this extension contributes. Empty by default. LIST
+   * contributions are rejected by {@link ExtensionRegistry#register} because only core list modes
+   * have storage and command handling.
+   */
   default Set<ChannelMode> contributedChannelModes() {
     return Set.of();
   }

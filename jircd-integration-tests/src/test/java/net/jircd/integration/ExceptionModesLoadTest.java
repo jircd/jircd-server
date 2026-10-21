@@ -29,18 +29,19 @@ class ExceptionModesLoadTest {
   @Test
   void fullListsPreserveJoinAndMessageLatencyBudget() throws Exception {
     Duration timeout = Duration.ofSeconds(5);
-    try (TestServer server = TestServer.start();
+    try (TestServer server =
+            TestServer.start("rateLimit:\n  bucketSize: 512\n  refillRatePerSecond: 10\n");
         RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
         RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort())) {
       alice.registerAndAwaitWelcome("alice", "alice");
       bob.registerAndAwaitWelcome("bob", "bob");
       alice.send("JOIN #c");
       alice.readUntil("366", timeout);
-      // Put matches last to exercise all 100 masks in every list. Pace below rate limits.
+      // Put matches last to exercise all 100 masks in every list. The configured bucket covers
+      // this bounded workload; each expected reply, rather than a delay, gates the next command.
       for (int i = 0; i < 99; i++) {
         alice.send("MODE #c +beI mask" + i + " mask" + i + " mask" + i);
         alice.readUntil("MODE #c +beI", timeout);
-        Thread.sleep(110);
       }
       alice.send("MODE #c +ibeI * bob bob");
       alice.readUntil("MODE #c +ibeI", timeout);
@@ -57,7 +58,6 @@ class ExceptionModesLoadTest {
         Duration latency = Duration.ofNanos(System.nanoTime() - start);
         assertThat(latency).isLessThan(Duration.ofSeconds(1));
         samples.add(latency.toNanos());
-        Thread.sleep(110);
       }
       long[] sorted = samples.stream().mapToLong(Long::longValue).sorted().toArray();
       System.out.printf(

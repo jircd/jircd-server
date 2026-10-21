@@ -28,6 +28,7 @@ import net.jircd.core.extension.ServerContext;
 import net.jircd.core.extension.ServerExtension;
 import net.jircd.core.session.BanEntry;
 import net.jircd.core.session.Channel;
+import net.jircd.core.session.ChannelModeChange;
 import net.jircd.core.session.ChannelRegistry;
 import net.jircd.core.session.ClientSession;
 import net.jircd.core.session.CoreChannelModes;
@@ -83,6 +84,23 @@ class JoinIdentityFailureTest {
 
     assertThat(output()).contains(" 473 joiner #c :Cannot join channel (+i)");
     assertThat(channel.members()).containsExactly(owner);
+  }
+
+  @Test
+  void failedIdentitySampleGrantsNoInviteExceptionAndReturns473() throws Exception {
+    channel.setMode(CoreChannelModes.INVITE_ONLY);
+    channel.applyAsOperator(
+        owner,
+        new ChannelModeChange.ListAdd(
+            CoreChannelModes.INVITE_EXCEPTION,
+            new BanEntry("*!*@host.example", "owner", Instant.EPOCH)));
+
+    handler.handle(joiner, MessageParser.parse("JOIN #c"));
+
+    assertThat(output()).contains(" 473 joiner #c :Cannot join channel (+i)");
+    assertThat(channel.members()).containsExactly(owner);
+    assertThat(joiner.channelMemberships()).isEmpty();
+    assertThat(hostname.calls.get()).isEqualTo(1);
   }
 
   @Test

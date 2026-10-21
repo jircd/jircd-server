@@ -261,7 +261,9 @@ public final class JoinCommandHandler implements CommandHandler {
 
   private static boolean matchesInviteException(
       Channel channel, ClientSession session, AdmissionIdentity identity) {
-    if (channel.masks(CoreChannelModes.INVITE_EXCEPTION).isEmpty()) {
+    // An unresolved displayed identity grants no exemption, even if the real identity matches.
+    // Ban checks retain their stricter failure propagation through AdmissionIdentity.require().
+    if (identity.failure() != null || channel.masks(CoreChannelModes.INVITE_EXCEPTION).isEmpty()) {
       return false;
     }
     return channel.matchesMask(

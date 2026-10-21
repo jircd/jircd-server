@@ -68,8 +68,24 @@ public final class ExtensionRegistry {
     this.serverContext = serverContext;
   }
 
-  /** Registers an already-instantiated extension (used by discovery and by tests). */
+  /**
+   * Registers an already-instantiated extension (used by discovery and by tests).
+   *
+   * @throws IllegalArgumentException if the extension contributes a LIST channel mode; mask-list
+   *     storage and handling are currently defined only for core modes
+   */
   public void register(Extension extension) {
+    if (extension instanceof ServerExtension serverExtension) {
+      for (ChannelMode mode : serverExtension.contributedChannelModes()) {
+        if (mode.kind() == ChannelMode.Kind.LIST) {
+          throw new IllegalArgumentException(
+              "Extension '"
+                  + extension.id()
+                  + "' cannot contribute LIST channel mode: "
+                  + mode.flag());
+        }
+      }
+    }
     byId.putIfAbsent(extension.id(), new Entry(extension));
   }
 
