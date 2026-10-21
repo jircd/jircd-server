@@ -76,12 +76,53 @@ public final class Replies {
         MessageSerializer.MAX_COMMAND_BYTES
             - MessageSerializer.commandBytes(
                 new Message(Map.of(), serverName, null, numeric.wireCode(), params));
+    params.set(params.size() - 1, truncate(text, budget, false));
+    if (session.writer() != null) {
+      session
+          .writer()
+          .enqueueRaw(new Message(Map.of(), serverName, null, numeric.wireCode(), params));
+    }
+  }
+
+  /**
+   * Sends {@code numeric} with a client-supplied value echoed as the middle parameter before the
+   * fixed trailing text, cutting the echoed value so the line fits 512 bytes. Whitespace and
+   * control characters in it, and a leading colon, become {@code _}, since a middle parameter
+   * cannot hold them; an empty result is echoed as {@code *}.
+   */
+  public static void sendEchoing(
+      ClientSession session,
+      String serverName,
+      NumericReply numeric,
+      String echoed,
+      String trailing) {
+    List<String> params = new ArrayList<>();
+    params.add(target(session));
+    params.add("");
+    params.add(trailing);
+    int budget =
+        MessageSerializer.MAX_COMMAND_BYTES
+            - MessageSerializer.commandBytes(
+                new Message(Map.of(), serverName, null, numeric.wireCode(), params));
+    String fitted = truncate(echoed, budget, true);
+    if (fitted.startsWith(":")) {
+      fitted = "_" + fitted.substring(1);
+    }
+    params.set(1, fitted.isEmpty() ? "*" : fitted);
+    if (session.writer() != null) {
+      session
+          .writer()
+          .enqueueRaw(new Message(Map.of(), serverName, null, numeric.wireCode(), params));
+    }
+  }
+
+  /** Cuts {@code text} to {@code budget} UTF-8 bytes on a code-point boundary. */
+  private static String truncate(String text, int budget, boolean noWhitespace) {
     StringBuilder fitted = new StringBuilder();
     int used = 0;
-    for (int i = 0; i < text.length(); ) {
-      int cp = text.codePointAt(i);
-      i += Character.charCount(cp);
-      String ch = (cp == '\r' || cp == '\n' || cp == 0) ? " " : Character.toString(cp);
+    for (int cp : text.codePoints().toArray()) {
+      boolean blank = cp <= ' ' || cp == 0x7f;
+      String ch = blank ? (noWhitespace ? "_" : " ") : Character.toString(cp);
       int bytes = MessageSerializer.utf8Bytes(ch);
       if (used + bytes > budget) {
         break;
@@ -89,12 +130,7 @@ public final class Replies {
       fitted.append(ch);
       used += bytes;
     }
-    params.set(params.size() - 1, fitted.toString());
-    if (session.writer() != null) {
-      session
-          .writer()
-          .enqueueRaw(new Message(Map.of(), serverName, null, numeric.wireCode(), params));
-    }
+    return fitted.toString();
   }
 
   /**

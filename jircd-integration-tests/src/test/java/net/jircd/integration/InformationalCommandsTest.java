@@ -50,7 +50,13 @@ class InformationalCommandsTest {
       alice.send("PASS hunter2");
       alice.send("NICK alice");
       alice.send("USER alice 0 * :Alice");
-      alice.readUntil(" 375 ", TIMEOUT);
+      List<String> beforeMotd = new java.util.ArrayList<>();
+      String line;
+      do {
+        line = alice.readLine();
+        beforeMotd.add(line);
+      } while (!line.contains(" 375 "));
+      assertThat(beforeMotd).noneMatch(l -> l.matches("\\S+ 4\\d\\d .*"));
       assertThat(alice.readLine()).endsWith(" 372 alice :- Hello there");
       assertThat(alice.readLine()).endsWith(" 372 alice :- Second line");
       assertThat(alice.readLine()).endsWith(" 376 alice :End of /MOTD command");

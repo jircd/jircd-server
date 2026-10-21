@@ -218,7 +218,7 @@ adminEmail: jane@example.org
 
 With `motdPath` set to a readable file, clients get it (`375`/`372`/`376`) when they
 register and on `MOTD`; otherwise they get `422`, and an unusable file is logged as a
-warning. Edits to the file are picked up without a reload; `REHASH`/`SIGHUP` applies a
+warning. Only the first 200 lines are served. Edits to the file are picked up without a reload; `REHASH`/`SIGHUP` applies a
 changed `motdPath`. `ADMIN` answers from the three admin settings (`-` for an unset one),
 or `423` when none is set.
 

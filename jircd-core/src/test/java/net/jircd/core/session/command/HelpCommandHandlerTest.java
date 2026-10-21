@@ -68,6 +68,27 @@ final class HelpCommandHandlerTest {
   }
 
   @Test
+  void anOverlongUnknownTopicIsEchoedTruncatedSoTheReplyIsNotDropped() throws Exception {
+    List<Message> replies = HandlerHarness.run(handler, alice, "HELP " + "x".repeat(2000));
+
+    assertThat(HandlerHarness.codes(replies)).containsExactly("524");
+  }
+
+  @Test
+  void aTopicStartingWithAColonIsEchoedWithoutIt() throws Exception {
+    List<Message> replies = HandlerHarness.run(handler, alice, "HELP ::x");
+
+    assertThat(replies.getFirst().rawCommand()).isEqualTo("524");
+    assertThat(replies.getFirst().params()).containsExactly("alice", "_x", "Help not found");
+  }
+
+  @Test
+  void anEmptyTopicIsTheIndexSoItIsNeverEchoedEmpty() throws Exception {
+    assertThat(HandlerHarness.codes(HandlerHarness.run(handler, alice, "HELP :")).getFirst())
+        .isEqualTo("704");
+  }
+
+  @Test
   void aLeadingSlashOrQuestionMarkIsTolerated() throws Exception {
     assertThat(HandlerHarness.codes(HandlerHarness.run(handler, alice, "HELP ?")).getFirst())
         .isEqualTo("704");

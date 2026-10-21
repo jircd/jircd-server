@@ -238,8 +238,12 @@ class ConfigurationLoaderTest {
   void motdAndAdminSettingsAreRead() throws Exception {
     ServerConfiguration configuration =
         load(
-            "motdPath: /etc/jircd/motd.txt\nadminName: Jane\nadminLocation: Earth\n"
-                + "adminEmail: jane@example.org");
+            """
+            motdPath: /etc/jircd/motd.txt
+            adminName: Jane
+            adminLocation: Earth
+            adminEmail: jane@example.org
+            """);
 
     assertThat(configuration.motdPath()).isEqualTo("/etc/jircd/motd.txt");
     assertThat(configuration.adminContact())

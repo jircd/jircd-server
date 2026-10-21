@@ -80,6 +80,14 @@ final class StatsCommandHandlerTest {
   }
 
   @Test
+  void anOverlongServerNameStillGetsAFittingNoSuchServer() throws Exception {
+    List<Message> replies =
+        HandlerHarness.run(at(Duration.ZERO), alice, "STATS u " + "s".repeat(2000));
+
+    assertThat(HandlerHarness.codes(replies)).containsExactly("402");
+  }
+
+  @Test
   void anotherServerIsNoSuchServer() throws Exception {
     List<Message> replies = HandlerHarness.run(at(Duration.ZERO), alice, "STATS u other.example");
 

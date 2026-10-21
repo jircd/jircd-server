@@ -45,6 +45,14 @@ final class PassCommandHandlerTest {
   }
 
   @Test
+  void anEmptyParameterCountsAsMissing() throws Exception {
+    ClientSession session = HandlerHarness.unregistered("c1");
+
+    assertThat(HandlerHarness.codes(HandlerHarness.run(handler, session, "PASS :")))
+        .containsExactly("461");
+  }
+
+  @Test
   void withoutAParameterItNeedsMoreParams() throws Exception {
     ClientSession session = HandlerHarness.unregistered("c1");
 

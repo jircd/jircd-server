@@ -160,7 +160,7 @@ administratorCredentials:
   missing, unreadable, a directory, empty, too large) they send `422`, and the problem
   is logged as a warning, at most once a minute per path and reason. The file is
   re-read when its modification time or size changes, so edits need no reload; `REHASH`/`SIGHUP`
-  applies a changed `motdPath`. Over-long lines are cut to fit the 512-byte limit. `ADMIN`
+  applies a changed `motdPath`. Over-long lines are cut to fit the 512-byte limit, and only the first 200 lines are served (a warning is logged), keeping a registration burst far below the default SendQ. `ADMIN`
   sends `256`-`259` from the three admin settings, `-` standing in for an unset one, and
   `423` when all three are unset; the lines are cut to fit too, and reload applies to the next `ADMIN`.
 - **Registration timeout (#73)**: `registrationTimeoutSeconds` defaults to `60` and

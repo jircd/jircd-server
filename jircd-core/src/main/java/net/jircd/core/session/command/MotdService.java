@@ -16,11 +16,14 @@
 package net.jircd.core.session.command;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.nio.file.attribute.FileTime;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 import net.jircd.core.session.ClientSession;
 import net.jircd.protocol.NumericReply;
@@ -44,11 +47,27 @@ public final class MotdService {
   private static final WarningThrottle WARNINGS =
       new WarningThrottle(java.util.concurrent.TimeUnit.MINUTES.toNanos(1), 64, System::nanoTime);
 
-  private record Snapshot(String path, long modifiedMillis, long size, List<String> lines) {}
+  /** Most lines served, so a registration burst of 512-byte lines stays far under the SendQ. */
+  public static final int MAX_LINES = 200;
+
+  /** What a cached read was made from; a different path, mtime, size or file identity rereads. */
+  private record Snapshot(
+      String path, FileTime modified, long size, Object fileKey, List<String> lines) {
+    Snapshot(String path, BasicFileAttributes attributes, List<String> lines) {
+      this(path, attributes.lastModifiedTime(), attributes.size(), attributes.fileKey(), lines);
+    }
+
+    boolean matches(String currentPath, BasicFileAttributes attributes) {
+      return path.equals(currentPath)
+          && modified.equals(attributes.lastModifiedTime())
+          && size == attributes.size()
+          && java.util.Objects.equals(fileKey, attributes.fileKey());
+    }
+  }
 
   private final Supplier<String> serverName;
   private final Supplier<String> motdPath;
-  private volatile Snapshot cached;
+  private final AtomicReference<Snapshot> cached = new AtomicReference<>();
 
   public MotdService(Supplier<String> serverName, Supplier<String> motdPath) {
     this.serverName = serverName;
@@ -87,19 +106,24 @@ public final class MotdService {
       if (!attributes.isRegularFile()) {
         return unusable(configured, "is not a regular file");
       }
-      if (attributes.size() > MAX_FILE_BYTES) {
-        return unusable(configured, "is larger than " + MAX_FILE_BYTES + " bytes");
-      }
-      long modified = attributes.lastModifiedTime().toMillis();
-      Snapshot snapshot = cached;
-      if (snapshot != null
-          && snapshot.path().equals(configured)
-          && snapshot.modifiedMillis() == modified
-          && snapshot.size() == attributes.size()) {
+      Snapshot snapshot = cached.get();
+      if (snapshot != null && snapshot.matches(configured, attributes)) {
         return snapshot.lines();
       }
-      List<String> lines = split(Files.readAllBytes(path));
-      cached = new Snapshot(configured, modified, attributes.size(), lines);
+      // The size seen above can be stale by now, so never read more than the limit allows.
+      byte[] content;
+      try (InputStream in = Files.newInputStream(path)) {
+        content = in.readNBytes(MAX_FILE_BYTES + 1);
+      }
+      if (content.length > MAX_FILE_BYTES) {
+        return unusable(configured, "is larger than " + MAX_FILE_BYTES + " bytes");
+      }
+      List<String> lines = split(content);
+      if (lines.size() > MAX_LINES) {
+        unusable(configured, "has more than " + MAX_LINES + " lines; only the first are served");
+        lines = List.copyOf(lines.subList(0, MAX_LINES));
+      }
+      cached.set(new Snapshot(configured, attributes, lines));
       if (lines.isEmpty()) {
         return unusable(configured, "is empty");
       }
@@ -109,12 +133,17 @@ public final class MotdService {
     }
   }
 
+  /** Only the final line terminator(s) are dropped; whitespace on the last line is kept. */
   private static List<String> split(byte[] content) {
     String text = new String(content, StandardCharsets.UTF_8);
     if (text.isBlank()) {
       return List.of();
     }
-    return text.stripTrailing().lines().toList();
+    int end = text.length();
+    while (end > 0 && (text.charAt(end - 1) == '\n' || text.charAt(end - 1) == '\r')) {
+      end--;
+    }
+    return text.substring(0, end).lines().toList();
   }
 
   private static List<String> unusable(String path, String reason) {

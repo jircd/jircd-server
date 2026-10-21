@@ -267,7 +267,8 @@ public final class JircdServerApplication {
    */
   private void registerExtendedCommandHandlers(net.jircd.core.session.command.MotdService motd) {
     connectionHandler.registerHandler(
-        Command.MOTD, new net.jircd.core.session.command.MotdCommandHandler(motd));
+        Command.MOTD,
+        new net.jircd.core.session.command.MotdCommandHandler(motd, () -> serverName));
     connectionHandler.registerHandler(
         Command.ISON,
         new net.jircd.core.session.command.IsonCommandHandler(nicknameRegistry, () -> serverName));

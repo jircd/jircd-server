@@ -34,7 +34,7 @@ final class LocalServerTarget {
     if (CaseMapping.fold(server).equals(CaseMapping.fold(target))) {
       return true;
     }
-    Replies.send(session, server, NumericReply.ERR_NOSUCHSERVER, target, "No such server");
+    Replies.sendEchoing(session, server, NumericReply.ERR_NOSUCHSERVER, target, "No such server");
     return false;
   }
 }

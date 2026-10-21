@@ -18,6 +18,7 @@ package net.jircd.core.session.command;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Locale;
 import java.util.function.Supplier;
 import net.jircd.core.session.ClientSession;
 import net.jircd.protocol.Message;
@@ -61,8 +62,12 @@ public final class StatsCommandHandler implements CommandHandler {
           server,
           NumericReply.RPL_STATSUPTIME,
           String.format(
+              Locale.ROOT,
               "Server Up %d days %d:%02d:%02d",
-              up.toDays(), up.toHoursPart(), up.toMinutesPart(), up.toSecondsPart()));
+              up.toDays(),
+              up.toHoursPart(),
+              up.toMinutesPart(),
+              up.toSecondsPart()));
     }
     Replies.send(session, server, NumericReply.RPL_ENDOFSTATS, letter, "End of /STATS report");
   }

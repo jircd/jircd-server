@@ -93,6 +93,21 @@ final class IsonCommandHandlerTest {
 
     List<Message> replies = HandlerHarness.run(handler, alice, line.toString());
 
+    assertThat(replies).hasSizeGreaterThan(1);
     assertThat(HandlerHarness.codes(replies)).allMatch("303"::equals);
+    List<String> listed =
+        replies.stream()
+            .flatMap(m -> java.util.Arrays.stream(m.params().getLast().split(" ")))
+            .toList();
+    assertThat(listed).hasSize(200);
+    assertThat(listed).contains("user0", "user99", "user199");
+  }
+
+  @Test
+  void anEmptyFirstParameterCountsAsMissing() throws Exception {
+    ClientSession alice = harness.register("alice");
+
+    assertThat(HandlerHarness.codes(HandlerHarness.run(handler, alice, "ISON :")))
+        .containsExactly("461");
   }
 }

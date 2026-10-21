@@ -34,7 +34,7 @@ final class MotdServiceTest {
   private final ClientSession alice = new HandlerHarness().register("alice");
   private final AtomicReference<String> path = new AtomicReference<>();
   private final MotdService motd = new MotdService(() -> "server.example", path::get);
-  private final MotdCommandHandler handler = new MotdCommandHandler(motd);
+  private final MotdCommandHandler handler = new MotdCommandHandler(motd, () -> "server.example");
 
   private Path write(String name, byte[] content) throws Exception {
     Path file = dir.resolve(name);
@@ -56,6 +56,36 @@ final class MotdServiceTest {
     assertThat(replies.get(2).params()).containsExactly("alice", "- ");
     assertThat(replies.get(3).params()).containsExactly("alice", "- Second line");
     assertThat(replies.get(4).params()).containsExactly("alice", "End of /MOTD command");
+  }
+
+  @Test
+  void onlyTheFinalLineTerminatorIsDroppedNotTrailingSpaces() throws Exception {
+    path.set(write("motd.txt", "a  \n  \n".getBytes(StandardCharsets.UTF_8)).toString());
+
+    List<Message> replies = HandlerHarness.run(handler, alice, "MOTD");
+
+    assertThat(replies.stream().map(m -> m.params().getLast()))
+        .containsExactly(
+            "- server.example Message of the day - ", "- a  ", "-   ", "End of /MOTD command");
+  }
+
+  @Test
+  void moreLinesThanTheCapAreTruncated() throws Exception {
+    path.set(
+        write("long.txt", "x\n".repeat(MotdService.MAX_LINES + 50).getBytes(StandardCharsets.UTF_8))
+            .toString());
+
+    List<Message> replies = HandlerHarness.run(handler, alice, "MOTD");
+
+    assertThat(replies).hasSize(MotdService.MAX_LINES + 2);
+  }
+
+  @Test
+  void aServerNameOtherThanThisOneIsNoSuchServer() throws Exception {
+    path.set(write("motd.txt", "hi".getBytes(StandardCharsets.UTF_8)).toString());
+
+    assertThat(HandlerHarness.codes(HandlerHarness.run(handler, alice, "MOTD other.example")))
+        .containsExactly("402");
   }
 
   @Test

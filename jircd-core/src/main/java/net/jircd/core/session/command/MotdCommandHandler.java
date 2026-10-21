@@ -15,20 +15,30 @@
  */
 package net.jircd.core.session.command;
 
+import java.util.function.Supplier;
 import net.jircd.core.session.ClientSession;
 import net.jircd.protocol.Message;
 
-/** {@code MOTD} — the message of the day, as served at registration. */
+/**
+ * {@code MOTD} — the message of the day, as served at registration. A server name other than this
+ * one is {@code 402}.
+ */
 public final class MotdCommandHandler implements CommandHandler {
 
   private final MotdService motd;
+  private final Supplier<String> serverName;
 
-  public MotdCommandHandler(MotdService motd) {
+  public MotdCommandHandler(MotdService motd, Supplier<String> serverName) {
     this.motd = motd;
+    this.serverName = serverName;
   }
 
   @Override
   public void handle(ClientSession session, Message message) {
+    if (!message.params().isEmpty()
+        && !LocalServerTarget.accepts(session, serverName, message.params().getFirst())) {
+      return;
+    }
     motd.send(session);
   }
 }

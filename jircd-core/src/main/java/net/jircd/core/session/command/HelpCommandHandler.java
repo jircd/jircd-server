@@ -94,7 +94,8 @@ public final class HelpCommandHandler implements CommandHandler {
     }
     List<String> lines = TOPICS.get(requested.toUpperCase(Locale.ROOT));
     if (lines == null) {
-      Replies.send(session, server, NumericReply.ERR_HELPNOTFOUND, requested, "Help not found");
+      Replies.sendEchoing(
+          session, server, NumericReply.ERR_HELPNOTFOUND, requested, "Help not found");
       return;
     }
     send(session, server, requested.toUpperCase(Locale.ROOT), lines);

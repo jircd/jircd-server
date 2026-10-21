@@ -41,7 +41,7 @@ public final class IsonCommandHandler implements CommandHandler {
 
   @Override
   public void handle(ClientSession session, Message message) {
-    if (message.params().isEmpty()) {
+    if (message.params().isEmpty() || message.params().getFirst().isEmpty()) {
       Replies.send(
           session,
           serverName.get(),
