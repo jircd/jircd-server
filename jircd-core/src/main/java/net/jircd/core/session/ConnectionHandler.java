@@ -23,6 +23,7 @@ import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -354,12 +355,17 @@ public final class ConnectionHandler {
       // Capture the sendq budget at accept time, independently of subsequent reloads.
       int acceptedSendqLimit = sendqLimitBytes.get();
       Duration acceptedRegistrationTimeout = registrationTimeout.get();
+      Instant acceptedAt = Clock.systemUTC().instant();
       connection =
           workers.newThread(
               () -> {
                 try {
                   handleConnection(
-                      socket, connectionId, acceptedSendqLimit, acceptedRegistrationTimeout);
+                      socket,
+                      connectionId,
+                      acceptedSendqLimit,
+                      acceptedRegistrationTimeout,
+                      acceptedAt);
                 } finally {
                   try {
                     closeQuietly(socket);
@@ -446,7 +452,11 @@ public final class ConnectionHandler {
   }
 
   private void handleConnection(
-      Socket socket, String connectionId, int sendqLimit, Duration registrationTimeout) {
+      Socket socket,
+      String connectionId,
+      int sendqLimit,
+      Duration registrationTimeout,
+      Instant acceptedAt) {
     acceptedSocketCustomizer.accept(socket);
     String remoteAddress =
         socket.getInetAddress() == null ? "unknown" : socket.getInetAddress().getHostAddress();
@@ -487,6 +497,7 @@ public final class ConnectionHandler {
             Duration.ofSeconds(keepAliveFrequencySeconds.get()),
             KEEP_ALIVE_TIMEOUT,
             registrationTimeout,
+            acceptedAt,
             Clock.systemUTC());
     session.attachLivenessMonitor(livenessMonitor);
     Thread liveness =

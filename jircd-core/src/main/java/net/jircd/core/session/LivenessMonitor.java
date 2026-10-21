@@ -53,7 +53,7 @@ public final class LivenessMonitor {
     this(session, disconnectCleanup, idleInterval, timeout, null, clock);
   }
 
-  /** The registration deadline runs from construction, i.e. from the connection's start. */
+  /** The registration deadline runs from monitor construction. */
   public LivenessMonitor(
       ClientSession session,
       DisconnectCleanup disconnectCleanup,
@@ -61,8 +61,27 @@ public final class LivenessMonitor {
       Duration timeout,
       Duration registrationTimeout,
       Clock clock) {
+    this(
+        session,
+        disconnectCleanup,
+        idleInterval,
+        timeout,
+        registrationTimeout,
+        clock.instant(),
+        clock);
+  }
+
+  /** {@code connectedAt} is when the connection was accepted, which the deadline runs from. */
+  public LivenessMonitor(
+      ClientSession session,
+      DisconnectCleanup disconnectCleanup,
+      Duration idleInterval,
+      Duration timeout,
+      Duration registrationTimeout,
+      Instant connectedAt,
+      Clock clock) {
     this.registrationTimeout = registrationTimeout;
-    this.connectedAt = clock.instant();
+    this.connectedAt = connectedAt;
     this.session = session;
     this.disconnectCleanup = disconnectCleanup;
     this.idleInterval = idleInterval;
@@ -74,7 +93,12 @@ public final class LivenessMonitor {
   public void checkNow() {
     Instant now = clock.instant();
     if (registrationExpired(now)) {
-      timeOut("Registration timeout");
+      // Claim CLOSING first, only if still unregistered: a registration completing concurrently
+      // either wins here (and we do nothing) or loses and sends no welcome after our ERROR.
+      if (session.lifecycle().closeIfUnregistered()) {
+        enqueueError("Registration timeout");
+        disconnectCleanup.cleanupClaimed(session, "Registration timeout");
+      }
       return;
     }
     if (pingOutstanding) {
@@ -90,18 +114,31 @@ public final class LivenessMonitor {
 
   /**
    * How long the liveness loop may sleep before the next check: the regular tick, shortened to
-   * reach the registration deadline while the session is still unregistered.
+   * reach the next idle PING and, while the session is unregistered, its registration deadline.
    */
   public Duration nextCheckDelay(Duration tick) {
-    if (registrationTimeout == null || session.lifecycle().isRegistered()) {
-      return tick;
+    Duration delay = tick;
+    if (pingOutstanding) {
+      // A PONG can clear the ping at any moment; the next one is then due within an interval.
+      delay = shorter(delay, idleInterval);
+    } else {
+      delay =
+          shorter(
+              delay,
+              idleInterval.minus(Duration.between(session.lastLivenessAt(), clock.instant())));
     }
-    Duration untilDeadline =
-        registrationTimeout.minus(Duration.between(connectedAt, clock.instant()));
-    if (untilDeadline.compareTo(tick) >= 0) {
-      return tick;
+    if (registrationTimeout != null && !session.lifecycle().isRegistered()) {
+      delay =
+          shorter(delay, registrationTimeout.minus(Duration.between(connectedAt, clock.instant())));
     }
-    return untilDeadline.compareTo(Duration.ofMillis(1)) < 0 ? Duration.ofMillis(1) : untilDeadline;
+    return delay;
+  }
+
+  /** The smaller of the two, but never less than a millisecond so the loop cannot spin. */
+  private static Duration shorter(Duration current, Duration candidate) {
+    Duration floor = Duration.ofMillis(1);
+    Duration bounded = candidate.compareTo(floor) < 0 ? floor : candidate;
+    return bounded.compareTo(current) < 0 ? bounded : current;
   }
 
   private boolean registrationExpired(Instant now) {
@@ -131,14 +168,18 @@ public final class LivenessMonitor {
   }
 
   private void timeOut(String reason) {
-    // Same as sendPing(): a borrowed reference, closed below via
-    // disconnectCleanup.cleanup(), not directly by this method.
+    enqueueError(reason);
+    disconnectCleanup.cleanup(session, reason);
+  }
+
+  private void enqueueError(String reason) {
+    // Borrowed reference to the session's own writer, closed by the disconnect cleanup that
+    // follows, not by this method.
     @SuppressWarnings("PMD.CloseResource")
     SessionWriter writer = session.writer();
     if (writer != null) {
       writer.enqueueRaw(
           new Message(Map.of(), null, Command.ERROR, "ERROR", java.util.List.of(reason)));
     }
-    disconnectCleanup.cleanup(session, reason);
   }
 }

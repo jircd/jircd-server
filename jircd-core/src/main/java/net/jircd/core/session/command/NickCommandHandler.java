@@ -100,6 +100,12 @@ public final class NickCommandHandler implements CommandHandler {
         isChange ? PresentedIdentity.presentedForm(session, extensionRegistry) : null;
 
     session.setNickname(requested);
+    // Disconnect cleanup reads the nickname after claiming CLOSING. If it ran before the line
+    // above it saw nothing to release, and CLOSING is then visible here: roll the claim back.
+    if (session.lifecycle().isClosing()) {
+      nicknameRegistry.release(requested, session);
+      return;
+    }
     registrationCompletion.tryComplete(session);
 
     if (isChange) {

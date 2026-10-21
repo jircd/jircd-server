@@ -40,9 +40,21 @@ public final class ConnectionLifecycle {
     return state.get() == State.CLOSING;
   }
 
-  /** CONNECTING -> REGISTERED. No-op if already REGISTERED or CLOSING. */
-  public void completeRegistration() {
-    state.compareAndSet(State.CONNECTING, State.REGISTERED);
+  /**
+   * CONNECTING -&gt; REGISTERED. Returns {@code true} only for the call that made the transition,
+   * so a caller never sends the welcome burst to a session that is already REGISTERED or CLOSING.
+   */
+  public boolean completeRegistration() {
+    return state.compareAndSet(State.CONNECTING, State.REGISTERED);
+  }
+
+  /**
+   * CONNECTING -&gt; CLOSING, atomically: {@code true} only if the session was still unregistered.
+   * Claims the same transition as {@link #closeIfNotAlreadyClosing()}, so exactly one of a racing
+   * registration and registration timeout wins.
+   */
+  public boolean closeIfUnregistered() {
+    return state.compareAndSet(State.CONNECTING, State.CLOSING);
   }
 
   /**

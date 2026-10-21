@@ -69,13 +69,36 @@ class RegistrationTimeoutTest {
   }
 
   @Test
+  void answeringTheServersOwnPingDoesNotKeepAnUnregisteredClientAlive() throws Exception {
+    try (TestServer server =
+            TestServer.start("registrationTimeoutSeconds: 4\nkeepAliveFrequencySeconds: 1\n");
+        RawIrcClient client = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+      client.send("CAP LS 302");
+      int pingsAnswered = 0;
+      String line;
+      while ((line = client.readLine()) != null && !line.startsWith("ERROR ")) {
+        if (line.startsWith("PING ")) {
+          client.send("PONG " + line.substring("PING ".length()));
+          pingsAnswered++;
+        }
+      }
+
+      // A second server PING is only sent once the first PONG cleared the outstanding ping.
+      assertThat(pingsAnswered).isGreaterThanOrEqualTo(2);
+      assertThat(line).isEqualTo("ERROR :Registration timeout");
+      assertThat(client.readLine()).isNull();
+    }
+  }
+
+  @Test
   void clientThatRegistersInTimeIsUnaffected() throws Exception {
     try (TestServer server = TestServer.start(CONFIG);
         RawIrcClient client = RawIrcClient.connectPlaintext(server.plaintextPort())) {
       client.registerAndAwaitWelcome("prompt", "prompt");
+      client.readThroughPong(STEP); // drain the rest of the welcome burst
 
-      // Outlive the 1s registration timeout; a still-running timer would have closed us by now.
-      Thread.sleep(Duration.ofMillis(2500));
+      // Nothing, in particular no ERROR, arrives well past the 1s registration deadline.
+      assertThat(client.staysSilentFor(Duration.ofMillis(2500))).isTrue();
       client.send("PING after-timeout");
 
       assertThat(client.readUntil("PONG", STEP)).endsWith("after-timeout");

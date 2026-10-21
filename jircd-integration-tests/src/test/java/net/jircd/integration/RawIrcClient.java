@@ -100,6 +100,22 @@ public final class RawIrcClient implements AutoCloseable {
     out.flush();
   }
 
+  /**
+   * Waits up to {@code duration} for the server to send or close; {@code true} if it did neither. A
+   * line that arrives is consumed, so a {@code false} result means the connection was not quiet.
+   */
+  public boolean staysSilentFor(Duration duration) throws IOException {
+    socket.setSoTimeout((int) duration.toMillis());
+    try {
+      reader.readLine();
+      return false;
+    } catch (java.net.SocketTimeoutException quiet) {
+      return true;
+    } finally {
+      socket.setSoTimeout(0);
+    }
+  }
+
   public String readLine() throws IOException {
     return reader.readLine();
   }
