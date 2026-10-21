@@ -122,7 +122,10 @@ public final class Replies {
     int used = 0;
     for (int cp : text.codePoints().toArray()) {
       boolean blank = cp <= ' ' || cp == 0x7f;
-      String ch = blank ? (noWhitespace ? "_" : " ") : Character.toString(cp);
+      String ch = Character.toString(cp);
+      if (blank) {
+        ch = noWhitespace ? "_" : " ";
+      }
       int bytes = MessageSerializer.utf8Bytes(ch);
       if (used + bytes > budget) {
         break;

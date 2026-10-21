@@ -99,8 +99,7 @@ final class IsonCommandHandlerTest {
         replies.stream()
             .flatMap(m -> java.util.Arrays.stream(m.params().getLast().split(" ")))
             .toList();
-    assertThat(listed).hasSize(200);
-    assertThat(listed).contains("user0", "user99", "user199");
+    assertThat(listed).hasSize(200).contains("user0", "user99", "user199");
   }
 
   @Test
