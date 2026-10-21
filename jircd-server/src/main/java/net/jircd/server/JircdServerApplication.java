@@ -142,6 +142,7 @@ public final class JircdServerApplication {
             () -> reloader.current().rateLimit(),
             () -> reloader.current().keepAliveFrequencySeconds(),
             () -> reloader.current().sendqLimitBytes(),
+            () -> reloader.current().connectionLimits(),
             acceptedSocketCustomizer);
     registerStory1Handlers();
 

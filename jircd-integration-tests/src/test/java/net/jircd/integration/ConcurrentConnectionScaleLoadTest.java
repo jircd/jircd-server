@@ -38,7 +38,8 @@ class ConcurrentConnectionScaleLoadTest {
   @SuppressWarnings("PMD.CloseResource")
   @Test
   void deliveryLatencyStaysWithinBudgetAtOneThousandConnections() throws Exception {
-    try (TestServer server = TestServer.start();
+    try (TestServer server =
+            TestServer.start("maxConnections: 10000\nmaxConnectionsPerIp: 10000\n");
         RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
         RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort())) {
       alice.registerAndAwaitWelcome("alice", "alice");

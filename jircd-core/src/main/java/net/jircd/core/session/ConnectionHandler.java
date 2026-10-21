@@ -23,12 +23,17 @@ import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
+import net.jircd.core.config.ConnectionLimitPolicy;
 import net.jircd.core.config.ServerConfiguration;
 import net.jircd.core.extension.ConnectionAdmissionExtension;
 import net.jircd.core.extension.Extension;
@@ -62,6 +67,18 @@ import org.slf4j.LoggerFactory;
 public final class ConnectionHandler {
 
   private static final Logger LOG = LoggerFactory.getLogger(ConnectionHandler.class);
+
+  // A TLS error write implicitly handshakes. Bound the entire rejection, even if a peer drips
+  // handshake bytes or never reads. One shared daemon timer bounds the rejection workers.
+  private static final ScheduledThreadPoolExecutor REJECTION_TIMER = rejectionTimer();
+
+  private static ScheduledThreadPoolExecutor rejectionTimer() {
+    ScheduledThreadPoolExecutor timer =
+        new ScheduledThreadPoolExecutor(
+            1, Thread.ofPlatform().daemon(true).name("connection-rejection-deadline").factory());
+    timer.setRemoveOnCancelPolicy(true);
+    return timer;
+  }
 
   /**
    * 512 bytes (command+params, CR-LF inclusive) and up to 4096 bytes for a message-tags section
@@ -100,10 +117,15 @@ public final class ConnectionHandler {
   private final Supplier<ServerConfiguration.RateLimit> rateLimit;
   private final Supplier<Integer> keepAliveFrequencySeconds;
   private final Supplier<Integer> sendqLimitBytes;
+  private final Supplier<ServerConfiguration.ConnectionLimits> connectionLimits;
+  // Guarded by this, together with admission and connection removal.
+  private final Map<String, Integer> connectionsPerBucket = new HashMap<>();
   private final TagRenderer tagRenderer;
   private final Consumer<Socket> acceptedSocketCustomizer;
   private boolean accepting = true;
   private final Map<Thread, Socket> connections = new ConcurrentHashMap<>();
+  private final Semaphore rejectionSlots = new Semaphore(64);
+  private final Map<Thread, Socket> rejections = new ConcurrentHashMap<>();
   private final Map<Command, CommandHandler> handlers = new ConcurrentHashMap<>();
 
   public ConnectionHandler(
@@ -135,6 +157,31 @@ public final class ConnectionHandler {
       Supplier<Integer> keepAliveFrequencySeconds,
       Supplier<Integer> sendqLimitBytes,
       Consumer<Socket> acceptedSocketCustomizer) {
+    this(
+        extensionRegistry,
+        disconnectCleanup,
+        serverName,
+        rateLimit,
+        keepAliveFrequencySeconds,
+        sendqLimitBytes,
+        () ->
+            new ServerConfiguration.ConnectionLimits(
+                ServerConfiguration.DEFAULT_MAX_CONNECTIONS,
+                ServerConfiguration.DEFAULT_MAX_CONNECTIONS_PER_IP),
+        acceptedSocketCustomizer);
+  }
+
+  /** Uses the current admission limits for every accept, shared across all listeners. */
+  public ConnectionHandler(
+      ExtensionRegistry extensionRegistry,
+      DisconnectCleanup disconnectCleanup,
+      Supplier<String> serverName,
+      Supplier<ServerConfiguration.RateLimit> rateLimit,
+      Supplier<Integer> keepAliveFrequencySeconds,
+      Supplier<Integer> sendqLimitBytes,
+      Supplier<ServerConfiguration.ConnectionLimits> connectionLimits,
+      Consumer<Socket> acceptedSocketCustomizer) {
+    this.connectionLimits = java.util.Objects.requireNonNull(connectionLimits);
     this.acceptedSocketCustomizer = java.util.Objects.requireNonNull(acceptedSocketCustomizer);
     this.extensionRegistry = extensionRegistry;
     this.disconnectCleanup = disconnectCleanup;
@@ -149,12 +196,64 @@ public final class ConnectionHandler {
     handlers.put(command, handler);
   }
 
-  /** Spawns one virtual thread to own this connection's lifetime end to end. */
+  /** Reserves admission before spawning one virtual thread to own the connection's lifetime. */
   public synchronized void accept(Socket socket) {
     if (!accepting) {
       closeQuietly(socket);
       return;
     }
+    String remoteAddress = socket.getInetAddress().getHostAddress();
+    ServerConfiguration.ConnectionLimits limits = connectionLimits.get();
+    ConnectionLimitPolicy.AddressLimit addressLimit =
+        ConnectionLimitPolicy.resolve(socket.getInetAddress(), limits);
+    int ipCount = connectionsPerBucket.getOrDefault(addressLimit.bucket(), 0);
+    String exceeded =
+        connections.size() >= limits.maxConnections()
+            ? "maxConnections"
+            : ipCount >= addressLimit.maxConnectionsPerIp() ? "maxConnectionsPerIp" : null;
+    if (exceeded == null) {
+      startConnection(socket, addressLimit.bucket(), ipCount);
+    } else {
+      int appliedLimit =
+          exceeded.equals("maxConnections")
+              ? limits.maxConnections()
+              : addressLimit.maxConnectionsPerIp();
+      startRejection(socket, remoteAddress, exceeded, addressLimit.bucket(), appliedLimit);
+    }
+  }
+
+  private void startRejection(
+      Socket socket, String remoteAddress, String exceeded, String bucket, int appliedLimit) {
+    SecurityEventLog.connectionLimit(remoteAddress, exceeded, bucket, appliedLimit);
+    if (!rejectionSlots.tryAcquire()) {
+      closeQuietly(socket);
+      return;
+    }
+    Thread rejection = null;
+    try {
+      rejection =
+          Thread.ofVirtual()
+              .name("connection-rejection")
+              .unstarted(
+                  () -> {
+                    try {
+                      rejectConnection(socket, remoteAddress);
+                    } finally {
+                      rejections.remove(Thread.currentThread());
+                      rejectionSlots.release();
+                    }
+                  });
+      rejections.put(rejection, socket);
+      rejection.start();
+    } catch (RuntimeException | Error failure) {
+      if (rejection != null) rejections.remove(rejection);
+      rejectionSlots.release();
+      closeQuietly(socket);
+      throw failure;
+    }
+  }
+
+  private void startConnection(Socket socket, String bucket, int ipCount) {
     String connectionId = UUID.randomUUID().toString();
     // Read at accept time so a later reload cannot change this connection's limit.
     int acceptedSendqLimit = sendqLimitBytes.get();
@@ -167,11 +266,38 @@ public final class ConnectionHandler {
                     handleConnection(socket, connectionId, acceptedSendqLimit);
                   } finally {
                     closeQuietly(socket);
-                    connections.remove(Thread.currentThread());
+                    releaseConnection(Thread.currentThread(), bucket);
                   }
                 });
+    connectionsPerBucket.put(bucket, ipCount + 1);
     connections.put(connection, socket);
-    connection.start();
+    try {
+      connection.start();
+    } catch (RuntimeException | Error failure) {
+      releaseConnection(connection, bucket);
+      closeQuietly(socket);
+      throw failure;
+    }
+  }
+
+  private synchronized void releaseConnection(Thread connection, String bucket) {
+    connections.remove(connection);
+    connectionsPerBucket.computeIfPresent(bucket, (_, count) -> count == 1 ? null : count - 1);
+  }
+
+  private static void rejectConnection(Socket socket, String remoteAddress) {
+    var deadline = REJECTION_TIMER.schedule(() -> closeQuietly(socket), 1, TimeUnit.SECONDS);
+    try {
+      socket
+          .getOutputStream()
+          .write("ERROR :Too many connections\r\n".getBytes(StandardCharsets.UTF_8));
+      socket.getOutputStream().flush();
+    } catch (IOException failure) {
+      LOG.debug("Unable to send connection limit error to {}", remoteAddress, failure);
+    } finally {
+      deadline.cancel(false);
+      closeQuietly(socket);
+    }
   }
 
   /** Allows listener accepts when the application starts again. */
@@ -185,20 +311,26 @@ public final class ConnectionHandler {
   }
 
   /**
-   * Closes accepted sockets and waits for their connection, liveness and writer work to finish.
-   * Rejects late accepts even if a listener failed to stop. A timeout leaves outstanding
-   * connections tracked so a subsequent call can wait again.
+   * Closes accepted and rejected sockets and waits for connection, rejection, liveness and writer
+   * work to finish. Rejects late accepts even if a listener failed to stop. A timeout leaves
+   * outstanding connections tracked so a subsequent call can wait again.
    */
   public void closeConnections(Duration timeout) throws IOException {
     long deadline = System.nanoTime() + timeout.toNanos();
     stopAccepting();
     connections.values().forEach(ConnectionHandler::closeQuietly);
-    for (Thread connection : connections.keySet()) {
+    rejections.values().forEach(ConnectionHandler::closeQuietly);
+    awaitConnections(connections, deadline);
+    awaitConnections(rejections, deadline);
+  }
+
+  private static void awaitConnections(Map<Thread, Socket> owned, long deadline)
+      throws IOException {
+    for (Thread connection : owned.keySet()) {
       try {
         long remaining = deadline - System.nanoTime();
         if (remaining <= 0 || !connection.join(Duration.ofNanos(remaining))) {
-          throw new IOException(
-              "Timed out waiting for " + connections.size() + " connections to stop");
+          throw new IOException("Timed out waiting for " + owned.size() + " connections to stop");
         }
       } catch (InterruptedException e) {
         Thread.currentThread().interrupt();

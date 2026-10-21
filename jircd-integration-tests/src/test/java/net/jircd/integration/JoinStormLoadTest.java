@@ -112,7 +112,8 @@ class JoinStormLoadTest {
     ExecutorService threads = Executors.newVirtualThreadPerTaskExecutor();
     try (threads;
         ScheduledExecutorService clock = Executors.newSingleThreadScheduledExecutor();
-        TestServer server = TestServer.start();
+        TestServer server =
+            TestServer.start("maxConnections: 10000\nmaxConnectionsPerIp: 10000\n");
         ClientPool clients = new ClientPool()) {
       try {
         RawIrcClient alice = clients.connect(server.plaintextPort());

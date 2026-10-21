@@ -90,7 +90,11 @@ class ExtensionRegistryTest {
             ServerConfiguration.DEFAULT_OPER_FAILURE_THRESHOLD,
             ServerConfiguration.DEFAULT_WHOWAS_HISTORY_SIZE,
             ServerConfiguration.DEFAULT_KEEP_ALIVE_FREQUENCY_SECONDS,
-            ServerConfiguration.DEFAULT_SENDQ_LIMIT_BYTES);
+            ServerConfiguration.DEFAULT_SENDQ_LIMIT_BYTES,
+            ServerConfiguration.DEFAULT_MAX_CONNECTIONS,
+            ServerConfiguration.DEFAULT_MAX_CONNECTIONS_PER_IP,
+            ServerConfiguration.DEFAULT_IPV6_CONNECTION_LIMIT_PREFIX,
+            List.of());
     registry.attachContext(
         new ServerContext(
             nicknameRegistry,

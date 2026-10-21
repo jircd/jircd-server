@@ -22,6 +22,7 @@ import java.net.UnknownHostException;
 import java.security.GeneralSecurityException;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -162,7 +163,52 @@ public final class ConfigurationLoader {
         operFailureThreshold,
         whowasHistorySize,
         keepAliveFrequencySeconds,
-        sendqLimitBytes);
+        sendqLimitBytes,
+        positiveIntWithinCeiling(
+            root, "maxConnections", ServerConfiguration.DEFAULT_MAX_CONNECTIONS, Integer.MAX_VALUE),
+        positiveIntWithinCeiling(
+            root,
+            "maxConnectionsPerIp",
+            ServerConfiguration.DEFAULT_MAX_CONNECTIONS_PER_IP,
+            Integer.MAX_VALUE),
+        positiveIntWithinCeiling(
+            root,
+            "ipv6ConnectionLimitPrefix",
+            ServerConfiguration.DEFAULT_IPV6_CONNECTION_LIMIT_PREFIX,
+            128),
+        parseConnectionLimitOverrides(root));
+  }
+
+  private static List<ConnectionLimitPolicy.AddressOverride> parseConnectionLimitOverrides(
+      Map<String, Object> root) throws ConfigurationException {
+    String key = "connectionLimitOverrides";
+    if (!root.containsKey(key)) return List.of();
+    List<?> entries = asList(root.get(key), key);
+    List<ConnectionLimitPolicy.AddressOverride> result = new ArrayList<>();
+    Set<ConnectionLimitPolicy.Cidr> ranges = new HashSet<>();
+    for (int i = 0; i < entries.size(); i++) {
+      String path = key + "[" + i + "]";
+      Map<String, Object> entry = asMap(entries.get(i), path);
+      String rawCidr = requiredString(entry.get("cidr"), path + ".cidr");
+      ConnectionLimitPolicy.Cidr cidr;
+      try {
+        cidr = ConnectionLimitPolicy.Cidr.parse(rawCidr);
+      } catch (IllegalArgumentException invalid) {
+        throw new ConfigurationException(path + ".cidr is invalid: " + invalid.getMessage());
+      }
+      if (!ranges.add(cidr)) {
+        throw new ConfigurationException(path + ".cidr is a duplicate range: " + cidr);
+      }
+      Object rawLimit = entry.get("maxConnectionsPerIp");
+      if (!(rawLimit instanceof Integer limit) || limit <= 0) {
+        throw new ConfigurationException(
+            path
+                + ".maxConnectionsPerIp must be a positive integer, got: "
+                + redactSecrets(rawLimit));
+      }
+      result.add(new ConnectionLimitPolicy.AddressOverride(cidr, limit));
+    }
+    return List.copyOf(result);
   }
 
   /** Checks complete NAMES items and their closing numeric against the running server prefix. */

@@ -28,6 +28,17 @@ public final class SecurityEventLog {
 
   private SecurityEventLog() {}
 
+  /** Records rejection before a session or connection worker is allocated. */
+  public static void connectionLimit(
+      String remoteAddress, String limit, String bucket, int appliedLimit) {
+    LOG.info(
+        "security-event=connection-limit remoteAddress={} limit={} bucket={} limitApplied={}",
+        remoteAddress,
+        limit,
+        bucket,
+        appliedLimit);
+  }
+
   public static void failedAuthentication(String connectionId, String username, String reason) {
     LOG.info(
         "security-event=failed-authentication connection={} username={} reason={}",

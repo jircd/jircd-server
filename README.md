@@ -119,6 +119,57 @@ administration (`OPER`, `REHASH`, etc.), see the full annotated schema in
 For a guided, story-by-story walkthrough of every feature, see
 [`quickstart.md`](specs/001-ircv3-server/quickstart.md).
 
+### Connection limits
+
+```yaml
+maxConnections: 10000       # positive integer; total across plaintext and TLS listeners
+maxConnectionsPerIp: 20     # positive integer; total per client bucket across all listeners
+ipv6ConnectionLimitPrefix: 64  # 1-128; 128 counts each IPv6 address separately
+connectionLimitOverrides: []   # optional list; defaults to no overrides
+```
+
+IPv4 clients count per /32; IPv6 clients share a bucket for the configured prefix
+(default /64). IPv4-mapped IPv6 clients (`::ffff:a.b.c.d`) normalize to IPv4 before
+bucketing and override matching.
+
+Overrides replace `maxConnectionsPerIp` for clients whose address matches a CIDR;
+the most specific matching prefix wins, regardless of list order. Counts remain
+per client bucket, **not per override range**. Matching uses the client's address,
+even when the CIDR is more specific than the counting prefix. For example:
+
+```yaml
+connectionLimitOverrides:
+  - cidr: 203.0.113.0/24
+    maxConnectionsPerIp: 200
+  - cidr: 203.0.113.128/25
+    maxConnectionsPerIp: 50    # wins over /24 for this half of the subnet
+  - cidr: "2001:db8:1234::/48"
+    maxConnectionsPerIp: 1000000  # practical per-bucket exemption; global limit still applies
+```
+
+CIDRs must use IP literals with **zero host bits**: use `203.0.113.0/24`, not
+`203.0.113.1/24`. IPv4 prefixes range from 0-32 and IPv6 prefixes from 0-128.
+Scoped/bracketed addresses and duplicate ranges (including equivalent IPv6 spellings)
+are rejected. Mapped IPv6 CIDRs with /96-/128 normalize to IPv4 /0-/32, so they
+cannot duplicate an equivalent IPv4 range. Each override requires a positive integer
+`maxConnectionsPerIp`; a large value provides an exemption without a separate list.
+
+Both limits count registered and unregistered connections. Connections exceeding either
+limit receive `ERROR :Too many connections` and close; rejections are logged as
+`security-event=connection-limit` with the source IP, exceeded setting, `bucket`, and
+`limitApplied` (the threshold of the exceeded setting). Rejection
+I/O runs on virtual threads with a one-second deadline and a shared cap of 64
+in-flight rejections across all listeners. When that cap is full, new rejected sockets
+close immediately without an error write. Peers that cannot finish the TLS handshake
+or receive the error within the deadline are closed.
+Counts are released when connection teardown completes. `REHASH`/`SIGHUP` applies
+new limits, overrides, and IPv6 grouping to subsequent accepts without disconnecting
+existing clients. Each connection releases its original bucket when it ends, even if
+the prefix has changed. Old and new buckets coexist during that transition; existing
+connections are not moved into the new buckets. Lowering a limit below a bucket's
+current usage blocks new connections to that bucket until usage falls below it. Raise the
+per-IP limit for deployments with many clients behind one NAT and for localhost load tests.
+
 ### Listener accept backlog
 
 Each plaintext or TLS listener accepts an optional positive integer `backlog`,

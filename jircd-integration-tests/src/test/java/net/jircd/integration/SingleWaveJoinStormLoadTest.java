@@ -47,7 +47,8 @@ class SingleWaveJoinStormLoadTest {
     CompletableFuture<Void> failure = new CompletableFuture<>();
     var threads = Executors.newVirtualThreadPerTaskExecutor();
     try (threads;
-        TestServer server = TestServer.start();
+        TestServer server =
+            TestServer.start("maxConnections: 10000\nmaxConnectionsPerIp: 10000\n");
         var clients = new JoinStormLoadTest.ClientPool();
         LogCapture overflow = new LogCapture(SessionWriter.class)) {
       try {
