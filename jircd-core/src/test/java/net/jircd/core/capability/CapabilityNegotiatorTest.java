@@ -17,12 +17,29 @@ package net.jircd.core.capability;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.List;
+import net.jircd.core.extension.AbstractCapabilityExtension;
+import net.jircd.core.extension.CapabilityExtension;
 import net.jircd.core.extension.ExtensionRegistry;
+import net.jircd.core.extension.ServerContext;
 import net.jircd.core.session.ClientSession;
 import net.jircd.core.session.RateLimitBucket;
 import org.junit.jupiter.api.Test;
 
 class CapabilityNegotiatorTest {
+
+  private static final class OfferedCapability extends AbstractCapabilityExtension {
+    OfferedCapability(String name) {
+      super(name);
+    }
+  }
+
+  private static void offer(ExtensionRegistry registry, String... names) {
+    for (String name : names) {
+      registry.register(new OfferedCapability(name));
+      registry.enable(name);
+    }
+  }
 
   @Test
   void negotiationSucceedsAndRegistrationCanCompleteWithZeroEnabledCapabilities() {
@@ -35,12 +52,117 @@ class CapabilityNegotiatorTest {
     negotiator.beginNegotiation(session);
     assertThat(session.isNegotiatingCapabilities()).isTrue();
 
-    var result = negotiator.request(session, java.util.List.of("message-tags"));
-    assertThat(result.accepted())
-        .isEmpty(); // nothing enabled, so nothing offered/accepted (FR-008)
-    assertThat(result.declined()).containsExactly("message-tags");
+    // nothing enabled, so nothing is offered and the request is declined (FR-008)
+    assertThat(negotiator.request(session, java.util.List.of("message-tags"))).isFalse();
 
     negotiator.endNegotiation(session);
     assertThat(session.isNegotiatingCapabilities()).isFalse();
+  }
+
+  @Test
+  void requestWithAnyUnknownCapabilityChangesNothing() {
+    ExtensionRegistry registry = new ExtensionRegistry();
+    offer(registry, "echo-message");
+    CapabilityNegotiator negotiator = new CapabilityNegotiator(registry);
+    ClientSession session = new ClientSession("c1", "host.example", RateLimitBucket.withDefaults());
+
+    session.negotiatedCapabilities().add("message-tags");
+
+    assertThat(negotiator.request(session, List.of("echo-message", "batch"))).isFalse();
+    assertThat(session.negotiatedCapabilities()).containsExactly("message-tags");
+  }
+
+  @Test
+  void requestAppliesAdditionsAndRemovalsTogether() {
+    ExtensionRegistry registry = new ExtensionRegistry();
+    offer(registry, "echo-message", "message-tags");
+    CapabilityNegotiator negotiator = new CapabilityNegotiator(registry);
+    ClientSession session = new ClientSession("c1", "host.example", RateLimitBucket.withDefaults());
+    session.negotiatedCapabilities().add("message-tags");
+
+    assertThat(negotiator.request(session, List.of("echo-message", "-message-tags"))).isTrue();
+    assertThat(session.negotiatedCapabilities()).containsExactly("echo-message");
+  }
+
+  @Test
+  void removingAnUnknownCapabilityDeclinesTheWholeRequest() {
+    ExtensionRegistry registry = new ExtensionRegistry();
+    offer(registry, "echo-message");
+    CapabilityNegotiator negotiator = new CapabilityNegotiator(registry);
+    ClientSession session = new ClientSession("c1", "host.example", RateLimitBucket.withDefaults());
+
+    session.negotiatedCapabilities().add("message-tags");
+
+    assertThat(negotiator.request(session, List.of("echo-message", "-nope"))).isFalse();
+    assertThat(session.negotiatedCapabilities()).containsExactly("message-tags");
+  }
+
+  @Test
+  void acceptedRequestSwapsInANewSetSoReadersNeverSeeAHalfAppliedOne() {
+    ExtensionRegistry registry = new ExtensionRegistry();
+    offer(registry, "echo-message", "message-tags");
+    CapabilityNegotiator negotiator = new CapabilityNegotiator(registry);
+    ClientSession session = new ClientSession("c1", "host.example", RateLimitBucket.withDefaults());
+    session.negotiatedCapabilities().add("message-tags");
+    var before = session.negotiatedCapabilities();
+
+    assertThat(negotiator.request(session, List.of("echo-message", "-message-tags"))).isTrue();
+
+    assertThat(before).containsExactly("message-tags");
+    assertThat(session.negotiatedCapabilities()).containsExactly("echo-message");
+  }
+
+  @Test
+  void isAcceptableDoesNotChangeTheSession() {
+    ExtensionRegistry registry = new ExtensionRegistry();
+    offer(registry, "echo-message");
+    CapabilityNegotiator negotiator = new CapabilityNegotiator(registry);
+    ClientSession session = new ClientSession("c1", "host.example", RateLimitBucket.withDefaults());
+
+    assertThat(negotiator.isAcceptable(List.of("echo-message"))).isTrue();
+    assertThat(negotiator.isAcceptable(List.of("echo-message", "nope"))).isFalse();
+    assertThat(session.negotiatedCapabilities()).isEmpty();
+  }
+
+  @Test
+  void twoExtensionsOfferingTheSameNameDoNotBreakRequests() {
+    ExtensionRegistry registry = new ExtensionRegistry();
+    registry.register(new DuplicateOffer("first"));
+    registry.register(new DuplicateOffer("second"));
+    registry.enable("first");
+    registry.enable("second");
+    CapabilityNegotiator negotiator = new CapabilityNegotiator(registry);
+    ClientSession session = new ClientSession("c1", "host.example", RateLimitBucket.withDefaults());
+
+    assertThat(negotiator.request(session, List.of("shared"))).isTrue();
+    assertThat(session.negotiatedCapabilities()).containsExactly("shared");
+  }
+
+  private static final class DuplicateOffer implements CapabilityExtension {
+    private final String id;
+
+    DuplicateOffer(String id) {
+      this.id = id;
+    }
+
+    @Override
+    public String id() {
+      return id;
+    }
+
+    @Override
+    public Capability providedCapability() {
+      return new Capability("shared");
+    }
+
+    @Override
+    public void start(ServerContext context) {
+      // nothing to start: the stub only offers a capability name
+    }
+
+    @Override
+    public void stop() {
+      // nothing to release: the stub holds no resources
+    }
   }
 }

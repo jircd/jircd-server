@@ -40,7 +40,8 @@ public final class ClientSession {
 
   private final String connectionId;
   private final ConnectionLifecycle lifecycle = new ConnectionLifecycle();
-  private final Set<String> negotiatedCapabilities = ConcurrentHashMap.newKeySet();
+  private final AtomicReference<Set<String>> negotiatedCapabilities =
+      new AtomicReference<>(ConcurrentHashMap.newKeySet());
   private final Set<Channel> channelMemberships = ConcurrentHashMap.newKeySet();
   private final Set<Channel> channelMembershipsView =
       Collections.unmodifiableSet(channelMemberships);
@@ -150,7 +151,17 @@ public final class ClientSession {
   }
 
   public Set<String> negotiatedCapabilities() {
-    return negotiatedCapabilities;
+    return negotiatedCapabilities.get();
+  }
+
+  /**
+   * Atomically replaces the whole negotiated set, so a concurrent reader sees either the old set or
+   * the new one, never a half-applied {@code CAP REQ}.
+   */
+  public void replaceNegotiatedCapabilities(java.util.Collection<String> capabilities) {
+    Set<String> replacement = ConcurrentHashMap.newKeySet();
+    replacement.addAll(capabilities);
+    negotiatedCapabilities.set(replacement);
   }
 
   public boolean isNegotiatingCapabilities() {

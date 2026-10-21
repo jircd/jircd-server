@@ -66,9 +66,13 @@ public final class CapabilityNegotiationGrammar {
     return result;
   }
 
-  public static Message ls(String serverName, List<String> capabilities) {
+  public static Message ls(String serverName, String target, List<String> capabilities) {
     return new Message(
-        java.util.Map.of(), serverName, Command.CAP, "CAP", List.of("*", "LS", join(capabilities)));
+        java.util.Map.of(),
+        serverName,
+        Command.CAP,
+        "CAP",
+        List.of(target, "LS", join(capabilities)));
   }
 
   /**
@@ -76,31 +80,31 @@ public final class CapabilityNegotiationGrammar {
    * which reports everything the server offers regardless of negotiation state
    * (005-fix-batch-conformance FR-007).
    */
-  public static Message list(String serverName, List<String> capabilities) {
+  public static Message list(String serverName, String target, List<String> capabilities) {
     return new Message(
         java.util.Map.of(),
         serverName,
         Command.CAP,
         "CAP",
-        List.of("*", "LIST", join(capabilities)));
+        List.of(target, "LIST", join(capabilities)));
   }
 
-  public static Message ack(String serverName, List<String> capabilities) {
+  public static Message ack(String serverName, String target, List<String> capabilities) {
     return new Message(
         java.util.Map.of(),
         serverName,
         Command.CAP,
         "CAP",
-        List.of("*", "ACK", join(capabilities)));
+        List.of(target, "ACK", join(capabilities)));
   }
 
-  public static Message nak(String serverName, List<String> capabilities) {
+  public static Message nak(String serverName, String target, List<String> capabilities) {
     return new Message(
         java.util.Map.of(),
         serverName,
         Command.CAP,
         "CAP",
-        List.of("*", "NAK", join(capabilities)));
+        List.of(target, "NAK", join(capabilities)));
   }
 
   private static String join(List<String> capabilities) {
