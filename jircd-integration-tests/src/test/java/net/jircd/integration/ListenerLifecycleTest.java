@@ -25,6 +25,7 @@ import java.net.BindException;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.SocketException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -204,9 +205,7 @@ class ListenerLifecycleTest {
           .write("PING :up\r\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
       try {
         assertThatThrownBy(application::start).isInstanceOf(BindException.class);
-        while (client.getInputStream().read() != -1) {
-          // read until the server closes the connection; the soTimeout fails the test otherwise
-        }
+        awaitServerClose(client);
         try (Socket late = new Socket()) {
           handler.accept(late);
           assertThat(late.isClosed()).isTrue();
@@ -214,6 +213,23 @@ class ListenerLifecycleTest {
       } finally {
         application.stop();
       }
+    }
+  }
+
+  /**
+   * Reads until the server closes the connection. The server may close with the client's {@code
+   * PING} still unread, in which case the kernel sends RST and the read fails with a connection
+   * reset instead of returning EOF; both mean the connection was closed. A {@code
+   * SocketTimeoutException} is not a {@code SocketException}, so a connection left open still fails
+   * the test through the soTimeout.
+   */
+  private static void awaitServerClose(Socket client) throws IOException {
+    try {
+      while (client.getInputStream().read() != -1) {
+        // read until the server closes the connection
+      }
+    } catch (SocketException e) {
+      assertThat(e).hasMessageContaining("reset");
     }
   }
 
