@@ -16,6 +16,7 @@
 package net.jircd.core.session;
 
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.LongSupplier;
 import net.jircd.core.config.ServerConfiguration;
 import net.jircd.core.extension.Extension;
@@ -46,7 +47,8 @@ public final class PresentedIdentity {
   /** Nanotime of the last over-long warning; zero until the first one. */
   private static final AtomicLong LAST_WARNED = new AtomicLong();
 
-  private static volatile LongSupplier nanoClock = System::nanoTime;
+  private static final AtomicReference<LongSupplier> NANO_CLOCK =
+      new AtomicReference<>(System::nanoTime);
 
   private PresentedIdentity() {}
 
@@ -102,7 +104,7 @@ public final class PresentedIdentity {
   }
 
   private static void warnOverlong(String extensionId) {
-    long now = nanoClock.getAsLong();
+    long now = NANO_CLOCK.get().getAsLong();
     long last = LAST_WARNED.get();
     if ((last == 0 || now - last >= WARN_INTERVAL_NANOS) && LAST_WARNED.compareAndSet(last, now)) {
       LOG.warn(
@@ -114,7 +116,7 @@ public final class PresentedIdentity {
 
   /** Swaps the throttle's clock and restarts its window; tests only. */
   static void useClockForTest(LongSupplier clock) {
-    nanoClock = clock;
+    NANO_CLOCK.set(clock);
     LAST_WARNED.set(0);
   }
 }

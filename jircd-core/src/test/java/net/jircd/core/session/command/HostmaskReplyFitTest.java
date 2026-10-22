@@ -220,8 +220,9 @@ class HostmaskReplyFitTest {
     owner.writer().close();
     List<String> sent = lines(askerOut);
     assertThat(sent.stream().filter(line -> line.contains(" 352 "))).hasSize(2);
-    assertThat(sent).anyMatch(line -> line.contains(" 311 "));
-    assertThat(sent).allMatch(line -> wireBytes(line) <= LIMIT);
+    assertThat(sent)
+        .anyMatch(line -> line.contains(" 311 "))
+        .allMatch(line -> wireBytes(line) <= LIMIT);
   }
 
   @Test
