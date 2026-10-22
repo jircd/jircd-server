@@ -1,6 +1,6 @@
 # Pre-PR review checklist
 
-SonarCloud and Sourcery review every PR. This list collects what they have flagged on this repo's merged PRs (#28–#94), so a change can be checked against it before the PR opens. Numbers in brackets are example PRs.
+SonarCloud and Sourcery review every PR (SonarCloud only when the PR's workflow has `SONAR_TOKEN`, so not on PRs from forks). This list collects what they have flagged on this repo's merged PRs (#28–#94), so a change can be checked against it before the PR opens. Numbers in brackets are example PRs.
 
 ## SonarCloud rules this repo keeps hitting
 
@@ -45,13 +45,13 @@ Check the diff for each of these before opening the PR.
 - **Protocol size limits.** Every reply fits the 512-byte command section, or is fitted or skipped with a specific WARN; never a silent drop by the writer. Bound reads of operator-supplied files (MOTD), output bursts against SendQ, and log volume per repeated request. [#52, #62, #87, #92, #94]
 - **Hostile or oversized input.** Bound CPU and memory: no backtracking blow-up, no allocation that grows with the input before the cap applies, no per-member work repeated on each JOIN. Treat equivalent masks as the same entry. [#52, #88, #91, #92]
 - **Extension boundaries.** Decide what happens when extension code throws or returns bad data, and keep core state consistent when it does (no empty channel left behind, no lost JOIN outcome, no crash on an unexpected mode kind). [#52, #61, #88, #92]
-- **Validation edge cases.** Treat empty, null, negative, zero, duplicate and out-of-range values explicitly: an empty parameter, an explicit `null` YAML section, a null bind address (which must not mean "all interfaces"), a negative limit, a duplicate CAP offer, an empty CAP REQ. Validate every configuration source, including reload and constructors. [#37, #39, #61, #67, #79, #80, #87]
+- **Validation edge cases.** Treat empty, null, negative, zero, duplicate and out-of-range values explicitly: an empty parameter, an explicit `null` YAML section, a missing bind address (which binds every interface only where the contract says so, as for `ServerConfiguration.Listener`), a negative limit, a duplicate CAP offer, an empty CAP REQ. Validate every configuration source, including reload and constructors. [#37, #39, #61, #67, #79, #80, #87]
 - **Rejected requests change nothing.** A rejected MODE, CAP REQ, PASS or OPER leaves state exactly as it was, and the client gets the documented error. [#61, #79, #82, #87]
 - **Counters and accounting.** Counts stay right across nickname changes, unregistered connections, failed setup and peaks (LUSERS), and byte counts stay right across dequeues and overflow (SendQ). [#63, #84]
 - **Security.** Secrets never reach logs, error messages or reports, including nested YAML values and extension settings. Lockout trackers stay safe when full, when verification is slow and when operators share a name. [#37, #70, #82]
 - **Determinism.** Output does not depend on the JVM's locale or time zone (number formatting, date formatting). [#87]
 - **Persistence of changes.** A reloaded value survives restart where the contract says it should, and cached file content notices edits. [#67, #87]
-- **Public API compatibility.** Changing a public constructor or record breaks callers. The project is unreleased (0.1.0-SNAPSHOT), so breaks are allowed, but say so in the PR body to save a review thread. [#39, #52, #63, #82, #83, #84, #87]
+- **Public API compatibility.** Changing a public constructor or record breaks callers. Keep the old signature, or follow the constitution's breaking-change rule: give the migration path in the PR body. While the project is unreleased (0.1.0-SNAPSHOT) the version bump comes with the first release. [#39, #52, #63, #82, #83, #84, #87]
 - **Tests that can pass while the code is wrong.** Assert content (exact params, fitted text, log lines, final state), not just reply codes or the absence of an exception. Make concurrency tests prove that the overlap happened. Don't reuse a consumed stream. Drive the real handler, not a shortcut. Check that a test fails without the fix. [#52, #59, #65, #81, #82, #87, #92, #94]
 - **Test reliability.** Tests have bounded waits and always clean up (no hang on a failed latch, no leaked connection). They don't depend on platform-specific exception messages, and ordinary tests don't run with load tests. [#39, #41, #59, #90]
 - **Docs and contracts.** Update `specs/` contracts, README and Javadoc in the same PR, and keep them consistent with each other and with the code. Claims match the implementation: an O(n·m) algorithm is not "linear time". [#62, #67, #79, #80, #82, #83, #84, #91]
