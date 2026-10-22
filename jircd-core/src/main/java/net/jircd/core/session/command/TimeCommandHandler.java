@@ -17,6 +17,7 @@ package net.jircd.core.session.command;
 
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
 import java.util.Locale;
 import java.util.function.Supplier;
 import net.jircd.core.session.ClientSession;
@@ -40,7 +41,11 @@ public final class TimeCommandHandler implements CommandHandler {
   @Override
   public void handle(ClientSession session, Message message) {
     String server = serverName.get();
-    Replies.send(
-        session, server, NumericReply.RPL_TIME, server, FORMAT.format(ZonedDateTime.now()));
+    Replies.sendFitted(
+        session,
+        server,
+        NumericReply.RPL_TIME,
+        List.of(server),
+        FORMAT.format(ZonedDateTime.now()));
   }
 }

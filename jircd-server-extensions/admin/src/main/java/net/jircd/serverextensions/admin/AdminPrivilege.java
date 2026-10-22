@@ -48,10 +48,11 @@ final class AdminPrivilege {
     if (isAuthorized(session, extensionRegistry)) {
       return false;
     }
-    Replies.send(
+    Replies.sendFitted(
         session,
         serverName,
         NumericReply.ERR_NOPRIVILEGES,
+        List.of(),
         "Permission Denied- You're not an IRC operator");
     return true;
   }
@@ -69,8 +70,12 @@ final class AdminPrivilege {
     if (params.size() >= minParams) {
       return false;
     }
-    Replies.send(
-        session, serverName, NumericReply.ERR_NEEDMOREPARAMS, commandName, "Not enough parameters");
+    Replies.sendFitted(
+        session,
+        serverName,
+        NumericReply.ERR_NEEDMOREPARAMS,
+        List.of(commandName),
+        "Not enough parameters");
     return true;
   }
 }

@@ -15,6 +15,7 @@
  */
 package net.jircd.core.session.command;
 
+import java.util.List;
 import java.util.function.Supplier;
 import net.jircd.core.extension.ExtensionRegistry;
 import net.jircd.core.session.ChannelRegistry;
@@ -44,19 +45,20 @@ public final class ListCommandHandler implements CommandHandler {
 
   @Override
   public void handle(ClientSession session, Message message) {
-    Replies.send(session, serverName.get(), NumericReply.RPL_LISTSTART, "Channel", "Users Name");
+    Replies.sendFitted(
+        session, serverName.get(), NumericReply.RPL_LISTSTART, List.of("Channel"), "Users Name");
     for (var channel : channelRegistry.all()) {
       if (ChannelVisibility.isHiddenFrom(channel, session, extensionRegistry)) {
         continue;
       }
-      Replies.send(
+      Replies.sendFitted(
           session,
           serverName.get(),
           NumericReply.RPL_LIST,
-          channel.name(),
-          String.valueOf(channel.members().size()),
+          List.of(channel.name(), String.valueOf(channel.members().size())),
           channel.topic() != null ? channel.topic() : "");
     }
-    Replies.send(session, serverName.get(), NumericReply.RPL_LISTEND, "End of /LIST");
+    Replies.sendFitted(
+        session, serverName.get(), NumericReply.RPL_LISTEND, List.of(), "End of /LIST");
   }
 }

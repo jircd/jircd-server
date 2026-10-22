@@ -15,6 +15,7 @@
  */
 package net.jircd.serverextensions.admin;
 
+import java.util.List;
 import java.util.function.Supplier;
 import net.jircd.core.extension.ExtensionRegistry;
 import net.jircd.core.session.ClientSession;
@@ -56,11 +57,11 @@ public final class WhohostCommandHandler implements CommandHandler {
     String targetNickname = message.params().getFirst();
     var target = nicknameRegistry.lookup(targetNickname);
     if (target.isEmpty()) {
-      Replies.send(
+      Replies.sendFitted(
           session,
           serverName.get(),
           NumericReply.ERR_NOSUCHNICK,
-          targetNickname,
+          List.of(targetNickname),
           "No such nick/channel");
       return;
     }

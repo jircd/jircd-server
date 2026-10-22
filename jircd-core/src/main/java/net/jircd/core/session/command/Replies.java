@@ -20,6 +20,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import net.jircd.core.session.ClientSession;
+import net.jircd.core.session.OutboundSizeGuard;
+import net.jircd.core.session.WarningThrottle;
 import net.jircd.protocol.Message;
 import net.jircd.protocol.MessageSerializer;
 import net.jircd.protocol.NumericReply;
@@ -41,7 +43,7 @@ public final class Replies {
 
   private Replies() {}
 
-  /** Makes the next oversized-reply warning for every key log again; for tests. */
+  /** Makes the next oversized-list warning for every key log again; for tests. */
   public static void resetOversizedWarnings() {
     OVERSIZED_WARNINGS.reset();
   }
@@ -57,41 +59,17 @@ public final class Replies {
 
   /** Sends an indivisible reply only if its command section fits, logging a throttled skip. */
   public static void sendChecked(ClientSession session, Message message) {
-    if (isRepresentable(message) && session.writer() != null) {
+    if (OutboundSizeGuard.isRepresentable(message) && session.writer() != null) {
       session.writer().enqueueRaw(message);
     }
   }
 
   /**
-   * Checks fixed output fields without changing identities. Used by numeric builders and the
-   * writer's fallback for hostmask notifications; warnings are shared across recipients and bounded
-   * to one per command per minute, with suppressed counts reported on the next admitted warning.
-   */
-  public static boolean isRepresentable(Message message) {
-    int bytes = MessageSerializer.commandBytes(message);
-    if (bytes <= MessageSerializer.MAX_COMMAND_BYTES) {
-      return true;
-    }
-    String command = message.rawCommand() != null ? message.rawCommand() : message.command().name();
-    if (LOG.isWarnEnabled()) {
-      long suppressed = OVERSIZED_WARNINGS.admit("reply|" + command);
-      if (suppressed >= 0) {
-        LOG.warn(
-            "Dropping oversized reply: reply={}, reason=fields exceed command budget, commandBytes={}, budget={}, suppressedSinceLast={}",
-            command,
-            bytes,
-            MessageSerializer.MAX_COMMAND_BYTES,
-            suppressed);
-      }
-    }
-    return false;
-  }
-
-  /**
    * Sends a numeric whose last parameter is free text of unknown length (an administrator's MOTD
-   * line, say), cut on a code-point boundary so the line fits the 512-byte limit. Line breaks and
-   * NUL in the text become spaces, since they would end or corrupt the wire line. If the fixed
-   * fields alone exceed the budget, the reply is logged and skipped without truncating identities.
+   * line, say), cut on a code-point boundary so the command section fits 512 bytes including CRLF,
+   * excluding tags. Line breaks and NUL in the text become spaces, since they would end or corrupt
+   * the wire line. If the fixed fields alone exceed the budget, the reply is logged and skipped
+   * without truncating identities.
    */
   public static void sendFitted(
       ClientSession session,
@@ -113,9 +91,9 @@ public final class Replies {
 
   /**
    * Sends {@code numeric} with a client-supplied value echoed as the middle parameter before the
-   * fixed trailing text, cutting the echoed value so the line fits 512 bytes. Whitespace and
-   * control characters in it, and a leading colon, become {@code _}, since a middle parameter
-   * cannot hold them; an empty result is echoed as {@code *}.
+   * fixed trailing text, cutting the echoed value so the command section fits 512 bytes including
+   * CRLF, excluding tags. Whitespace and control characters in it, and a leading colon, become
+   * {@code _}, since a middle parameter cannot hold them; an empty result is echoed as {@code *}.
    */
   public static void sendEchoing(
       ClientSession session,

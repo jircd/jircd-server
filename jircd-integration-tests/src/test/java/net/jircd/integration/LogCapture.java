@@ -20,6 +20,7 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.List;
 import java.util.function.Predicate;
 import org.slf4j.LoggerFactory;
@@ -31,13 +32,14 @@ import org.slf4j.LoggerFactory;
  */
 final class LogCapture implements AutoCloseable {
 
-  private final Logger logger;
+  private final List<Logger> loggers;
   private final ListAppender<ILoggingEvent> appender = new ListAppender<>();
 
-  LogCapture(Class<?> loggerClass) {
-    logger = (Logger) LoggerFactory.getLogger(loggerClass);
+  LogCapture(Class<?>... loggerClasses) {
+    loggers =
+        Arrays.stream(loggerClasses).map(type -> (Logger) LoggerFactory.getLogger(type)).toList();
     appender.start();
-    logger.addAppender(appender);
+    loggers.forEach(logger -> logger.addAppender(appender));
   }
 
   List<String> messages() {
@@ -61,6 +63,6 @@ final class LogCapture implements AutoCloseable {
 
   @Override
   public void close() {
-    logger.detachAppender(appender);
+    loggers.forEach(logger -> logger.detachAppender(appender));
   }
 }

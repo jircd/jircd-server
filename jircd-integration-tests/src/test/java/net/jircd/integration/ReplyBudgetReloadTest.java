@@ -21,6 +21,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.time.Duration;
 import java.util.List;
+import net.jircd.core.session.OutboundSizeGuard;
 import net.jircd.core.session.command.Replies;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -29,6 +30,7 @@ class ReplyBudgetReloadTest {
   @BeforeEach
   void forgetEarlierWarnings() {
     Replies.resetOversizedWarnings();
+    OutboundSizeGuard.resetWarnings();
   }
 
   private static final Duration TIMEOUT = Duration.ofSeconds(5);
@@ -62,7 +64,7 @@ class ReplyBudgetReloadTest {
       root.readUntil("366", TIMEOUT);
       member.send("JOIN " + channel);
       member.readThroughPong(TIMEOUT);
-      try (LogCapture logs = new LogCapture(Replies.class)) {
+      try (LogCapture logs = new LogCapture(Replies.class, OutboundSizeGuard.class)) {
         root.send("NAMES " + channel);
         var lines = root.readThroughPong(TIMEOUT);
         assertThat(lines.stream().filter(line -> line.contains(" 353 ")))
@@ -98,7 +100,7 @@ class ReplyBudgetReloadTest {
       assertThat(server.application.channelRegistry().lookup(channel)).containsSame(original);
       assertThat(original.memberListing()).containsExactly("@member");
       requester.registerAndAwaitWelcome("r".repeat(150), "requester");
-      try (LogCapture logs = new LogCapture(Replies.class)) {
+      try (LogCapture logs = new LogCapture(Replies.class, OutboundSizeGuard.class)) {
         requester.send("NAMES");
         var lines = requester.readThroughPong(TIMEOUT);
         assertThat(lines.stream().filter(line -> line.contains(" 353 "))).isEmpty();
@@ -152,7 +154,8 @@ class ReplyBudgetReloadTest {
       member.send("TOPIC " + channel + " :retained topic");
       member.readThroughPong(TIMEOUT);
       Replies.resetOversizedWarnings();
-      try (LogCapture logs = new LogCapture(Replies.class)) {
+      OutboundSizeGuard.resetWarnings();
+      try (LogCapture logs = new LogCapture(Replies.class, OutboundSizeGuard.class)) {
         owner.send("WHO " + channel);
         var who = owner.readThroughPong(TIMEOUT);
         assertWireFits(who);
@@ -194,6 +197,7 @@ class ReplyBudgetReloadTest {
             .anyMatch(line -> line.contains(" 314 "))
             .anyMatch(line -> line.contains(" 369 "));
         assertThat(logs.messages())
+            .isNotEmpty()
             .allSatisfy(
                 line ->
                     assertThat(line)
@@ -204,6 +208,7 @@ class ReplyBudgetReloadTest {
 
   private static void assertWireFits(List<String> lines) {
     assertThat(lines)
+        .isNotEmpty()
         .allSatisfy(
             line ->
                 assertThat(line.getBytes(StandardCharsets.UTF_8).length + 2)

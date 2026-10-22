@@ -15,6 +15,7 @@
  */
 package net.jircd.core.session.command;
 
+import java.util.List;
 import java.util.function.Supplier;
 import net.jircd.core.extension.ExtensionRegistry;
 import net.jircd.core.session.ChannelRegistry;
@@ -58,8 +59,12 @@ public final class NamesCommandHandler implements CommandHandler {
           JoinCommandHandler.sendNamesLine(session, channel, serverName.get());
         }
       }
-      Replies.send(
-          session, serverName.get(), NumericReply.RPL_ENDOFNAMES, "*", "End of /NAMES list");
+      Replies.sendFitted(
+          session,
+          serverName.get(),
+          NumericReply.RPL_ENDOFNAMES,
+          List.of("*"),
+          "End of /NAMES list");
       return;
     }
     String requestedName = message.params().getFirst();
@@ -70,11 +75,11 @@ public final class NamesCommandHandler implements CommandHandler {
       // (RFC1459 §4.2.5/RFC2812 §3.2.5); an invalid or nonexistent single channel gets only the
       // closing RPL_ENDOFNAMES, the same as it would if it existed but had zero visible members —
       // never an error, unlike most other channel-targeted commands.
-      Replies.send(
+      Replies.sendFitted(
           session,
           serverName.get(),
           NumericReply.RPL_ENDOFNAMES,
-          requestedName,
+          List.of(requestedName),
           "End of /NAMES list");
       return;
     }

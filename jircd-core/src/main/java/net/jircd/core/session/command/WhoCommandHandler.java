@@ -109,11 +109,11 @@ public final class WhoCommandHandler implements CommandHandler {
     var found = channelRegistry.lookup(channelName);
     if (found.isEmpty()
         || ChannelVisibility.isHiddenFrom(found.get(), session, extensionRegistry)) {
-      Replies.send(
+      Replies.sendFitted(
           session,
           serverName.get(),
           NumericReply.ERR_NOSUCHCHANNEL,
-          channelName,
+          List.of(channelName),
           "No such channel");
       return;
     }

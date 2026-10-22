@@ -15,6 +15,7 @@
  */
 package net.jircd.core.session.command;
 
+import java.util.List;
 import java.util.function.Supplier;
 import net.jircd.core.session.ClientSession;
 import net.jircd.protocol.Message;
@@ -38,8 +39,12 @@ public final class InfoCommandHandler implements CommandHandler {
   @Override
   public void handle(ClientSession session, Message message) {
     String server = serverName.get();
-    Replies.send(
-        session, server, NumericReply.RPL_INFO, server + " (jircd IRC server) " + serverVersion);
-    Replies.send(session, server, NumericReply.RPL_ENDOFINFO, "End of /INFO list");
+    Replies.sendFitted(
+        session,
+        server,
+        NumericReply.RPL_INFO,
+        List.of(),
+        server + " (jircd IRC server) " + serverVersion);
+    Replies.sendFitted(session, server, NumericReply.RPL_ENDOFINFO, List.of(), "End of /INFO list");
   }
 }

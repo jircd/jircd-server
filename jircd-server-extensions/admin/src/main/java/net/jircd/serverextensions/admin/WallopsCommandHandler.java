@@ -62,7 +62,8 @@ public final class WallopsCommandHandler implements CommandHandler {
     }
     String text = message.params().getFirst();
     if (text.isBlank()) {
-      Replies.send(session, serverName.get(), NumericReply.ERR_NOTEXTTOSEND, "No text to send");
+      Replies.sendFitted(
+          session, serverName.get(), NumericReply.ERR_NOTEXTTOSEND, List.of(), "No text to send");
       return;
     }
 

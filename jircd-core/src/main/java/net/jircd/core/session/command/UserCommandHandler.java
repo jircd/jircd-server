@@ -15,6 +15,7 @@
  */
 package net.jircd.core.session.command;
 
+import java.util.List;
 import net.jircd.core.config.ServerConfiguration;
 import net.jircd.core.session.ClientSession;
 import net.jircd.protocol.Hostmask;
@@ -42,19 +43,20 @@ public final class UserCommandHandler implements CommandHandler {
   @Override
   public void handle(ClientSession session, Message message) {
     if (session.hasProcessedUser()) {
-      Replies.send(
+      Replies.sendFitted(
           session,
           serverName.get(),
           NumericReply.ERR_ALREADYREGISTRED,
+          List.of(),
           "Unauthorized command (already registered)");
       return;
     }
     if (message.params().size() < 4) {
-      Replies.send(
+      Replies.sendFitted(
           session,
           serverName.get(),
           NumericReply.ERR_NEEDMOREPARAMS,
-          "USER",
+          List.of("USER"),
           "Not enough parameters");
       return;
     }
@@ -62,11 +64,11 @@ public final class UserCommandHandler implements CommandHandler {
     String username = message.params().getFirst();
     String realname = message.params().get(3);
     if (realname.isEmpty()) {
-      Replies.send(
+      Replies.sendFitted(
           session,
           serverName.get(),
           NumericReply.ERR_NEEDMOREPARAMS,
-          "USER",
+          List.of("USER"),
           "Not enough parameters");
       return;
     }

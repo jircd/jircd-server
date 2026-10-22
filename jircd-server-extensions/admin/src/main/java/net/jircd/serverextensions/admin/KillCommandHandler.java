@@ -58,30 +58,31 @@ public final class KillCommandHandler implements CommandHandler {
   @Override
   public void handle(ClientSession session, Message message) {
     if (!AdminPrivilege.isAuthorized(session, extensionRegistry)) {
-      Replies.send(
+      Replies.sendFitted(
           session,
           serverName.get(),
           NumericReply.ERR_NOPRIVILEGES,
+          List.of(),
           "Permission Denied- You're not an IRC operator");
       return;
     }
     if (message.params().isEmpty()) {
-      Replies.send(
+      Replies.sendFitted(
           session,
           serverName.get(),
           NumericReply.ERR_NEEDMOREPARAMS,
-          "KILL",
+          List.of("KILL"),
           "Not enough parameters");
       return;
     }
     String targetNickname = message.params().getFirst();
     var target = nicknameRegistry.lookup(targetNickname);
     if (target.isEmpty()) {
-      Replies.send(
+      Replies.sendFitted(
           session,
           serverName.get(),
           NumericReply.ERR_NOSUCHNICK,
-          targetNickname,
+          List.of(targetNickname),
           "No such nick/channel");
       return;
     }

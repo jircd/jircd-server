@@ -76,11 +76,11 @@ public final class SamodeCommandHandler implements CommandHandler {
 
     var found = channelRegistry.lookup(channelName);
     if (found.isEmpty() || !found.get().members().contains(session)) {
-      Replies.send(
+      Replies.sendFitted(
           session,
           serverName.get(),
           NumericReply.ERR_NOTONCHANNEL,
-          channelName,
+          List.of(channelName),
           "You're not on that channel");
       return;
     }
@@ -92,11 +92,11 @@ public final class SamodeCommandHandler implements CommandHandler {
     } else if ("-o".equals(modeArg)) {
       sign = '-';
     } else {
-      Replies.send(
+      Replies.sendFitted(
           session,
           serverName.get(),
           NumericReply.ERR_UNKNOWNMODE,
-          modeArg,
+          List.of(modeArg),
           "is unknown mode char to me");
       return;
     }
@@ -105,11 +105,11 @@ public final class SamodeCommandHandler implements CommandHandler {
     boolean accepted =
         channel.setMemberPrivilege(session, Channel.MemberPrivilege.OPERATOR, sign == '+');
     if (!accepted) {
-      Replies.send(
+      Replies.sendFitted(
           session,
           serverName.get(),
           NumericReply.ERR_USERNOTINCHANNEL,
-          session.nickname(),
+          List.of(session.nickname()),
           "They aren't on that channel");
       return;
     }

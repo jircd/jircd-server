@@ -42,11 +42,11 @@ public final class IsonCommandHandler implements CommandHandler {
   @Override
   public void handle(ClientSession session, Message message) {
     if (message.params().isEmpty() || message.params().getFirst().isEmpty()) {
-      Replies.send(
+      Replies.sendFitted(
           session,
           serverName.get(),
           NumericReply.ERR_NEEDMOREPARAMS,
-          "ISON",
+          List.of("ISON"),
           "Not enough parameters");
       return;
     }

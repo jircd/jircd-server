@@ -31,7 +31,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import net.jircd.core.config.ServerConfiguration;
-import net.jircd.core.session.command.Replies;
 import net.jircd.protocol.CapabilityName;
 import net.jircd.protocol.Command;
 import net.jircd.protocol.Message;
@@ -251,7 +250,7 @@ public final class SessionWriter implements AutoCloseable {
     } catch (MessageSerializer.MessageTooLongException e) {
       // Report unrepresentable identities and nick/channel pairs through the same throttled
       // policy as numeric replies. PRIVMSG/NOTICE have already attempted text fitting above.
-      if (!Replies.isRepresentable(message)) {
+      if (OutboundSizeGuard.warnIfOversized(message)) {
         return;
       }
       LOG.warn(

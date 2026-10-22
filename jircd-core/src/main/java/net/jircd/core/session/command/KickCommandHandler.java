@@ -64,11 +64,11 @@ public final class KickCommandHandler implements CommandHandler {
   @Override
   public void handle(ClientSession session, Message message) {
     if (message.params().size() < 2) {
-      Replies.send(
+      Replies.sendFitted(
           session,
           serverName.get(),
           NumericReply.ERR_NEEDMOREPARAMS,
-          "KICK",
+          List.of("KICK"),
           "Not enough parameters");
       return;
     }
@@ -80,11 +80,11 @@ public final class KickCommandHandler implements CommandHandler {
 
     var found = channelRegistry.lookup(channelName);
     if (found.isEmpty()) {
-      Replies.send(
+      Replies.sendFitted(
           session,
           serverName.get(),
           NumericReply.ERR_NOSUCHCHANNEL,
-          channelName,
+          List.of(channelName),
           "No such channel");
       return;
     }
@@ -104,11 +104,11 @@ public final class KickCommandHandler implements CommandHandler {
     switch (channelRegistry.kick(channel, session, targetNickname)) {
       case KickOutcome.NotOperator() -> rejectNotOperator(session, channel, channelName);
       case KickOutcome.NoSuchMember() ->
-          Replies.send(
+          Replies.sendFitted(
               session,
               serverName.get(),
               NumericReply.ERR_USERNOTINCHANNEL,
-              targetNickname,
+              List.of(targetNickname),
               "They aren't on that channel");
       case KickOutcome.Kicked(Departure departure) -> {
         List<String> params = List.of(channel.name(), departure.departed().nickname(), reason);
@@ -121,11 +121,11 @@ public final class KickCommandHandler implements CommandHandler {
   private void rejectNotOperator(ClientSession session, Channel channel, String channelName) {
     SecurityEventLog.rejectedModerationAction(
         session.connectionId(), "KICK", channelName, "not a channel operator");
-    Replies.send(
+    Replies.sendFitted(
         session,
         serverName.get(),
         NumericReply.ERR_CHANOPRIVSNEEDED,
-        channel.name(),
+        List.of(channel.name()),
         "You're not channel operator");
   }
 }

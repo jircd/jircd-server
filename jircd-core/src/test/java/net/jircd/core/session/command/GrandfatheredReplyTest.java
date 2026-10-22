@@ -28,6 +28,7 @@ import java.util.Map;
 import net.jircd.core.extension.ExtensionRegistry;
 import net.jircd.core.session.ChannelRegistry;
 import net.jircd.core.session.ClientSession;
+import net.jircd.core.session.OutboundSizeGuard;
 import net.jircd.core.session.Recipients;
 import net.jircd.core.session.SessionWriter;
 import net.jircd.core.session.TagRenderer;
@@ -35,6 +36,7 @@ import net.jircd.core.session.WhowasEntry;
 import net.jircd.core.session.WhowasHistory;
 import net.jircd.protocol.Command;
 import net.jircd.protocol.Message;
+import net.jircd.protocol.MessageSerializer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -50,6 +52,7 @@ class GrandfatheredReplyTest {
   @BeforeEach
   void resetWarnings() {
     Replies.resetOversizedWarnings();
+    OutboundSizeGuard.resetWarnings();
   }
 
   private ClientSession session(String nick) {
@@ -89,7 +92,15 @@ class GrandfatheredReplyTest {
               "WHOIS " + target.nickname());
       assertThat(HandlerHarness.codes(replies)).containsExactly("301", "313", "318");
       assertThat(replies)
+          .isNotEmpty()
           .allSatisfy(reply -> assertThat(reply.params().get(1)).isEqualTo(target.nickname()));
+      assertThat(replies.stream().filter(reply -> "301".equals(reply.rawCommand())))
+          .singleElement()
+          .satisfies(
+              reply ->
+                  assertThat(reply.params().getLast())
+                      .isNotEmpty()
+                      .satisfies(text -> assertThat(target.awayReason()).startsWith(text)));
       warnings.assertReply("311");
       warnings.assertReply("312");
     }
@@ -146,6 +157,13 @@ class GrandfatheredReplyTest {
     try (Warnings warnings = new Warnings()) {
       var replies = HandlerHarness.run(handler, session("requester"), command + " " + name);
       assertThat(HandlerHarness.codes(replies)).contains("332").doesNotContain("333");
+      assertThat(replies.stream().filter(reply -> "332".equals(reply.rawCommand())))
+          .singleElement()
+          .satisfies(
+              reply ->
+                  assertThat(reply.params().getLast())
+                      .isNotEmpty()
+                      .satisfies(text -> assertThat(channel.topic()).startsWith(text)));
       warnings.assertReply("333");
     }
   }
@@ -201,13 +219,160 @@ class GrandfatheredReplyTest {
     }
   }
 
+  @Test
+  void unknownLongWhoisTargetStillGetsFittedErrorAndCloser() throws Exception {
+    String unknown = "u".repeat(240);
+    var replies =
+        HandlerHarness.run(
+            new WhoisCommandHandler(harness.nicknames, extensions, () -> SERVER),
+            session("r".repeat(240)),
+            "WHOIS " + unknown);
+    assertThat(HandlerHarness.codes(replies)).containsExactly("401", "318");
+    assertThat(replies)
+        .isNotEmpty()
+        .allSatisfy(reply -> assertThat(reply.params().get(1)).isEqualTo(unknown));
+    assertThat(replies.getLast().params().getLast())
+        .isNotEmpty()
+        .satisfies(text -> assertThat("End of /WHOIS list").startsWith(text));
+  }
+
+  @Test
+  void unknownLongWhowasTargetStillGetsFittedErrorAndCloser() throws Exception {
+    String unknown = "u".repeat(240);
+    var replies =
+        HandlerHarness.run(
+            new WhowasCommandHandler(new WhowasHistory(() -> 10), () -> SERVER),
+            session("r".repeat(240)),
+            "WHOWAS " + unknown);
+    assertThat(HandlerHarness.codes(replies)).containsExactly("406", "369");
+    assertThat(replies)
+        .isNotEmpty()
+        .allSatisfy(reply -> assertThat(reply.params().get(1)).isEqualTo(unknown));
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"PRIVMSG", "NOTICE"})
+  void directMessageFitsAwayReasonWithoutLosingItsText(String command) throws Exception {
+    ClientSession target = session("n".repeat(240));
+    target.setAwayReason("😀".repeat(300));
+    var replies =
+        HandlerHarness.run(
+            new MessageCommandHandler(
+                channels, harness.nicknames, extensions, () -> SERVER, command.equals("NOTICE")),
+            session("r".repeat(240)),
+            command + " " + target.nickname() + " :hello");
+    assertThat(replies)
+        .singleElement()
+        .satisfies(
+            reply -> {
+              assertThat(reply.rawCommand()).isEqualTo("301");
+              assertThat(reply.params().get(1)).isEqualTo(target.nickname());
+              assertThat(reply.params().getLast())
+                  .isNotEmpty()
+                  .satisfies(text -> assertThat(target.awayReason()).startsWith(text));
+            });
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"PRIVMSG", "NOTICE"})
+  void textFitFailureReportsThatNoCompleteCodePointFits(String command) throws Exception {
+    String prefix = "sender!ident@host.example";
+    Message empty = new Message(Map.of(), prefix, null, command, List.of("r", ""));
+    String target = "r".repeat(1 + 510 - MessageSerializer.commandBytes(empty));
+    try (Warnings warnings = new Warnings()) {
+      var replies =
+          HandlerHarness.run(
+              (session, ignored) -> {
+                session
+                    .writer()
+                    .enqueueRaw(
+                        new Message(
+                            Map.of(), prefix, null, command, List.of(target, "😀".repeat(100))));
+                session.writer().enqueueRaw(Message.of(Command.PING, "alive"));
+              },
+              session("recipient"),
+              "PING test");
+      assertThat(HandlerHarness.codes(replies)).containsExactly("PING");
+      assertThat(warnings.appender.list)
+          .singleElement()
+          .satisfies(
+              event -> {
+                assertThat(event.getLevel()).isEqualTo(Level.WARN);
+                assertThat(event.getFormattedMessage())
+                    .contains(
+                        "reply=" + command,
+                        "reason=text has no room for a complete code point",
+                        "fixedFieldsBytes=510",
+                        "budget=512")
+                    .doesNotContain("fields exceed command budget");
+              });
+    }
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"PRIVMSG", "NOTICE"})
+  void textWithOversizedFixedFieldsUsesTheFixedFieldDiagnosis(String command) throws Exception {
+    Message oversized =
+        new Message(
+            Map.of(),
+            "sender!ident@host.example",
+            null,
+            command,
+            List.of("r".repeat(600), "😀".repeat(100)));
+    try (Warnings warnings = new Warnings()) {
+      var replies =
+          HandlerHarness.run(
+              (session, ignored) -> session.writer().enqueueRaw(oversized),
+              session("recipient"),
+              "PING test");
+      assertThat(replies).isEmpty();
+      assertThat(warnings.appender.list)
+          .singleElement()
+          .satisfies(
+              event ->
+                  assertThat(event.getFormattedMessage())
+                      .contains("reply=" + command, "reason=fields exceed command budget")
+                      .doesNotContain("reason=text"));
+    }
+  }
+
+  @Test
+  void aFittableTextBodyDoesNotHideAnOversizedTagFailure() throws Exception {
+    Message oversized =
+        new Message(
+            Map.of("s", "x".repeat(4093)),
+            "sender!ident@host.example",
+            Command.PRIVMSG,
+            "PRIVMSG",
+            List.of("target", "😀".repeat(300)));
+    try (Warnings warnings = new Warnings()) {
+      var replies =
+          HandlerHarness.run(
+              (session, ignored) -> session.writer().enqueueRaw(oversized),
+              session("recipient"),
+              "PING test");
+      assertThat(replies).isEmpty();
+      assertThat(warnings.appender.list)
+          .singleElement()
+          .satisfies(
+              event ->
+                  assertThat(event.getFormattedMessage())
+                      .contains("Outbound server tags exceed 4094 data bytes")
+                      .doesNotContain("fields exceed command budget", "reason=text"));
+    }
+  }
+
   private static final class Warnings implements AutoCloseable {
-    private final Logger logger = (Logger) LoggerFactory.getLogger(Replies.class);
+    private final List<Logger> loggers =
+        List.of(
+            (Logger) LoggerFactory.getLogger(Replies.class),
+            (Logger) LoggerFactory.getLogger(OutboundSizeGuard.class),
+            (Logger) LoggerFactory.getLogger(SessionWriter.class));
     private final ListAppender<ILoggingEvent> appender = new ListAppender<>();
 
     Warnings() {
       appender.start();
-      logger.addAppender(appender);
+      loggers.forEach(logger -> logger.addAppender(appender));
     }
 
     void assertReply(String code) {
@@ -222,7 +387,7 @@ class GrandfatheredReplyTest {
 
     @Override
     public void close() {
-      logger.detachAppender(appender);
+      loggers.forEach(logger -> logger.detachAppender(appender));
       appender.stop();
     }
   }

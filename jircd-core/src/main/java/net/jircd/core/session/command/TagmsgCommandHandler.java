@@ -15,6 +15,7 @@
  */
 package net.jircd.core.session.command;
 
+import java.util.List;
 import java.util.Set;
 import java.util.function.Supplier;
 import net.jircd.core.extension.ExtensionRegistry;
@@ -54,20 +55,20 @@ public final class TagmsgCommandHandler implements CommandHandler {
   @Override
   public void handle(ClientSession session, Message message) {
     if (message.params().isEmpty()) {
-      Replies.send(
+      Replies.sendFitted(
           session,
           serverName.get(),
           NumericReply.ERR_NEEDMOREPARAMS,
-          "TAGMSG",
+          List.of("TAGMSG"),
           "Not enough parameters");
       return;
     }
     if (message.tags().isEmpty()) {
-      Replies.send(
+      Replies.sendFitted(
           session,
           serverName.get(),
           NumericReply.ERR_UNKNOWNCOMMAND,
-          "TAGMSG",
+          List.of("TAGMSG"),
           "Malformed message");
       return;
     }
