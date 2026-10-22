@@ -328,7 +328,23 @@ administratorCredentials:
   actually empty list still produces an empty 353. A header that exceeds 512
   bytes including CRLF is diagnosed separately. JOIN, SAJOIN, and targeted NAMES
   still attempt their channel 366; bare NAMES attempts its `*` 366. A closer
-  that independently exceeds 512 bytes is logged and dropped by the writer.
+  that independently exceeds 512 bytes is logged and skipped by the shared reply guard.
+  The same policy applies to hostmask replies and nick/channel pairs, including
+  WHO 352, USERHOST 302, WHOIS 311/312/301/313/318, WHOWAS 314/369,
+  topic metadata 333 (both TOPIC and JOIN), INVITE and 341, and channel
+  notifications such as JOIN, PART, KICK, MODE and TOPIC. Free trailing text
+  in WHO, WHOIS, WHOWAS and topic numerics is fitted on a Unicode code-point
+  boundary. Nicknames, channels, idents, hosts and timestamps remain intact;
+  if those fixed fields cannot fit, the reply is skipped. USERHOST uses the
+  same indivisible-item policy as NAMES and continues with later entries.
+  A shared writer fallback covers other notifications, while PRIVMSG/NOTICE
+  retain their existing text-fitting policy. Skips name the numeric or command
+  and the byte budget in a WARN. Warnings for indivisible replies are limited
+  to one per command per minute across recipients, using at most 256 keys and
+  reporting suppressed counts on the next warning. List warnings retain their
+  existing per-numeric/channel throttle. Command processing continues and
+  attempts its terminating numeric (315, 318, 369, etc.), which is independently
+  fitted or checked by the same policy.
   These fallbacks can produce an incomplete listing for retained old state;
   new name claims obey the configured byte limits. Repeating JOIN or SAJOIN on
   an over-limit channel still returns 476, even for an existing member; the
