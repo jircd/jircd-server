@@ -33,3 +33,5 @@ graphify-out/
 
 # Local worktrees
 .worktrees/
+# SonarScanner local cache (./gradlew sonar)
+.sonar/
