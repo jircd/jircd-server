@@ -32,7 +32,8 @@ Planned for the first release:
 - Real-time connection registration, channel messaging, and moderation
   (classic first-join-gets-operator model)
 - IRCv3 capability negotiation, with `message-tags`, `server-time`, and
-  `echo-message` as the initial capability set
+  `echo-message` as the initial capability set; `away-notify`, `batch` and
+  `multi-prefix` are available too
 - Runtime-toggleable extensions, configurable via file or in-band IRC
   administrative commands
 - Standard `nickname!ident@hostname` identity presentation, with an
@@ -60,13 +61,13 @@ reload.
 
 Startup and reload reject unsafe combinations of the resolved server-name byte
 length `S`, nickname limit `N`, and channel byte limit `Cmax`: both
-`S + 2N + Cmax + 14 <= 512` (353) and `S + N + Cmax + 29 <= 512` (366)
+`S + 2N + Cmax + 15 <= 512` (353) and `S + N + Cmax + 29 <= 512` (366)
 must hold. Validation names the keys, computed reply sizes, and available channel
 byte budget. Reduce the configured limits or use a shorter server name to migrate
 an incompatible configuration; a failed reload keeps the previous settings.
 Replies that carry a nick!user@host are budgeted too, with a username of up to 27
 bytes and a presented host of up to 63 bytes (see the contract below); the widest
-is WHO's 352, `2S + 2N + Cmax + 27 + 63 + 21 <= 512`. A host an extension returns
+is WHO's 352, `2S + 2N + Cmax + 27 + 63 + 22 <= 512`. A host an extension returns
 is truncated to 63 bytes. USERHOST entries split across several 302 lines, so
 the budget covers one entry (`S + 2N + 27 + 63 + 13`).
 NAMES never splits or truncates member identities. A grandfathered item that

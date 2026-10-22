@@ -94,6 +94,7 @@ capabilities:            # CapabilityExtension states only (jircd-capabilities/)
   echo-message: enabled
   away-notify: enabled   # 011-away-notify-batch
   batch: enabled          # 011-away-notify-batch
+  multi-prefix: enabled   # 353/352 list every status prefix a member holds
 
 server-extensions:      # ServerExtension states only (jircd-server-extensions/) —
   cloak: disabled        # never CAP-negotiated, administrator-only. A
@@ -266,15 +267,16 @@ administratorCredentials:
 - **Coupled NAMES byte bounds (issue #54)** also apply at startup and reload.
   Let `S` be the resolved server name's UTF-8 byte length, `N` be
   `nicknameMaxLength`, and `Cmax` be `channelNameMaxLength` used as the channel
-  UTF-8 byte cap. Both `S + 2N + Cmax + 14 <= 512` (353 RPL_NAMREPLY) and
+  UTF-8 byte cap. Both `S + 2N + Cmax + 15 <= 512` (353 RPL_NAMREPLY) and
   `S + N + Cmax + 29 <= 512` (366 RPL_ENDOFNAMES) MUST hold. The first reserves
-  a trailing colon and one member status character; the two nickname lengths
+  a trailing colon and two member status characters (an operator who is also
+  voiced, listed to a `multi-prefix` client); the two nickname lengths
   cover the recipient and listed member. The second includes the closing
   numeric's fixed text. An error names `serverName`, `nicknameMaxLength`, and
   `channelNameMaxLength`, both computed reply sizes, and the channel byte budget
-  `min(512 - S - 2N - 14, 512 - S - N - 29)`. The limits are rejected, never
-  silently clamped. For example, `test.jircd.local` is 16 bytes: `N=216, Cmax=50`
-  exactly fills the conservative 353 budget; `N=217, Cmax=50` requires 514 bytes
+  `min(512 - S - 2N - 15, 512 - S - N - 29)`. The limits are rejected, never
+  silently clamped. For example, `test.jircd.local` is 16 bytes: `N=215, Cmax=51`
+  exactly fills the conservative 353 budget; `N=216, Cmax=51` requires 514 bytes
   and is rejected. The omitted server name is resolved before validation.
   `serverName` remains fixed for the lifetime of the running application;
   reload validates against both the proposed configuration and the running
@@ -291,7 +293,7 @@ administratorCredentials:
 
   | Reply | Command-section bytes |
   | --- | --- |
-  | 352 RPL_WHOREPLY (server name twice, flags `G*@`) | `2S + 2N + Cmax + U + H + 21` |
+  | 352 RPL_WHOREPLY (server name twice, flags `G*@+`) | `2S + 2N + Cmax + U + H + 22` |
   | 333 RPL_TOPICWHOTIME (10-digit timestamp) | `S + 2N + Cmax + U + H + 23` |
   | 311 / 314 WHOIS / WHOWAS user | `S + 2N + U + H + 15` |
   | 302 RPL_USERHOST (one entry; several entries split across 302 lines) | `S + 2N + U + H + 13` |
