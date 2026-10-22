@@ -63,6 +63,11 @@ length `S`, nickname limit `N`, and channel byte limit `Cmax`: both
 must hold. Validation names the keys, computed reply sizes, and available channel
 byte budget. Reduce the configured limits or use a shorter server name to migrate
 an incompatible configuration; a failed reload keeps the previous settings.
+Replies that carry a nick!user@host are budgeted too, with a username of up to 27
+bytes and a presented host of up to 63 bytes (see the contract below); the widest
+is WHO's 352, `2S + 2N + Cmax + 27 + 63 + 21 <= 512`. A host an extension returns
+is truncated to 63 bytes. USERHOST entries split across several 302 lines, so
+the budget covers one entry (`S + 2N + 27 + 63 + 14`).
 NAMES never splits or truncates member identities. A grandfathered item that
 cannot fit is skipped with a WARN giving the channel, item bytes and singleton
 budget; fitting neighbors continue. An oversized fixed header is logged

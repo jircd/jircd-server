@@ -274,6 +274,35 @@ administratorCredentials:
   reload validates against both the proposed configuration and the running
   prefix before applying extension states or limits. A failed reload keeps
   the previous configuration and ISUPPORT lengths.
+- **Hostmask reply bounds (issue #85)** also apply at startup and reload, after
+  the NAMES bounds. Replies that embed a nick!user@host (or an ident and host)
+  must fit 512 bytes including CRLF, or `SessionWriter` drops them. The terms
+  are fixed by the server: a username (ident) is at most 9 UTF-16 units kept
+  from `USER`, so `U = 27` UTF-8 bytes; a presented host is at most `H = 63`
+  bytes (RFC 2812 §2.3.1's host limit; the longest built-in value is a 45-byte
+  IPv6 literal). With `S`, `N` and `Cmax` as above, the worst cases, excluding
+  tags and with a real name counted as empty, are:
+
+  | Reply | Bytes |
+  | --- | --- |
+  | 352 RPL_WHOREPLY (server name twice, flags `G*@`) | `2S + 2N + Cmax + U + H + 21` |
+  | 333 RPL_TOPICWHOTIME (10-digit timestamp) | `S + 2N + Cmax + U + H + 23` |
+  | 311 / 314 WHOIS / WHOWAS user | `S + 2N + U + H + 15` |
+  | 302 RPL_USERHOST (one entry; several entries split across 302 lines) | `S + 2N + U + H + 14` |
+  | `:nick!user@host INVITE nick #chan` | `2N + Cmax + U + H + 14` |
+
+  Every value MUST be `<= 512`. An error names `serverName`, `nicknameMaxLength`
+  and `channelNameMaxLength`, the `U` and `H` terms, and each computed size. The
+  limits are rejected, never clamped; reload validates against the running
+  server name. Because 352 repeats the server name, it is normally the binding
+  one: at the defaults (`N=9`, `Cmax=50`) the server name may be at most 166
+  bytes. A real name that would overflow 311, 314 or 352 is cut on a code-point
+  boundary instead of dropping the line.
+- **A `hostname-display` extension's host is capped at 63 bytes.** The value
+  `PresentedIdentity` gets from the extension is truncated to 63 UTF-8 bytes on a
+  code-point boundary. The truncated value is the fallback, not the real
+  hostname, which a cloak exists to hide. A WARN names the extension, at most
+  once a minute; nothing is thrown into the command path.
 - **Channel admission counts UTF-8 bytes as well as characters.** JOIN and
   SAJOIN apply `channelNameMaxLength` to both UTF-16 code units and wire bytes,
   including the leading `#`. Both reply with the existing `476 ERR_BADCHANMASK`
