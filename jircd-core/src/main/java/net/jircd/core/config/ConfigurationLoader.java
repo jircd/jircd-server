@@ -235,8 +235,59 @@ public final class ConfigurationLoader {
     return List.copyOf(result);
   }
 
-  /** Checks complete NAMES items and their closing numeric against the running server prefix. */
+  /**
+   * Checks the NAMES replies, then every reply that embeds a hostmask, against the running server
+   * prefix. Startup and reload both come through here.
+   */
   static void validateReplyBudgets(
+      String serverName, int nicknameMaxLength, int channelNameMaxLength)
+      throws ConfigurationException {
+    validateNamesBudget(serverName, nicknameMaxLength, channelNameMaxLength);
+    validateHostmaskBudget(serverName, nicknameMaxLength, channelNameMaxLength);
+  }
+
+  /**
+   * Checks that the worst-case nick!user@host reply fits 512 bytes: the longest ident and presented
+   * host the server can produce, with the configured server name, nickname and channel limits.
+   */
+  static void validateHostmaskBudget(
+      String serverName, int nicknameMaxLength, int channelNameMaxLength)
+      throws ConfigurationException {
+    int serverBytes = MessageSerializer.utf8Bytes(serverName);
+    Map<String, Integer> worst =
+        HostmaskReplyBudget.worstCaseBytes(serverBytes, nicknameMaxLength, channelNameMaxLength);
+    int maximum = MessageSerializer.MAX_COMMAND_BYTES;
+    if (worst.values().stream().noneMatch(bytes -> bytes > maximum)) {
+      return;
+    }
+    StringBuilder sizes = new StringBuilder();
+    worst.forEach(
+        (reply, bytes) -> {
+          if (!sizes.isEmpty()) {
+            sizes.append(", ");
+          }
+          sizes.append(reply).append('=').append(bytes);
+        });
+    throw new ConfigurationException(
+        "serverName (S="
+            + serverBytes
+            + " bytes), nicknameMaxLength (N="
+            + nicknameMaxLength
+            + "), channelNameMaxLength (Cmax="
+            + channelNameMaxLength
+            + " bytes) with a username of up to "
+            + ServerConfiguration.IDENT_MAX_BYTES
+            + " bytes and a presented host of up to "
+            + ServerConfiguration.PRESENTED_HOST_MAX_BYTES
+            + " bytes exceed the "
+            + maximum
+            + "-byte reply limit: "
+            + sizes
+            + ". Reduce serverName bytes, nicknameMaxLength or channelNameMaxLength.");
+  }
+
+  /** Checks complete NAMES items and their closing numeric against the running server prefix. */
+  static void validateNamesBudget(
       String serverName, int nicknameMaxLength, int channelNameMaxLength)
       throws ConfigurationException {
     int serverBytes = MessageSerializer.utf8Bytes(serverName);

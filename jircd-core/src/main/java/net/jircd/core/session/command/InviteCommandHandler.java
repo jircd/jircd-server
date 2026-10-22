@@ -17,6 +17,7 @@ package net.jircd.core.session.command;
 
 import java.util.List;
 import java.util.Map;
+import java.util.function.IntSupplier;
 import java.util.function.Supplier;
 import net.jircd.core.extension.ExtensionRegistry;
 import net.jircd.core.session.Channel;
@@ -26,6 +27,7 @@ import net.jircd.core.session.CoreChannelModes;
 import net.jircd.core.session.NicknameRegistry;
 import net.jircd.core.session.PresentedIdentity;
 import net.jircd.core.session.SecurityEventLog;
+import net.jircd.protocol.ChannelName;
 import net.jircd.protocol.Command;
 import net.jircd.protocol.Message;
 import net.jircd.protocol.NumericReply;
@@ -47,12 +49,15 @@ public final class InviteCommandHandler implements CommandHandler {
   private final NicknameRegistry nicknameRegistry;
   private final ExtensionRegistry extensionRegistry;
   private final Supplier<String> serverName;
+  private final IntSupplier channelNameMaxLength;
 
   public InviteCommandHandler(
       ChannelRegistry channelRegistry,
       NicknameRegistry nicknameRegistry,
       ExtensionRegistry extensionRegistry,
-      Supplier<String> serverName) {
+      Supplier<String> serverName,
+      IntSupplier channelNameMaxLength) {
+    this.channelNameMaxLength = channelNameMaxLength;
     this.channelRegistry = channelRegistry;
     this.nicknameRegistry = nicknameRegistry;
     this.extensionRegistry = extensionRegistry;
@@ -85,6 +90,12 @@ public final class InviteCommandHandler implements CommandHandler {
           NumericReply.ERR_NOTONCHANNEL,
           channelName,
           "You're not on that channel");
+      return;
+    }
+    if (found.isEmpty() && !ChannelName.isValid(channelName, channelNameMaxLength.getAsInt())) {
+      // The name is echoed in RPL_INVITING and the INVITE itself, so bound it as JOIN does.
+      Replies.sendEchoing(
+          session, serverName.get(), NumericReply.ERR_BADCHANMASK, channelName, "Bad Channel Mask");
       return;
     }
     Channel channel = found.orElse(null);

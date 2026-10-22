@@ -321,7 +321,11 @@ public final class JircdServerApplication {
     connectionHandler.registerHandler(
         Command.INVITE,
         new net.jircd.core.session.command.InviteCommandHandler(
-            channelRegistry, nicknameRegistry, extensionRegistry, () -> serverName));
+            channelRegistry,
+            nicknameRegistry,
+            extensionRegistry,
+            () -> serverName,
+            () -> reloader.current().channelNameMaxLength()));
 
     var userModeHandler = new UserModeCommandHandler(() -> serverName);
     var channelModeHandler =

@@ -15,6 +15,7 @@
  */
 package net.jircd.core.session.command;
 
+import java.util.List;
 import java.util.function.Supplier;
 import net.jircd.core.extension.ExtensionRegistry;
 import net.jircd.core.session.ClientSession;
@@ -84,14 +85,11 @@ public final class WhoisCommandHandler implements CommandHandler {
             ? target.realHostname()
             : PresentedIdentity.displayHostname(target, extensionRegistry);
 
-    Replies.send(
+    Replies.sendFitted(
         session,
         serverName.get(),
         NumericReply.RPL_WHOISUSER,
-        target.nickname(),
-        target.ident(),
-        hostname,
-        "*",
+        List.of(target.nickname(), target.ident(), hostname, "*"),
         target.realname());
 
     Replies.send(

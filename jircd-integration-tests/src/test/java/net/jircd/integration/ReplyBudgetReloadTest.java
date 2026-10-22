@@ -35,18 +35,18 @@ class ReplyBudgetReloadTest {
   void loweredNicknameLimitGrandfathersMembersAndTheGuardHandlesNewLargerChannels()
       throws Exception {
     try (TestServer server =
-            TestServer.start("nicknameMaxLength: 200\nchannelNameMaxLength: 50\n");
+            TestServer.start("nicknameMaxLength: 150\nchannelNameMaxLength: 50\n");
         RawIrcClient member = RawIrcClient.connectPlaintext(server.plaintextPort());
         RawIrcClient root = RawIrcClient.connectPlaintext(server.plaintextPort());
         RawIrcClient probe = RawIrcClient.connectPlaintext(server.plaintextPort())) {
-      String nickname = "n".repeat(200);
+      String nickname = "n".repeat(150);
       member.registerAndAwaitWelcome(nickname, "member");
       root.registerAndAwaitWelcome("root", "root");
       member.send("JOIN #old");
       member.readUntil("366", TIMEOUT);
       Files.writeString(
           server.configPath,
-          TestServer.baseYaml() + "nicknameMaxLength: 9\nchannelNameMaxLength: 400\n");
+          TestServer.baseYaml() + "nicknameMaxLength: 9\nchannelNameMaxLength: 351\n");
       server.application.reloader().reload();
       assertThat(server.application.nicknameRegistry().lookup(nickname)).isPresent();
       assertThat(server.application.channelRegistry().lookup("#old").orElseThrow().memberListing())
@@ -55,7 +55,7 @@ class ReplyBudgetReloadTest {
       assertThat(probe.readUntil("432", TIMEOUT)).contains("Erroneous nickname");
       root.send("NICK " + "r".repeat(10));
       assertThat(root.readUntil("432", TIMEOUT)).contains("Erroneous nickname");
-      String channel = "#" + "c".repeat(399);
+      String channel = "#" + "c".repeat(350);
       root.send("JOIN " + channel);
       root.readUntil("366", TIMEOUT);
       member.send("JOIN " + channel);
@@ -71,7 +71,7 @@ class ReplyBudgetReloadTest {
         assertThat(logs.messages())
             .singleElement()
             .asString()
-            .contains("Dropping oversized listed item", channel, "itemBytes=200", "budget=80");
+            .contains("Dropping oversized listed item", channel, "itemBytes=150", "budget=129");
       }
       assertThat(server.application.channelRegistry().lookup(channel).orElseThrow().memberListing())
           .contains(nickname, "@root");
@@ -81,21 +81,21 @@ class ReplyBudgetReloadTest {
   @Test
   void loweredChannelLimitKeepsExistingChannelAndBareNamesStillAttemptsItsCloser()
       throws Exception {
-    try (TestServer server = TestServer.start("channelNameMaxLength: 400\n");
+    try (TestServer server = TestServer.start("channelNameMaxLength: 351\n");
         RawIrcClient member = RawIrcClient.connectPlaintext(server.plaintextPort());
         RawIrcClient requester = RawIrcClient.connectPlaintext(server.plaintextPort())) {
       member.registerAndAwaitWelcome("member", "member");
-      String channel = "#" + "c".repeat(399);
+      String channel = "#" + "c".repeat(350);
       member.send("JOIN " + channel);
       member.readUntil("366", TIMEOUT);
       var original = server.application.channelRegistry().lookup(channel).orElseThrow();
       Files.writeString(
           server.configPath,
-          TestServer.baseYaml() + "nicknameMaxLength: 200\nchannelNameMaxLength: 50\n");
+          TestServer.baseYaml() + "nicknameMaxLength: 150\nchannelNameMaxLength: 50\n");
       server.application.reloader().reload();
       assertThat(server.application.channelRegistry().lookup(channel)).containsSame(original);
       assertThat(original.memberListing()).containsExactly("@member");
-      requester.registerAndAwaitWelcome("r".repeat(200), "requester");
+      requester.registerAndAwaitWelcome("r".repeat(150), "requester");
       try (LogCapture logs = new LogCapture(Replies.class)) {
         requester.send("NAMES");
         var lines = requester.readThroughPong(TIMEOUT);

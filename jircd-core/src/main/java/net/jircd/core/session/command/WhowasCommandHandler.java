@@ -66,14 +66,11 @@ public final class WhowasCommandHandler implements CommandHandler {
         // not admin-gated like WHOHOST, so it must not leak the real value to an ordinary client.
         String hostname =
             session.isAdministrator() ? entry.realHostname() : entry.presentedHostname();
-        Replies.send(
+        Replies.sendFitted(
             session,
             server,
             NumericReply.RPL_WHOWASUSER,
-            entry.nickname(),
-            entry.ident(),
-            hostname,
-            "*",
+            List.of(entry.nickname(), entry.ident(), hostname, "*"),
             entry.realname());
       }
     }
