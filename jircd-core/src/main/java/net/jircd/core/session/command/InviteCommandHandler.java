@@ -67,11 +67,11 @@ public final class InviteCommandHandler implements CommandHandler {
   @Override
   public void handle(ClientSession session, Message message) {
     if (message.params().size() < 2) {
-      Replies.send(
+      Replies.sendFitted(
           session,
           serverName.get(),
           NumericReply.ERR_NEEDMOREPARAMS,
-          "INVITE",
+          List.of("INVITE"),
           "Not enough parameters");
       return;
     }
@@ -84,11 +84,11 @@ public final class InviteCommandHandler implements CommandHandler {
     // unchanged.
     var found = channelRegistry.lookup(channelName);
     if (found.isPresent() && !found.get().members().contains(session)) {
-      Replies.send(
+      Replies.sendFitted(
           session,
           serverName.get(),
           NumericReply.ERR_NOTONCHANNEL,
-          channelName,
+          List.of(channelName),
           "You're not on that channel");
       return;
     }
@@ -102,21 +102,20 @@ public final class InviteCommandHandler implements CommandHandler {
 
     var target = nicknameRegistry.lookup(targetNickname);
     if (target.isEmpty()) {
-      Replies.send(
+      Replies.sendFitted(
           session,
           serverName.get(),
           NumericReply.ERR_NOSUCHNICK,
-          targetNickname,
+          List.of(targetNickname),
           "No such nick/channel");
       return;
     }
     if (channel != null && channel.members().contains(target.get())) {
-      Replies.send(
+      Replies.sendFitted(
           session,
           serverName.get(),
           NumericReply.ERR_USERONCHANNEL,
-          targetNickname,
-          channel.name(),
+          List.of(targetNickname, channel.name()),
           "is already on channel");
       return;
     }
@@ -125,11 +124,11 @@ public final class InviteCommandHandler implements CommandHandler {
         && !channel.operators().contains(session)) {
       SecurityEventLog.rejectedModerationAction(
           session.connectionId(), "INVITE", channelName, "not a channel operator");
-      Replies.send(
+      Replies.sendFitted(
           session,
           serverName.get(),
           NumericReply.ERR_CHANOPRIVSNEEDED,
-          channel.name(),
+          List.of(channel.name()),
           "You're not channel operator");
       return;
     }
@@ -148,8 +147,6 @@ public final class InviteCommandHandler implements CommandHandler {
             Command.INVITE,
             "INVITE",
             List.of(target.get().nickname(), channelName));
-    if (target.get().writer() != null) {
-      target.get().writer().enqueueRaw(inviteMessage);
-    }
+    Replies.sendChecked(target.get(), inviteMessage);
   }
 }

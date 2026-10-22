@@ -61,19 +61,19 @@ public final class WhoisCommandHandler implements CommandHandler {
       String targetNickname = message.params().getLast();
       var found = nicknameRegistry.lookup(targetNickname);
       if (found.isEmpty()) {
-        Replies.send(
+        Replies.sendFitted(
             session,
             serverName.get(),
             NumericReply.ERR_NOSUCHNICK,
-            targetNickname,
+            List.of(targetNickname),
             "No such nick/channel");
         // 005-fix-batch-conformance FR-020 — RFC requires WHOIS's reply sequence to always
         // close with 318, success or not; this path used to skip it.
-        Replies.send(
+        Replies.sendFitted(
             session,
             serverName.get(),
             NumericReply.RPL_ENDOFWHOIS,
-            targetNickname,
+            List.of(targetNickname),
             "End of /WHOIS list");
         return;
       }
@@ -92,33 +92,36 @@ public final class WhoisCommandHandler implements CommandHandler {
         List.of(target.nickname(), target.ident(), hostname, "*"),
         target.realname());
 
-    Replies.send(
+    Replies.sendFitted(
         session,
         serverName.get(),
         NumericReply.RPL_WHOISSERVER,
-        target.nickname(),
-        serverName.get(),
+        List.of(target.nickname(), serverName.get()),
         "jircd IRC server");
 
     if (target.isAway()) {
-      Replies.send(
-          session, serverName.get(), NumericReply.RPL_AWAY, target.nickname(), target.awayReason());
+      Replies.sendFitted(
+          session,
+          serverName.get(),
+          NumericReply.RPL_AWAY,
+          List.of(target.nickname()),
+          target.awayReason());
     }
 
     if (target.userModes().contains(UserMode.OPERATOR)) {
-      Replies.send(
+      Replies.sendFitted(
           session,
           serverName.get(),
           NumericReply.RPL_WHOISOPERATOR,
-          target.nickname(),
+          List.of(target.nickname()),
           "is an IRC operator");
     }
 
-    Replies.send(
+    Replies.sendFitted(
         session,
         serverName.get(),
         NumericReply.RPL_ENDOFWHOIS,
-        target.nickname(),
+        List.of(target.nickname()),
         "End of /WHOIS list");
   }
 }

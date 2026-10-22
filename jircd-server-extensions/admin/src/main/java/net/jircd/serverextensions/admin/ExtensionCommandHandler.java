@@ -15,6 +15,7 @@
  */
 package net.jircd.serverextensions.admin;
 
+import java.util.List;
 import java.util.Locale;
 import java.util.function.Supplier;
 import net.jircd.core.extension.ExtensionRegistry;
@@ -45,19 +46,20 @@ public final class ExtensionCommandHandler implements CommandHandler {
   @Override
   public void handle(ClientSession session, Message message) {
     if (!AdminPrivilege.isAuthorized(session, extensionRegistry)) {
-      Replies.send(
+      Replies.sendFitted(
           session,
           serverName.get(),
           NumericReply.ERR_NOPRIVILEGES,
+          List.of(),
           "Permission Denied- You're not an IRC operator");
       return;
     }
     if (message.params().size() < 2) {
-      Replies.send(
+      Replies.sendFitted(
           session,
           serverName.get(),
           NumericReply.ERR_NEEDMOREPARAMS,
-          "EXTENSION",
+          List.of("EXTENSION"),
           "Not enough parameters");
       return;
     }
@@ -65,11 +67,11 @@ public final class ExtensionCommandHandler implements CommandHandler {
     String extensionId = message.params().get(1);
 
     if (extensionRegistry.find(extensionId).isEmpty()) {
-      Replies.send(
+      Replies.sendFitted(
           session,
           serverName.get(),
           NumericReply.ERR_UNKNOWNCOMMAND,
-          extensionId,
+          List.of(extensionId),
           "No such extension");
       return;
     }
@@ -85,11 +87,11 @@ public final class ExtensionCommandHandler implements CommandHandler {
           AdminNotices.send(session, serverName.get(), extensionId + " is now disabled");
         }
         default ->
-            Replies.send(
+            Replies.sendFitted(
                 session,
                 serverName.get(),
                 NumericReply.ERR_UNKNOWNCOMMAND,
-                "EXTENSION",
+                List.of("EXTENSION"),
                 "Unknown action — use ENABLE or DISABLE");
       }
     } catch (RuntimeException e) {

@@ -17,8 +17,11 @@ package net.jircd.integration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.time.Duration;
+import java.util.List;
+import net.jircd.core.session.OutboundSizeGuard;
 import net.jircd.core.session.command.Replies;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -27,6 +30,7 @@ class ReplyBudgetReloadTest {
   @BeforeEach
   void forgetEarlierWarnings() {
     Replies.resetOversizedWarnings();
+    OutboundSizeGuard.resetWarnings();
   }
 
   private static final Duration TIMEOUT = Duration.ofSeconds(5);
@@ -60,7 +64,7 @@ class ReplyBudgetReloadTest {
       root.readUntil("366", TIMEOUT);
       member.send("JOIN " + channel);
       member.readThroughPong(TIMEOUT);
-      try (LogCapture logs = new LogCapture(Replies.class)) {
+      try (LogCapture logs = new LogCapture(Replies.class, OutboundSizeGuard.class)) {
         root.send("NAMES " + channel);
         var lines = root.readThroughPong(TIMEOUT);
         assertThat(lines.stream().filter(line -> line.contains(" 353 ")))
@@ -96,7 +100,7 @@ class ReplyBudgetReloadTest {
       assertThat(server.application.channelRegistry().lookup(channel)).containsSame(original);
       assertThat(original.memberListing()).containsExactly("@member");
       requester.registerAndAwaitWelcome("r".repeat(150), "requester");
-      try (LogCapture logs = new LogCapture(Replies.class)) {
+      try (LogCapture logs = new LogCapture(Replies.class, OutboundSizeGuard.class)) {
         requester.send("NAMES");
         var lines = requester.readThroughPong(TIMEOUT);
         assertThat(lines.stream().filter(line -> line.contains(" 353 "))).isEmpty();
@@ -113,5 +117,102 @@ class ReplyBudgetReloadTest {
       assertThat(member.readUntil("476", TIMEOUT)).contains("Bad Channel Mask");
       assertThat(server.application.channelRegistry().lookup(channel)).containsSame(original);
     }
+  }
+
+  @Test
+  void retainedNickAndChannelHostmaskRepliesFitOrWarnAndCommandsContinue() throws Exception {
+    try (TestServer server =
+            TestServer.start("nicknameMaxLength: 150\nchannelNameMaxLength: 50\n");
+        RawIrcClient owner = RawIrcClient.connectPlaintext(server.plaintextPort());
+        RawIrcClient member = RawIrcClient.connectPlaintext(server.plaintextPort());
+        RawIrcClient target = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+      String memberNick = "m".repeat(150);
+      String targetNick = "t".repeat(150);
+      String channel = "#" + "c".repeat(350);
+      owner.registerAndAwaitWelcome("owner", "owner");
+      member.registerAndAwaitWelcome(memberNick, "member");
+      target.registerAndAwaitWelcome(targetNick, "target");
+      member.send("JOIN #sync");
+      member.readThroughPong(TIMEOUT);
+      target.send("JOIN #sync");
+      target.readThroughPong(TIMEOUT);
+      Files.writeString(
+          server.configPath,
+          TestServer.baseYaml() + "nicknameMaxLength: 9\nchannelNameMaxLength: 351\n");
+      server.application.reloader().reload();
+      owner.send("JOIN " + channel);
+      owner.readThroughPong(TIMEOUT);
+      member.send("JOIN " + channel);
+      member.readThroughPong(TIMEOUT);
+      Files.writeString(
+          server.configPath,
+          TestServer.baseYaml() + "nicknameMaxLength: 9\nchannelNameMaxLength: 50\n");
+      server.application.reloader().reload();
+      assertThat(server.application.nicknameRegistry().lookup(memberNick)).isPresent();
+      assertThat(server.application.channelRegistry().lookup(channel).orElseThrow().memberListing())
+          .contains(memberNick, "@owner");
+      member.send("TOPIC " + channel + " :retained topic");
+      member.readThroughPong(TIMEOUT);
+      Replies.resetOversizedWarnings();
+      OutboundSizeGuard.resetWarnings();
+      try (LogCapture logs = new LogCapture(Replies.class, OutboundSizeGuard.class)) {
+        owner.send("WHO " + channel);
+        var who = owner.readThroughPong(TIMEOUT);
+        assertWireFits(who);
+        assertThat(who).anyMatch(line -> line.contains(" 315 "));
+        assertThat(logs.messages()).anyMatch(line -> line.contains("reply=352"));
+
+        target.send("TOPIC " + channel);
+        var topic = target.readThroughPong(TIMEOUT);
+        assertWireFits(topic);
+        assertThat(topic).noneMatch(line -> line.contains(" 333 "));
+        assertThat(logs.messages()).anyMatch(line -> line.contains("reply=333"));
+
+        member.send("INVITE " + targetNick + " " + channel);
+        var inviting = member.readThroughPong(TIMEOUT);
+        assertWireFits(inviting);
+        assertThat(inviting).noneMatch(line -> line.contains(" 341 "));
+        assertThat(logs.messages())
+            .anyMatch(line -> line.contains("reply=341"))
+            .anyMatch(line -> line.contains("reply=INVITE"));
+
+        target.send("WHOIS " + memberNick);
+        var whois = target.readThroughPong(TIMEOUT);
+        assertWireFits(whois);
+        assertThat(whois)
+            .anyMatch(line -> line.contains(" 311 "))
+            .anyMatch(line -> line.contains(" 312 "))
+            .anyMatch(line -> line.contains(" 318 "));
+        target.send("USERHOST " + memberNick);
+        var userhost = target.readThroughPong(TIMEOUT);
+        assertWireFits(userhost);
+        assertThat(userhost).anyMatch(line -> line.contains(" 302 ") && line.contains(memberNick));
+
+        member.send("QUIT :history");
+        target.readUntil("QUIT", TIMEOUT);
+        target.send("WHOWAS " + memberNick);
+        var whowas = target.readThroughPong(TIMEOUT);
+        assertWireFits(whowas);
+        assertThat(whowas)
+            .anyMatch(line -> line.contains(" 314 "))
+            .anyMatch(line -> line.contains(" 369 "));
+        assertThat(logs.messages())
+            .isNotEmpty()
+            .allSatisfy(
+                line ->
+                    assertThat(line)
+                        .contains("Dropping oversized", "budget", "suppressedSinceLast="));
+      }
+    }
+  }
+
+  private static void assertWireFits(List<String> lines) {
+    assertThat(lines)
+        .isNotEmpty()
+        .allSatisfy(
+            line ->
+                assertThat(line.getBytes(StandardCharsets.UTF_8).length + 2)
+                    .as("wire bytes including CRLF")
+                    .isLessThanOrEqualTo(512));
   }
 }

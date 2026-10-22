@@ -53,11 +53,11 @@ public final class CapCommandHandler implements CommandHandler {
         CapabilityNegotiationGrammar.parseSubcommand(message);
     if (subcommand == null) {
       String rawSubcommand = message.params().isEmpty() ? "*" : message.params().getFirst();
-      Replies.send(
+      Replies.sendFitted(
           session,
           serverName.get(),
           NumericReply.ERR_INVALIDCAPCMD,
-          rawSubcommand,
+          List.of(rawSubcommand),
           "Invalid CAP subcommand");
       return;
     }
@@ -106,8 +106,12 @@ public final class CapCommandHandler implements CommandHandler {
             ? CapabilityNegotiationGrammar.ack(serverName.get(), target, requested)
             : CapabilityNegotiationGrammar.nak(serverName.get(), target, requested);
     if (MessageSerializer.commandBytes(reply) > MessageSerializer.MAX_COMMAND_BYTES) {
-      Replies.send(
-          session, serverName.get(), NumericReply.ERR_INPUTTOOLONG, "Input line was too long");
+      Replies.sendFitted(
+          session,
+          serverName.get(),
+          NumericReply.ERR_INPUTTOOLONG,
+          List.of(),
+          "Input line was too long");
       return;
     }
     if (accepted) {

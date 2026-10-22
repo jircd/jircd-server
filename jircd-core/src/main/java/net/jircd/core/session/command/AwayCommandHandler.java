@@ -51,14 +51,19 @@ public final class AwayCommandHandler implements CommandHandler {
     // way a fully-absent one already does, rather than setting an empty-string away reason.
     if (message.params().isEmpty() || message.params().getFirst().isEmpty()) {
       session.setAwayReason(null);
-      Replies.send(
-          session, server, NumericReply.RPL_UNAWAY, "You are no longer marked as being away");
+      Replies.sendFitted(
+          session,
+          server,
+          NumericReply.RPL_UNAWAY,
+          List.of(),
+          "You are no longer marked as being away");
       broadcastAwayChange(session, null);
       return;
     }
     String reason = message.params().getFirst();
     session.setAwayReason(reason);
-    Replies.send(session, server, NumericReply.RPL_NOWAWAY, "You have been marked as being away");
+    Replies.sendFitted(
+        session, server, NumericReply.RPL_NOWAWAY, List.of(), "You have been marked as being away");
     broadcastAwayChange(session, reason);
   }
 

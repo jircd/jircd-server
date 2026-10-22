@@ -160,7 +160,9 @@ administratorCredentials:
   missing, unreadable, a directory, empty, too large) they send `422`, and the problem
   is logged as a warning, at most once a minute per path and reason. The file is
   re-read when its modification time or size changes, so edits need no reload; `REHASH`/`SIGHUP`
-  applies a changed `motdPath`. Over-long lines are cut to fit the 512-byte limit, and only the first 200 lines are served (a warning is logged), keeping a registration burst far below the default SendQ. `ADMIN`
+  applies a changed `motdPath`. Over-long text is cut to fit the 512-byte command
+  section, and only the first 200 lines are served (a warning is logged), keeping
+  a registration burst far below the default SendQ. `ADMIN`
   sends `256`-`259` from the three admin settings, `-` standing in for an unset one, and
   `423` when all three are unset; the lines are cut to fit too, and reload applies to the next `ADMIN`.
 - **Registration timeout (#73)**: `registrationTimeoutSeconds` defaults to `60` and
@@ -257,6 +259,10 @@ administratorCredentials:
   disconnected or evicted — the limit only gates new claims, the same
   "no retroactive enforcement" posture extension-state changes already
   have (FR-011).
+- **Reply byte budgets** measure the command section: prefix, command, parameters,
+  and CRLF, limited to 512 UTF-8 bytes. IRCv3 message tags use a separate section:
+  at most 8191 wire bytes total, with up to 4094 escaped data bytes from each
+  client/server origin. Tags never consume the command-section budget.
 - **Coupled NAMES byte bounds (issue #54)** also apply at startup and reload.
   Let `S` be the resolved server name's UTF-8 byte length, `N` be
   `nicknameMaxLength`, and `Cmax` be `channelNameMaxLength` used as the channel
@@ -276,14 +282,14 @@ administratorCredentials:
   the previous configuration and ISUPPORT lengths.
 - **Hostmask reply bounds (issue #85)** also apply at startup and reload, after
   the NAMES bounds. Replies that embed a nick!user@host (or an ident and host)
-  must fit 512 bytes including CRLF, or `SessionWriter` drops them. The terms
+  must fit the 512-byte command section, or `SessionWriter` drops them. The terms
   are fixed by the server: a username (ident) is at most 9 UTF-16 units kept
   from `USER`, so `U = 27` UTF-8 bytes; a presented host is at most `H = 63`
   bytes (RFC 2812 §2.3.1's host limit; the longest built-in value is a 45-byte
   IPv6 literal). With `S`, `N` and `Cmax` as above, the worst cases, excluding
   tags and with a real name counted as empty, are:
 
-  | Reply | Bytes |
+  | Reply | Command-section bytes |
   | --- | --- |
   | 352 RPL_WHOREPLY (server name twice, flags `G*@`) | `2S + 2N + Cmax + U + H + 21` |
   | 333 RPL_TOPICWHOTIME (10-digit timestamp) | `S + 2N + Cmax + U + H + 23` |
@@ -291,8 +297,8 @@ administratorCredentials:
   | 302 RPL_USERHOST (one entry; several entries split across 302 lines) | `S + 2N + U + H + 13` |
   | `:nick!user@host INVITE nick #chan` | `2N + Cmax + U + H + 14` |
 
-  Every value MUST be `<= 512`. An error names `serverName`, `nicknameMaxLength`
-  and `channelNameMaxLength`, the `U` and `H` terms, and each computed size. The
+  Every command-section size MUST be `<= 512` bytes. An error names `serverName`,
+  `nicknameMaxLength` and `channelNameMaxLength`, the `U` and `H` terms, and each computed size. The
   limits are rejected, never clamped; reload validates against the running
   server name. Because 352 repeats the server name, it is normally the binding
   one: at the defaults (`N=9`, `Cmax=50`) the server name may be at most 166
@@ -325,10 +331,31 @@ administratorCredentials:
   singleton byte budget), and continues with later items. It never truncates or
   splits a nickname. The one-byte slack from an omitted singleton trailing colon
   is usable. If all items are skipped, no synthetic empty 353 is emitted; an
-  actually empty list still produces an empty 353. A header that exceeds 512
-  bytes including CRLF is diagnosed separately. JOIN, SAJOIN, and targeted NAMES
+  actually empty list still produces an empty 353. A header that cannot fit the
+  512-byte command section is diagnosed separately. JOIN, SAJOIN, and targeted NAMES
   still attempt their channel 366; bare NAMES attempts its `*` 366. A closer
-  that independently exceeds 512 bytes is logged and dropped by the writer.
+  whose fixed fields alone exceed the 512-byte command section is logged and
+  skipped by the shared reply guard; otherwise its free closing text is fitted.
+  The same policy applies to hostmask replies and nick/channel pairs, including
+  WHO 352, USERHOST 302, WHOIS 311/312/301/313/318, WHOWAS 314/369,
+  topic metadata 333 (both TOPIC and JOIN), INVITE and 341, and channel
+  notifications such as JOIN, PART, KICK, MODE and TOPIC. Free trailing text
+  in numeric replies is fitted on a Unicode code-point boundary, including
+  unknown-target errors and closers, and away replies on PRIVMSG/NOTICE.
+  Nicknames, channels, idents, hosts and timestamps remain intact;
+  if those fixed fields cannot fit, the reply is skipped. USERHOST uses the
+  same indivisible-item policy as NAMES and continues with later entries.
+  A shared writer fallback covers other notifications, while PRIVMSG/NOTICE
+  retain their existing text-fitting policy. A failed text fit distinguishes fixed
+  fields exceeding the command-section budget from too little room for one complete
+  body code point, reporting the actual fixed-field byte count. Skips name the
+  numeric or command and the command-section budget in a WARN. Warnings for
+  indivisible replies are limited
+  to one per command per minute across recipients, using at most 256 keys and
+  reporting suppressed counts on the next warning. List warnings retain their
+  existing per-numeric/channel throttle. Command processing continues and
+  attempts its terminating numeric (315, 318, 369, etc.), which is independently
+  fitted or checked by the same policy.
   These fallbacks can produce an incomplete listing for retained old state;
   new name claims obey the configured byte limits. Repeating JOIN or SAJOIN on
   an over-limit channel still returns 476, even for an existing member; the

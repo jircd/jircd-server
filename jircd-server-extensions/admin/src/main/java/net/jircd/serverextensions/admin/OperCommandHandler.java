@@ -69,11 +69,11 @@ public final class OperCommandHandler implements CommandHandler {
   @Override
   public void handle(ClientSession session, Message message) {
     if (message.params().size() < 2) {
-      Replies.send(
+      Replies.sendFitted(
           session,
           serverName.get(),
           NumericReply.ERR_NEEDMOREPARAMS,
-          "OPER",
+          List.of("OPER"),
           "Not enough parameters");
       return;
     }
@@ -99,18 +99,23 @@ public final class OperCommandHandler implements CommandHandler {
       result = authenticateSession(session, config, username, password);
     }
     if (result == OperAttemptTracker.Result.TLS_REQUIRED) {
-      Replies.send(
+      Replies.sendFitted(
           session,
           serverName.get(),
           NumericReply.ERR_NOOPERHOST,
+          List.of(),
           "OPER requires TLS; reconnect using TLS");
       return;
     }
     if (result == OperAttemptTracker.Result.SUCCESS) {
       session.resetFallbackOperFailures();
       session.grantAdministratorPrivilege();
-      Replies.send(
-          session, serverName.get(), NumericReply.RPL_YOUREOPER, "You are now an IRC operator");
+      Replies.sendFitted(
+          session,
+          serverName.get(),
+          NumericReply.RPL_YOUREOPER,
+          List.of(),
+          "You are now an IRC operator");
       // 005-fix-batch-conformance FR-023 — the same unsolicited self-directed MODE echo shape
       // UserModeCommandHandler already uses for a self mode change, so the client's own state
       // tracking reflects the new operator status immediately, without a separate query.
@@ -134,7 +139,12 @@ public final class OperCommandHandler implements CommandHandler {
         result == OperAttemptTracker.Result.LOCKED
             ? "OPER source locked out"
             : "invalid OPER credentials");
-    Replies.send(session, serverName.get(), NumericReply.ERR_PASSWDMISMATCH, "Password incorrect");
+    Replies.sendFitted(
+        session,
+        serverName.get(),
+        NumericReply.ERR_PASSWDMISMATCH,
+        List.of(),
+        "Password incorrect");
     if (result == OperAttemptTracker.Result.LOCKED
         || result == OperAttemptTracker.Result.FAILURE_LIMIT_REACHED) {
       disconnectCleanup.cleanup(session, "Too many failed OPER attempts");

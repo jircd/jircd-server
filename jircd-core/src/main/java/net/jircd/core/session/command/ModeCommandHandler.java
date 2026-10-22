@@ -97,22 +97,22 @@ public final class ModeCommandHandler implements CommandHandler {
   @Override
   public void handle(ClientSession session, Message message) {
     if (message.params().isEmpty()) {
-      Replies.send(
+      Replies.sendFitted(
           session,
           serverName.get(),
           NumericReply.ERR_NEEDMOREPARAMS,
-          "MODE",
+          List.of("MODE"),
           "Not enough parameters");
       return;
     }
     String channelName = message.params().getFirst();
     var found = channelRegistry.lookup(channelName);
     if (found.isEmpty()) {
-      Replies.send(
+      Replies.sendFitted(
           session,
           serverName.get(),
           NumericReply.ERR_NOSUCHCHANNEL,
-          channelName,
+          List.of(channelName),
           "No such channel");
       return;
     }
@@ -147,11 +147,11 @@ public final class ModeCommandHandler implements CommandHandler {
   private void refuse(ClientSession session, Channel channel) {
     SecurityEventLog.rejectedModerationAction(
         session.connectionId(), "MODE", channel.name(), "not a channel operator");
-    Replies.send(
+    Replies.sendFitted(
         session,
         serverName.get(),
         NumericReply.ERR_CHANOPRIVSNEEDED,
-        channel.name(),
+        List.of(channel.name()),
         "You're not channel operator");
   }
 
@@ -171,11 +171,11 @@ public final class ModeCommandHandler implements CommandHandler {
     for (ModeChange change : changes) {
       ChannelMode mode = resolve(recognized, change.flag());
       if (mode == null) {
-        Replies.send(
+        Replies.sendFitted(
             session,
             serverName.get(),
             NumericReply.ERR_UNKNOWNMODE,
-            String.valueOf(change.flag()),
+            List.of(String.valueOf(change.flag())),
             "is unknown mode char to me");
         break;
       }
@@ -206,11 +206,11 @@ public final class ModeCommandHandler implements CommandHandler {
         break; // silent stop — no reply beyond the echo of what was applied so far
       }
       if (nextParamIndex >= message.params().size()) {
-        Replies.send(
+        Replies.sendFitted(
             session,
             serverName.get(),
             NumericReply.ERR_NEEDMOREPARAMS,
-            "MODE",
+            List.of("MODE"),
             "Not enough parameters");
         break;
       }
@@ -225,18 +225,18 @@ public final class ModeCommandHandler implements CommandHandler {
           // WHOIS/KILL already do: 401 for "not connected anywhere", 441 only once it's
           // confirmed the nickname exists but isn't a member of THIS channel.
           if (nicknameRegistry.lookup(rawParam).isEmpty()) {
-            Replies.send(
+            Replies.sendFitted(
                 session,
                 serverName.get(),
                 NumericReply.ERR_NOSUCHNICK,
-                rawParam,
+                List.of(rawParam),
                 "No such nick/channel");
           } else {
-            Replies.send(
+            Replies.sendFitted(
                 session,
                 serverName.get(),
                 NumericReply.ERR_USERNOTINCHANNEL,
-                rawParam,
+                List.of(rawParam),
                 "They aren't on that channel");
           }
           break;
@@ -251,11 +251,11 @@ public final class ModeCommandHandler implements CommandHandler {
           break;
         }
         if (result == Channel.ModeChangeResult.NOT_A_MEMBER) {
-          Replies.send(
+          Replies.sendFitted(
               session,
               serverName.get(),
               NumericReply.ERR_USERNOTINCHANNEL,
-              rawParam,
+              List.of(rawParam),
               "They aren't on that channel");
           break;
         }
@@ -309,12 +309,11 @@ public final class ModeCommandHandler implements CommandHandler {
             break;
           }
           if (result == Channel.ModeChangeResult.BAN_LIST_FULL) {
-            Replies.send(
+            Replies.sendFitted(
                 session,
                 serverName.get(),
                 NumericReply.ERR_BANLISTFULL,
-                channel.name(),
-                normalized,
+                List.of(channel.name(), normalized),
                 "Channel list is full (+" + mode.flag() + ")");
             break;
           }
@@ -371,11 +370,11 @@ public final class ModeCommandHandler implements CommandHandler {
    */
   private void sendChannelModeIs(ClientSession session, Channel channel) {
     if (ChannelVisibility.isHiddenFrom(channel, session, extensionRegistry)) {
-      Replies.send(
+      Replies.sendFitted(
           session,
           serverName.get(),
           NumericReply.ERR_NOSUCHCHANNEL,
-          channel.name(),
+          List.of(channel.name()),
           "No such channel");
       return;
     }
@@ -444,7 +443,7 @@ public final class ModeCommandHandler implements CommandHandler {
           case 'I' -> "End of channel invite list";
           default -> "End of channel ban list";
         };
-    Replies.send(session, serverName.get(), endReply, channel.name(), endText);
+    Replies.sendFitted(session, serverName.get(), endReply, List.of(channel.name()), endText);
   }
 
   private void broadcastEcho(

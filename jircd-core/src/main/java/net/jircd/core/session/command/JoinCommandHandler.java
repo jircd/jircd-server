@@ -64,11 +64,11 @@ public final class JoinCommandHandler implements CommandHandler {
   @Override
   public void handle(ClientSession session, Message message) {
     if (message.params().isEmpty()) {
-      Replies.send(
+      Replies.sendFitted(
           session,
           serverName.get(),
           NumericReply.ERR_NEEDMOREPARAMS,
-          "JOIN",
+          List.of("JOIN"),
           "Not enough parameters");
       return;
     }
@@ -86,8 +86,12 @@ public final class JoinCommandHandler implements CommandHandler {
 
   private void joinOne(ClientSession session, String name, String suppliedKey) {
     if (!ChannelName.isValid(name, channelNameMaxLength.getAsInt())) {
-      Replies.send(
-          session, serverName.get(), NumericReply.ERR_BADCHANMASK, name, "Bad Channel Mask");
+      Replies.sendFitted(
+          session,
+          serverName.get(),
+          NumericReply.ERR_BADCHANMASK,
+          List.of(name),
+          "Bad Channel Mask");
       return;
     }
 
@@ -114,8 +118,12 @@ public final class JoinCommandHandler implements CommandHandler {
     if (joined.isEmpty()) {
       AdmissionFailure rejected = failure.get();
       if (rejected != null) {
-        Replies.send(
-            session, serverName.get(), rejected.reply(), rejected.channelName(), rejected.reason());
+        Replies.sendFitted(
+            session,
+            serverName.get(),
+            rejected.reply(),
+            List.of(rejected.channelName()),
+            rejected.reason());
       }
       return;
     }
@@ -134,7 +142,8 @@ public final class JoinCommandHandler implements CommandHandler {
 
     Channel.Topic topic = channel.topicState();
     if (topic != null) {
-      Replies.send(session, serverName.get(), NumericReply.RPL_TOPIC, channel.name(), topic.text());
+      Replies.sendFitted(
+          session, serverName.get(), NumericReply.RPL_TOPIC, List.of(channel.name()), topic.text());
       Replies.send(
           session,
           serverName.get(),
@@ -213,8 +222,12 @@ public final class JoinCommandHandler implements CommandHandler {
   public static void sendNamesReply(
       ClientSession requester, Channel channel, String serverName, List<String> memberListing) {
     sendNamesLine(requester, channel, serverName, memberListing);
-    Replies.send(
-        requester, serverName, NumericReply.RPL_ENDOFNAMES, channel.name(), "End of /NAMES list");
+    Replies.sendFitted(
+        requester,
+        serverName,
+        NumericReply.RPL_ENDOFNAMES,
+        List.of(channel.name()),
+        "End of /NAMES list");
   }
 
   /**

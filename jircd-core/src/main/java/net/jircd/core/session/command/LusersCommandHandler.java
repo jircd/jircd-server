@@ -72,49 +72,49 @@ public final class LusersCommandHandler implements CommandHandler {
     int unknownCount = unregisteredConnections.getAsInt();
     String current = String.valueOf(clientCount);
     String max = String.valueOf(Math.max(userStatistics.peak(), clientCount));
-    Replies.send(
+    Replies.sendFitted(
         session,
         server,
         NumericReply.RPL_LUSERCLIENT,
+        List.of(),
         "There are " + clientCount + " users and " + invisibleCount + " invisible on 1 servers");
-    Replies.send(
+    Replies.sendFitted(
         session,
         server,
         NumericReply.RPL_LUSEROP,
-        String.valueOf(operatorCount),
+        List.of(String.valueOf(operatorCount)),
         "operator(s) online");
     if (unknownCount > 0) {
-      Replies.send(
+      Replies.sendFitted(
           session,
           server,
           NumericReply.RPL_LUSERUNKNOWN,
-          String.valueOf(unknownCount),
+          List.of(String.valueOf(unknownCount)),
           "unknown connection(s)");
     }
-    Replies.send(
+    Replies.sendFitted(
         session,
         server,
         NumericReply.RPL_LUSERCHANNELS,
-        String.valueOf(channelCount),
+        List.of(String.valueOf(channelCount)),
         "channels formed");
-    Replies.send(
+    Replies.sendFitted(
         session,
         server,
         NumericReply.RPL_LUSERME,
+        List.of(),
         "I have " + clientCount + " clients and 1 servers");
-    Replies.send(
+    Replies.sendFitted(
         session,
         server,
         NumericReply.RPL_LOCALUSERS,
-        current,
-        max,
+        List.of(current, max),
         "Current local users " + current + ", max " + max);
-    Replies.send(
+    Replies.sendFitted(
         session,
         server,
         NumericReply.RPL_GLOBALUSERS,
-        current,
-        max,
+        List.of(current, max),
         "Current global users " + current + ", max " + max);
   }
 }

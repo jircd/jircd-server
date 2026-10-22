@@ -60,28 +60,32 @@ public final class NickCommandHandler implements CommandHandler {
   @Override
   public void handle(ClientSession session, Message message) {
     if (message.params().isEmpty() || message.params().getFirst().isEmpty()) {
-      Replies.send(
-          session, serverName.get(), NumericReply.ERR_NONICKNAMEGIVEN, "No nickname given");
+      Replies.sendFitted(
+          session,
+          serverName.get(),
+          NumericReply.ERR_NONICKNAMEGIVEN,
+          List.of(),
+          "No nickname given");
       return;
     }
     String requested = message.params().getFirst();
 
     if (!Hostmask.isValidNickname(requested, nicknameMaxLength.getAsInt())) {
-      Replies.send(
+      Replies.sendFitted(
           session,
           serverName.get(),
           NumericReply.ERR_ERRONEUSNICKNAME,
-          requested,
+          List.of(requested),
           "Erroneous nickname");
       return;
     }
 
     if (!nicknameRegistry.claim(requested, session)) {
-      Replies.send(
+      Replies.sendFitted(
           session,
           serverName.get(),
           NumericReply.ERR_NICKNAMEINUSE,
-          requested,
+          List.of(requested),
           "Nickname is already in use");
       return;
     }

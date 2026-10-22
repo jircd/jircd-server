@@ -44,21 +44,22 @@ public final class UserModeCommandHandler implements CommandHandler {
   @Override
   public void handle(ClientSession session, Message message) {
     if (message.params().isEmpty()) {
-      Replies.send(
+      Replies.sendFitted(
           session,
           serverName.get(),
           NumericReply.ERR_NEEDMOREPARAMS,
-          "MODE",
+          List.of("MODE"),
           "Not enough parameters");
       return;
     }
     String target = message.params().getFirst();
     if (session.nickname() == null
         || !CaseMapping.fold(session.nickname()).equals(CaseMapping.fold(target))) {
-      Replies.send(
+      Replies.sendFitted(
           session,
           serverName.get(),
           NumericReply.ERR_USERSDONTMATCH,
+          List.of(),
           "Cannot change mode for other users");
       return;
     }
@@ -75,8 +76,12 @@ public final class UserModeCommandHandler implements CommandHandler {
     for (ModeChange change : changes) {
       UserMode mode = findByFlag(change.flag());
       if (mode == null) {
-        Replies.send(
-            session, serverName.get(), NumericReply.ERR_UMODEUNKNOWNFLAG, "Unknown MODE flag");
+        Replies.sendFitted(
+            session,
+            serverName.get(),
+            NumericReply.ERR_UMODEUNKNOWNFLAG,
+            List.of(),
+            "Unknown MODE flag");
         break;
       }
       if (change.sign() == '+') {
@@ -85,10 +90,11 @@ public final class UserModeCommandHandler implements CommandHandler {
           continue;
         }
         if (!mode.clientSettable()) {
-          Replies.send(
+          Replies.sendFitted(
               session,
               serverName.get(),
               NumericReply.ERR_NOPRIVILEGES,
+              List.of(),
               "Permission Denied- You're not an IRC operator");
           break;
         }

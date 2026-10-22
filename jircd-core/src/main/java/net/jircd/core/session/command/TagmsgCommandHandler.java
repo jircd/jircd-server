@@ -15,6 +15,7 @@
  */
 package net.jircd.core.session.command;
 
+import java.util.List;
 import java.util.Set;
 import java.util.function.Supplier;
 import net.jircd.core.extension.ExtensionRegistry;
@@ -35,6 +36,8 @@ import net.jircd.protocol.NumericReply;
  */
 public final class TagmsgCommandHandler implements CommandHandler {
 
+  private static final String COMMAND_NAME = "TAGMSG";
+
   private final ChannelRegistry channelRegistry;
   private final NicknameRegistry nicknameRegistry;
   private final ExtensionRegistry extensionRegistry;
@@ -54,20 +57,20 @@ public final class TagmsgCommandHandler implements CommandHandler {
   @Override
   public void handle(ClientSession session, Message message) {
     if (message.params().isEmpty()) {
-      Replies.send(
+      Replies.sendFitted(
           session,
           serverName.get(),
           NumericReply.ERR_NEEDMOREPARAMS,
-          "TAGMSG",
+          List.of(COMMAND_NAME),
           "Not enough parameters");
       return;
     }
     if (message.tags().isEmpty()) {
-      Replies.send(
+      Replies.sendFitted(
           session,
           serverName.get(),
           NumericReply.ERR_UNKNOWNCOMMAND,
-          "TAGMSG",
+          List.of(COMMAND_NAME),
           "Malformed message");
       return;
     }
@@ -87,7 +90,7 @@ public final class TagmsgCommandHandler implements CommandHandler {
 
     String presentedForm = PresentedIdentity.presentedForm(session, extensionRegistry);
     OutboundMessage outbound =
-        OutboundMessage.now(presentedForm, "TAGMSG", target, null, message.tags());
+        OutboundMessage.now(presentedForm, COMMAND_NAME, target, null, message.tags());
     boolean echoToSender = MessageCommandHandler.includeSenderInFanOut(extensionRegistry, session);
     for (ClientSession recipient :
         MessageCommandHandler.deliveryTargets(recipients, session, target, echoToSender)) {

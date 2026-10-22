@@ -18,6 +18,7 @@ package net.jircd.core.session.command;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.concurrent.atomic.AtomicLong;
+import net.jircd.core.session.WarningThrottle;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 

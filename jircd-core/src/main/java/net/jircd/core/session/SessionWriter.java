@@ -248,6 +248,11 @@ public final class SessionWriter implements AutoCloseable {
       }
       writeLine(MessageSerializer.serializeText(message));
     } catch (MessageSerializer.MessageTooLongException e) {
+      // Report unrepresentable identities and nick/channel pairs through the same throttled
+      // policy as numeric replies. PRIVMSG/NOTICE have already attempted text fitting above.
+      if (OutboundSizeGuard.warnIfOversized(message)) {
+        return;
+      }
       LOG.warn(
           "Dropping oversized outbound message for connection {}: {}",
           session.connectionId(),

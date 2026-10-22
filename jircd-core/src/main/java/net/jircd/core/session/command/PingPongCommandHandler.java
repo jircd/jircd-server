@@ -37,7 +37,8 @@ public final class PingPongCommandHandler {
   public static CommandHandler ping(Supplier<String> serverName) {
     return (session, message) -> {
       if (message.params().isEmpty()) {
-        Replies.send(session, serverName.get(), NumericReply.ERR_NOORIGIN, "No origin specified");
+        Replies.sendFitted(
+            session, serverName.get(), NumericReply.ERR_NOORIGIN, List.of(), "No origin specified");
         return;
       }
       String token = message.params().getFirst();

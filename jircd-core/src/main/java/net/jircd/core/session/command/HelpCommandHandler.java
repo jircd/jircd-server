@@ -113,6 +113,7 @@ public final class HelpCommandHandler implements CommandHandler {
     for (String line : lines.subList(1, lines.size())) {
       Replies.sendFitted(session, server, NumericReply.RPL_HELPTXT, List.of(subject), line);
     }
-    Replies.send(session, server, NumericReply.RPL_ENDOFHELP, subject, "End of /HELP");
+    Replies.sendFitted(
+        session, server, NumericReply.RPL_ENDOFHELP, List.of(subject), "End of /HELP");
   }
 }

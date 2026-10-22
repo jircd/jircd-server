@@ -109,11 +109,11 @@ public final class WhoCommandHandler implements CommandHandler {
     var found = channelRegistry.lookup(channelName);
     if (found.isEmpty()
         || ChannelVisibility.isHiddenFrom(found.get(), session, extensionRegistry)) {
-      Replies.send(
+      Replies.sendFitted(
           session,
           serverName.get(),
           NumericReply.ERR_NOSUCHCHANNEL,
-          channelName,
+          List.of(channelName),
           "No such channel");
       return;
     }
@@ -168,11 +168,11 @@ public final class WhoCommandHandler implements CommandHandler {
   }
 
   private void sendEndOfWho(ClientSession session, String arg) {
-    Replies.send(
+    Replies.sendFitted(
         session,
         serverName.get(),
         NumericReply.RPL_ENDOFWHO,
-        arg != null ? arg : "*",
+        List.of(arg != null ? arg : "*"),
         "End of /WHO list");
   }
 }

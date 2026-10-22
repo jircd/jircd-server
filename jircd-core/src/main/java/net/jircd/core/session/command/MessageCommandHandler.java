@@ -17,6 +17,7 @@ package net.jircd.core.session.command;
 
 import java.util.Collection;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.function.Supplier;
 import net.jircd.core.extension.ExtensionRegistry;
@@ -62,11 +63,11 @@ public final class MessageCommandHandler implements CommandHandler {
     String commandName = notice ? "NOTICE" : "PRIVMSG";
     if (message.params().size() < 2) {
       if (!notice) {
-        Replies.send(
+        Replies.sendFitted(
             session,
             serverName.get(),
             NumericReply.ERR_NEEDMOREPARAMS,
-            commandName,
+            List.of(commandName),
             "Not enough parameters");
       }
       return;
@@ -77,7 +78,8 @@ public final class MessageCommandHandler implements CommandHandler {
       // 005-fix-batch-conformance FR-004 — an empty body is syntactically present but
       // semantically equivalent to "no text to send"; NOTICE stays silent on error either way.
       if (!notice) {
-        Replies.send(session, serverName.get(), NumericReply.ERR_NOTEXTTOSEND, "No text to send");
+        Replies.sendFitted(
+            session, serverName.get(), NumericReply.ERR_NOTEXTTOSEND, List.of(), "No text to send");
       }
       return;
     }
@@ -99,11 +101,11 @@ public final class MessageCommandHandler implements CommandHandler {
       // members, if any, are not individually called out.
       ClientSession recipient = recipients.iterator().next();
       if (recipient.isAway()) {
-        Replies.send(
+        Replies.sendFitted(
             session,
             serverName.get(),
             NumericReply.RPL_AWAY,
-            recipient.nickname(),
+            List.of(recipient.nickname()),
             recipient.awayReason());
       }
     }
@@ -161,11 +163,11 @@ public final class MessageCommandHandler implements CommandHandler {
       var channel = channelRegistry.lookup(target);
       if (channel.isEmpty() || !passesSendGate(channel.get(), session, extensionRegistry)) {
         if (reportErrors) {
-          Replies.send(
+          Replies.sendFitted(
               session,
               serverName.get(),
               NumericReply.ERR_CANNOTSENDTOCHAN,
-              target,
+              List.of(target),
               "Cannot send to channel");
         }
         return Set.of();
@@ -175,8 +177,12 @@ public final class MessageCommandHandler implements CommandHandler {
     var recipient = nicknameRegistry.lookup(target);
     if (recipient.isEmpty()) {
       if (reportErrors) {
-        Replies.send(
-            session, serverName.get(), NumericReply.ERR_NOSUCHNICK, target, "No such nick/channel");
+        Replies.sendFitted(
+            session,
+            serverName.get(),
+            NumericReply.ERR_NOSUCHNICK,
+            List.of(target),
+            "No such nick/channel");
       }
       return Set.of();
     }

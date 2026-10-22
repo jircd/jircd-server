@@ -70,11 +70,11 @@ public final class TopicCommandHandler implements CommandHandler {
   @Override
   public void handle(ClientSession session, Message message) {
     if (message.params().isEmpty()) {
-      Replies.send(
+      Replies.sendFitted(
           session,
           serverName.get(),
           NumericReply.ERR_NEEDMOREPARAMS,
-          "TOPIC",
+          List.of("TOPIC"),
           "Not enough parameters");
       return;
     }
@@ -82,11 +82,11 @@ public final class TopicCommandHandler implements CommandHandler {
     var found = channelRegistry.lookup(channelName);
     if (found.isEmpty()
         || ChannelVisibility.isHiddenFrom(found.get(), session, extensionRegistry)) {
-      Replies.send(
+      Replies.sendFitted(
           session,
           serverName.get(),
           NumericReply.ERR_NOSUCHCHANNEL,
-          channelName,
+          List.of(channelName),
           "No such channel");
       return;
     }
@@ -95,11 +95,19 @@ public final class TopicCommandHandler implements CommandHandler {
     if (message.params().size() < 2) {
       Channel.Topic topic = channel.topicState();
       if (topic == null) {
-        Replies.send(
-            session, serverName.get(), NumericReply.RPL_NOTOPIC, channel.name(), "No topic is set");
+        Replies.sendFitted(
+            session,
+            serverName.get(),
+            NumericReply.RPL_NOTOPIC,
+            List.of(channel.name()),
+            "No topic is set");
       } else {
-        Replies.send(
-            session, serverName.get(), NumericReply.RPL_TOPIC, channel.name(), topic.text());
+        Replies.sendFitted(
+            session,
+            serverName.get(),
+            NumericReply.RPL_TOPIC,
+            List.of(channel.name()),
+            topic.text());
         Replies.send(
             session,
             serverName.get(),
@@ -115,18 +123,19 @@ public final class TopicCommandHandler implements CommandHandler {
     // topic-lock is active; any member may set the topic when it's off.
     if (channel.activeModes().contains(CoreChannelModes.TOPIC_LOCK)
         && !channel.operators().contains(session)) {
-      Replies.send(
+      Replies.sendFitted(
           session,
           serverName.get(),
           NumericReply.ERR_CHANOPRIVSNEEDED,
-          channel.name(),
+          List.of(channel.name()),
           "You're not channel operator");
       return;
     }
 
     String newTopic = message.params().get(1);
     if (newTopic.length() > topicMaxLength.getAsInt()) {
-      Replies.send(session, serverName.get(), NumericReply.ERR_INPUTTOOLONG, "Topic too long");
+      Replies.sendFitted(
+          session, serverName.get(), NumericReply.ERR_INPUTTOOLONG, List.of(), "Topic too long");
       return;
     }
 

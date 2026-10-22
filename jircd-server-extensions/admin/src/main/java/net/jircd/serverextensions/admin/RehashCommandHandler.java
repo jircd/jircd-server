@@ -16,6 +16,7 @@
 package net.jircd.serverextensions.admin;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.function.Supplier;
 import net.jircd.core.config.ConfigurationException;
 import net.jircd.core.config.ConfigurationReloader;
@@ -50,20 +51,21 @@ public final class RehashCommandHandler implements CommandHandler {
   @Override
   public void handle(ClientSession session, Message message) {
     if (!AdminPrivilege.isAuthorized(session, extensionRegistry)) {
-      Replies.send(
+      Replies.sendFitted(
           session,
           serverName.get(),
           NumericReply.ERR_NOPRIVILEGES,
+          List.of(),
           "Permission Denied- You're not an IRC operator");
       return;
     }
     try {
       configurationReloader.reload();
-      Replies.send(
+      Replies.sendFitted(
           session,
           serverName.get(),
           NumericReply.RPL_REHASHING,
-          configurationReloader.configPath().toString(),
+          List.of(configurationReloader.configPath().toString()),
           "Rehashing");
     } catch (ConfigurationException e) {
       AdminNotices.send(session, serverName.get(), "Rehash failed: " + e.getMessage());

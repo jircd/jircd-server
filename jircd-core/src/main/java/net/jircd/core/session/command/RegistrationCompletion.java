@@ -91,15 +91,24 @@ public final class RegistrationCompletion {
     String server = serverName.get();
     String nick = session.nickname();
 
-    Replies.send(
-        session, server, NumericReply.RPL_WELCOME, "Welcome to the Internet Relay Network " + nick);
-    Replies.send(
+    Replies.sendFitted(
+        session,
+        server,
+        NumericReply.RPL_WELCOME,
+        List.of(),
+        "Welcome to the Internet Relay Network " + nick);
+    Replies.sendFitted(
         session,
         server,
         NumericReply.RPL_YOURHOST,
+        List.of(),
         "Your host is " + server + ", running version " + serverVersion);
-    Replies.send(
-        session, server, NumericReply.RPL_CREATED, "This server was created " + serverStartedAt);
+    Replies.sendFitted(
+        session,
+        server,
+        NumericReply.RPL_CREATED,
+        List.of(),
+        "This server was created " + serverStartedAt);
 
     String userModeLetters =
         userModeLetters(extensionRegistry.recognizedUserModes(UserMode.CORE_CATALOG));

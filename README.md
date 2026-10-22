@@ -41,7 +41,8 @@ Planned for the first release:
 Authentication/accounts and server-to-server federation are deliberately
 out of scope for the first release — see the spec for the reasoning.
 
-Outgoing command sections are limited to 512 UTF-8 bytes including CRLF.
+The outgoing command section (prefix, command, parameters, and CRLF) is limited
+to 512 UTF-8 bytes. IRCv3 tags use a separate budget and never consume those bytes.
 NAMES replies split between complete nicknames. Oversized PRIVMSG and NOTICE
 text is shortened at a Unicode character boundary after reserving room for
 the sender prefix and target. Other oversized messages are logged and dropped;
@@ -71,8 +72,8 @@ the budget covers one entry (`S + 2N + 27 + 63 + 13`).
 NAMES never splits or truncates member identities. A grandfathered item that
 cannot fit is skipped with a WARN giving the channel, item bytes and singleton
 budget; fitting neighbors continue. An oversized fixed header is logged
-separately. The closing 366 is still attempted, and the writer logs and drops it
-if its own size exceeds 512 bytes. See the
+separately. The closing 366 is still attempted with fitted text; it is logged and
+skipped if its fixed fields exceed the 512-byte command section. See the
 [configuration contract](specs/001-ircv3-server/contracts/server-configuration.md)
 for the limits and reload behavior.
 

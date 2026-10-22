@@ -53,11 +53,11 @@ public final class PartCommandHandler implements CommandHandler {
   @Override
   public void handle(ClientSession session, Message message) {
     if (message.params().isEmpty()) {
-      Replies.send(
+      Replies.sendFitted(
           session,
           serverName.get(),
           NumericReply.ERR_NEEDMOREPARAMS,
-          "PART",
+          List.of("PART"),
           "Not enough parameters");
       return;
     }
@@ -76,11 +76,11 @@ public final class PartCommandHandler implements CommandHandler {
       departed = channelRegistry.part(found.get(), session);
     }
     if (departed.isEmpty()) {
-      Replies.send(
+      Replies.sendFitted(
           session,
           serverName.get(),
           NumericReply.ERR_NOTONCHANNEL,
-          channelName,
+          List.of(channelName),
           "You're not on that channel");
       return;
     }

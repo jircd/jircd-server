@@ -48,11 +48,11 @@ public final class AdminCommandHandler implements CommandHandler {
     String server = serverName.get();
     AdminContact admin = contact.get();
     if (admin.isEmpty()) {
-      Replies.send(
+      Replies.sendFitted(
           session,
           server,
           NumericReply.ERR_NOADMININFO,
-          server,
+          List.of(server),
           "No administrative info available");
       return;
     }

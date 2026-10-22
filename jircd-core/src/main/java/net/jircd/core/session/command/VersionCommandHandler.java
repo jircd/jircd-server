@@ -15,6 +15,7 @@
  */
 package net.jircd.core.session.command;
 
+import java.util.List;
 import java.util.function.Supplier;
 import net.jircd.core.extension.ExtensionRegistry;
 import net.jircd.core.session.ClientSession;
@@ -43,8 +44,12 @@ public final class VersionCommandHandler implements CommandHandler {
   @Override
   public void handle(ClientSession session, Message message) {
     String server = serverName.get();
-    Replies.send(
-        session, server, NumericReply.RPL_VERSION, serverVersion, server, "jircd IRC server");
+    Replies.sendFitted(
+        session,
+        server,
+        NumericReply.RPL_VERSION,
+        List.of(serverVersion, server),
+        "jircd IRC server");
     RegistrationCompletion.sendIsupport(session, server, extensionRegistry);
   }
 }

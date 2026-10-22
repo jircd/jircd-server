@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 import net.jircd.core.session.ClientSession;
+import net.jircd.core.session.WarningThrottle;
 import net.jircd.protocol.NumericReply;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -83,15 +84,21 @@ public final class MotdService {
     String server = serverName.get();
     List<String> lines = lines();
     if (lines.isEmpty()) {
-      Replies.send(session, server, NumericReply.ERR_NOMOTD, "MOTD File is missing");
+      Replies.sendFitted(
+          session, server, NumericReply.ERR_NOMOTD, List.of(), "MOTD File is missing");
       return;
     }
-    Replies.send(
-        session, server, NumericReply.RPL_MOTDSTART, "- " + server + " Message of the day - ");
+    Replies.sendFitted(
+        session,
+        server,
+        NumericReply.RPL_MOTDSTART,
+        List.of(),
+        "- " + server + " Message of the day - ");
     for (String line : lines) {
       Replies.sendFitted(session, server, NumericReply.RPL_MOTD, List.of(), "- " + line);
     }
-    Replies.send(session, server, NumericReply.RPL_ENDOFMOTD, "End of /MOTD command");
+    Replies.sendFitted(
+        session, server, NumericReply.RPL_ENDOFMOTD, List.of(), "End of /MOTD command");
   }
 
   /** The current MOTD lines, empty when there is none. */

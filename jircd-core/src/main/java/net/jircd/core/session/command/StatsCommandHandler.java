@@ -18,6 +18,7 @@ package net.jircd.core.session.command;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Locale;
 import java.util.function.Supplier;
 import net.jircd.core.session.ClientSession;
@@ -46,8 +47,12 @@ public final class StatsCommandHandler implements CommandHandler {
   public void handle(ClientSession session, Message message) {
     String server = serverName.get();
     if (message.params().isEmpty() || message.params().getFirst().isEmpty()) {
-      Replies.send(
-          session, server, NumericReply.ERR_NEEDMOREPARAMS, "STATS", "Not enough parameters");
+      Replies.sendFitted(
+          session,
+          server,
+          NumericReply.ERR_NEEDMOREPARAMS,
+          List.of("STATS"),
+          "Not enough parameters");
       return;
     }
     if (message.params().size() > 1
@@ -57,10 +62,11 @@ public final class StatsCommandHandler implements CommandHandler {
     String letter = new String(Character.toChars(message.params().getFirst().codePointAt(0)));
     if (letter.equals("u")) {
       Duration up = Duration.between(startedAt, clock.instant());
-      Replies.send(
+      Replies.sendFitted(
           session,
           server,
           NumericReply.RPL_STATSUPTIME,
+          List.of(),
           String.format(
               Locale.ROOT,
               "Server Up %d days %d:%02d:%02d",
@@ -69,6 +75,7 @@ public final class StatsCommandHandler implements CommandHandler {
               up.toMinutesPart(),
               up.toSecondsPart()));
     }
-    Replies.send(session, server, NumericReply.RPL_ENDOFSTATS, letter, "End of /STATS report");
+    Replies.sendFitted(
+        session, server, NumericReply.RPL_ENDOFSTATS, List.of(letter), "End of /STATS report");
   }
 }

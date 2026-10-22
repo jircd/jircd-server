@@ -15,6 +15,7 @@
  */
 package net.jircd.core.session.command;
 
+import java.util.List;
 import java.util.function.Supplier;
 import net.jircd.core.session.ClientSession;
 import net.jircd.protocol.Message;
@@ -36,15 +37,19 @@ public final class PassCommandHandler implements CommandHandler {
   @Override
   public void handle(ClientSession session, Message message) {
     if (message.params().isEmpty() || message.params().getFirst().isEmpty()) {
-      Replies.send(
+      Replies.sendFitted(
           session,
           serverName.get(),
           NumericReply.ERR_NEEDMOREPARAMS,
-          "PASS",
+          List.of("PASS"),
           "Not enough parameters");
     } else if (session.lifecycle().isRegistered()) {
-      Replies.send(
-          session, serverName.get(), NumericReply.ERR_ALREADYREGISTRED, "You may not reregister");
+      Replies.sendFitted(
+          session,
+          serverName.get(),
+          NumericReply.ERR_ALREADYREGISTRED,
+          List.of(),
+          "You may not reregister");
     }
   }
 }

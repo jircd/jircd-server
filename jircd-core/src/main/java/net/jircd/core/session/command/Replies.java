@@ -20,6 +20,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import net.jircd.core.session.ClientSession;
+import net.jircd.core.session.OutboundSizeGuard;
+import net.jircd.core.session.WarningThrottle;
 import net.jircd.protocol.Message;
 import net.jircd.protocol.MessageSerializer;
 import net.jircd.protocol.NumericReply;
@@ -41,7 +43,7 @@ public final class Replies {
 
   private Replies() {}
 
-  /** Makes the next oversized-reply warning for every channel log again; for tests. */
+  /** Makes the next oversized-list warning for every key log again; for tests. */
   public static void resetOversizedWarnings() {
     OVERSIZED_WARNINGS.reset();
   }
@@ -52,15 +54,22 @@ public final class Replies {
     params.add(target(session));
     params.addAll(List.of(trailingParams));
     Message message = new Message(Map.of(), serverName, null, numeric.wireCode(), params);
-    if (session.writer() != null) {
+    sendChecked(session, message);
+  }
+
+  /** Sends an indivisible reply only if its command section fits, logging a throttled skip. */
+  public static void sendChecked(ClientSession session, Message message) {
+    if (OutboundSizeGuard.isRepresentable(message) && session.writer() != null) {
       session.writer().enqueueRaw(message);
     }
   }
 
   /**
    * Sends a numeric whose last parameter is free text of unknown length (an administrator's MOTD
-   * line, say), cut on a code-point boundary so the line fits the 512-byte limit. Line breaks and
-   * NUL in the text become spaces, since they would end or corrupt the wire line.
+   * line, say), cut on a code-point boundary so the command section fits 512 bytes including CRLF,
+   * excluding tags. Line breaks and NUL in the text become spaces, since they would end or corrupt
+   * the wire line. If the fixed fields alone exceed the budget, the reply is logged and skipped
+   * without truncating identities.
    */
   public static void sendFitted(
       ClientSession session,
@@ -77,18 +86,14 @@ public final class Replies {
             - MessageSerializer.commandBytes(
                 new Message(Map.of(), serverName, null, numeric.wireCode(), params));
     params.set(params.size() - 1, truncate(text, budget, false));
-    if (session.writer() != null) {
-      session
-          .writer()
-          .enqueueRaw(new Message(Map.of(), serverName, null, numeric.wireCode(), params));
-    }
+    sendChecked(session, new Message(Map.of(), serverName, null, numeric.wireCode(), params));
   }
 
   /**
    * Sends {@code numeric} with a client-supplied value echoed as the middle parameter before the
-   * fixed trailing text, cutting the echoed value so the line fits 512 bytes. Whitespace and
-   * control characters in it, and a leading colon, become {@code _}, since a middle parameter
-   * cannot hold them; an empty result is echoed as {@code *}.
+   * fixed trailing text, cutting the echoed value so the command section fits 512 bytes including
+   * CRLF, excluding tags. Whitespace and control characters in it, and a leading colon, become
+   * {@code _}, since a middle parameter cannot hold them; an empty result is echoed as {@code *}.
    */
   public static void sendEchoing(
       ClientSession session,
@@ -109,11 +114,7 @@ public final class Replies {
       fitted = "_" + fitted.substring(1);
     }
     params.set(1, fitted.isEmpty() ? "*" : fitted);
-    if (session.writer() != null) {
-      session
-          .writer()
-          .enqueueRaw(new Message(Map.of(), serverName, null, numeric.wireCode(), params));
-    }
+    sendChecked(session, new Message(Map.of(), serverName, null, numeric.wireCode(), params));
   }
 
   /** Cuts {@code text} to {@code budget} UTF-8 bytes on a code-point boundary. */

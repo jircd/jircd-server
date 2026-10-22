@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.Map;
 import net.jircd.core.session.Channel;
 import net.jircd.core.session.ClientSession;
+import net.jircd.core.session.OutboundSizeGuard;
 import net.jircd.core.session.RateLimitBucket;
 import net.jircd.core.session.SessionWriter;
 import net.jircd.core.session.TagRenderer;
@@ -45,12 +46,13 @@ class NamesByteBudgetTest {
   @BeforeEach
   void forgetEarlierWarnings() {
     Replies.resetOversizedWarnings();
+    OutboundSizeGuard.resetWarnings();
   }
 
   @Test
   void repeatedNamesLogOneWarningPerChannelAndFailureTypeAndCountTheRest() throws Exception {
     String oversized = "x".repeat(600);
-    try (LogCapture logs = new LogCapture(Replies.class)) {
+    try (LogCapture logs = new LogCapture(Replies.class, OutboundSizeGuard.class)) {
       for (int i = 0; i < 5; i++) {
         send("requester", CHANNEL, List.of(oversized));
       }
@@ -94,7 +96,7 @@ class NamesByteBudgetTest {
     int budget = budget("requester", CHANNEL);
     String fitting = "x".repeat(budget + 1);
     String oversized = "y".repeat(budget + 2);
-    try (LogCapture logs = new LogCapture(Replies.class)) {
+    try (LogCapture logs = new LogCapture(Replies.class, OutboundSizeGuard.class)) {
       List<Message> messages = send("requester", CHANNEL, List.of(fitting, oversized, "later"));
       assertThat(
               messages.stream()
@@ -118,7 +120,7 @@ class NamesByteBudgetTest {
   void actualSingletonFitAccountsForARequiredTrailingColon() throws Exception {
     int budget = budget("requester", CHANNEL);
     String item = ":" + "x".repeat(budget);
-    try (LogCapture logs = new LogCapture(Replies.class)) {
+    try (LogCapture logs = new LogCapture(Replies.class, OutboundSizeGuard.class)) {
       assertThat(
               send("requester", CHANNEL, List.of(item, "later")).stream()
                   .filter(m -> "353".equals(m.rawCommand()))
@@ -135,9 +137,10 @@ class NamesByteBudgetTest {
   void anExactlyFullReservedHeaderStillAllowsOneColonlessByte() throws Exception {
     String channel = "#" + "x".repeat(budget("requester", "#"));
     assertThat(budget("requester", channel)).isZero();
-    try (LogCapture logs = new LogCapture(Replies.class)) {
-      assertThat(send("requester", channel, List.of("x")).stream().map(Message::rawCommand))
-          .containsExactly("353", "PING");
+    try (LogCapture logs = new LogCapture(Replies.class, OutboundSizeGuard.class)) {
+      var replies = send("requester", channel, List.of("x"));
+      assertThat(replies.stream().map(Message::rawCommand)).containsExactly("353", "366", "PING");
+      assertFittedCloser(replies);
       assertThat(logs.messages()).isEmpty();
     }
   }
@@ -147,7 +150,7 @@ class NamesByteBudgetTest {
   void oversizedFirstMiddleAndLastItemsPreserveNeighborsAndCloser(int position) throws Exception {
     List<String> items = new ArrayList<>(List.of("before", "after"));
     items.add(position, "x".repeat(budget("requester", CHANNEL) + 2));
-    try (LogCapture logs = new LogCapture(Replies.class)) {
+    try (LogCapture logs = new LogCapture(Replies.class, OutboundSizeGuard.class)) {
       List<Message> messages = send("requester", CHANNEL, items);
       assertThat(
               messages.stream()
@@ -164,7 +167,7 @@ class NamesByteBudgetTest {
 
   @Test
   void aListContainingOnlyAnOversizedItemDoesNotInventAnEmptyNamesReply() throws Exception {
-    try (LogCapture logs = new LogCapture(Replies.class)) {
+    try (LogCapture logs = new LogCapture(Replies.class, OutboundSizeGuard.class)) {
       assertThat(
               send("requester", CHANNEL, List.of("x".repeat(600))).stream()
                   .map(Message::rawCommand))
@@ -174,20 +177,19 @@ class NamesByteBudgetTest {
   }
 
   @Test
-  void anUnrepresentableHeaderIsDiagnosedSeparatelyAndTheWriterStillAttempts366() throws Exception {
+  void anUnrepresentableHeaderAndItsCloserAreDiagnosedSeparately() throws Exception {
     String channel = "#" + "x".repeat(490);
-    try (LogCapture logs = new LogCapture(Replies.class);
-        LogCapture writerLogs = new LogCapture(SessionWriter.class)) {
+    try (LogCapture logs = new LogCapture(Replies.class, OutboundSizeGuard.class)) {
       assertThat(send("requester", channel, List.of("small")).stream().map(Message::rawCommand))
           .containsExactly("PING");
       assertThat(logs.messages())
-          .singleElement()
-          .asString()
-          .contains("Dropping oversized listed reply header", channel, "headerBytes=");
-      assertThat(writerLogs.messages())
-          .singleElement()
-          .asString()
-          .contains("Dropping oversized outbound message");
+          .anySatisfy(
+              line ->
+                  assertThat(line)
+                      .contains("Dropping oversized listed reply header", channel, "headerBytes="))
+          .anySatisfy(
+              line ->
+                  assertThat(line).contains("Dropping oversized reply", "reply=366", "budget=512"));
     }
   }
 
@@ -195,25 +197,36 @@ class NamesByteBudgetTest {
   void aLongGrandfatheredRequesterCanExhaustAnOtherwiseOrdinaryItemsBudget() throws Exception {
     String requester = "r".repeat(400);
     String channel = "#" + "c".repeat(75);
-    try (LogCapture logs = new LogCapture(Replies.class)) {
+    try (LogCapture logs = new LogCapture(Replies.class, OutboundSizeGuard.class)) {
       assertThat(
               send(requester, channel, List.of("@" + "n".repeat(10), "ok")).stream()
                   .map(Message::rawCommand))
-          .containsExactly("353", "PING");
-      assertThat(logs.messages()).singleElement().asString().contains("itemBytes=11", "budget=8");
+          .containsExactly("353", "366", "PING");
+      assertThat(logs.messages())
+          .singleElement()
+          .asString()
+          .contains("Dropping oversized listed item", "itemBytes=11", "budget=8");
     }
   }
 
   @Test
-  void aFitting353DoesNotPreventAnIndependentlyOversized366FromBeingRejected() throws Exception {
+  void aFitting353AlsoGetsAFitted366WhenOnlyTheClosingTextExceedsTheBudget() throws Exception {
     String channel = "#" + "界".repeat(153);
-    try (LogCapture logs = new LogCapture(SessionWriter.class)) {
-      assertThat(send("requester", channel, List.of("@nickname")).stream().map(Message::rawCommand))
-          .containsExactly("353", "PING");
-      assertThat(logs.messages())
-          .singleElement()
-          .asString()
-          .contains("Dropping oversized outbound message");
+    try (LogCapture logs = new LogCapture(Replies.class, OutboundSizeGuard.class)) {
+      var replies = send("requester", channel, List.of("@nickname"));
+      assertThat(replies.stream().map(Message::rawCommand)).containsExactly("353", "366", "PING");
+      assertFittedCloser(replies);
+      assertThat(logs.messages()).isEmpty();
     }
+  }
+
+  private static void assertFittedCloser(List<Message> replies) {
+    assertThat(replies.stream().filter(reply -> "366".equals(reply.rawCommand())))
+        .singleElement()
+        .satisfies(
+            reply ->
+                assertThat(reply.params().getLast())
+                    .isNotEmpty()
+                    .matches("End of /NAMES list"::startsWith));
   }
 }

@@ -47,7 +47,8 @@ public final class WhowasCommandHandler implements CommandHandler {
   public void handle(ClientSession session, Message message) {
     String server = serverName.get();
     if (message.params().isEmpty()) {
-      Replies.send(session, server, NumericReply.ERR_NONICKNAMEGIVEN, "No nickname given");
+      Replies.sendFitted(
+          session, server, NumericReply.ERR_NONICKNAMEGIVEN, List.of(), "No nickname given");
       return;
     }
     String nickname = message.params().getFirst();
@@ -57,8 +58,12 @@ public final class WhowasCommandHandler implements CommandHandler {
     int count = message.params().size() > 1 ? parseCount(message.params().get(1)) : 0;
     List<WhowasEntry> found = whowasHistory.mostRecentNFor(nickname, count);
     if (found.isEmpty()) {
-      Replies.send(
-          session, server, NumericReply.ERR_WASNOSUCHNICK, nickname, "There was no such nickname");
+      Replies.sendFitted(
+          session,
+          server,
+          NumericReply.ERR_WASNOSUCHNICK,
+          List.of(nickname),
+          "There was no such nickname");
     } else {
       for (WhowasEntry entry : found) {
         // Same FR-038 resolution WHOIS/WHO already use: real hostname for an administrator, the
@@ -74,7 +79,8 @@ public final class WhowasCommandHandler implements CommandHandler {
             entry.realname());
       }
     }
-    Replies.send(session, server, NumericReply.RPL_ENDOFWHOWAS, nickname, "End of WHOWAS");
+    Replies.sendFitted(
+        session, server, NumericReply.RPL_ENDOFWHOWAS, List.of(nickname), "End of WHOWAS");
   }
 
   private static int parseCount(String raw) {

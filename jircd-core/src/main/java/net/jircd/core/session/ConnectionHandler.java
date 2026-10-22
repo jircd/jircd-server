@@ -25,6 +25,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -566,8 +567,12 @@ public final class ConnectionHandler {
           break;
         }
         if (lineBytes == OVERSIZED_LINE) {
-          Replies.send(
-              session, serverName.get(), NumericReply.ERR_INPUTTOOLONG, "Input line was too long");
+          Replies.sendFitted(
+              session,
+              serverName.get(),
+              NumericReply.ERR_INPUTTOOLONG,
+              List.of(),
+              "Input line was too long");
         } else {
           processLine(session, lineBytes);
         }
@@ -757,8 +762,12 @@ public final class ConnectionHandler {
     }
     if (tagSectionLength(lineBytes) > MAX_TAG_SECTION_BYTES
         || commandSectionLength(lineBytes) + 2 > MAX_COMMAND_SECTION_BYTES) {
-      Replies.send(
-          session, serverName.get(), NumericReply.ERR_INPUTTOOLONG, "Input line was too long");
+      Replies.sendFitted(
+          session,
+          serverName.get(),
+          NumericReply.ERR_INPUTTOOLONG,
+          List.of(),
+          "Input line was too long");
       return;
     }
     String line = new String(lineBytes, StandardCharsets.UTF_8);
@@ -767,8 +776,12 @@ public final class ConnectionHandler {
     try {
       message = MessageParser.parse(line);
     } catch (MalformedMessageException e) {
-      Replies.send(
-          session, serverName.get(), NumericReply.ERR_UNKNOWNCOMMAND, line, "Malformed message");
+      Replies.sendFitted(
+          session,
+          serverName.get(),
+          NumericReply.ERR_UNKNOWNCOMMAND,
+          List.of(line),
+          "Malformed message");
       return;
     }
 
@@ -777,30 +790,34 @@ public final class ConnectionHandler {
     }
 
     if (message.command() == null) {
-      Replies.send(
+      Replies.sendFitted(
           session,
           serverName.get(),
           NumericReply.ERR_UNKNOWNCOMMAND,
-          message.rawCommand(),
+          List.of(message.rawCommand()),
           "Unknown command");
       return;
     }
 
     CommandHandler handler = handlers.get(message.command());
     if (handler == null) {
-      Replies.send(
+      Replies.sendFitted(
           session,
           serverName.get(),
           NumericReply.ERR_UNKNOWNCOMMAND,
-          message.rawCommand(),
+          List.of(message.rawCommand()),
           "Unknown command");
       return;
     }
 
     if (!session.lifecycle().isRegistered()
         && !PRE_REGISTRATION_COMMANDS.contains(message.command())) {
-      Replies.send(
-          session, serverName.get(), NumericReply.ERR_NOTREGISTERED, "You have not registered");
+      Replies.sendFitted(
+          session,
+          serverName.get(),
+          NumericReply.ERR_NOTREGISTERED,
+          List.of(),
+          "You have not registered");
       return;
     }
 

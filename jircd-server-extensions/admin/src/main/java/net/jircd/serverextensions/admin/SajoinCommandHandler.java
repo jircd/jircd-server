@@ -68,8 +68,12 @@ public final class SajoinCommandHandler implements CommandHandler {
     String name = message.params().getFirst();
 
     if (!ChannelName.isValid(name, channelNameMaxLength.getAsInt())) {
-      Replies.send(
-          session, serverName.get(), NumericReply.ERR_BADCHANMASK, name, "Bad Channel Mask");
+      Replies.sendFitted(
+          session,
+          serverName.get(),
+          NumericReply.ERR_BADCHANMASK,
+          List.of(name),
+          "Bad Channel Mask");
       return;
     }
 
