@@ -50,7 +50,23 @@ during that window.
 | `255` | `RPL_LUSERME` | `LUSERS` — `I have <n> clients and 1 servers` | FR-012 |
 | `265` | `RPL_LOCALUSERS` | `LUSERS` — `<nick> <u> <m> :Current local users <u>, max <m>`; `u` is the registered users, `m` the high-water mark of `u` since startup, which never decreases (issue #76) | FR-003 |
 | `266` | `RPL_GLOBALUSERS` | `LUSERS` — same shape and values as `265`; this is a single server, so global equals local (issue #76) | FR-003 |
-| `422` | `ERR_NOMOTD` | Registration Completion Burst (this release implements no MOTD content) | FR-051 |
+| `375` | `RPL_MOTDSTART` | Registration Completion Burst and `MOTD`, when `motdPath` names a readable file: `<nick> :- <server> Message of the day - ` (issue #77) | FR-051 |
+| `372` | `RPL_MOTD` | One per line of the MOTD file: `<nick> :- <line>`; a line is cut to fit 512 bytes (issue #77) | FR-051 |
+| `376` | `RPL_ENDOFMOTD` | Closes the MOTD: `<nick> :End of /MOTD command` (issue #77) | FR-051 |
+| `422` | `ERR_NOMOTD` | Registration Completion Burst and `MOTD` when `motdPath` is unset, or the file is missing, unreadable, empty or over 64 KiB (the last cases log a warning) | FR-051 |
+| `303` | `RPL_ISON` *(Used)* | `ISON` — the online subset of the asked nicknames, in the form their owners present, space-separated; empty when none is online (issue #77) | issue #77 |
+| `242` | `RPL_STATSUPTIME` *(Used)* | `STATS u` — `:Server Up <d> days <h>:<mm>:<ss>` (issue #77) | issue #77 |
+| `219` | `RPL_ENDOFSTATS` | Every accepted `STATS`: `<nick> <letter> :End of /STATS report` (issue #77) | issue #77 |
+| `256` | `RPL_ADMINME` *(Used)* | `ADMIN`: `<nick> <server> :Administrative info about <server>` (issue #77) | issue #77 |
+| `257` | `RPL_ADMINLOC1` *(Used)* | `ADMIN` — `adminName`, or `-` when unset (issue #77) | issue #77 |
+| `258` | `RPL_ADMINLOC2` *(Used)* | `ADMIN` — `adminLocation`, or `-` when unset (issue #77) | issue #77 |
+| `259` | `RPL_ADMINEMAIL` *(Used)* | `ADMIN` — `adminEmail`, or `-` when unset (issue #77) | issue #77 |
+| `423` | `ERR_NOADMININFO` *(Used)* | `ADMIN` when none of `adminName`, `adminLocation`, `adminEmail` is set: `<nick> <server> :No administrative info available` (issue #77) | issue #77 |
+| `704` | `RPL_HELPSTART` | `HELP`/`HELPOP` — `<nick> <subject> :<first line>`; subject is the upper-cased topic, `index` when none was asked for (issue #77) | issue #77 |
+| `705` | `RPL_HELPTXT` | `HELP`/`HELPOP` — one per further line of the topic (issue #77) | issue #77 |
+| `706` | `RPL_ENDOFHELP` | End of a `HELP`/`HELPOP` reply: `<nick> <subject> :End of /HELP` (issue #77) | issue #77 |
+| `524` | `ERR_HELPNOTFOUND` | `HELP`/`HELPOP` for a topic that does not exist: `<nick> <topic> :Help not found` (issue #77) | issue #77 |
+| `402` | `ERR_NOSUCHSERVER` *(Used)* | `ADMIN`/`STATS` naming a server other than this one — there are no peers (issue #77) | issue #77 |
 | `322` | `RPL_LIST` | `LIST` (one per active channel) | FR-042 |
 | `323` | `RPL_LISTEND` | End of a `LIST` reply | FR-042 |
 | `331` | `RPL_NOTOPIC` | `TOPIC` query on a channel with no topic set | FR-040 |
@@ -89,8 +105,8 @@ during that window.
 | `349` | `RPL_ENDOFEXCEPTLIST` | End of a `MODE <channel> e` reply, including an empty list (#78) | #78 |
 | `478` | `ERR_BANLISTFULL` | `MODE <channel> +b/+e/+I <mask>` when the corresponding list already has 100 active entries (FR-062, #78) | FR-062 |
 | `476` | `ERR_BADCHANMASK` | `JOIN` or `SAJOIN` naming a channel that violates the Channel Name Grammar (irc-protocol-commands.md "Channel Operations") — `SAJOIN` bypasses `JOIN`-gating flags, not the name grammar itself (FR-057) | FR-048, FR-057 |
-| `461` | `ERR_NEEDMOREPARAMS` | Command missing required parameters | FR-015 |
-| `462` | `ERR_ALREADYREGISTRED` | `USER` from a session that has already processed one, before or after reaching `REGISTERED` (FR-001) | FR-001 |
+| `461` | `ERR_NEEDMOREPARAMS` | Command missing required parameters (`ISON`, `PASS`, `STATS` included — issue #77) | FR-015 |
+| `462` | `ERR_ALREADYREGISTRED` | `USER` from a session that has already processed one, before or after reaching `REGISTERED` (FR-001); also `PASS` after registration (issue #77) | FR-001 |
 | `464` | `ERR_PASSWDMISMATCH` | Failed `OPER` (also logged as a security event, FR-019) | FR-034 |
 | `491` | `ERR_NOOPERHOST` | Plaintext `OPER` when `operRequireTls` is enabled; reconnect using TLS. No credential verification or failure count. | #74 |
 | `472` | `ERR_UNKNOWNMODE` | `MODE` given a flag the core moderation command set doesn't define | FR-015, FR-036 (core input validation — `MODE` is never extension-gated) |
@@ -114,32 +130,32 @@ trigger them is "Recognized only" per irc-protocol-commands.md).
 |---|---|---|---|---|---|
 | `001` | `RPL_WELCOME` *(Used)* | `211` | `RPL_STATSLINKINFO` | `321` | `RPL_LISTSTART` |
 | `002` | `RPL_YOURHOST` *(Used)* | `212` | `RPL_STATSCOMMANDS` | `322` | `RPL_LIST` *(Used)* |
-| `003` | `RPL_CREATED` *(Used)* | `219` | `RPL_ENDOFSTATS` | `323` | `RPL_LISTEND` *(Used)* |
+| `003` | `RPL_CREATED` *(Used)* | `219` | `RPL_ENDOFSTATS` *(Used)* | `323` | `RPL_LISTEND` *(Used)* |
 | `004` | `RPL_MYINFO` *(Used)* | `221` | `RPL_UMODEIS` *(Used)* | `324` | `RPL_CHANNELMODEIS` *(Used)* |
 | `005` | `RPL_BOUNCE` *(Used, as `RPL_ISUPPORT`)* | `234` | `RPL_SERVLIST` | `325` | `RPL_UNIQOPIS` |
 | `200` | `RPL_TRACELINK` | `235` | `RPL_SERVLISTEND` | `329` | `RPL_CHANNELCREATED` *(Used)* |
 | | | | | `331` | `RPL_NOTOPIC` *(Used)* |
-| `201` | `RPL_TRACECONNECTING` | `242` | `RPL_STATSUPTIME` | `332` | `RPL_TOPIC` *(Used)* |
+| `201` | `RPL_TRACECONNECTING` | `242` | `RPL_STATSUPTIME` *(Used)* | `332` | `RPL_TOPIC` *(Used)* |
 | `202` | `RPL_TRACEHANDSHAKE` | `243` | `RPL_STATSOLINE` | `341` | `RPL_INVITING` *(Used)* |
 | `203` | `RPL_TRACEUNKNOWN` | `251` | `RPL_LUSERCLIENT` *(Used)* | `342` | `RPL_SUMMONING` |
 | `204` | `RPL_TRACEOPERATOR` | `252` | `RPL_LUSEROP` *(Used)* | `346` | `RPL_INVITELIST` *(Used)* |
 | `205` | `RPL_TRACEUSER` | `253` | `RPL_LUSERUNKNOWN` *(Used)* | `347` | `RPL_ENDOFINVITELIST` *(Used)* |
 | `206` | `RPL_TRACESERVER` | `254` | `RPL_LUSERCHANNELS` *(Used)* | `348` | `RPL_EXCEPTLIST` *(Used)* |
 | `207` | `RPL_TRACESERVICE` | `255` | `RPL_LUSERME` *(Used)* | `349` | `RPL_ENDOFEXCEPTLIST` *(Used)* |
-| `208` | `RPL_TRACENEWTYPE` | `256` | `RPL_ADMINME` | `351` | `RPL_VERSION` |
-| `209` | `RPL_TRACECLASS` | `257` | `RPL_ADMINLOC1` | `352` | `RPL_WHOREPLY` *(Used)* |
-| `210` | `RPL_TRACERECONNECT` | `258` | `RPL_ADMINLOC2` | `353` | `RPL_NAMREPLY` *(Used)* |
-| `261` | `RPL_TRACELOG` | `259` | `RPL_ADMINEMAIL` | `364` | `RPL_LINKS` |
+| `208` | `RPL_TRACENEWTYPE` | `256` | `RPL_ADMINME` *(Used)* | `351` | `RPL_VERSION` |
+| `209` | `RPL_TRACECLASS` | `257` | `RPL_ADMINLOC1` *(Used)* | `352` | `RPL_WHOREPLY` *(Used)* |
+| `210` | `RPL_TRACERECONNECT` | `258` | `RPL_ADMINLOC2` *(Used)* | `353` | `RPL_NAMREPLY` *(Used)* |
+| `261` | `RPL_TRACELOG` | `259` | `RPL_ADMINEMAIL` *(Used)* | `364` | `RPL_LINKS` |
 | `262` | `RPL_TRACEEND` | `265` | `RPL_LOCALUSERS` *(Used)* | `365` | `RPL_ENDOFLINKS` |
 | `263` | `RPL_TRYAGAIN` | `266` | `RPL_GLOBALUSERS` *(Used)* | `366` | `RPL_ENDOFNAMES` *(Used)* |
 | `300` | `RPL_NONE` | `301` | `RPL_AWAY` | `367` | `RPL_BANLIST` *(Used)* |
-| `302` | `RPL_USERHOST` | `303` | `RPL_ISON` | `368` | `RPL_ENDOFBANLIST` *(Used)* |
+| `302` | `RPL_USERHOST` | `303` | `RPL_ISON` *(Used)* | `368` | `RPL_ENDOFBANLIST` *(Used)* |
 | `305` | `RPL_UNAWAY` | `306` | `RPL_NOWAWAY` | `369` | `RPL_ENDOFWHOWAS` |
 | `311` | `RPL_WHOISUSER` *(Used)* | `312` | `RPL_WHOISSERVER` *(Used)* | `371` | `RPL_INFO` |
 | `313` | `RPL_WHOISOPERATOR` *(Used)* | `314` | `RPL_WHOWASUSER` | `372` | `RPL_MOTD` |
 | `315` | `RPL_ENDOFWHO` *(Used)* | `317` | `RPL_WHOISIDLE` | `374` | `RPL_ENDOFINFO` |
 | `318` | `RPL_ENDOFWHOIS` *(Used)* | `319` | `RPL_WHOISCHANNELS` | `375` | `RPL_MOTDSTART` |
-| `376` | `RPL_ENDOFMOTD` | `381` | `RPL_YOUREOPER` *(Used)* | `382` | `RPL_REHASHING` *(Used)* |
+| `376` | `RPL_ENDOFMOTD` *(Used)* | `381` | `RPL_YOUREOPER` *(Used)* | `382` | `RPL_REHASHING` *(Used)* |
 | `383` | `RPL_YOURESERVICE` | `391` | `RPL_TIME` | `392` | `RPL_USERSSTART` |
 | `393` | `RPL_USERS` | `394` | `RPL_ENDOFUSERS` | `395` | `RPL_NOUSERS` |
 
@@ -147,7 +163,7 @@ trigger them is "Recognized only" per irc-protocol-commands.md).
 
 | Numeric | Name | Numeric | Name | Numeric | Name |
 |---|---|---|---|---|---|
-| `401` | `ERR_NOSUCHNICK` *(Used)* | `402` | `ERR_NOSUCHSERVER` | `403` | `ERR_NOSUCHCHANNEL` *(Used)* |
+| `401` | `ERR_NOSUCHNICK` *(Used)* | `402` | `ERR_NOSUCHSERVER` *(Used)* | `403` | `ERR_NOSUCHCHANNEL` *(Used)* |
 | `404` | `ERR_CANNOTSENDTOCHAN` *(Used)* | `405` | `ERR_TOOMANYCHANNELS` | `406` | `ERR_WASNOSUCHNICK` |
 | `407` | `ERR_TOOMANYTARGETS` | `408` | `ERR_NOSUCHSERVICE` | `409` | `ERR_NOORIGIN` |
 | `411` | `ERR_NORECIPIENT` | `412` | `ERR_NOTEXTTOSEND` | `413` | `ERR_NOTOPLEVEL` |

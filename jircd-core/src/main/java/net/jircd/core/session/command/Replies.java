@@ -58,6 +58,85 @@ public final class Replies {
   }
 
   /**
+   * Sends a numeric whose last parameter is free text of unknown length (an administrator's MOTD
+   * line, say), cut on a code-point boundary so the line fits the 512-byte limit. Line breaks and
+   * NUL in the text become spaces, since they would end or corrupt the wire line.
+   */
+  public static void sendFitted(
+      ClientSession session,
+      String serverName,
+      NumericReply numeric,
+      List<String> fixedParams,
+      String text) {
+    List<String> params = new ArrayList<>();
+    params.add(target(session));
+    params.addAll(fixedParams);
+    params.add("");
+    int budget =
+        MessageSerializer.MAX_COMMAND_BYTES
+            - MessageSerializer.commandBytes(
+                new Message(Map.of(), serverName, null, numeric.wireCode(), params));
+    params.set(params.size() - 1, truncate(text, budget, false));
+    if (session.writer() != null) {
+      session
+          .writer()
+          .enqueueRaw(new Message(Map.of(), serverName, null, numeric.wireCode(), params));
+    }
+  }
+
+  /**
+   * Sends {@code numeric} with a client-supplied value echoed as the middle parameter before the
+   * fixed trailing text, cutting the echoed value so the line fits 512 bytes. Whitespace and
+   * control characters in it, and a leading colon, become {@code _}, since a middle parameter
+   * cannot hold them; an empty result is echoed as {@code *}.
+   */
+  public static void sendEchoing(
+      ClientSession session,
+      String serverName,
+      NumericReply numeric,
+      String echoed,
+      String trailing) {
+    List<String> params = new ArrayList<>();
+    params.add(target(session));
+    params.add("");
+    params.add(trailing);
+    int budget =
+        MessageSerializer.MAX_COMMAND_BYTES
+            - MessageSerializer.commandBytes(
+                new Message(Map.of(), serverName, null, numeric.wireCode(), params));
+    String fitted = truncate(echoed, budget, true);
+    if (fitted.startsWith(":")) {
+      fitted = "_" + fitted.substring(1);
+    }
+    params.set(1, fitted.isEmpty() ? "*" : fitted);
+    if (session.writer() != null) {
+      session
+          .writer()
+          .enqueueRaw(new Message(Map.of(), serverName, null, numeric.wireCode(), params));
+    }
+  }
+
+  /** Cuts {@code text} to {@code budget} UTF-8 bytes on a code-point boundary. */
+  private static String truncate(String text, int budget, boolean noWhitespace) {
+    StringBuilder fitted = new StringBuilder();
+    int used = 0;
+    for (int cp : text.codePoints().toArray()) {
+      boolean blank = cp <= ' ' || cp == 0x7f;
+      String ch = Character.toString(cp);
+      if (blank) {
+        ch = noWhitespace ? "_" : " ";
+      }
+      int bytes = MessageSerializer.utf8Bytes(ch);
+      if (used + bytes > budget) {
+        break;
+      }
+      fitted.append(ch);
+      used += bytes;
+    }
+    return fitted.toString();
+  }
+
+  /**
    * Sends a space-separated list across byte-budgeted numeric replies, including an empty list.
    * Unrepresentable headers and indivisible items are logged and skipped; later items still send.
    */

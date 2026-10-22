@@ -26,6 +26,11 @@ whose Full Numeric Catalog already reserves every numeric this feature claims (`
 | `VERSION` | C→S | `REGISTERED` session | Returns server name/version, then a fresh `RPL_ISUPPORT` burst (Clarifications, 2026-08-19) | `351 RPL_VERSION`, then one or more `005 RPL_ISUPPORT` lines — identical rendering to the registration completion burst's own `005` (`001-ircv3-server` "Registration Completion Burst"), via the shared helper research.md "VERSION + ISUPPORT reuse" describes |
 | `TIME` | C→S | `REGISTERED` session | Returns the server's current local time | `391 RPL_TIME` |
 | `LUSERS` | C→S | `REGISTERED` session | Returns current connected-client, connected-operator, and active-channel counts (server-wide totals only — spec.md Assumptions) | `251 RPL_LUSERCLIENT` (`"There are <clients> users and <invisible> invisible on 1 servers"` — the conventional, widely-parsed text shape, 003-irctest-conformance-fixes FR-004), `252 RPL_LUSEROP` (connected-operator count, 006-complete-core-protocol FR-011), `254 RPL_LUSERCHANNELS` (channel count), `253 RPL_LUSERUNKNOWN` (only when unregistered connections exist), then `255 RPL_LUSERME` (`"I have <clients> clients and 1 servers"`, always sent, 006-complete-core-protocol FR-012), `265 RPL_LOCALUSERS` and `266 RPL_GLOBALUSERS` |
+| `MOTD` | C→S | `REGISTERED` session | Returns the message of the day (issue #77) | `375`, `372` per line, `376`; `422` when `motdPath` is unset or unusable |
+| `ISON` | C→S | `REGISTERED` session | Which of the asked nicknames are online (issue #77) | `303 RPL_ISON`; `461` without a parameter |
+| `ADMIN` | C→S | `REGISTERED` session | Administrator contact (issue #77) | `256`-`259`; `423` when no admin setting is configured |
+| `STATS` | C→S | `REGISTERED` session | `STATS u` reports uptime, other letters nothing (issue #77) | `242` (only for `u`), then `219`; `461` without a letter |
+| `HELP`, `HELPOP` | C→S | `REGISTERED` session | Built-in topic list (issue #77) | `704`, `705`…, `706`; `524` for an unknown topic |
 
 **Contract notes**:
 - `LUSERS` sends `253 RPL_LUSERUNKNOWN` (`<nick> <n> :unknown connection(s)`) when `n > 0`, where

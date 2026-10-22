@@ -192,9 +192,14 @@ public final class JircdServerApplication {
   }
 
   private void registerStory1Handlers() {
+    var motd =
+        new net.jircd.core.session.command.MotdService(
+            () -> serverName, () -> reloader.current().motdPath());
     var registrationCompletion =
         new net.jircd.core.session.command.RegistrationCompletion(
-            () -> serverName, serverVersion, startedAt, extensionRegistry, userStatistics);
+            () -> serverName, serverVersion, startedAt, extensionRegistry, userStatistics, motd);
+    connectionHandler.registerHandler(
+        Command.PASS, new net.jircd.core.session.command.PassCommandHandler(() -> serverName));
     connectionHandler.registerHandler(
         Command.NICK,
         new NickCommandHandler(
@@ -253,11 +258,31 @@ public final class JircdServerApplication {
         new CapCommandHandler(
             new CapabilityNegotiator(extensionRegistry), () -> serverName, registrationCompletion));
     registerModerationHandlers();
-    registerExtendedCommandHandlers();
+    registerExtendedCommandHandlers(motd);
   }
 
-  /** VERSION/TIME/LUSERS/AWAY/WHOWAS/TAGMSG (002-extended-irc-commands). */
-  private void registerExtendedCommandHandlers() {
+  /**
+   * VERSION/TIME/LUSERS/AWAY/WHOWAS/TAGMSG (002-extended-irc-commands), plus MOTD, ISON, ADMIN,
+   * STATS and HELP/HELPOP.
+   */
+  private void registerExtendedCommandHandlers(net.jircd.core.session.command.MotdService motd) {
+    connectionHandler.registerHandler(
+        Command.MOTD,
+        new net.jircd.core.session.command.MotdCommandHandler(motd, () -> serverName));
+    connectionHandler.registerHandler(
+        Command.ISON,
+        new net.jircd.core.session.command.IsonCommandHandler(nicknameRegistry, () -> serverName));
+    connectionHandler.registerHandler(
+        Command.ADMIN,
+        new net.jircd.core.session.command.AdminCommandHandler(
+            () -> serverName, () -> reloader.current().adminContact()));
+    connectionHandler.registerHandler(
+        Command.STATS,
+        new net.jircd.core.session.command.StatsCommandHandler(
+            () -> serverName, startedAt, java.time.Clock.systemUTC()));
+    var help = new net.jircd.core.session.command.HelpCommandHandler(() -> serverName);
+    connectionHandler.registerHandler(Command.HELP, help);
+    connectionHandler.registerHandler(Command.HELPOP, help);
     connectionHandler.registerHandler(
         Command.VERSION,
         new VersionCommandHandler(() -> serverName, serverVersion, extensionRegistry));

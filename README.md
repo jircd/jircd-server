@@ -207,6 +207,21 @@ client parked after `CAP LS` counts as unregistered. Answering `PING`s does not 
 the deadline. A registered client is never affected. A reload applies to connections
 accepted afterwards only.
 
+### Message of the day and admin contact
+
+```yaml
+motdPath: /etc/jircd/motd.txt   # optional; UTF-8 text, at most 64 KiB
+adminName: Jane Admin           # optional ADMIN lines
+adminLocation: Example Org, Earth
+adminEmail: jane@example.org
+```
+
+With `motdPath` set to a readable file, clients get it (`375`/`372`/`376`) when they
+register and on `MOTD`; otherwise they get `422`, and an unusable file is logged as a
+warning. Only the first 200 lines are served. Edits to the file are picked up without a reload; `REHASH`/`SIGHUP` applies a
+changed `motdPath`. `ADMIN` answers from the three admin settings (`-` for an unset one),
+or `423` when none is set.
+
 ### Listener accept backlog
 
 Each plaintext or TLS listener accepts an optional positive integer `backlog`,

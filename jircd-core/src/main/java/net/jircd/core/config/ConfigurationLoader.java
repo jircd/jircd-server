@@ -189,7 +189,18 @@ public final class ConfigurationLoader {
             root,
             "registrationTimeoutSeconds",
             ServerConfiguration.DEFAULT_REGISTRATION_TIMEOUT_SECONDS,
-            ServerConfiguration.REGISTRATION_TIMEOUT_CEILING_SECONDS));
+            ServerConfiguration.REGISTRATION_TIMEOUT_CEILING_SECONDS),
+        optionalText(root, "motdPath"),
+        optionalText(root, "adminName"),
+        optionalText(root, "adminLocation"),
+        optionalText(root, "adminEmail"));
+  }
+
+  /** An optional string setting; absent, null or blank all mean "not configured". */
+  private static String optionalText(Map<String, Object> root, String key)
+      throws ConfigurationException {
+    String value = asString(root.get(key), key);
+    return value == null || value.isBlank() ? null : value.strip();
   }
 
   private static List<ConnectionLimitPolicy.AddressOverride> parseConnectionLimitOverrides(

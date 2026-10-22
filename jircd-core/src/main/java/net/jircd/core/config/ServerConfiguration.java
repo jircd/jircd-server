@@ -27,6 +27,11 @@ import java.util.Map;
  * 1–86400 seconds). {@code operRequireTls} defaults to false; when true, plaintext OPER is rejected
  * without credential verification. Reload updates subsequent OPER commands, retaining existing
  * failure-window deadlines.
+ *
+ * <p>{@code motdPath} is the optional message-of-the-day file ({@code null}: none, so {@code 422}).
+ * The path is read live from the current configuration, so a reload can point at another file.
+ * {@code adminName}, {@code adminLocation} and {@code adminEmail} are the optional {@code ADMIN}
+ * contact lines; when all three are {@code null}, {@code ADMIN} answers {@code 423}.
  */
 public record ServerConfiguration(
     Map<String, Boolean> capabilityStates,
@@ -50,7 +55,11 @@ public record ServerConfiguration(
     int maxConnectionsPerIp,
     int ipv6ConnectionLimitPrefix,
     List<ConnectionLimitPolicy.AddressOverride> connectionLimitOverrides,
-    int registrationTimeoutSeconds) {
+    int registrationTimeoutSeconds,
+    String motdPath,
+    String adminName,
+    String adminLocation,
+    String adminEmail) {
 
   public ServerConfiguration {
     connectionLimitOverrides = List.copyOf(connectionLimitOverrides);
@@ -142,6 +151,17 @@ public record ServerConfiguration(
 
   /** Default IPv6 counting prefix; /128 restores per-address counting. */
   public static final int DEFAULT_IPV6_CONNECTION_LIMIT_PREFIX = 64;
+
+  /** The {@code ADMIN} contact lines; each may be {@code null}. */
+  public record AdminContact(String name, String location, String email) {
+    public boolean isEmpty() {
+      return name == null && location == null && email == null;
+    }
+  }
+
+  public AdminContact adminContact() {
+    return new AdminContact(adminName, adminLocation, adminEmail);
+  }
 
   /** Limits shared by every listener; reloading affects new connections only. */
   public ConnectionLimits connectionLimits() {

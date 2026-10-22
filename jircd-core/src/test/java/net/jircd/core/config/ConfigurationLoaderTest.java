@@ -226,6 +226,39 @@ class ConfigurationLoaderTest {
         .hasMessageContaining("registrationTimeoutSeconds");
   }
 
+  @Test
+  void motdAndAdminSettingsAreOptionalAndBlankMeansUnset() throws Exception {
+    ServerConfiguration unset = load("adminName: '  '\nmotdPath: ''");
+
+    assertThat(unset.motdPath()).isNull();
+    assertThat(unset.adminContact().isEmpty()).isTrue();
+  }
+
+  @Test
+  void motdAndAdminSettingsAreRead() throws Exception {
+    ServerConfiguration configuration =
+        load(
+            """
+            motdPath: /etc/jircd/motd.txt
+            adminName: Jane
+            adminLocation: Earth
+            adminEmail: jane@example.org
+            """);
+
+    assertThat(configuration.motdPath()).isEqualTo("/etc/jircd/motd.txt");
+    assertThat(configuration.adminContact())
+        .isEqualTo(new ServerConfiguration.AdminContact("Jane", "Earth", "jane@example.org"));
+  }
+
+  @ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(
+      strings = {"motdPath", "adminName", "adminLocation", "adminEmail"})
+  void motdAndAdminSettingsMustBeStrings(String key) {
+    assertThatThrownBy(() -> load(key + ": 42"))
+        .isInstanceOf(ConfigurationException.class)
+        .hasMessageContaining(key);
+  }
+
   @ParameterizedTest
   @org.junit.jupiter.params.provider.ValueSource(ints = {16384, 524288, 2097152})
   void sendqLimitAcceptsValuesWithinBounds(int value) throws Exception {

@@ -179,7 +179,7 @@ defined, the same class of gap the nickname/channel grammars closed for
 | `003 RPL_CREATED` | This running process's start time — not a fixed software release date |
 | `004 RPL_MYINFO` | `serverName`, `serverVersion`, the currently-recognized user-mode letters (`o` this release, FR-044, data-model.md `UserMode`), and the currently-recognized channel-mode letters — read from the same server-scoped `ChannelMode` catalog snapshot `005`'s `CHANMODES` also reads (data-model.md `SupportedFeatures`), recomputed only when `ExtensionRegistry`'s state changes, not per registration, so this never drifts out of sync with what `MODE` actually recognizes or with what `005` advertises |
 | `005 RPL_ISUPPORT` (one or more lines) | `SupportedFeatures` (FR-055, data-model.md — server-scoped, not computed per session) — `CASEMAPPING=rfc1459`, `CHANTYPES=#`, `NICKLEN`, `CHANNELLEN`, `TOPICLEN` (FR-056 — `9`/`50`/`390` by default, but each `ServerConfiguration`-configurable, not fixed constants), `MODES` (FR-064 — `6` by default, likewise configurable), `CHANMODES=Ibe,k,l,imnpst` (computed from the same `ChannelMode` catalog snapshot `004` reads: list modes `Ibe` in group A, `k` in B, `l` in C, and boolean modes `imnpst` in D); `EXCEPTS=e`, `INVEX=I`, `MAXLIST=Ibe:100`, `PREFIX=(ov)@+`, `UTF8ONLY`; split across additional `005` lines if the full token set wouldn't fit one line within FR-049's 512-byte limit (this release's default token set always fits in one) |
-| `422 ERR_NOMOTD` | Closes the burst — this release implements no message-of-the-day content (`MOTD` itself remains "Recognized only," Full Command Catalog below); `422` gives clients a defined completion signal instead of an indefinite wait for one |
+| `375`/`372`…/`376`, or `422 ERR_NOMOTD` | Closes the burst — the message of the day from the `motdPath` file (issue #77, same replies as `MOTD`); `422` when `motdPath` is unset or the file cannot be used, which gives clients a defined completion signal instead of an indefinite wait for one |
 
 **Contract notes**:
 - `CAP` negotiation MUST be usable before `NICK`/`USER` completes
@@ -617,7 +617,7 @@ any given server to implement it.
 
 | Command | RFC 2812 § | Status in this release |
 |---|---|---|
-| `PASS` | 3.1.1 | Recognized only — this server has no server-wide connection password concept |
+| `PASS` | 3.1.1 | **Implemented** (issue #77) — valid before registration, where it is accepted and ignored (this server has no connection password; the value is never stored or logged); `462 ERR_ALREADYREGISTRED` once registered; `461` without a parameter |
 | `NICK` | 3.1.2 | **Implemented** — see "Connection Registration" above |
 | `USER` | 3.1.3 | **Implemented** — see "Connection Registration" above |
 | `OPER` | 3.1.4 | **Implemented**, but with this project's own privilege model, not RFC 2812's O-line concept — see "Administration" above |
@@ -635,15 +635,15 @@ any given server to implement it.
 | `KICK` | 3.2.8 | **Implemented** — see "Moderation" above |
 | `PRIVMSG` | 3.3.1 | **Implemented** — see "Channel Operations" above |
 | `NOTICE` | 3.3.2 | **Implemented** — see "Channel Operations" above |
-| `MOTD` | 3.4.1 | Recognized only — no message-of-the-day feature in this release |
+| `MOTD` | 3.4.1 | **Implemented** (issue #77) — `375`, one `372` per line of the `motdPath` file, `376`; `422` when unset or unusable. The file is re-read when it changes; reload picks up a new `motdPath` |
 | `LUSERS` | 3.4.2 | **Implemented** — `251`, `252`, `253`, `254`, `255`, `265`, `266` in that order (issue #76); see the `LUSERS` row under "Information Queries" |
 | `VERSION` | 3.4.3 | Recognized only |
-| `STATS` | 3.4.4 | Recognized only |
+| `STATS` | 3.4.4 | **Implemented** (issue #77) — `STATS u` sends `242 RPL_STATSUPTIME`, then every query ends with `219 RPL_ENDOFSTATS` carrying the letter; other letters send only `219`; no letter is `461`; a server name other than this one is `402` |
 | `LINKS` | 3.4.5 | Recognized only — server-to-server; not applicable to a standalone release (FR-021) |
 | `TIME` | 3.4.6 | Recognized only |
 | `CONNECT` | 3.4.7 | Recognized only — server-to-server; not applicable to a standalone release (FR-021) |
 | `TRACE` | 3.4.8 | Recognized only |
-| `ADMIN` | 3.4.9 | Recognized only |
+| `ADMIN` | 3.4.9 | **Implemented** (issue #77) — `256`, `257`, `258`, `259` from `adminName`, `adminLocation`, `adminEmail` (`-` for an unset one); `423 ERR_NOADMININFO` when none is set; a server name other than this one is `402` |
 | `INFO` | 3.4.10 | **Implemented** (005-fix-batch-conformance FR-019) — a short, fixed server-information burst (`371 RPL_INFO`, then `374 RPL_ENDOFINFO`), reusing the same `serverVersion` source `VERSION`'s `351` reply already uses |
 | `SERVLIST` | 3.5.1 | Recognized only — this server has no services-framework concept |
 | `SQUERY` | 3.5.2 | Recognized only |
@@ -662,7 +662,8 @@ any given server to implement it.
 | `USERS` | 4.6 | Recognized only |
 | `WALLOPS` | 4.7 | Recognized only — no server-wide operator broadcast in this release |
 | `USERHOST` | 4.8 | **Implemented** (005-fix-batch-conformance FR-018) — host information for up to 5 nicknames (`302 RPL_USERHOST`), one `nick[*]=[+\|-]user@host` entry per found nickname; the host follows the same FR-038 three-tier resolution `WHOIS`/`WHO`/`WHOWAS` already use |
-| `ISON` | 4.9 | Recognized only |
+| `ISON` | 4.9 | **Implemented** (issue #77) — `303 RPL_ISON` with the registered nicknames among those asked (case-folded lookup, presented form, no duplicates); `461` without a parameter |
+| `HELP`, `HELPOP` | Modern IRC | **Implemented** (issue #77) — a short built-in topic list: `704`, `705`…, `706` with the topic as subject (`index` for a bare `HELP`), `524 ERR_HELPNOTFOUND` for an unknown topic. Both commands behave identically |
 | `CAP` | IRCv3 | **Implemented** — see "Connection Registration" above |
 | `AUTHENTICATE` | IRCv3 (SASL) | Recognized only — deferred with Story 3 (FR-009/FR-010); MUST NOT be offered as a capability (contracts note above) |
 | `TAGMSG` | IRCv3 | Recognized only — no tag-only-message feature in this release, though `message-tags` (FR-025) itself is implemented for regular messages |

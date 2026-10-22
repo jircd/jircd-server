@@ -40,13 +40,32 @@ public final class RegistrationCompletion {
   private final Instant serverStartedAt;
   private final ExtensionRegistry extensionRegistry;
   private final UserStatistics userStatistics;
+  private final MotdService motd;
 
+  /** A burst that ends with {@code 422}, for a server with no message of the day. */
   public RegistrationCompletion(
       Supplier<String> serverName,
       String serverVersion,
       Instant serverStartedAt,
       ExtensionRegistry extensionRegistry,
       UserStatistics userStatistics) {
+    this(
+        serverName,
+        serverVersion,
+        serverStartedAt,
+        extensionRegistry,
+        userStatistics,
+        MotdService.none(serverName));
+  }
+
+  public RegistrationCompletion(
+      Supplier<String> serverName,
+      String serverVersion,
+      Instant serverStartedAt,
+      ExtensionRegistry extensionRegistry,
+      UserStatistics userStatistics,
+      MotdService motd) {
+    this.motd = motd;
     this.serverName = serverName;
     this.serverVersion = serverVersion;
     this.serverStartedAt = serverStartedAt;
@@ -94,7 +113,7 @@ public final class RegistrationCompletion {
 
     sendIsupport(session, server, extensionRegistry);
 
-    Replies.send(session, server, NumericReply.ERR_NOMOTD, "MOTD File is missing");
+    motd.send(session);
   }
 
   /**
