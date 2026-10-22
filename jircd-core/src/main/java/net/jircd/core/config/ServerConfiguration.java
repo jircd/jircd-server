@@ -204,6 +204,21 @@ public record ServerConfiguration(
 
   public static final int OPER_LOCKOUT_SECONDS_CEILING = 86400;
   public static final int LENGTH_CEILING = 400;
+
+  /** Characters of the {@code USER} username kept as the ident; longer ones are truncated. */
+  public static final int IDENT_MAX_CHARS = 9;
+
+  /** A UTF-16 unit takes at most 3 UTF-8 bytes (a surrogate pair is 4 bytes for 2 units). */
+  public static final int IDENT_MAX_BYTES = IDENT_MAX_CHARS * 3;
+
+  /**
+   * UTF-8 byte cap on a presented hostname. RFC 2812 §2.3.1 limits a {@code host} to 63 characters;
+   * the longest built-in value is an IPv6 literal (45 bytes), and a {@code hostname-display}
+   * extension's output is cut to this bound. It is a fixed term in the hostmask reply budget so
+   * that no accepted configuration can push a nick!user@host reply past 512 bytes.
+   */
+  public static final int PRESENTED_HOST_MAX_BYTES = 63;
+
   public static final int MAX_MODES_CEILING = 20;
   public static final int OPER_FAILURE_THRESHOLD_CEILING = 20;
 

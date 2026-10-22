@@ -17,6 +17,7 @@ package net.jircd.core.session.command;
 
 import java.util.Collection;
 import java.util.Collections;
+import java.util.List;
 import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 import net.jircd.core.extension.ExtensionRegistry;
@@ -152,16 +153,17 @@ public final class WhoCommandHandler implements CommandHandler {
       }
     }
 
-    Replies.send(
+    Replies.sendFitted(
         requester,
         serverName.get(),
         NumericReply.RPL_WHOREPLY,
-        channelOrStar,
-        target.ident(),
-        hostname,
-        serverName.get(),
-        target.nickname(),
-        flags.toString(),
+        List.of(
+            channelOrStar,
+            target.ident(),
+            hostname,
+            serverName.get(),
+            target.nickname(),
+            flags.toString()),
         "0 " + target.realname());
   }
 

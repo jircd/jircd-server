@@ -15,6 +15,7 @@
  */
 package net.jircd.core.session.command;
 
+import net.jircd.core.config.ServerConfiguration;
 import net.jircd.core.session.ClientSession;
 import net.jircd.protocol.Hostmask;
 import net.jircd.protocol.Message;
@@ -71,8 +72,8 @@ public final class UserCommandHandler implements CommandHandler {
     }
 
     String ident = Hostmask.isValidUsernameContent(username) ? username : "user";
-    if (ident.length() > 9) {
-      ident = ident.substring(0, 9);
+    if (ident.length() > ServerConfiguration.IDENT_MAX_CHARS) {
+      ident = ident.substring(0, ServerConfiguration.IDENT_MAX_CHARS);
     }
     session.setIdent(ident);
     session.setRealname(realname);

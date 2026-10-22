@@ -15,6 +15,8 @@
  */
 package net.jircd.core.session.command;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.function.Supplier;
 import net.jircd.core.extension.ExtensionRegistry;
 import net.jircd.core.session.ClientSession;
@@ -51,7 +53,7 @@ public final class UserhostCommandHandler implements CommandHandler {
 
   @Override
   public void handle(ClientSession session, Message message) {
-    StringBuilder reply = new StringBuilder();
+    List<String> entries = new ArrayList<>();
     int count = Math.min(message.params().size(), MAX_NICKNAMES);
     for (int i = 0; i < count; i++) {
       nicknameRegistry
@@ -62,19 +64,16 @@ public final class UserhostCommandHandler implements CommandHandler {
                     target == session || session.isAdministrator()
                         ? target.realHostname()
                         : PresentedIdentity.displayHostname(target, extensionRegistry);
-                if (!reply.isEmpty()) {
-                  reply.append(' ');
-                }
-                reply
-                    .append(target.nickname())
-                    .append(target.userModes().contains(UserMode.OPERATOR) ? "*" : "")
-                    .append('=')
-                    .append(target.isAway() ? '-' : '+')
-                    .append(target.ident())
-                    .append('@')
-                    .append(hostname);
+                entries.add(
+                    target.nickname()
+                        + (target.userModes().contains(UserMode.OPERATOR) ? "*" : "")
+                        + '='
+                        + (target.isAway() ? '-' : '+')
+                        + target.ident()
+                        + '@'
+                        + hostname);
               });
     }
-    Replies.send(session, serverName.get(), NumericReply.RPL_USERHOST, reply.toString());
+    Replies.sendListed(session, serverName.get(), NumericReply.RPL_USERHOST, List.of(), entries);
   }
 }

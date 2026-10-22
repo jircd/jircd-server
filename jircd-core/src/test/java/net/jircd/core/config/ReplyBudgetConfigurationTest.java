@@ -56,10 +56,7 @@ class ReplyBudgetConfigurationTest {
   @Test
   void checks366IndependentlyAtItsBoundary() throws Exception {
     String server = "s".repeat(73) + ".";
-    assertThat(
-            load("serverName: " + server + "\nnicknameMaxLength: 9\nchannelNameMaxLength: 400\n")
-                .channelNameMaxLength())
-        .isEqualTo(400);
+    ConfigurationLoader.validateNamesBudget(server, 9, 400);
     assertThatThrownBy(
             () ->
                 load(
@@ -73,10 +70,45 @@ class ReplyBudgetConfigurationTest {
 
   @Test
   void accepts353ExactlyAtTheConservativeBoundary() throws Exception {
-    assertThat(
-            load("serverName: test.jircd.local\nnicknameMaxLength: 216\nchannelNameMaxLength: 50\n")
-                .nicknameMaxLength())
-        .isEqualTo(216);
+    ConfigurationLoader.validateNamesBudget("test.jircd.local", 216, 50);
+  }
+
+  @Test
+  void rejectsTheIssue85ServerNameThatOverflowsAHostmaskReply() {
+    // 388-byte server name, 30-byte nicks, 50-byte channel: 333 is 569 bytes with a 21-byte cloak.
+    String server = "s".repeat(384) + ".net";
+    assertThatThrownBy(() -> load("serverName: " + server + "\nnicknameMaxLength: 30\n"))
+        .isInstanceOf(ConfigurationException.class)
+        .hasMessageContaining("serverName")
+        .hasMessageContaining("nicknameMaxLength")
+        .hasMessageContaining("channelNameMaxLength")
+        .hasMessageContaining("27 bytes")
+        .hasMessageContaining("63 bytes")
+        .hasMessageContaining("333 (TOPICWHOTIME)=")
+        .hasMessageContaining("352 (WHO)=");
+  }
+
+  @Test
+  void hostmaskBudgetAcceptsTheWidestServerNameAndRejectsOneByteMore() throws Exception {
+    // WHO carries the server name twice: 2S + 2N + C + 27 + 63 + 21 <= 512 -> S <= 166 at 9/50.
+    String widest = "s".repeat(162) + ".net";
+    assertThat(load("serverName: " + widest + "\n").serverName()).isEqualTo(widest);
+    assertThatThrownBy(() -> load("serverName: s" + widest + "\n"))
+        .isInstanceOf(ConfigurationException.class)
+        .hasMessageContaining("352 (WHO)=513");
+  }
+
+  @Test
+  void reloadAppliesTheHostmaskBudgetToTheRunningServerName() throws Exception {
+    ServerConfiguration initial = load("serverName: " + "s".repeat(162) + ".net\n");
+    Path yaml = directory.resolve("wide-nick.yaml");
+    Files.writeString(yaml, "serverName: s.x\nnicknameMaxLength: 30\n");
+    ConfigurationReloader reloader =
+        new ConfigurationReloader(yaml, loader, new ExtensionRegistry(), initial);
+    assertThatThrownBy(reloader::reload)
+        .isInstanceOf(ConfigurationException.class)
+        .hasMessageContaining("352 (WHO)=");
+    assertThat(reloader.current()).isSameAs(initial);
   }
 
   @Test
