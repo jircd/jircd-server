@@ -229,7 +229,7 @@ class ListenerLifecycleTest {
         // read until the server closes the connection
       }
     } catch (SocketException e) {
-      assertThat(e).hasMessageContaining("reset");
+      assertThat(e.getMessage()).containsIgnoringCase("reset");
     }
   }
 
