@@ -36,8 +36,8 @@ public final class HostmaskReplyBudget {
   /** Epoch seconds are 10 digits until the year 2286. */
   private static final int TIMESTAMP_BYTES = 10;
 
-  /** A WHO flags field at its widest: away, operator and channel status. */
-  private static final int WHO_FLAGS_BYTES = 3;
+  /** A WHO flags field at its widest: away, operator and both channel statuses (multi-prefix). */
+  private static final int WHO_FLAGS_BYTES = 4;
 
   private HostmaskReplyBudget() {}
 

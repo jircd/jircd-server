@@ -48,8 +48,8 @@ class ReplyBudgetConfigurationTest {
         .hasMessageContaining("serverName")
         .hasMessageContaining("nicknameMaxLength")
         .hasMessageContaining("channelNameMaxLength")
-        .hasMessageContaining("353=514")
-        .hasMessageContaining("budget=48")
+        .hasMessageContaining("353=515")
+        .hasMessageContaining("budget=47")
         .hasMessageContaining("512");
   }
 
@@ -70,13 +70,16 @@ class ReplyBudgetConfigurationTest {
 
   @Test
   void accepts353ExactlyAtTheConservativeBoundary() throws Exception {
-    ConfigurationLoader.validateNamesBudget("test.jircd.local", 216, 50);
+    ConfigurationLoader.validateNamesBudget("test.jircd.local", 215, 51);
+    assertThatThrownBy(() -> ConfigurationLoader.validateNamesBudget("test.jircd.local", 216, 51))
+        .isInstanceOf(ConfigurationException.class)
+        .hasMessageContaining("353=514");
   }
 
   @Test
   void rejectsTheIssue85ServerNameThatOverflowsAHostmaskReply() {
-    // 388-byte server name, 30-byte nicks, 50-byte channel: 333 is 569 bytes with a 21-byte cloak.
-    String server = "s".repeat(384) + ".net";
+    // 387-byte server name, 30-byte nicks, 50-byte channel: 333 is 568 bytes with a 21-byte cloak.
+    String server = "s".repeat(383) + ".net";
     assertThatThrownBy(() -> load("serverName: " + server + "\nnicknameMaxLength: 30\n"))
         .isInstanceOf(ConfigurationException.class)
         .hasMessageContaining("serverName")
@@ -90,12 +93,12 @@ class ReplyBudgetConfigurationTest {
 
   @Test
   void hostmaskBudgetAcceptsTheWidestServerNameAndRejectsOneByteMore() throws Exception {
-    // WHO carries the server name twice: 2S + 2N + C + 27 + 63 + 21 <= 512 -> S <= 166 at 9/50.
+    // WHO carries the server name twice: 2S + 2N + C + 27 + 63 + 22 <= 512 -> S <= 166 at 9/50.
     String widest = "s".repeat(162) + ".net";
     assertThat(load("serverName: " + widest + "\n").serverName()).isEqualTo(widest);
     assertThatThrownBy(() -> load("serverName: s" + widest + "\n"))
         .isInstanceOf(ConfigurationException.class)
-        .hasMessageContaining("352 (WHO)=513");
+        .hasMessageContaining("352 (WHO)=514");
   }
 
   @Test

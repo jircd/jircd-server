@@ -647,7 +647,7 @@ class ChannelRegistryTest {
               });
       try {
         assertThat(holding.await(5, TimeUnit.SECONDS)).isTrue();
-        assertThat(executor.submit(channel::memberListing))
+        assertThat(executor.submit(() -> channel.memberListing()))
             .succeedsWithin(Duration.ofSeconds(2))
             .isEqualTo(List.of("@alice"));
       } finally {

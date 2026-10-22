@@ -34,4 +34,5 @@ public final class CapabilityName {
   public static final String ECHO_MESSAGE = "echo-message";
   public static final String AWAY_NOTIFY = "away-notify";
   public static final String BATCH = "batch";
+  public static final String MULTI_PREFIX = "multi-prefix";
 }

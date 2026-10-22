@@ -118,6 +118,33 @@ class ChannelTest {
   }
 
   @Test
+  void multiPrefixListingHoldsEveryStatusInPrefixOrder() {
+    Channel channel = new Channel("#lobby");
+    ClientSession both = member("both");
+    ClientSession voiced = member("voiced");
+    ClientSession plain = member("plain");
+    ClientSession operator = member("operator");
+    // The first joiner becomes operator, so "both" starts as one and gains voice below.
+    List.of(both, voiced, plain, operator).forEach(channel::addMember);
+    channel.grantVoice(both);
+    channel.grantVoice(voiced);
+    channel.grantOperator(operator);
+
+    assertThat(channel.memberListing(true))
+        .containsExactlyInAnyOrder("@+both", "+voiced", "plain", "@operator");
+    assertThat(channel.memberListing(false))
+        .containsExactlyInAnyOrder("@both", "+voiced", "plain", "@operator");
+    assertThat(channel.memberListing()).isEqualTo(channel.memberListing(false));
+  }
+
+  @Test
+  void statusPrefixesIsEmptyForANonMember() {
+    Channel channel = new Channel("#lobby");
+
+    assertThat(channel.statusPrefixes(member("stranger"), true)).isEmpty();
+  }
+
+  @Test
   void emptyChannelHasEmptyMemberListing() {
     assertThat(new Channel("#empty").memberListing()).isEmpty();
   }

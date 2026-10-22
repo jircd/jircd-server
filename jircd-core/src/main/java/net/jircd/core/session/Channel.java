@@ -107,17 +107,34 @@ public final class Channel {
    * can yield a prefix the member never held.
    */
   public List<String> memberListing() {
+    return memberListing(false);
+  }
+
+  /**
+   * As {@link #memberListing()}, but with {@code multiPrefix} every status the member holds is
+   * listed, in {@code PREFIX} order ({@code @} before {@code +}), as {@code multi-prefix} requires.
+   * The flag describes the client receiving the listing, not the members listed.
+   */
+  public List<String> memberListing(boolean multiPrefix) {
     List<String> listing = new ArrayList<>();
     for (ClientSession member : members) {
-      String status = "";
-      if (operators.contains(member)) {
-        status = "@";
-      } else if (voiced.contains(member)) {
-        status = "+";
-      }
-      listing.add(status + member.nickname());
+      listing.add(statusPrefixes(member, multiPrefix) + member.nickname());
     }
     return listing;
+  }
+
+  /**
+   * The status symbols a member holds, highest first: {@code @} for operator, {@code +} for voice.
+   * Without {@code multiPrefix} only the highest is returned. Each symbol comes from a separate
+   * read, so a concurrent privilege change can yield a combination the member never held at once.
+   */
+  public String statusPrefixes(ClientSession member, boolean multiPrefix) {
+    boolean operator = operators.contains(member);
+    boolean voice = voiced.contains(member);
+    if (operator) {
+      return multiPrefix && voice ? "@+" : "@";
+    }
+    return voice ? "+" : "";
   }
 
   public Set<ClientSession> operators() {

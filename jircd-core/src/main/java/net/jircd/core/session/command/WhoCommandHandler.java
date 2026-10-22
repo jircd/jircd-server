@@ -29,6 +29,7 @@ import net.jircd.core.session.ClientSession;
 import net.jircd.core.session.NicknameRegistry;
 import net.jircd.core.session.PresentedIdentity;
 import net.jircd.core.session.UserMode;
+import net.jircd.protocol.CapabilityName;
 import net.jircd.protocol.Message;
 import net.jircd.protocol.NumericReply;
 
@@ -146,11 +147,9 @@ public final class WhoCommandHandler implements CommandHandler {
       flags.append('*');
     }
     if (channel != null) {
-      if (channel.operators().contains(target)) {
-        flags.append('@');
-      } else if (channel.voiced().contains(target)) {
-        flags.append('+');
-      }
+      flags.append(
+          channel.statusPrefixes(
+              target, requester.negotiatedCapabilities().contains(CapabilityName.MULTI_PREFIX)));
     }
 
     Replies.sendFitted(

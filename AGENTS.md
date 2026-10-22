@@ -4,7 +4,7 @@ IRCv3 server in Java 25 (Gradle toolchain, multi-module). The project rules live
 
 ## Modules
 
-`jircd-protocol` (wire format) → `jircd-core` → `jircd-capabilities:*` (message-tags, server-time, echo-message, away-notify, batch) and `jircd-server-extensions:*` (cloak, admin) → `jircd-server` (app, `JircdServerApplication`). `jircd-integration-tests` holds the end-to-end tests over real sockets.
+`jircd-protocol` (wire format) → `jircd-core` → `jircd-capabilities:*` (message-tags, server-time, echo-message, away-notify, batch, multi-prefix) and `jircd-server-extensions:*` (cloak, admin) → `jircd-server` (app, `JircdServerApplication`). `jircd-integration-tests` holds the end-to-end tests over real sockets.
 
 ## Commands
 

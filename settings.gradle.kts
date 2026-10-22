@@ -15,6 +15,7 @@ include(
     "jircd-capabilities:echo-message",
     "jircd-capabilities:away-notify",
     "jircd-capabilities:batch",
+    "jircd-capabilities:multi-prefix",
     "jircd-server-extensions",
     "jircd-server-extensions:cloak",
     "jircd-server-extensions:admin",
