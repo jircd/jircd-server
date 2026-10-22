@@ -288,7 +288,7 @@ administratorCredentials:
   | 352 RPL_WHOREPLY (server name twice, flags `G*@`) | `2S + 2N + Cmax + U + H + 21` |
   | 333 RPL_TOPICWHOTIME (10-digit timestamp) | `S + 2N + Cmax + U + H + 23` |
   | 311 / 314 WHOIS / WHOWAS user | `S + 2N + U + H + 15` |
-  | 302 RPL_USERHOST (one entry; several entries split across 302 lines) | `S + 2N + U + H + 14` |
+  | 302 RPL_USERHOST (one entry; several entries split across 302 lines) | `S + 2N + U + H + 13` |
   | `:nick!user@host INVITE nick #chan` | `2N + Cmax + U + H + 14` |
 
   Every value MUST be `<= 512`. An error names `serverName`, `nicknameMaxLength`
@@ -298,6 +298,9 @@ administratorCredentials:
   one: at the defaults (`N=9`, `Cmax=50`) the server name may be at most 166
   bytes. A real name that would overflow 311, 314 or 352 is cut on a code-point
   boundary instead of dropping the line.
+  `INVITE` to a channel that does not exist applies JOIN's name check
+  (`channelNameMaxLength`, channel prefix) and answers `476` before sending
+  anything, so the echoed name is bounded.
 - **A `hostname-display` extension's host is capped at 63 bytes.** The value
   `PresentedIdentity` gets from the extension is truncated to 63 UTF-8 bytes on a
   code-point boundary. The truncated value is the fallback, not the real

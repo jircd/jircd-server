@@ -55,8 +55,8 @@ public final class HostmaskReplyBudget {
     worst.put("333 (TOPICWHOTIME)", s + n + c + hostmask + TIMESTAMP_BYTES + 9 + 2);
     // ":S 311 N nick user host * :" + CRLF; 314 (WHOWAS) has the same shape
     worst.put("311/314 (WHOIS/WHOWAS)", s + 2 * n + U + H + 15);
-    // ":S 302 N :nick*=+user@host" + CRLF, one entry
-    worst.put("302 (USERHOST)", s + 2 * n + U + H + 14);
+    // ":S 302 N nick*=+user@host" + CRLF, one entry; a single word takes no trailing colon
+    worst.put("302 (USERHOST)", s + 2 * n + U + H + 13);
     // ":nick!user@host INVITE N C" + CRLF, the longest S-free prefix line
     worst.put("INVITE", hostmask + n + c + 12);
     return worst;

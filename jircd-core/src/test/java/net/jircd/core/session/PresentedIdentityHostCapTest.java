@@ -17,13 +17,18 @@ package net.jircd.core.session;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.atomic.AtomicLong;
 import net.jircd.core.config.ServerConfiguration;
 import net.jircd.core.extension.ExtensionRegistry;
 import net.jircd.core.extension.HostnameDisplayExtension;
 import net.jircd.core.extension.ServerContext;
 import net.jircd.core.extension.ServerExtension;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 
 class PresentedIdentityHostCapTest {
 
@@ -90,9 +95,39 @@ class PresentedIdentityHostCapTest {
   }
 
   @Test
-  void repeatedOverlongHostsNeverThrow() {
-    for (int i = 0; i < 5; i++) {
-      assertThat(displayed("x".repeat(500))).hasSize(CAP);
+  void repeatedOverlongHostsWarnOncePerThrottleWindow() {
+    AtomicLong now = new AtomicLong(1_000_000_000L);
+    PresentedIdentity.useClockForTest(now::get);
+    Logger logger = (Logger) LoggerFactory.getLogger(PresentedIdentity.class);
+    ListAppender<ILoggingEvent> appender = new ListAppender<>();
+    appender.start();
+    logger.addAppender(appender);
+    try {
+      for (int i = 0; i < 5; i++) {
+        assertThat(displayed("x".repeat(500))).hasSize(CAP);
+      }
+      assertThat(appender.list).as("five calls in one window").hasSize(1);
+      assertThat(appender.list.getFirst().getFormattedMessage())
+          .contains("cap-cloak")
+          .contains("63 bytes");
+
+      now.addAndGet(59_000_000_000L);
+      displayed("x".repeat(500));
+      assertThat(appender.list).as("still inside the minute").hasSize(1);
+
+      now.addAndGet(2_000_000_000L);
+      displayed("x".repeat(500));
+      displayed("x".repeat(500));
+      assertThat(appender.list).as("one more after the window").hasSize(2);
+    } finally {
+      logger.detachAppender(appender);
+      PresentedIdentity.useClockForTest(System::nanoTime);
     }
+  }
+
+  @Test
+  void aHugeHostCostsOnlyTheCapAndKeepsTheLeadingCodePoints() {
+    String huge = "😀".repeat(5_000_000);
+    assertThat(displayed(huge)).isEqualTo("😀".repeat(CAP / 4));
   }
 }

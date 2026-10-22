@@ -15,8 +15,8 @@
  */
 package net.jircd.core.session;
 
-import java.nio.charset.StandardCharsets;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.LongSupplier;
 import net.jircd.core.config.ServerConfiguration;
 import net.jircd.core.extension.Extension;
 import net.jircd.core.extension.ExtensionRegistry;
@@ -46,6 +46,8 @@ public final class PresentedIdentity {
   /** Nanotime of the last over-long warning; zero until the first one. */
   private static final AtomicLong LAST_WARNED = new AtomicLong();
 
+  private static volatile LongSupplier nanoClock = System::nanoTime;
+
   private PresentedIdentity() {}
 
   public static String displayHostname(ClientSession session, ExtensionRegistry extensionRegistry) {
@@ -64,15 +66,43 @@ public final class PresentedIdentity {
         session.nickname(), session.ident(), displayHostname(session, extensionRegistry));
   }
 
-  /** Cuts {@code host} to the byte cap on a code-point boundary, warning at most once a minute. */
+  /**
+   * Cuts {@code host} to the byte cap on a code-point boundary, warning at most once a minute. One
+   * pass counts each code point's UTF-8 bytes without encoding, and stops at the first one past the
+   * cap, so a huge value costs work proportional to the cap.
+   */
   private static String bounded(String host, String extensionId) {
-    if (host == null
-        || host.length() * 3 <= ServerConfiguration.PRESENTED_HOST_MAX_BYTES
-        || host.getBytes(StandardCharsets.UTF_8).length
-            <= ServerConfiguration.PRESENTED_HOST_MAX_BYTES) {
-      return host;
+    if (host == null) {
+      return null;
     }
-    long now = System.nanoTime();
+    int cap = ServerConfiguration.PRESENTED_HOST_MAX_BYTES;
+    int used = 0;
+    int end = 0;
+    while (end < host.length()) {
+      int codePoint = host.codePointAt(end);
+      int bytes = utf8Bytes(codePoint);
+      if (used + bytes > cap) {
+        warnOverlong(extensionId);
+        return host.substring(0, end);
+      }
+      used += bytes;
+      end += Character.charCount(codePoint);
+    }
+    return host;
+  }
+
+  private static int utf8Bytes(int codePoint) {
+    if (codePoint < 0x80) {
+      return 1;
+    }
+    if (codePoint < 0x800) {
+      return 2;
+    }
+    return codePoint < 0x10000 ? 3 : 4;
+  }
+
+  private static void warnOverlong(String extensionId) {
+    long now = nanoClock.getAsLong();
     long last = LAST_WARNED.get();
     if ((last == 0 || now - last >= WARN_INTERVAL_NANOS) && LAST_WARNED.compareAndSet(last, now)) {
       LOG.warn(
@@ -80,17 +110,11 @@ public final class PresentedIdentity {
           extensionId,
           ServerConfiguration.PRESENTED_HOST_MAX_BYTES);
     }
-    StringBuilder cut = new StringBuilder();
-    int used = 0;
-    for (int cp : host.codePoints().toArray()) {
-      String ch = Character.toString(cp);
-      int bytes = ch.getBytes(StandardCharsets.UTF_8).length;
-      if (used + bytes > ServerConfiguration.PRESENTED_HOST_MAX_BYTES) {
-        break;
-      }
-      cut.append(ch);
-      used += bytes;
-    }
-    return cut.toString();
+  }
+
+  /** Swaps the throttle's clock and restarts its window; tests only. */
+  static void useClockForTest(LongSupplier clock) {
+    nanoClock = clock;
+    LAST_WARNED.set(0);
   }
 }
