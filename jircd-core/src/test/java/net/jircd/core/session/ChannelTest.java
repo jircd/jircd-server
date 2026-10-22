@@ -24,6 +24,7 @@ import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -135,6 +136,44 @@ class ChannelTest {
     assertThat(channel.memberListing(false))
         .containsExactlyInAnyOrder("@both", "+voiced", "plain", "@operator");
     assertThat(channel.memberListing()).isEqualTo(channel.memberListing(false));
+  }
+
+  /**
+   * The member only ever holds operator or voice, never both: each flip de-ops then voices, or
+   * de-voices then ops. A reader that read the two sets separately could see the old operator and
+   * the new voice and render "@+". The overlap is timing dependent, so this is a stress test: it
+   * failed on the unversioned two-read implementation, and passing proves no impossible state
+   * appeared in the reads made.
+   */
+  @Test
+  void multiPrefixNeverShowsAStatusCombinationTheMemberDidNotHold() throws Exception {
+    Channel channel = new Channel("#lobby");
+    ClientSession anchor = member("anchor");
+    ClientSession flipper = member("flipper");
+    channel.addMember(anchor);
+    channel.addMember(flipper);
+    channel.grantOperator(flipper);
+    AtomicBoolean running = new AtomicBoolean(true);
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var writer =
+          executor.submit(
+              () -> {
+                while (running.get()) {
+                  channel.revokeOperator(flipper);
+                  channel.grantVoice(flipper);
+                  channel.revokeVoice(flipper);
+                  channel.grantOperator(flipper);
+                }
+              });
+      try {
+        for (int i = 0; i < 2_000_000; i++) {
+          assertThat(channel.statusPrefixes(flipper, true)).isNotEqualTo("@+");
+        }
+      } finally {
+        running.set(false);
+        writer.get(5, TimeUnit.SECONDS);
+      }
+    }
   }
 
   @Test

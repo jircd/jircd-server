@@ -311,7 +311,8 @@ was previously missing and needed its own definition (FR-048).
   correctly enforced server-side: a client showing no visual difference
   between a voiced and a non-voiced member defeats the point of granting
   voice at all. A member who is both an operator and voiced is prefixed
-  `@` only, matching standard client expectations (operator implies the
+  `@` only for a requester that has not negotiated `multi-prefix` (below),
+  matching standard client expectations (operator implies the
   ability to speak; the `+` prefix communicates *additional* information
   a plain `@` doesn't).
 - **`multi-prefix`** (issue #96): to a requester that has negotiated it, `353`

@@ -24,6 +24,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -633,6 +634,8 @@ class ChannelRegistryTest {
     ChannelRegistry registry = new ChannelRegistry();
     Channel channel =
         registry.join("#c", newSession("alice"), ignored -> true).orElseThrow().channel();
+    // Typed so the reference resolves to the no-argument overload, not Runnable's submit.
+    Callable<List<String>> listing = channel::memberListing;
     CountDownLatch holding = new CountDownLatch(1);
     CountDownLatch release = new CountDownLatch(1);
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
@@ -647,7 +650,7 @@ class ChannelRegistryTest {
               });
       try {
         assertThat(holding.await(5, TimeUnit.SECONDS)).isTrue();
-        assertThat(executor.submit(() -> channel.memberListing()))
+        assertThat(executor.submit(listing))
             .succeedsWithin(Duration.ofSeconds(2))
             .isEqualTo(List.of("@alice"));
       } finally {

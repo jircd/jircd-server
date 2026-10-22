@@ -28,9 +28,9 @@ import net.jircd.protocol.CapabilityName;
  */
 public final class MultiPrefixExtension extends AbstractCapabilityExtension {
 
-  public static final String ID = CapabilityName.MULTI_PREFIX;
+  public static final String CAPABILITY_ID = CapabilityName.MULTI_PREFIX;
 
   public MultiPrefixExtension() {
-    super(ID);
+    super(CAPABILITY_ID);
   }
 }
