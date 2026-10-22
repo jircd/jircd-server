@@ -15,6 +15,7 @@
  */
 package net.jircd.core.session.command;
 
+import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -46,6 +47,6 @@ public final class TimeCommandHandler implements CommandHandler {
         server,
         NumericReply.RPL_TIME,
         List.of(server),
-        FORMAT.format(ZonedDateTime.now()));
+        FORMAT.format(ZonedDateTime.now(ZoneId.systemDefault())));
   }
 }

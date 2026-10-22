@@ -36,6 +36,8 @@ import net.jircd.protocol.NumericReply;
  */
 public final class TagmsgCommandHandler implements CommandHandler {
 
+  private static final String COMMAND_NAME = "TAGMSG";
+
   private final ChannelRegistry channelRegistry;
   private final NicknameRegistry nicknameRegistry;
   private final ExtensionRegistry extensionRegistry;
@@ -59,7 +61,7 @@ public final class TagmsgCommandHandler implements CommandHandler {
           session,
           serverName.get(),
           NumericReply.ERR_NEEDMOREPARAMS,
-          List.of("TAGMSG"),
+          List.of(COMMAND_NAME),
           "Not enough parameters");
       return;
     }
@@ -68,7 +70,7 @@ public final class TagmsgCommandHandler implements CommandHandler {
           session,
           serverName.get(),
           NumericReply.ERR_UNKNOWNCOMMAND,
-          List.of("TAGMSG"),
+          List.of(COMMAND_NAME),
           "Malformed message");
       return;
     }
@@ -88,7 +90,7 @@ public final class TagmsgCommandHandler implements CommandHandler {
 
     String presentedForm = PresentedIdentity.presentedForm(session, extensionRegistry);
     OutboundMessage outbound =
-        OutboundMessage.now(presentedForm, "TAGMSG", target, null, message.tags());
+        OutboundMessage.now(presentedForm, COMMAND_NAME, target, null, message.tags());
     boolean echoToSender = MessageCommandHandler.includeSenderInFanOut(extensionRegistry, session);
     for (ClientSession recipient :
         MessageCommandHandler.deliveryTargets(recipients, session, target, echoToSender)) {

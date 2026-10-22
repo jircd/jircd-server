@@ -233,7 +233,7 @@ class GrandfatheredReplyTest {
         .allSatisfy(reply -> assertThat(reply.params().get(1)).isEqualTo(unknown));
     assertThat(replies.getLast().params().getLast())
         .isNotEmpty()
-        .satisfies(text -> assertThat("End of /WHOIS list").startsWith(text));
+        .matches("End of /WHOIS list"::startsWith);
   }
 
   @Test

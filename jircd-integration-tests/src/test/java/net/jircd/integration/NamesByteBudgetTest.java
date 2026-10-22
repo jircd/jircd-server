@@ -227,6 +227,6 @@ class NamesByteBudgetTest {
             reply ->
                 assertThat(reply.params().getLast())
                     .isNotEmpty()
-                    .satisfies(text -> assertThat("End of /NAMES list").startsWith(text)));
+                    .matches("End of /NAMES list"::startsWith));
   }
 }
