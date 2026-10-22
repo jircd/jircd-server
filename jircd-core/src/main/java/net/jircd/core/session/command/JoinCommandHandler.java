@@ -134,7 +134,8 @@ public final class JoinCommandHandler implements CommandHandler {
 
     Channel.Topic topic = channel.topicState();
     if (topic != null) {
-      Replies.send(session, serverName.get(), NumericReply.RPL_TOPIC, channel.name(), topic.text());
+      Replies.sendFitted(
+          session, serverName.get(), NumericReply.RPL_TOPIC, List.of(channel.name()), topic.text());
       Replies.send(
           session,
           serverName.get(),

@@ -138,7 +138,10 @@ class NamesByteBudgetTest {
     try (LogCapture logs = new LogCapture(Replies.class)) {
       assertThat(send("requester", channel, List.of("x")).stream().map(Message::rawCommand))
           .containsExactly("353", "PING");
-      assertThat(logs.messages()).isEmpty();
+      assertThat(logs.messages())
+          .singleElement()
+          .asString()
+          .contains("Dropping oversized reply", "reply=366", "budget=512");
     }
   }
 
@@ -174,20 +177,19 @@ class NamesByteBudgetTest {
   }
 
   @Test
-  void anUnrepresentableHeaderIsDiagnosedSeparatelyAndTheWriterStillAttempts366() throws Exception {
+  void anUnrepresentableHeaderAndItsCloserAreDiagnosedSeparately() throws Exception {
     String channel = "#" + "x".repeat(490);
-    try (LogCapture logs = new LogCapture(Replies.class);
-        LogCapture writerLogs = new LogCapture(SessionWriter.class)) {
+    try (LogCapture logs = new LogCapture(Replies.class)) {
       assertThat(send("requester", channel, List.of("small")).stream().map(Message::rawCommand))
           .containsExactly("PING");
       assertThat(logs.messages())
-          .singleElement()
-          .asString()
-          .contains("Dropping oversized listed reply header", channel, "headerBytes=");
-      assertThat(writerLogs.messages())
-          .singleElement()
-          .asString()
-          .contains("Dropping oversized outbound message");
+          .anySatisfy(
+              line ->
+                  assertThat(line)
+                      .contains("Dropping oversized listed reply header", channel, "headerBytes="))
+          .anySatisfy(
+              line ->
+                  assertThat(line).contains("Dropping oversized reply", "reply=366", "budget=512"));
     }
   }
 
@@ -200,20 +202,27 @@ class NamesByteBudgetTest {
               send(requester, channel, List.of("@" + "n".repeat(10), "ok")).stream()
                   .map(Message::rawCommand))
           .containsExactly("353", "PING");
-      assertThat(logs.messages()).singleElement().asString().contains("itemBytes=11", "budget=8");
+      assertThat(logs.messages())
+          .anySatisfy(
+              line ->
+                  assertThat(line)
+                      .contains("Dropping oversized listed item", "itemBytes=11", "budget=8"))
+          .anySatisfy(
+              line ->
+                  assertThat(line).contains("Dropping oversized reply", "reply=366", "budget=512"));
     }
   }
 
   @Test
   void aFitting353DoesNotPreventAnIndependentlyOversized366FromBeingRejected() throws Exception {
     String channel = "#" + "界".repeat(153);
-    try (LogCapture logs = new LogCapture(SessionWriter.class)) {
+    try (LogCapture logs = new LogCapture(Replies.class)) {
       assertThat(send("requester", channel, List.of("@nickname")).stream().map(Message::rawCommand))
           .containsExactly("353", "PING");
       assertThat(logs.messages())
           .singleElement()
           .asString()
-          .contains("Dropping oversized outbound message");
+          .contains("Dropping oversized reply", "reply=366", "budget=512");
     }
   }
 }

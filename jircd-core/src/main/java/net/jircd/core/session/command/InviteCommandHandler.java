@@ -148,8 +148,6 @@ public final class InviteCommandHandler implements CommandHandler {
             Command.INVITE,
             "INVITE",
             List.of(target.get().nickname(), channelName));
-    if (target.get().writer() != null) {
-      target.get().writer().enqueueRaw(inviteMessage);
-    }
+    Replies.sendChecked(target.get(), inviteMessage);
   }
 }

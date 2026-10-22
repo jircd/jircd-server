@@ -41,7 +41,7 @@ public final class Replies {
 
   private Replies() {}
 
-  /** Makes the next oversized-reply warning for every channel log again; for tests. */
+  /** Makes the next oversized-reply warning for every key log again; for tests. */
   public static void resetOversizedWarnings() {
     OVERSIZED_WARNINGS.reset();
   }
@@ -52,15 +52,46 @@ public final class Replies {
     params.add(target(session));
     params.addAll(List.of(trailingParams));
     Message message = new Message(Map.of(), serverName, null, numeric.wireCode(), params);
-    if (session.writer() != null) {
+    sendChecked(session, message);
+  }
+
+  /** Sends an indivisible reply only if its command section fits, logging a throttled skip. */
+  public static void sendChecked(ClientSession session, Message message) {
+    if (isRepresentable(message) && session.writer() != null) {
       session.writer().enqueueRaw(message);
     }
   }
 
   /**
+   * Checks fixed output fields without changing identities. Used by numeric builders and the
+   * writer's fallback for hostmask notifications; warnings are shared across recipients and bounded
+   * to one per command per minute, with suppressed counts reported on the next admitted warning.
+   */
+  public static boolean isRepresentable(Message message) {
+    int bytes = MessageSerializer.commandBytes(message);
+    if (bytes <= MessageSerializer.MAX_COMMAND_BYTES) {
+      return true;
+    }
+    String command = message.rawCommand() != null ? message.rawCommand() : message.command().name();
+    if (LOG.isWarnEnabled()) {
+      long suppressed = OVERSIZED_WARNINGS.admit("reply|" + command);
+      if (suppressed >= 0) {
+        LOG.warn(
+            "Dropping oversized reply: reply={}, reason=fields exceed command budget, commandBytes={}, budget={}, suppressedSinceLast={}",
+            command,
+            bytes,
+            MessageSerializer.MAX_COMMAND_BYTES,
+            suppressed);
+      }
+    }
+    return false;
+  }
+
+  /**
    * Sends a numeric whose last parameter is free text of unknown length (an administrator's MOTD
    * line, say), cut on a code-point boundary so the line fits the 512-byte limit. Line breaks and
-   * NUL in the text become spaces, since they would end or corrupt the wire line.
+   * NUL in the text become spaces, since they would end or corrupt the wire line. If the fixed
+   * fields alone exceed the budget, the reply is logged and skipped without truncating identities.
    */
   public static void sendFitted(
       ClientSession session,
@@ -77,11 +108,7 @@ public final class Replies {
             - MessageSerializer.commandBytes(
                 new Message(Map.of(), serverName, null, numeric.wireCode(), params));
     params.set(params.size() - 1, truncate(text, budget, false));
-    if (session.writer() != null) {
-      session
-          .writer()
-          .enqueueRaw(new Message(Map.of(), serverName, null, numeric.wireCode(), params));
-    }
+    sendChecked(session, new Message(Map.of(), serverName, null, numeric.wireCode(), params));
   }
 
   /**
@@ -109,11 +136,7 @@ public final class Replies {
       fitted = "_" + fitted.substring(1);
     }
     params.set(1, fitted.isEmpty() ? "*" : fitted);
-    if (session.writer() != null) {
-      session
-          .writer()
-          .enqueueRaw(new Message(Map.of(), serverName, null, numeric.wireCode(), params));
-    }
+    sendChecked(session, new Message(Map.of(), serverName, null, numeric.wireCode(), params));
   }
 
   /** Cuts {@code text} to {@code budget} UTF-8 bytes on a code-point boundary. */

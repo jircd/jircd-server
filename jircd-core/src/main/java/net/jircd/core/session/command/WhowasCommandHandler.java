@@ -74,7 +74,8 @@ public final class WhowasCommandHandler implements CommandHandler {
             entry.realname());
       }
     }
-    Replies.send(session, server, NumericReply.RPL_ENDOFWHOWAS, nickname, "End of WHOWAS");
+    Replies.sendFitted(
+        session, server, NumericReply.RPL_ENDOFWHOWAS, List.of(nickname), "End of WHOWAS");
   }
 
   private static int parseCount(String raw) {

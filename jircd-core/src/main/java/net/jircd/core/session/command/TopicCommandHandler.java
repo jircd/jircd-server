@@ -98,8 +98,12 @@ public final class TopicCommandHandler implements CommandHandler {
         Replies.send(
             session, serverName.get(), NumericReply.RPL_NOTOPIC, channel.name(), "No topic is set");
       } else {
-        Replies.send(
-            session, serverName.get(), NumericReply.RPL_TOPIC, channel.name(), topic.text());
+        Replies.sendFitted(
+            session,
+            serverName.get(),
+            NumericReply.RPL_TOPIC,
+            List.of(channel.name()),
+            topic.text());
         Replies.send(
             session,
             serverName.get(),
