@@ -291,13 +291,13 @@ public final class ConfigurationLoader {
       String serverName, int nicknameMaxLength, int channelNameMaxLength)
       throws ConfigurationException {
     int serverBytes = MessageSerializer.utf8Bytes(serverName);
-    int namesBytes = serverBytes + 2 * nicknameMaxLength + channelNameMaxLength + 14;
+    int namesBytes = serverBytes + 2 * nicknameMaxLength + channelNameMaxLength + 15;
     int endBytes = serverBytes + nicknameMaxLength + channelNameMaxLength + 29;
     int maximum = MessageSerializer.MAX_COMMAND_BYTES;
     if (namesBytes > maximum || endBytes > maximum) {
       int channelBudget =
           Math.min(
-              maximum - serverBytes - 2 * nicknameMaxLength - 14,
+              maximum - serverBytes - 2 * nicknameMaxLength - 15,
               maximum - serverBytes - nicknameMaxLength - 29);
       throw new ConfigurationException(
           "serverName (S="

@@ -36,6 +36,7 @@ import net.jircd.core.session.SessionWriter;
 import net.jircd.core.session.TagRenderer;
 import net.jircd.core.session.WhowasEntry;
 import net.jircd.core.session.WhowasHistory;
+import net.jircd.protocol.CapabilityName;
 import net.jircd.protocol.MessageParser;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -141,6 +142,10 @@ class HostmaskReplyFitTest {
     assertThat(nicknames.claim(asker.nickname(), asker)).isTrue();
     channels.join(channelName, owner, ignored -> true);
     channels.join(channelName, asker, ignored -> true);
+    // The widest 352 flags are away, operator, @ and + : the owner is voiced as well as the first
+    // joiner, and the asker negotiated multi-prefix.
+    channels.lookup(channelName).orElseThrow().grantVoice(owner);
+    asker.replaceNegotiatedCapabilities(List.of(CapabilityName.MULTI_PREFIX));
     String presentedHost = "h".repeat(ServerConfiguration.PRESENTED_HOST_MAX_BYTES);
     WhowasHistory history = new WhowasHistory(() -> 10);
     history.record(

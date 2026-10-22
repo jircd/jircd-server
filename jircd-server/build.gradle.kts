@@ -20,6 +20,7 @@ dependencies {
     runtimeOnly(project(":jircd-capabilities:echo-message"))
     runtimeOnly(project(":jircd-capabilities:away-notify"))
     runtimeOnly(project(":jircd-capabilities:batch"))
+    runtimeOnly(project(":jircd-capabilities:multi-prefix"))
     runtimeOnly(project(":jircd-server-extensions:cloak"))
     runtimeOnly(project(":jircd-server-extensions:admin"))
 }

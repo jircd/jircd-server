@@ -185,9 +185,10 @@ defined, the same class of gap the nickname/channel grammars closed for
 - `CAP` negotiation MUST be usable before `NICK`/`USER` completes
   registration (FR-006), and registration MUST still succeed for clients
   that skip `CAP` entirely (FR-008).
-- Only `message-tags`, `server-time`, and `echo-message` may appear in the
-  `CAP LS` response for this release (FR-025); the SASL capability
-  referenced in the spec is deferred with Story 3 and MUST NOT appear.
+- Only `message-tags`, `server-time`, `echo-message`, `away-notify`, `batch`
+  and `multi-prefix` may appear in the `CAP LS` response (FR-025, extended by
+  011-away-notify-batch and issue #96); the SASL capability referenced in the
+  spec is deferred with Story 3 and MUST NOT appear.
 - `message-tags` itself now contributes one tag unconditionally: `msgid`,
   a server-generated unique identifier present on every message relayed
   to a recipient that has negotiated `message-tags` at all, regardless
@@ -310,9 +311,19 @@ was previously missing and needed its own definition (FR-048).
   correctly enforced server-side: a client showing no visual difference
   between a voiced and a non-voiced member defeats the point of granting
   voice at all. A member who is both an operator and voiced is prefixed
-  `@` only, matching standard client expectations (operator implies the
+  `@` only for a requester that has not negotiated `multi-prefix` (below),
+  matching standard client expectations (operator implies the
   ability to speak; the `+` prefix communicates *additional* information
   a plain `@` doesn't).
+- **`multi-prefix`** (issue #96): to a requester that has negotiated it, `353`
+  lists every status the member holds, in ISUPPORT `PREFIX` order (`@` before
+  `+`), so an operator who is also voiced is `@+nick`, and `352`'s `<status>`
+  flags likewise end in `@+` (`H@+`, `G*@+`). A requester without it gets
+  today's single highest prefix (`@nick`, `H@`). The choice follows the client
+  receiving the reply, never the member listed, and applies to `NAMES`
+  (targeted and bare), the `353` sent on `JOIN`/`SAJOIN`, and the
+  channel-scoped `WHO`. Core behavior gated on the capability id; the
+  `jircd-capabilities/multi-prefix` module only registers the capability.
 
 ### User Queries (Story 7)
 

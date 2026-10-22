@@ -79,7 +79,7 @@ during that window.
 | `352` | `RPL_WHOREPLY` | `WHO`, one per (visible) matching user (FR-061) | FR-061 |
 | `315` | `RPL_ENDOFWHO` | End of a `WHO` reply, including a zero-match one (FR-061) | FR-061 |
 | `221` | `RPL_UMODEIS` | `MODE <nickname>` self-query with no mode string (FR-044) | FR-044 |
-| `353` | `RPL_NAMREPLY` | `JOIN`, `NAMES` — nicknames prefixed `@` (operator) or `+` (voiced, non-operator) per irc-protocol-commands.md "Channel Operations" | FR-003, FR-041, FR-045, FR-046 |
+| `353` | `RPL_NAMREPLY` | `JOIN`, `NAMES` — nicknames prefixed `@` (operator) or `+` (voiced, non-operator), both (`@+`) for a `multi-prefix` requester, per irc-protocol-commands.md "Channel Operations" | FR-003, FR-041, FR-045, FR-046 |
 | `366` | `RPL_ENDOFNAMES` | `JOIN`, `NAMES` | FR-003, FR-041 |
 | `381` | `RPL_YOUREOPER` | Successful `OPER` | FR-034 |
 | `382` | `RPL_REHASHING` | Successful `REHASH` | FR-011, FR-012 (research.md "Configuration reload mechanism") |

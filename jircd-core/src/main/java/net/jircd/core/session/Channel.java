@@ -24,6 +24,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 import net.jircd.protocol.NickMask;
@@ -42,8 +43,9 @@ import net.jircd.protocol.NickMask;
  * active; setting one clears the other in the same step. C-3: at most {@link #MAX_BANS} entries per
  * mask list, with unique masks under RFC1459 case folding. C-4: the first member added to an empty
  * channel becomes an operator. C-5: {@link #memberListing} is a weakly consistent traversal taken
- * without the monitor. It never lists a session twice but is not a snapshot of one instant, and a
- * prefix may come from two separate reads of the operator and voice sets.
+ * without the monitor. It never lists a session twice but is not a snapshot of one instant. Each
+ * member's prefix, however, comes from one consistent view of the operator and voice sets (see
+ * {@link #statusPrefixes}), so it never shows a status combination the member did not hold.
  *
  * <p>The collection accessors return unmodifiable views. Membership changes arrive only through
  * {@link ChannelRegistry} transitions.
@@ -60,6 +62,13 @@ public final class Channel {
   private final Set<ClientSession> operatorsView = Collections.unmodifiableSet(operators);
   private final Set<ClientSession> voiced = ConcurrentHashMap.newKeySet();
   private final Set<ClientSession> voicedView = Collections.unmodifiableSet(voiced);
+
+  /**
+   * Odd while a privilege update is in progress; changes with every update. Written under the
+   * monitor.
+   */
+  private final AtomicLong privilegeVersion = new AtomicLong();
+
   private final Set<ChannelMode> activeModes = ConcurrentHashMap.newKeySet();
   private final Set<ChannelMode> activeModesView = Collections.unmodifiableSet(activeModes);
   private final List<BanEntry> bans = new CopyOnWriteArrayList<>();
@@ -103,21 +112,50 @@ public final class Channel {
    * concurrent sets without this monitor, so a NAMES reply on a large channel never delays a
    * transition waiting for it while holding the registry monitor. The traversal never visits a
    * session twice, but it is not a snapshot of one instant: concurrent joins and departures may or
-   * may not appear, and each prefix comes from two separate reads, so a concurrent privilege change
-   * can yield a prefix the member never held.
+   * may not appear. A member's prefix is read consistently, as in {@link #statusPrefixes}.
    */
   public List<String> memberListing() {
+    return memberListing(false);
+  }
+
+  /**
+   * As {@link #memberListing()}, but with {@code multiPrefix} every status the member holds is
+   * listed, in {@code PREFIX} order ({@code @} before {@code +}), as {@code multi-prefix} requires.
+   * The flag describes the client receiving the listing, not the members listed.
+   */
+  public List<String> memberListing(boolean multiPrefix) {
     List<String> listing = new ArrayList<>();
     for (ClientSession member : members) {
-      String status = "";
-      if (operators.contains(member)) {
-        status = "@";
-      } else if (voiced.contains(member)) {
-        status = "+";
-      }
-      listing.add(status + member.nickname());
+      listing.add(statusPrefixes(member, multiPrefix) + member.nickname());
     }
     return listing;
+  }
+
+  /**
+   * The status symbols a member holds, highest first: {@code @} for operator, {@code +} for voice.
+   * Without {@code multiPrefix} only the highest is returned. Both sets are read as one view
+   * without taking the monitor, so a listing never waits for a transition: every privilege update
+   * (made under the monitor) brackets itself with {@code privilegeVersion} changes, and the read
+   * retries when an update was in progress or finished meanwhile. A concurrent "-o then +v" can
+   * therefore never render {@code @+} for a member who never held both. An update only adds to or
+   * removes from the sets, so the retry wait is short and never calls out to a session.
+   */
+  public String statusPrefixes(ClientSession member, boolean multiPrefix) {
+    boolean operator;
+    boolean voice;
+    while (true) {
+      long before = privilegeVersion.get();
+      operator = operators.contains(member);
+      voice = voiced.contains(member);
+      if ((before & 1) == 0 && privilegeVersion.get() == before) {
+        break;
+      }
+      Thread.onSpinWait();
+    }
+    if (operator) {
+      return multiPrefix && voice ? "@+" : "@";
+    }
+    return voice ? "+" : "";
   }
 
   public Set<ClientSession> operators() {
@@ -252,11 +290,7 @@ public final class Channel {
           case OPERATOR -> operators;
           case VOICE -> voiced;
         };
-    if (granted) {
-      holders.add(member);
-    } else {
-      holders.remove(member);
-    }
+    updateHolders(holders, member, granted);
     return true;
   }
 
@@ -265,13 +299,13 @@ public final class Channel {
     if (!members.contains(member)) {
       return false;
     }
-    operators.add(member);
+    updateHolders(operators, member, true);
     return true;
   }
 
   /** Removes operator status, returning whether it was present. */
   public synchronized boolean revokeOperator(ClientSession member) {
-    return operators.remove(member);
+    return updateHolders(operators, member, false);
   }
 
   /** Grants voice to a current member; returns false only for a non-member. */
@@ -279,13 +313,13 @@ public final class Channel {
     if (!members.contains(member)) {
       return false;
     }
-    voiced.add(member);
+    updateHolders(voiced, member, true);
     return true;
   }
 
   /** Removes voice, returning whether it was present. */
   public synchronized boolean revokeVoice(ClientSession member) {
-    return voiced.remove(member);
+    return updateHolders(voiced, member, false);
   }
 
   /** Activates a mode, clearing PRIVATE for SECRET and SECRET for PRIVATE in the same step. */
@@ -355,7 +389,7 @@ public final class Channel {
     boolean wasEmpty = members.isEmpty();
     members.add(session);
     if (wasEmpty) {
-      operators.add(session);
+      updateHolders(operators, session, true);
     }
     return wasEmpty;
   }
@@ -363,8 +397,23 @@ public final class Channel {
   /** Removes a departing session from membership, operator, and voice state together. */
   synchronized void removeMember(ClientSession session) {
     members.remove(session);
-    operators.remove(session);
-    voiced.remove(session);
+    privilegeVersion.incrementAndGet();
+    try {
+      operators.remove(session);
+      voiced.remove(session);
+    } finally {
+      privilegeVersion.incrementAndGet();
+    }
+  }
+
+  /** Adds to or removes from a privilege set, bracketed for {@link #statusPrefixes}' retry. */
+  private boolean updateHolders(Set<ClientSession> holders, ClientSession member, boolean add) {
+    privilegeVersion.incrementAndGet();
+    try {
+      return add ? holders.add(member) : holders.remove(member);
+    } finally {
+      privilegeVersion.incrementAndGet();
+    }
   }
 
   /**

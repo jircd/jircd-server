@@ -26,6 +26,7 @@ import net.jircd.core.session.ClientSession;
 import net.jircd.core.session.CoreChannelModes;
 import net.jircd.core.session.PresentedIdentity;
 import net.jircd.core.session.Recipients;
+import net.jircd.protocol.CapabilityName;
 import net.jircd.protocol.ChannelName;
 import net.jircd.protocol.Command;
 import net.jircd.protocol.Hostmask;
@@ -215,7 +216,7 @@ public final class JoinCommandHandler implements CommandHandler {
   }
 
   public static void sendNamesReply(ClientSession requester, Channel channel, String serverName) {
-    sendNamesReply(requester, channel, serverName, channel.memberListing());
+    sendNamesReply(requester, channel, serverName, listingFor(requester, channel));
   }
 
   /** Sends a membership snapshot captured by a join transition, followed by its closing numeric. */
@@ -237,7 +238,13 @@ public final class JoinCommandHandler implements CommandHandler {
    * of its own afterward, instead of one per channel.
    */
   public static void sendNamesLine(ClientSession requester, Channel channel, String serverName) {
-    sendNamesLine(requester, channel, serverName, channel.memberListing());
+    sendNamesLine(requester, channel, serverName, listingFor(requester, channel));
+  }
+
+  /** The listing in the form the requester negotiated: every prefix with {@code multi-prefix}. */
+  private static List<String> listingFor(ClientSession requester, Channel channel) {
+    return channel.memberListing(
+        requester.negotiatedCapabilities().contains(CapabilityName.MULTI_PREFIX));
   }
 
   private static void sendNamesLine(
