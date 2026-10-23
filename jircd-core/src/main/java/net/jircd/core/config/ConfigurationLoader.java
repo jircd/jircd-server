@@ -28,6 +28,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Supplier;
+import net.jircd.core.extension.capability.ReplyBudgetCatalog;
 import net.jircd.protocol.MessageSerializer;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.error.MarkedYAMLException;
@@ -48,10 +50,36 @@ public final class ConfigurationLoader {
 
   private final Set<String> knownCapabilityIds;
   private final Set<String> knownServerExtensionIds;
+  private final Supplier<ReplyBudgetCatalog> discoveredReplyCatalog;
 
   public ConfigurationLoader(Set<String> knownCapabilityIds, Set<String> knownServerExtensionIds) {
+    this(knownCapabilityIds, knownServerExtensionIds, ReplyBudgetCatalog::empty);
+  }
+
+  /**
+   * {@code discoveredReplyCatalog} supplies the reply decorations every installed provider could
+   * apply, so startup and reload reserve them whether or not the provider is enabled now.
+   */
+  public ConfigurationLoader(
+      Set<String> knownCapabilityIds,
+      Set<String> knownServerExtensionIds,
+      Supplier<ReplyBudgetCatalog> discoveredReplyCatalog) {
     this.knownCapabilityIds = knownCapabilityIds;
     this.knownServerExtensionIds = knownServerExtensionIds;
+    this.discoveredReplyCatalog = discoveredReplyCatalog;
+  }
+
+  /**
+   * Checks the reply budgets against the running server prefix and the widths of every installed
+   * provider. Startup, reload and runtime enable all use this same bound arithmetic.
+   */
+  public void checkReplyBudgets(String serverName, int nicknameMaxLength, int channelNameMaxLength)
+      throws ConfigurationException {
+    validateReplyBudgets(
+        serverName,
+        nicknameMaxLength,
+        channelNameMaxLength,
+        ReplyBudgetCatalog.legacyCompatible().plus(discoveredReplyCatalog.get()));
   }
 
   public ServerConfiguration load(InputStream yamlInput) throws ConfigurationException {
@@ -87,7 +115,7 @@ public final class ConfigurationLoader {
             "channelNameMaxLength",
             ServerConfiguration.DEFAULT_CHANNEL_NAME_MAX_LENGTH,
             ServerConfiguration.LENGTH_CEILING);
-    validateReplyBudgets(serverName, nicknameMaxLength, channelNameMaxLength);
+    checkReplyBudgets(serverName, nicknameMaxLength, channelNameMaxLength);
 
     int topicMaxLength =
         positiveIntWithinCeiling(
@@ -242,8 +270,18 @@ public final class ConfigurationLoader {
   static void validateReplyBudgets(
       String serverName, int nicknameMaxLength, int channelNameMaxLength)
       throws ConfigurationException {
-    validateNamesBudget(serverName, nicknameMaxLength, channelNameMaxLength);
-    validateHostmaskBudget(serverName, nicknameMaxLength, channelNameMaxLength);
+    validateReplyBudgets(
+        serverName, nicknameMaxLength, channelNameMaxLength, ReplyBudgetCatalog.legacyCompatible());
+  }
+
+  static void validateReplyBudgets(
+      String serverName,
+      int nicknameMaxLength,
+      int channelNameMaxLength,
+      ReplyBudgetCatalog catalog)
+      throws ConfigurationException {
+    validateNamesBudget(serverName, nicknameMaxLength, channelNameMaxLength, catalog);
+    validateHostmaskBudget(serverName, nicknameMaxLength, channelNameMaxLength, catalog);
   }
 
   /**
@@ -253,9 +291,20 @@ public final class ConfigurationLoader {
   static void validateHostmaskBudget(
       String serverName, int nicknameMaxLength, int channelNameMaxLength)
       throws ConfigurationException {
+    validateHostmaskBudget(
+        serverName, nicknameMaxLength, channelNameMaxLength, ReplyBudgetCatalog.legacyCompatible());
+  }
+
+  static void validateHostmaskBudget(
+      String serverName,
+      int nicknameMaxLength,
+      int channelNameMaxLength,
+      ReplyBudgetCatalog catalog)
+      throws ConfigurationException {
     int serverBytes = MessageSerializer.utf8Bytes(serverName);
     Map<String, Integer> worst =
-        HostmaskReplyBudget.worstCaseBytes(serverBytes, nicknameMaxLength, channelNameMaxLength);
+        HostmaskReplyBudget.worstCaseBytes(
+            serverBytes, nicknameMaxLength, channelNameMaxLength, catalog);
     int maximum = MessageSerializer.MAX_COMMAND_BYTES;
     if (worst.values().stream().noneMatch(bytes -> bytes > maximum)) {
       return;
@@ -290,15 +339,29 @@ public final class ConfigurationLoader {
   static void validateNamesBudget(
       String serverName, int nicknameMaxLength, int channelNameMaxLength)
       throws ConfigurationException {
+    validateNamesBudget(
+        serverName, nicknameMaxLength, channelNameMaxLength, ReplyBudgetCatalog.legacyCompatible());
+  }
+
+  static void validateNamesBudget(
+      String serverName,
+      int nicknameMaxLength,
+      int channelNameMaxLength,
+      ReplyBudgetCatalog catalog)
+      throws ConfigurationException {
     int serverBytes = MessageSerializer.utf8Bytes(serverName);
-    int namesBytes = serverBytes + 2 * nicknameMaxLength + channelNameMaxLength + 15;
-    int endBytes = serverBytes + nicknameMaxLength + channelNameMaxLength + 29;
+    Map<String, Integer> names =
+        HostmaskReplyBudget.namesWorstCaseBytes(
+            serverBytes, nicknameMaxLength, channelNameMaxLength, catalog);
+    int namesBytes = names.get("353");
+    int endBytes = names.get("366");
     int maximum = MessageSerializer.MAX_COMMAND_BYTES;
     if (namesBytes > maximum || endBytes > maximum) {
+      // Both numerics grow one byte per channel byte, so the channel budget is what is left.
       int channelBudget =
           Math.min(
-              maximum - serverBytes - 2 * nicknameMaxLength - 15,
-              maximum - serverBytes - nicknameMaxLength - 29);
+              maximum - (namesBytes - channelNameMaxLength),
+              maximum - (endBytes - channelNameMaxLength));
       throw new ConfigurationException(
           "serverName (S="
               + serverBytes

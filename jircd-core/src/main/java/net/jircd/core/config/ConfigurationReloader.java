@@ -72,7 +72,7 @@ public final class ConfigurationReloader {
     try (InputStream in = new FileInputStream(configPath.toFile())) {
       reloaded = loader.load(in);
     }
-    ConfigurationLoader.validateReplyBudgets(
+    loader.checkReplyBudgets(
         runningServerName, reloaded.nicknameMaxLength(), reloaded.channelNameMaxLength());
     reconcile(reloaded);
     this.current = reloaded;

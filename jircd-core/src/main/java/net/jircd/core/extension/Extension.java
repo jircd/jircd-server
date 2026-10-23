@@ -29,6 +29,10 @@ public interface Extension {
 
   String id();
 
+  /**
+   * Prepares resources. If this throws, {@link #stop()} is still called so whatever was acquired
+   * before the failure is released; {@code stop} must therefore tolerate a partial start.
+   */
   void start(ServerContext context);
 
   void stop();

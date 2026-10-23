@@ -1,0 +1,135 @@
+# Integration fixture hashes (T003)
+
+Scope check for #100: `jircd-integration-tests/src/test` is **unchanged** — `git diff HEAD -- jircd-integration-tests` is empty at the time of recording, and `git status --short jircd-integration-tests` lists nothing.
+
+- Files: 117 under `jircd-integration-tests/src/test`
+- sha256 of the listing below (`shasum -a 256` over the sorted `shasum -a 256` output): `ba2b56c66a7acd6bcd833be0a4ae0c50e07f837871c593133713932d85b8b474`
+- #101 must reproduce this listing exactly. #97 may change only the CAP LS / provider-absence expectations that the advertised core `cap-notify` deliberately affects; record that diff narrowly then.
+
+## Design files included in this PR (10)
+
+All ten reviewed design files under `specs/014-capability-plugin-spi/` are already on this branch in commit `0d070b1` (this PR's base):
+
+`spec.md`, `plan.md`, `research.md`, `data-model.md`, `quickstart.md`, `tasks.md`, `checklists/requirements.md`, `contracts/capability-spi.md`, `contracts/runtime-lifecycle.md`, `contracts/reply-budgets.md`.
+
+## Hashes (`sha256  path-relative-to-jircd-integration-tests/src/test`)
+
+```
+8616c67cd07c44c267bc585e030b2fce4a5c578722bbcbe7a554a1354244f7ff  ./java/net/jircd/core/session/SessionWriterTestAccess.java
+e3e96d043c016a986a9dbff46b194429c341a5685476efc7e59d9b466cbe5b4c  ./java/net/jircd/integration/AdminArgon2CredentialTest.java
+8f26d87a74836399ae73390adb015244759d3ccf332a2d762ebe00d4bd7463da  ./java/net/jircd/integration/AwayNotifyTest.java
+f80792970a04b21579c5aab306c7b0f8e892d55a9901fa1b117fa52bd101bf43  ./java/net/jircd/integration/AwayStatusTest.java
+17af7df62218ff1d68a27b183af346eca185570f44c07b382b9b4f0ea71e6b29  ./java/net/jircd/integration/BareNamesTest.java
+6310712f4d58f0319c68331ff8411074f827236840d6a0726aaa0644d10a179b  ./java/net/jircd/integration/CapReqAtomicityTest.java
+520eeb81d98e61bbbe0bfb0c1e3d48f61c94189aff1ac3f858cd89661af188ce  ./java/net/jircd/integration/ChannelCapacityModesTest.java
+222e6027bf52de10d03af1c8907927604a7a1fa3eddd15d0b08c42c5055b2bec  ./java/net/jircd/integration/ChannelMembershipGrammarTest.java
+351196deef59cb75e195e19c1fecc6b2e0889a99e884efa15021c4d28381c305  ./java/net/jircd/integration/ChannelModeIsTest.java
+b47db856aa6979b04c87296bbbb458c3b8432f3a1df06df1e59244d72ff165bc  ./java/net/jircd/integration/ConcurrentConnectionScaleLoadTest.java
+a82b9de158d35e583648b64b44d241c37b7d3f8167f364ea52103401a160ca6d  ./java/net/jircd/integration/ConnectionAdmissionLoggingTest.java
+a2f5c176c1024ac1ab2e3340fbd65587ad67848ea9b12a42c5957a2572262f5a  ./java/net/jircd/integration/ConnectionAndCapPrecisionTest.java
+f6c5340e91ecbfdffae7c12186ef8d118c3495e884a42e89be07e3316c06d2ca  ./java/net/jircd/integration/ConnectionLimitsTest.java
+3bc50bfaa95347cd025457dcd4604cf678f866fdd4dc91c3579ceef217475fdd  ./java/net/jircd/integration/ConnectionMonitorLogTest.java
+ead420dbdf908dc2ea92d87ad345e604299be7e4f27235776a72f6655baa724e  ./java/net/jircd/integration/ConnectionSmokeTest.java
+a966f6bdf54e82bc283028aa7ff70a33cb52650c9767c5f4d4800d84cc7202c2  ./java/net/jircd/integration/ConnectionTokenOpacityTest.java
+9c0e9f64effedbe98d65de97c64e05cfbd266947cf8ab58df2750e7045c87dd5  ./java/net/jircd/integration/DepartureRecipientsTest.java
+2094ff1da07a4d039f67d49d6f7c1563b20e9f9ba480b5464050767903ab7e4b  ./java/net/jircd/integration/DirectMessageGuaranteesTest.java
+534993cde34565957ea90156d18ff109c3d1962875c8f813d574fe9b74c81c5a  ./java/net/jircd/integration/ExceptionModesLoadTest.java
+bb9df2293d707695e6f1c49c61cb811860f2414bb502efb7c32cd7d5612e48e9  ./java/net/jircd/integration/ExceptionModesTest.java
+0c8397eaff91dab6f28f6e3b025b2e8cb6dc90ba4b5bc99f6ec1e6311539d4f1  ./java/net/jircd/integration/InformationalCommandsTest.java
+30e471de53e99e15ed9de8888da0fc1ce33dbb8a36d11e0a43848b888dc14124  ./java/net/jircd/integration/InformationQueryCompletenessTest.java
+548a0543a847dcd77276c90711351ccac79d79d4f996b655e01baa07c7907e04  ./java/net/jircd/integration/InviteNotYetExistingChannelTest.java
+818b61217717b6181dd2a48f9b431f8480e5905b8a468cf743d2a844bbd72177  ./java/net/jircd/integration/IrctestConformanceFixesTest.java
+6b2bbdd62e23dfa69951b9e5b8042a6be11ad956c2d5c71734ce7797d5d3267b  ./java/net/jircd/integration/JoinStormLoadTest.java
+4cadfd04a1d2923392e204e01fcf2c28f96cc535b2abaa8ce7ced829ea33e940  ./java/net/jircd/integration/JoinStormSupportTest.java
+99076f4d42821efc5ba62b36f42e02645a9c44332c9159c0c815ec26b3e1a4a3  ./java/net/jircd/integration/KeepAliveLoadTest.java
+4b2f8da33bb565bf18c8222aa76666eac3ccba44e06bb9791b44901eb0179cab  ./java/net/jircd/integration/KillCommandTest.java
+6d4e8377d0301c820458faf96e361178958f41e1e7d30a6dcae5a203f7887a5f  ./java/net/jircd/integration/LineLengthLimitTest.java
+52f7656c640f8f563f1b96a0e2527e71bde5b8370b77e818dc1eae454196b176  ./java/net/jircd/integration/ListenerLifecycleTest.java
+36c276322e3d0d35c3355c8681031cd845e375020500a7bd0d023a7c5c53a972  ./java/net/jircd/integration/LogCapture.java
+e85603376c116cc601c637ffa69b0d941bfb991f61d6251954d41b29b100c404  ./java/net/jircd/integration/LoopbackBindingTest.java
+ee85bdfab5a57283372782d699cc0dcb5fffc560ab2a87656f8e13825e47ca7a  ./java/net/jircd/integration/LusersCompletenessTest.java
+6394bfeb5afe7d274380590a22b7d578de8b617290c735301a189a35f0309d5b  ./java/net/jircd/integration/LusersUserCountsTest.java
+46b8edf7dc0feb41b1d10314ad67fe3e71eb4897af8546806d893344a9951a86  ./java/net/jircd/integration/ModeFanoutTest.java
+b68b3dad6ea20e389040c4020b607d15100129b755ce6027e19a5757a462620a  ./java/net/jircd/integration/MultiPrefixTest.java
+0c8f334a81c6b7b38e20581d8f1026e14a161d6a6a4686ba6d27d86d54cdd9ee  ./java/net/jircd/integration/NamesByteBudgetTest.java
+f3bca9c6551c6fc51117da9b8be9e6456f92fb49241493f1f2a39ac3d2f9a81b  ./java/net/jircd/integration/NickBroadcastTest.java
+f25bcab26d10bbb6c234b7bf432e309427123f2b065a0065143aca887427bc4d  ./java/net/jircd/integration/OperSelfNotificationTest.java
+b40d75311c0f9a7810e42cba30446b01cab03792a2ca4f7680741c98af989b5b  ./java/net/jircd/integration/OutboundByteBudgetTest.java
+9314d0f0792aa5e1d814f9a8129170940a152d06ec77c98926adc45ecc7f4c5e  ./java/net/jircd/integration/PingPongTest.java
+c46bc908c73353c5e480b030a95ad33784a9a40c20fb99e6b344fa3276288e10  ./java/net/jircd/integration/PingTokenConsistencyTest.java
+4e17cf2c9505e6fd56bf1215128748a38d87882f3badbe199c4487bdc33e64d3  ./java/net/jircd/integration/QuitNeighborsTest.java
+935aa80dbf0dd33dfdccafd4c4639d4c50d6a95e7ec5840cf6fe889f960ddcd0  ./java/net/jircd/integration/RateLimitConfigTest.java
+16e4b9d8b9dca7f55dd9641937d715f4fead68fd6ae45c4ade10814613e4b9c6  ./java/net/jircd/integration/RateLimitLoadTest.java
+73cf22fd5779a2fd49bab559b184de040995d43e3aed43bce8efe075d3254747  ./java/net/jircd/integration/RawIrcClient.java
+75d32ba097d0732312e3a19934241a316857702b2d12b7e8c173a10d32665db1  ./java/net/jircd/integration/RegistrationTimeoutTest.java
+a9b45a17b90387c98554d2b5b67e5f5d4d818c0b079828af87804fb6600aad0a  ./java/net/jircd/integration/RepeatedJoinTest.java
+5824a1904b6c53ec0cae3b6d6d376fe196d10271127518a34574af28339ae73c  ./java/net/jircd/integration/ReplyBudgetReloadTest.java
+3e05f90f90428d08f77201d977a62042e86b307f6ba244e5d820a74833ed4352  ./java/net/jircd/integration/SajoinRepeatTest.java
+8b1ac5ecebd3f122a26eb198e56d89fc6d72c0091f2baa69921bc3a6858786fb  ./java/net/jircd/integration/SendqOverflowTest.java
+7f0b09717194a5c3e7b133cfd59eeb2d1d3a603c4463de8022525e9d02f43527  ./java/net/jircd/integration/ServerInfoQueriesTest.java
+681112f3d10bf3940a1d9003989d405e8879ab65aeae6b4da69546186300dce0  ./java/net/jircd/integration/SingleWaveJoinStormLoadTest.java
+c249fde8ca14ca03c4988985617f6d6ed0416f60388f7835838c82efb6d2799a  ./java/net/jircd/integration/Story1ChatTest.java
+42837abce8aaef05cc8fc6a478cb4255a09c62b8d2859563ccd03cf07e56b21d  ./java/net/jircd/integration/Story1DeliveryLatencyLoadTest.java
+ac357d4d4361340667e3f98d3f50e85b51d8b0213a61f9008738684f9f40f724  ./java/net/jircd/integration/Story1DisconnectCleanupTest.java
+12414502ded3aaffdb626d036ae9a21c80fa3c9b4837eed68ae51865de0d84de  ./java/net/jircd/integration/Story1ListTest.java
+e67af08d73375a0851eae1ef859aaf629528dea067fd4e5ddcc3bc708926c975  ./java/net/jircd/integration/Story1NamesTest.java
+69aa80ee6949560edb4f211fa30d56b86094d40c200d034535fdd86ab0363621  ./java/net/jircd/integration/Story1NicknameRaceTest.java
+a2e4e09a9ccaa418d54ecca02d80ad197248928f1eda31ed5a696ed35cbec919  ./java/net/jircd/integration/Story1QuitBeforeRegistrationTest.java
+eb70351fea68a2d6d198c5143f79cd4b780239b319a1ce6002a77586281be10e  ./java/net/jircd/integration/Story1RegistrationBurstTest.java
+a40026e592372c7f89989b11fe8ca689334e7593dfa02993fb9cb021c0e42dc4  ./java/net/jircd/integration/Story1TopicTest.java
+5c0e27405668dddbcc030924410978f8fc8acaf87874eeb77889c1d91b4c5f69  ./java/net/jircd/integration/Story1UserModeTest.java
+c6a1117ddf5524e63c493a677f5ab62474831655b6868d3d03afdf20cfd7d21d  ./java/net/jircd/integration/Story1UserOneShotTest.java
+4d493a5819c3d5f592df433bccace87ab8b75f3faa47ed09f78534f51d033f47  ./java/net/jircd/integration/Story2CapabilityListTest.java
+e5c645b707f7506df603d76c6b089deae722564493d23c93177872f4a70b9a6b  ./java/net/jircd/integration/Story2MessageIdTest.java
+a625ec2145b82e28122c939c4bb864c060e2e5450a27e0a659ea6524156fd8d3  ./java/net/jircd/integration/Story2NegotiatedDeliveryTest.java
+c0062d768173697cca33230ed1e693afab7735391f78e36eb93b2b4de1a7a334  ./java/net/jircd/integration/Story4ConfigToggleTest.java
+4cfc43c7c672dcce33265f3d7eeb1e58c8bd8c4a719d922b810317e70baa48a2  ./java/net/jircd/integration/Story4InvalidConfigTest.java
+a6838e0cf19df7feb179e815df9942ef8d3316899e81138f454672078dee8b25  ./java/net/jircd/integration/Story4LengthLimitConfigTest.java
+ca4585fe1d2df7a70adab15496e6cc7e63439f7e86b582c13de55f4309d3bc25  ./java/net/jircd/integration/Story5AlwaysAvailableTest.java
+cd4a3ab12cc9680422495fb008e0f914c0d2878fb48cd6f76747bafa9dc1aa25  ./java/net/jircd/integration/Story5BanCapTest.java
+5c0bf020d83f14ab4192e231810f26d346b5425735851bdfd58465b27b0dfe95  ./java/net/jircd/integration/Story5BanJoinTest.java
+4c6101fb22b639f060ae80b4597f9307cbd2a4f9894d510982adb0c394056514  ./java/net/jircd/integration/Story5BanListTest.java
+e141f5578d0f63de97943cd02b96d677e30f4bc970d5f4fa2cdbfd670e9925d1  ./java/net/jircd/integration/Story5BanMuteTest.java
+244de48a6287fcf713e092f86c757188faa3bbdb52dc4c4058fef75728442d93  ./java/net/jircd/integration/Story5BanRealHostnameTest.java
+753bcaf44ba1470eef4b3dafb81b2eea82a980c5686b534ee1a6ed45dbf77272  ./java/net/jircd/integration/Story5InviteTest.java
+ad5ff65d667f44cffe9b462f13d65399448e6e8fe3228343742c53a753d97426  ./java/net/jircd/integration/Story5KickPermissionTest.java
+14113f4d87a2abbc718b8d195c9d687e2927f16ed7ebb4ae039eaddcf03923b5  ./java/net/jircd/integration/Story5KickTest.java
+bdf56d347148206fe4054f2ff0cb659ccc86b01b52affa4c566f065445655d82  ./java/net/jircd/integration/Story5ModeCapConfigTest.java
+84f21311da19287d3e74bb80f8f22faf470449fea5410d0cbc80efec9e5f2b37  ./java/net/jircd/integration/Story5ModeGroupingTest.java
+55380a6374cb3aaa1f60074bed8712bb8eb47333cd64797cc0c2d45c2cd1c957  ./java/net/jircd/integration/Story5ModeRestrictionTest.java
+14690e226b40c1895146e88b0cf5b35431549f343ea221884bbe07ae39a7c562  ./java/net/jircd/integration/Story5NamesPrefixTest.java
+c449c75ac934dde3b9695c3c228cc38e419a6db9dcf12d8534bc020f2cd709c3  ./java/net/jircd/integration/Story5OperatorGrantTest.java
+759d360d52f3da74471fb4561f00efda67cdcce20826391d37c0ea0f35ba5dcd  ./java/net/jircd/integration/Story5PrivacyTest.java
+a2a071f6bf7513806a2007b1d4584bfcde2ef8e6e9f81b0ebad53e1cef846f43  ./java/net/jircd/integration/Story5VoiceTest.java
+3a22ae8b488b8f126e75b045282d64b4108a4efe813c1ee6c90de3881d354b5e  ./java/net/jircd/integration/Story6ExtensionToggleTest.java
+9cb3e576ef284848c53a42f76ca99511dab99ca73b924c510cac8128dcced198  ./java/net/jircd/integration/Story6NonToggleableRejectionTest.java
+8731cd9c3dcdaf069d752a143c066838a865ec6c6645f94ef16b62b94e986054  ./java/net/jircd/integration/Story6OperTest.java
+ca1aa187dec4d590be6e74a6b0d78160646e0fbe3a7d024cb3508c4b0e30a45a  ./java/net/jircd/integration/Story6OperUserModeTest.java
+35e97d2c5e0858bb56bd79ed6df229a6081c058806ab7198fa58148113d814bb  ./java/net/jircd/integration/Story6PrivilegeGateTest.java
+3e523d8f67c77c726cbe59e6472ee421999d13afb8581e01a09aef59bab142ce  ./java/net/jircd/integration/Story6RehashTest.java
+aae856fb4897f72075e023e522ba5a33195b6a885fdabfea1594c6348f22ab89  ./java/net/jircd/integration/Story6SajoinTest.java
+df1465cb58eac9270908488d33129405bbe354575f840e6f2e9b9d80a6a9da8a  ./java/net/jircd/integration/Story6SamodeTest.java
+098e71f1eaf9658a495767bbc37bdb36e453dbdce9128952e46801e17d0564cf  ./java/net/jircd/integration/Story6SelfLockoutTest.java
+0f6854ef8ed6150a52f952a70dbb987fa1ae7b51d4f5fc75d5067d4488124235  ./java/net/jircd/integration/Story6WhohostTest.java
+f7f4a42d48fd52b9ea9e10683b74cc13ea23e97d24a0308925af6af70bcc4e25  ./java/net/jircd/integration/Story7AdminLookupTest.java
+c09dbca373cb2f08bdb586bd1271be93409d591aa498776a509819385874887e  ./java/net/jircd/integration/Story7NoSuchNickTest.java
+3b2fb281b25c2c53a4c5ccdbb473af50a17fcd22dec09ff516ed5f491f2f8612  ./java/net/jircd/integration/Story7RegularLookupTest.java
+938ef18659d32b2ce884cfda52b888b2a633b07719618c23fe0c8449aa11c0c9  ./java/net/jircd/integration/Story7SelfLookupTest.java
+95b8a62019a0922258706d8a8ef61371258db7f978c3b71c051f4dcd850317f5  ./java/net/jircd/integration/Story7WhoChannelTest.java
+007de646e2248ec6951678badd5900969807b8a01bcaa1ac6d98aa8fa470cbbc  ./java/net/jircd/integration/Story7WhoInvisibleTest.java
+ef7480795bedc4137b0813f121f98dc70168bfa05f4c1f16970e4ba265727df5  ./java/net/jircd/integration/Story7WhoMaskConfigTest.java
+b7dc0096f2160bbcd6a4a4b8822c92eecd065f74034f502cc3c1461b0cd07a46  ./java/net/jircd/integration/TagmsgCommandTest.java
+c627b229b085fbfe14592ae261695a0a03aef3e60e4bf97d1ed935522eff969d  ./java/net/jircd/integration/TestServer.java
+03f07f4507839c653b8c90a5c5b61ac7e9d87799bad4b53e3d9e18491af6f749  ./java/net/jircd/integration/TlsCertificateConfigTest.java
+4aac311e3b29419d566f143b99939b5b35a3c1d0b6c2e1f1c8f57d256986f43b  ./java/net/jircd/integration/TopicLockTest.java
+5bf5a3dcbefaeee541898fee204ff3348da166a2221121112f3ebef2ff768b24  ./java/net/jircd/integration/TopicMetadataTest.java
+33223582e837b8856854f740299707825810964dd2d293e215dfdd55c620ce4d  ./java/net/jircd/integration/Utf8ValidationTest.java
+b64c73d155416fd20e9f505e91600a9d2dd88d44b58bde1026fa98bda87454e2  ./java/net/jircd/integration/WallopsCommandTest.java
+80bf79830526051b3c569d6c907ea6a8f6425c1c062b34c14030d16cc17b5eac  ./java/net/jircd/integration/WhowasCommandTest.java
+2478cb9b4b543ee75b62f06d56ba4b1dab5c61f89727c3f3bd62314d27d5e861  ./java/net/jircd/integration/WhowasCountTest.java
+9679f67d499bb1a2fc60608063f70adf35e0217bcf3d2a9b84f37a565d2fc069  ./java/net/jircd/server/JircdServerTestAccess.java
+f969e2178d546a41456501d52997b5e37955483176f3995aea1769018e6ac864  ./resources/tls/test-fullchain.pem
+18abaece94ef9e1f09d4175ea341fbc9944e7962d740fb4fc3ab20eafe09d7e5  ./resources/tls/test-keystore.p12
+0bb079e001856cababb75b1a38315bc0482e644113730f26d6c0db924ab72597  ./resources/tls/test-privkey-encrypted.pem
+ef2f5b4ec6093524999cf4c708ba2da79d869a1ffd09900070abe8f531a41519  ./resources/tls/test-privkey.pem
+```

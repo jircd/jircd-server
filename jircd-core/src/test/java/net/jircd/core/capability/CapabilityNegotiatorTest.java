@@ -16,6 +16,7 @@
 package net.jircd.core.capability;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.List;
 import net.jircd.core.extension.AbstractCapabilityExtension;
@@ -125,12 +126,14 @@ class CapabilityNegotiatorTest {
   }
 
   @Test
-  void twoExtensionsOfferingTheSameNameDoNotBreakRequests() {
+  void aSecondExtensionOfferingTheSameNameIsRejectedAndRequestsStillWork() {
     ExtensionRegistry registry = new ExtensionRegistry();
     registry.register(new DuplicateOffer("first"));
     registry.register(new DuplicateOffer("second"));
     registry.enable("first");
-    registry.enable("second");
+    assertThatThrownBy(() -> registry.enable("second"))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("shared");
     CapabilityNegotiator negotiator = new CapabilityNegotiator(registry);
     ClientSession session = new ClientSession("c1", "host.example", RateLimitBucket.withDefaults());
 

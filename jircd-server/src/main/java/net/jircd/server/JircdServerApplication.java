@@ -124,7 +124,10 @@ public final class JircdServerApplication {
             .map(net.jircd.core.extension.Extension::id)
             .collect(java.util.stream.Collectors.toSet());
     ConfigurationLoader loader =
-        new ConfigurationLoader(knownCapabilityIds, knownServerExtensionIds);
+        new ConfigurationLoader(
+            knownCapabilityIds,
+            knownServerExtensionIds,
+            extensionRegistry::discoveredReplyBudgetCatalog);
 
     try (InputStream in = new FileInputStream(configPath.toFile())) {
       this.configuration = loader.load(in);
@@ -167,7 +170,8 @@ public final class JircdServerApplication {
             () -> serverName,
             reloader,
             disconnectCleanup,
-            connectionHandler::registerHandler));
+            connectionHandler.commandRegistrar(),
+            extensionRegistry.capabilityServices()));
 
     enableConfiguredExtensions();
   }

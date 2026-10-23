@@ -18,10 +18,11 @@ package net.jircd.core.extension;
 import net.jircd.core.capability.Capability;
 
 /**
- * The {@code id}/{@code providedCapability}/{@code start}/{@code stop} boilerplate every Story 2
- * {@link CapabilityExtension} (message-tags, server-time, echo-message) shares — none of them need
- * {@link ServerContext} or hold any state, so a concrete extension only needs to override whichever
- * of {@link #contributeTags}/{@link #includeSenderInFanOut} applies to it.
+ * The {@code id}/{@code providedCapability} boilerplate every {@link CapabilityExtension} shares,
+ * with documented no-op lifecycle defaults: {@link #start} and {@link #stop} do nothing, because a
+ * provider that holds no resources has nothing to prepare or release. A migrated provider overrides
+ * {@link #register} to stage its typed hooks; a provider still on the temporary bridge overrides
+ * {@link #contributeTags}/{@link #includeSenderInFanOut} instead.
  */
 public abstract class AbstractCapabilityExtension implements CapabilityExtension {
 
@@ -43,9 +44,11 @@ public abstract class AbstractCapabilityExtension implements CapabilityExtension
     return capability;
   }
 
+  /** No-op: nothing to prepare. Acquire resources here, never in {@link #register}. */
   @Override
   public void start(ServerContext context) {}
 
+  /** No-op: nothing to release. Runs after the provider's hooks are withdrawn. */
   @Override
   public void stop() {}
 }

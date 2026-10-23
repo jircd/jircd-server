@@ -34,6 +34,8 @@ import net.jircd.core.session.ChannelRegistry;
 import net.jircd.core.session.DisconnectCleanup;
 import net.jircd.core.session.NicknameRegistry;
 import net.jircd.core.session.WhowasHistory;
+import net.jircd.core.session.command.CommandHandler;
+import net.jircd.protocol.Command;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -116,7 +118,23 @@ class ExtensionRegistryTest {
                 configuration),
             new DisconnectCleanup(
                 nicknameRegistry, channelRegistry, new WhowasHistory(() -> 100), registry),
-            (command, handler) -> {}));
+            new CommandRegistrar() {
+              @Override
+              public void register(Command command, CommandHandler handler) {
+                // Not exercised.
+              }
+
+              @Override
+              public boolean isRegistered(Command command) {
+                return false;
+              }
+
+              @Override
+              public void unregister(Command command, CommandHandler installed) {
+                // Not exercised.
+              }
+            },
+            registry.capabilityServices()));
     return registry;
   }
 

@@ -17,6 +17,7 @@ package net.jircd.core.extension;
 
 import java.util.function.Supplier;
 import net.jircd.core.config.ConfigurationReloader;
+import net.jircd.core.extension.capability.CapabilityServices;
 import net.jircd.core.session.ChannelRegistry;
 import net.jircd.core.session.DisconnectCleanup;
 import net.jircd.core.session.NicknameRegistry;
@@ -24,8 +25,9 @@ import net.jircd.core.session.NicknameRegistry;
 /**
  * What an {@link Extension} receives at {@code start(ServerContext)} — its handle onto the core
  * registries it may need, without depending on the rest of {@code jircd-core}/{@code
- * jircd-server}'s wiring directly. {@code serverName} is a live supplier, not a snapshot, since it
- * (like the rest of {@code configurationReloader}'s live state) can change across a reload.
+ * jircd-server}'s wiring directly. {@code capabilityServices} is the capability-specific handle.
+ * {@code serverName} is a live supplier, not a snapshot, since it (like the rest of {@code
+ * configurationReloader}'s live state) can change across a reload.
  */
 public record ServerContext(
     NicknameRegistry nicknameRegistry,
@@ -34,4 +36,5 @@ public record ServerContext(
     Supplier<String> serverName,
     ConfigurationReloader configurationReloader,
     DisconnectCleanup disconnectCleanup,
-    CommandRegistrar commandRegistrar) {}
+    CommandRegistrar commandRegistrar,
+    CapabilityServices capabilityServices) {}
