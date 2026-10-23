@@ -19,8 +19,6 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -31,7 +29,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import net.jircd.core.config.ServerConfiguration;
-import net.jircd.protocol.CapabilityName;
+import net.jircd.core.extension.capability.OutputGroup;
+import net.jircd.core.extension.capability.RequestContext;
 import net.jircd.protocol.Command;
 import net.jircd.protocol.Message;
 import net.jircd.protocol.MessageSerializer;
@@ -181,40 +180,53 @@ public final class SessionWriter implements AutoCloseable {
     }
   }
 
-  private static final String BATCH_TAG_KEY = "batch";
-
   /**
-   * Wraps {@code members} in {@code BATCH +ref}/{@code BATCH -ref} framing with a {@code batch=ref}
-   * tag merged onto each member, but only if this session negotiated both {@code batch} and {@code
-   * message-tags} — otherwise every member is sent via {@link #enqueueRaw} completely unmodified
-   * (011-away-notify-batch FR-007 through FR-011, research.md Decision 2). {@code ref} is a fresh
-   * {@link UUID} generated per call — collision-safe without any shared/synchronized state
-   * (research.md Decision 3). The open/close {@code BATCH} lines carry no prefix, the same
-   * precedent {@code KillCommandHandler}'s {@code ERROR} line already establishes for a
-   * server-framing line with no natural sender identity.
+   * Enqueues a finite group of {@code members}, framed for this recipient by whichever provider
+   * owns group framing (or sent plain when none applies to it), as one queue entry: every frame,
+   * including any closer, is admitted or none is, so an opener can never be queued without its
+   * closer and concurrent groups never interleave. The group must fit this queue; one that cannot
+   * overflows this recipient, like any other output it cannot hold. Nothing here keeps a provider
+   * callback for the writer thread: the plan is serialized now.
    */
-  public void enqueueBatch(String type, List<String> typeParams, List<Message> members) {
-    if (!session.negotiatedCapabilities().contains(CapabilityName.BATCH)
-        || !session.negotiatedCapabilities().contains(CapabilityName.MESSAGE_TAGS)) {
-      for (Message member : members) {
-        enqueueRaw(member);
-      }
+  public void enqueueGroup(String type, List<String> typeParams, List<Message> members) {
+    enqueueGroup(type, typeParams, members, RequestContext.of(0, Map.of()));
+  }
+
+  /** As {@link #enqueueGroup(String, List, List)}, for the request {@code context} it answers. */
+  public void enqueueGroup(
+      String type, List<String> typeParams, List<Message> members, RequestContext context) {
+    if (closing.get() || overflowed.get()) {
       return;
     }
-    String ref = UUID.randomUUID().toString();
-    List<String> openParams = new ArrayList<>();
-    openParams.add("+" + ref);
-    openParams.add(type);
-    openParams.addAll(typeParams);
-    enqueueRaw(new Message(Map.of(), null, null, "BATCH", List.copyOf(openParams)));
+    long memberBytes = 0;
     for (Message member : members) {
-      Map<String, String> tags = new LinkedHashMap<>(member.tags());
-      tags.put(BATCH_TAG_KEY, ref);
-      enqueueRaw(
-          new Message(
-              tags, member.prefix(), member.command(), member.rawCommand(), member.params()));
+      memberBytes = Math.addExact(memberBytes, WireBytes.raw(member));
     }
-    enqueueRaw(new Message(Map.of(), null, null, "BATCH", List.of("-" + ref)));
+    if (memberBytes > limitBytes) {
+      // Larger than the whole queue: reject before allocating any transformed copy.
+      enqueueEntry(new Entry(memberBytes, null, null));
+      return;
+    }
+    // The plan's own bound is left open on purpose: a provider's valid framing that is merely too
+    // large for the queue must overflow this recipient below, not read as a malformed plan and fall
+    // back to plain members. The plan stays bounded by its frame count and the per-frame limits.
+    OutputGroup group =
+        new OutputGroup(UUID.randomUUID().toString(), type, typeParams, members, Long.MAX_VALUE);
+    List<Message> frames = tagRenderer.frame(session, group, context).frames();
+    if (frames.isEmpty()) {
+      return;
+    }
+    FrameSequence sequence;
+    try {
+      sequence = FrameSequence.of(frames);
+    } catch (IllegalArgumentException e) {
+      LOG.warn(
+          "Dropping an unrepresentable output group for connection {}: {}",
+          session.connectionId(),
+          e.getMessage());
+      return;
+    }
+    enqueueEntry(new Entry(sequence.bytes(), sequence, null));
   }
 
   private void handleOverflow() {

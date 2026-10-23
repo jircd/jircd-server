@@ -88,7 +88,13 @@ public final class SajoinCommandHandler implements CommandHandler {
     Message joinNotification =
         new Message(Map.of(), presentedForm, Command.JOIN, "JOIN", List.of(channel.name()));
     Recipients.deliver(result.recipients(), joinNotification);
+    if (!result.alreadyMember()) {
+      extensionRegistry
+          .committedEvents()
+          .joined(session, presentedForm, channel.name(), result.recipients());
+    }
 
-    JoinCommandHandler.sendNamesReply(session, channel, serverName.get(), result.memberListing());
+    JoinCommandHandler.sendNamesReply(
+        extensionRegistry, session, channel, serverName.get(), result.members());
   }
 }

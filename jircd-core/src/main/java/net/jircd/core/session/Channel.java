@@ -42,10 +42,11 @@ import net.jircd.protocol.NickMask;
  * non-member is refused and changes nothing. C-2: {@code secret} and {@code private} are never both
  * active; setting one clears the other in the same step. C-3: at most {@link #MAX_BANS} entries per
  * mask list, with unique masks under RFC1459 case folding. C-4: the first member added to an empty
- * channel becomes an operator. C-5: {@link #memberListing} is a weakly consistent traversal taken
- * without the monitor. It never lists a session twice but is not a snapshot of one instant. Each
- * member's prefix, however, comes from one consistent view of the operator and voice sets (see
- * {@link #statusPrefixes}), so it never shows a status combination the member did not hold.
+ * channel becomes an operator. C-5: {@link #memberListing} and {@link #memberFacts()} are weakly
+ * consistent traversals taken without the monitor. They never list a session twice but are not a
+ * snapshot of one instant. Each member's statuses, however, come from one consistent view of the
+ * operator and voice sets (see {@link #heldStatuses}), so they never show a status combination the
+ * member did not hold.
  *
  * <p>The collection accessors return unmodifiable views. Membership changes arrive only through
  * {@link ChannelRegistry} transitions.
@@ -53,6 +54,10 @@ import net.jircd.protocol.NickMask;
 public final class Channel {
 
   public static final int MAX_BANS = 100;
+
+  private static final List<String> OPERATOR = List.of("@");
+  private static final List<String> VOICE = List.of("+");
+  private static final List<String> OPERATOR_AND_VOICE = List.of("@", "+");
 
   private final String name;
   private final String foldedName;
@@ -108,39 +113,50 @@ public final class Channel {
   }
 
   /**
-   * Returns one status-prefixed nickname per member, in member iteration order. Reads the
-   * concurrent sets without this monitor, so a NAMES reply on a large channel never delays a
-   * transition waiting for it while holding the registry monitor. The traversal never visits a
-   * session twice, but it is not a snapshot of one instant: concurrent joins and departures may or
-   * may not appear. A member's prefix is read consistently, as in {@link #statusPrefixes}.
+   * Returns one status-prefixed nickname per member, in member iteration order, each with its
+   * highest status only — the form an ordinary requester gets. A capability that renders
+   * differently starts from {@link #memberFacts()} instead. Reads the concurrent sets without this
+   * monitor, so a NAMES reply on a large channel never delays a transition waiting for it while
+   * holding the registry monitor. The traversal never visits a session twice, but it is not a
+   * snapshot of one instant: concurrent joins and departures may or may not appear. A member's
+   * statuses are read consistently, as in {@link #heldStatuses}.
    */
   public List<String> memberListing() {
-    return memberListing(false);
-  }
-
-  /**
-   * As {@link #memberListing()}, but with {@code multiPrefix} every status the member holds is
-   * listed, in {@code PREFIX} order ({@code @} before {@code +}), as {@code multi-prefix} requires.
-   * The flag describes the client receiving the listing, not the members listed.
-   */
-  public List<String> memberListing(boolean multiPrefix) {
     List<String> listing = new ArrayList<>();
     for (ClientSession member : members) {
-      listing.add(statusPrefixes(member, multiPrefix) + member.nickname());
+      List<String> held = heldStatuses(member);
+      listing.add((held.isEmpty() ? "" : held.getFirst()) + member.nickname());
     }
     return listing;
   }
 
   /**
-   * The status symbols a member holds, highest first: {@code @} for operator, {@code +} for voice.
-   * Without {@code multiPrefix} only the highest is returned. Both sets are read as one view
-   * without taking the monitor, so a listing never waits for a transition: every privilege update
-   * (made under the monitor) brackets itself with {@code privilegeVersion} changes, and the read
-   * retries when an update was in progress or finished meanwhile. A concurrent "-o then +v" can
-   * therefore never render {@code @+} for a member who never held both. An update only adds to or
-   * removes from the sets, so the retry wait is short and never calls out to a session.
+   * One {@link MemberFacts} per member in member iteration order, with the same weak consistency as
+   * {@link #memberListing()}: unformatted facts that carry no knowledge of any capability.
    */
-  public String statusPrefixes(ClientSession member, boolean multiPrefix) {
+  public List<MemberFacts> memberFacts() {
+    List<MemberFacts> facts = new ArrayList<>();
+    for (ClientSession member : members) {
+      facts.add(new MemberFacts(member, heldStatuses(member)));
+    }
+    return facts;
+  }
+
+  /** The facts of one member; no statuses for a session that is not a member. */
+  public MemberFacts memberFacts(ClientSession member) {
+    return new MemberFacts(member, heldStatuses(member));
+  }
+
+  /**
+   * The status symbols a member holds, highest first and in {@code PREFIX} order: {@code @} for
+   * operator, {@code +} for voice. Both sets are read as one view without taking the monitor, so a
+   * listing never waits for a transition: every privilege update (made under the monitor) brackets
+   * itself with {@code privilegeVersion} changes, and the read retries when an update was in
+   * progress or finished meanwhile. A concurrent "-o then +v" can therefore never show {@code @+}
+   * for a member who never held both. An update only adds to or removes from the sets, so the retry
+   * wait is short and never calls out to a session.
+   */
+  public List<String> heldStatuses(ClientSession member) {
     boolean operator;
     boolean voice;
     while (true) {
@@ -153,9 +169,9 @@ public final class Channel {
       Thread.onSpinWait();
     }
     if (operator) {
-      return multiPrefix && voice ? "@+" : "@";
+      return voice ? OPERATOR_AND_VOICE : OPERATOR;
     }
-    return voice ? "+" : "";
+    return voice ? VOICE : List.of();
   }
 
   public Set<ClientSession> operators() {
@@ -406,7 +422,7 @@ public final class Channel {
     }
   }
 
-  /** Adds to or removes from a privilege set, bracketed for {@link #statusPrefixes}' retry. */
+  /** Adds to or removes from a privilege set, bracketed for {@link #heldStatuses}' retry. */
   private boolean updateHolders(Set<ClientSession> holders, ClientSession member, boolean add) {
     privilegeVersion.incrementAndGet();
     try {

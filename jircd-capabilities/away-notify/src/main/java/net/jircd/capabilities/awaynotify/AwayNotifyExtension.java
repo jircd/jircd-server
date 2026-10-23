@@ -15,16 +15,25 @@
  */
 package net.jircd.capabilities.awaynotify;
 
+import java.util.List;
+import java.util.Map;
 import net.jircd.core.extension.AbstractCapabilityExtension;
+import net.jircd.core.extension.capability.CapabilityRegistrar;
+import net.jircd.core.extension.capability.CommittedEvent;
+import net.jircd.core.extension.capability.EventIntent;
+import net.jircd.core.extension.capability.EventKind;
+import net.jircd.core.session.ClientSession;
 import net.jircd.protocol.CapabilityName;
+import net.jircd.protocol.Command;
+import net.jircd.protocol.Message;
 
 /**
  * The {@code away-notify} capability (011-away-notify-batch FR-001 through FR-006): unlike {@code
  * message-tags}/{@code server-time}/{@code echo-message}, this doesn't decorate an existing fan-out
- * — it gates a wholly new one. {@link net.jircd.core.session.command.AwayCommandHandler} checks
- * this capability's id directly against each channel-mate's negotiated set when broadcasting an
- * away-status change, via the shared {@link CapabilityName#AWAY_NOTIFY} constant rather than
- * importing this class (jircd-core can't depend on jircd-capabilities).
+ * — it gates a wholly new one. It listens for the committed {@code AWAY_CHANGED} event and answers
+ * with one {@code AWAY} notice for the peers who share a channel with the user, deduplicated and
+ * without the user itself by the event's audience. Core narrows the notice to peers that negotiated
+ * this capability; it keeps the away state and the confirmations to the user.
  */
 public final class AwayNotifyExtension extends AbstractCapabilityExtension {
 
@@ -32,5 +41,21 @@ public final class AwayNotifyExtension extends AbstractCapabilityExtension {
 
   public AwayNotifyExtension() {
     super(ID);
+  }
+
+  @Override
+  public void register(CapabilityRegistrar registrar) {
+    registrar.onEvent(EventKind.AWAY_CHANGED, AwayNotifyExtension::awayNotice);
+  }
+
+  /** {@code :<presented identity> AWAY [:<reason>]}; no parameter means the user is back. */
+  static List<EventIntent> awayNotice(CommittedEvent event) {
+    List<ClientSession> peers = event.audience().peers();
+    if (peers.isEmpty()) {
+      return List.of();
+    }
+    List<String> params = event.after().isEmpty() ? List.of() : List.of(event.after());
+    Message notice = new Message(Map.of(), event.subject(), Command.AWAY, "AWAY", params);
+    return List.of(new EventIntent(notice, peers));
   }
 }

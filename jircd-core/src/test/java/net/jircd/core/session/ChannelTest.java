@@ -17,6 +17,7 @@ package net.jircd.core.session;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.groups.Tuple.tuple;
 
 import java.time.Instant;
 import java.util.List;
@@ -119,7 +120,7 @@ class ChannelTest {
   }
 
   @Test
-  void multiPrefixListingHoldsEveryStatusInPrefixOrder() {
+  void memberFactsHoldEveryStatusInPrefixOrderWithoutAnyCapabilityFlag() {
     Channel channel = new Channel("#lobby");
     ClientSession both = member("both");
     ClientSession voiced = member("voiced");
@@ -131,11 +132,15 @@ class ChannelTest {
     channel.grantVoice(voiced);
     channel.grantOperator(operator);
 
-    assertThat(channel.memberListing(true))
-        .containsExactlyInAnyOrder("@+both", "+voiced", "plain", "@operator");
-    assertThat(channel.memberListing(false))
+    assertThat(channel.memberFacts())
+        .extracting(fact -> fact.member().nickname(), MemberFacts::heldStatuses)
+        .containsExactlyInAnyOrder(
+            tuple("both", List.of("@", "+")),
+            tuple("voiced", List.of("+")),
+            tuple("plain", List.of()),
+            tuple("operator", List.of("@")));
+    assertThat(channel.memberListing())
         .containsExactlyInAnyOrder("@both", "+voiced", "plain", "@operator");
-    assertThat(channel.memberListing()).isEqualTo(channel.memberListing(false));
   }
 
   /**
@@ -146,7 +151,7 @@ class ChannelTest {
    * appeared in the reads made.
    */
   @Test
-  void multiPrefixNeverShowsAStatusCombinationTheMemberDidNotHold() throws Exception {
+  void heldStatusesNeverShowACombinationTheMemberDidNotHold() throws Exception {
     Channel channel = new Channel("#lobby");
     ClientSession anchor = member("anchor");
     ClientSession flipper = member("flipper");
@@ -166,9 +171,11 @@ class ChannelTest {
                 }
               });
       try {
+        int impossible = 0;
         for (int i = 0; i < 2_000_000; i++) {
-          assertThat(channel.statusPrefixes(flipper, true)).isNotEqualTo("@+");
+          if (channel.heldStatuses(flipper).size() > 1) impossible++;
         }
+        assertThat(impossible).isZero();
       } finally {
         running.set(false);
         writer.get(5, TimeUnit.SECONDS);
@@ -177,10 +184,10 @@ class ChannelTest {
   }
 
   @Test
-  void statusPrefixesIsEmptyForANonMember() {
+  void heldStatusesIsEmptyForANonMember() {
     Channel channel = new Channel("#lobby");
 
-    assertThat(channel.statusPrefixes(member("stranger"), true)).isEmpty();
+    assertThat(channel.heldStatuses(member("stranger"))).isEmpty();
   }
 
   @Test

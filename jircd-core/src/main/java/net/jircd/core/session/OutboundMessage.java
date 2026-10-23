@@ -20,20 +20,20 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
-import net.jircd.core.extension.CapabilityExtension;
-import net.jircd.core.extension.capability.FaultReporter;
 import net.jircd.core.extension.capability.HookDispatcher;
 import net.jircd.core.extension.capability.HookRegistration;
 
 /**
  * Immutable fan-out content shared by recipients, with message-scoped contribution byte metadata.
  * Recipient selection and rendering remain in the tag renderer; metadata never changes content.
+ *
+ * <p>Client-only ({@code +}) tags passed to a constructor are candidates for forwarding, not
+ * forwarded: a recipient sees one only if it negotiated a capability that selected it, which {@code
+ * MessageDelivery} records. An envelope built without that record forwards no client tag.
  */
 public final class OutboundMessage {
-  private static final HookDispatcher LEGACY_DISPATCHER =
-      new HookDispatcher(FaultReporter.logging());
-
   private final String senderPresentedForm;
   private final String command;
   private final String target;
@@ -43,8 +43,13 @@ public final class OutboundMessage {
   private final UUID messageId;
   private final long componentBytes;
   private final Map<String, String> forwardedClientTags;
-  private final WireBytes.Tags clientTagBytes;
-  private Map<CapabilityExtension, Contribution> contributions;
+
+  /**
+   * Forwarded tag key to every capability that selected it. Empty until {@link #forwardedBy}: a
+   * client tag with no recorded selector is shown to nobody.
+   */
+  private Map<String, Set<String>> forwardOwners = Map.of();
+
   private Map<HookRegistration, Contribution> hookContributions;
 
   /** A hook's validated, immutable tags with their exact escaped size, computed once. */
@@ -75,7 +80,6 @@ public final class OutboundMessage {
           if (key.startsWith("+")) forwarded.put(key, value);
         });
     this.forwardedClientTags = Map.copyOf(forwarded);
-    this.clientTagBytes = WireBytes.tags(forwardedClientTags);
   }
 
   public String senderPresentedForm() {
@@ -110,32 +114,32 @@ public final class OutboundMessage {
     return componentBytes;
   }
 
-  Map<String, String> forwardedClientTags() {
-    return forwardedClientTags;
-  }
-
-  WireBytes.Tags clientTagBytes() {
-    return clientTagBytes;
-  }
-
-  synchronized WireBytes.Tags contributionBytes(CapabilityExtension capability) {
-    return legacyContribution(capability, LEGACY_DISPATCHER).bytes();
+  /**
+   * Records which capabilities selected each forwarded client tag, so {@link #forwardedFor} shows a
+   * tag only to recipients of one of its selectors. Call once, before the message is shared.
+   */
+  OutboundMessage forwardedBy(Map<String, Set<String>> ownersByKey) {
+    Map<String, Set<String>> copy = new java.util.LinkedHashMap<>();
+    ownersByKey.forEach((key, owners) -> copy.put(key, Set.copyOf(owners)));
+    this.forwardOwners = Map.copyOf(copy);
+    return this;
   }
 
   /**
-   * The legacy provider's tags, evaluated once per envelope so enqueue can budget them. A throw, a
-   * {@code null} or an oversized map is contained by {@code dispatcher}: an empty contribution.
+   * The forwarded client tags a recipient with {@code negotiated} capabilities may see: those for
+   * which it negotiated at least one selecting capability. It fails closed: a tag whose selector
+   * was never recorded, as for an envelope built outside {@code MessageDelivery}, is not shown.
    */
-  synchronized Contribution legacyContribution(
-      CapabilityExtension capability, HookDispatcher dispatcher) {
-    if (contributions == null) contributions = new IdentityHashMap<>();
-    return contributions.computeIfAbsent(
-        capability,
-        key -> {
-          Map<String, String> tags =
-              dispatcher.legacyOutboundTags(key.id(), () -> key.contributeTags(this));
-          return new Contribution(tags, WireBytes.tags(tags));
+  Map<String, String> forwardedFor(Set<String> negotiated) {
+    Map<String, String> visible = new java.util.LinkedHashMap<>();
+    forwardedClientTags.forEach(
+        (key, value) -> {
+          if (!java.util.Collections.disjoint(
+              forwardOwners.getOrDefault(key, Set.of()), negotiated)) {
+            visible.put(key, value);
+          }
         });
+    return visible;
   }
 
   /**

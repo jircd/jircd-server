@@ -22,25 +22,21 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import net.jircd.core.capability.Capability;
+import net.jircd.core.extension.AbstractCapabilityExtension;
 import net.jircd.core.extension.CapabilityExtension;
 import net.jircd.core.extension.ExtensionRegistry;
 import net.jircd.core.extension.ServerContext;
 import net.jircd.core.extension.capability.CapabilityRegistrar;
 import org.junit.jupiter.api.Test;
 
-/**
- * Migrated providers publish typed tag hooks and are never also asked through the legacy method.
- */
+/** Providers publish typed tag hooks: evaluated once per envelope, shared, contained on a fault. */
 class CapabilityTagRendererMigrationTest {
 
   private static class Provider implements CapabilityExtension {
     final AtomicInteger hookCalls = new AtomicInteger();
-    final AtomicInteger legacyCalls = new AtomicInteger();
-    final boolean migrated;
     final boolean failing;
 
-    Provider(boolean migrated, boolean failing) {
-      this.migrated = migrated;
+    Provider(boolean failing) {
       this.failing = failing;
     }
 
@@ -66,7 +62,6 @@ class CapabilityTagRendererMigrationTest {
 
     @Override
     public void register(CapabilityRegistrar registrar) {
-      if (!migrated) return;
       registrar.onOutboundTags(
           Set.of("t"),
           16,
@@ -75,12 +70,6 @@ class CapabilityTagRendererMigrationTest {
             if (failing) throw new IllegalStateException("boom");
             return Map.of("t", "hook");
           });
-    }
-
-    @Override
-    public Map<String, String> contributeTags(OutboundMessage message) {
-      legacyCalls.incrementAndGet();
-      return Map.of("t", "legacy");
     }
   }
 
@@ -94,12 +83,13 @@ class CapabilityTagRendererMigrationTest {
     ExtensionRegistry registry = new ExtensionRegistry();
     registry.register(provider);
     registry.enable("tagger");
+    ClientTagForwarder.enableIn(registry);
     return registry;
   }
 
   @Test
-  void migratedProviderIsEvaluatedOncePerEnvelopeAndNeverThroughTheLegacyMethod() {
-    Provider provider = new Provider(true, false);
+  void aProviderIsEvaluatedOncePerEnvelopeAndNeverAtDrain() {
+    Provider provider = new Provider(false);
     CapabilityTagRenderer renderer = new CapabilityTagRenderer(registryWith(provider));
     OutboundMessage envelope = OutboundMessage.now("n!u@h", "PRIVMSG", "#c", "hi");
     for (int i = 0; i < 5; i++) {
@@ -108,33 +98,35 @@ class CapabilityTagRendererMigrationTest {
       assertThat(prepared.tags().get()).containsExactly(Map.entry("t", "hook"));
     }
     assertThat(provider.hookCalls).hasValue(1);
-    assertThat(provider.legacyCalls).hasValue(0);
-  }
-
-  @Test
-  void unmigratedProviderKeepsTheLegacyPath() {
-    Provider provider = new Provider(false, false);
-    CapabilityTagRenderer renderer = new CapabilityTagRenderer(registryWith(provider));
-    OutboundMessage envelope = OutboundMessage.now("n!u@h", "PRIVMSG", "#c", "hi");
-    assertThat(renderer.render(recipient("r"), envelope)).containsExactly(Map.entry("t", "legacy"));
-    assertThat(provider.hookCalls).hasValue(0);
   }
 
   @Test
   void aFaultingHookContributesNothingAndLeavesOtherOutputIntact() {
-    Provider provider = new Provider(true, true);
+    Provider provider = new Provider(true);
     CapabilityTagRenderer renderer = new CapabilityTagRenderer(registryWith(provider));
+    OutboundMessage envelope =
+        ForwardedTags.selectedBy(
+            "message-tags",
+            OutboundMessage.now("n!u@h", "PRIVMSG", "#c", "hi", Map.of("+keep", "me")));
+    ClientSession session = recipient("r");
+    session.replaceNegotiatedCapabilities(List.of("tagger", "message-tags"));
+    assertThat(renderer.render(session, envelope)).containsExactly(Map.entry("+keep", "me"));
+  }
+
+  @Test
+  void clientTagsWithNoRecordedSelectorAreNotForwardedToAnyone() {
+    CapabilityTagRenderer renderer = new CapabilityTagRenderer(registryWith(new Provider(false)));
     OutboundMessage envelope =
         OutboundMessage.now("n!u@h", "PRIVMSG", "#c", "hi", Map.of("+keep", "me"));
     ClientSession session = recipient("r");
     session.replaceNegotiatedCapabilities(List.of("tagger", "message-tags"));
-    assertThat(renderer.render(session, envelope)).containsExactly(Map.entry("+keep", "me"));
-    assertThat(provider.legacyCalls).hasValue(0);
+
+    assertThat(renderer.render(session, envelope)).doesNotContainKey("+keep");
   }
 
   @Test
   void disablingWithdrawsNewCapturesButCapturedWorkKeepsItsTags() {
-    Provider provider = new Provider(true, false);
+    Provider provider = new Provider(false);
     ExtensionRegistry registry = registryWith(provider);
     CapabilityTagRenderer renderer = new CapabilityTagRenderer(registry);
     OutboundMessage envelope = OutboundMessage.now("n!u@h", "PRIVMSG", "#c", "hi");
@@ -168,7 +160,7 @@ class CapabilityTagRendererMigrationTest {
   }
 
   private static CapabilityExtension bulky(String id, String key) {
-    return new Provider(true, false) {
+    return new Provider(false) {
       @Override
       public String id() {
         return id;
@@ -187,30 +179,14 @@ class CapabilityTagRendererMigrationTest {
   }
 
   @Test
-  void aTypedContributionThatOverflowsWithALegacyOneIsDroppedNotTheMessage() {
+  void aContributionThatOverflowsAlongsideAnotherIsDroppedNotTheMessage() {
     ExtensionRegistry registry = new ExtensionRegistry();
-    registry.register(
-        new Provider(false, false) {
-          @Override
-          public String id() {
-            return "legacy";
-          }
-
-          @Override
-          public Capability providedCapability() {
-            return new Capability("legacy");
-          }
-
-          @Override
-          public Map<String, String> contributeTags(OutboundMessage message) {
-            return Map.of("msgid", "m".repeat(2000));
-          }
-        });
-    registry.register(bulky("typed", "t"));
-    registry.enable("legacy");
-    registry.enable("typed");
+    registry.register(typed("first", "msgid", () -> Map.of("msgid", "m".repeat(2000))));
+    registry.register(bulky("second", "t"));
+    registry.enable("first");
+    registry.enable("second");
     ClientSession session = new ClientSession("r", "host", RateLimitBucket.withDefaults());
-    session.replaceNegotiatedCapabilities(List.of("legacy", "typed"));
+    session.replaceNegotiatedCapabilities(List.of("first", "second"));
     java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
     try (SessionWriter writer =
         new SessionWriter(session, out, new CapabilityTagRenderer(registry), 1 << 20)) {
@@ -222,21 +198,13 @@ class CapabilityTagRendererMigrationTest {
         .doesNotContain("t=x");
   }
 
-  private static Provider legacy(String id, java.util.function.Supplier<Map<String, String>> tags) {
-    return new Provider(false, false) {
+  /** A provider whose single owned tag comes from {@code tags}, declared at the widest bound. */
+  private static AbstractCapabilityExtension typed(
+      String id, String key, java.util.function.Supplier<Map<String, String>> tags) {
+    return new AbstractCapabilityExtension(id) {
       @Override
-      public String id() {
-        return id;
-      }
-
-      @Override
-      public Capability providedCapability() {
-        return new Capability(id);
-      }
-
-      @Override
-      public Map<String, String> contributeTags(OutboundMessage message) {
-        return tags.get();
+      public void register(CapabilityRegistrar registrar) {
+        registrar.onOutboundTags(Set.of(key), 4094, message -> tags.get());
       }
     };
   }
@@ -253,16 +221,17 @@ class CapabilityTagRendererMigrationTest {
   }
 
   @Test
-  void aLegacyProviderThatThrowsOrReturnsNullContributesNothingAndTheMessageStillGoesOut() {
+  void aProviderThatThrowsOrReturnsNullContributesNothingAndTheMessageStillGoesOut() {
     ExtensionRegistry registry = new ExtensionRegistry();
     registry.register(
-        legacy(
+        typed(
             "boom",
+            "a",
             () -> {
               throw new IllegalStateException("boom");
             }));
-    registry.register(legacy("nul", () -> null));
-    registry.register(legacy("fine", () -> Map.of("msgid", "ok")));
+    registry.register(typed("nul", "b", () -> null));
+    registry.register(typed("fine", "msgid", () -> Map.of("msgid", "ok")));
     registry.enable("boom");
     registry.enable("nul");
     registry.enable("fine");
@@ -271,11 +240,11 @@ class CapabilityTagRendererMigrationTest {
   }
 
   @Test
-  void oversizedLegacyTagsAreOmittedAtEnqueueNotAtDrainSoTheMessageIsNotDropped() {
+  void oversizedTagsAreOmittedAtEnqueueNotAtDrainSoTheMessageIsNotDropped() {
     ExtensionRegistry registry = new ExtensionRegistry();
-    registry.register(legacy("huge", () -> Map.of("msgid", "m".repeat(4100))));
-    registry.register(legacy("one", () -> Map.of("a", "x".repeat(2500))));
-    registry.register(legacy("two", () -> Map.of("b", "y".repeat(2500))));
+    registry.register(typed("huge", "msgid", () -> Map.of("msgid", "m".repeat(4100))));
+    registry.register(typed("one", "a", () -> Map.of("a", "x".repeat(2500))));
+    registry.register(typed("two", "b", () -> Map.of("b", "y".repeat(2500))));
     registry.enable("huge");
     registry.enable("one");
     registry.enable("two");
@@ -286,24 +255,14 @@ class CapabilityTagRendererMigrationTest {
   }
 
   @Test
-  void legacySelectionFollowsTheCapturedSnapshotNotTheLiveEnabledState() throws Exception {
+  void selectionFollowsTheCapturedSnapshotNotTheLiveEnabledState() throws Exception {
     java.util.concurrent.CountDownLatch stopping = new java.util.concurrent.CountDownLatch(1);
     java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
-    Provider slow =
-        new Provider(false, false) {
+    AbstractCapabilityExtension slow =
+        new AbstractCapabilityExtension("slow") {
           @Override
-          public String id() {
-            return "slow";
-          }
-
-          @Override
-          public Capability providedCapability() {
-            return new Capability("slow");
-          }
-
-          @Override
-          public Map<String, String> contributeTags(OutboundMessage message) {
-            return Map.of("t", "legacy");
+          public void register(CapabilityRegistrar registrar) {
+            registrar.onOutboundTags(Set.of("t"), 16, message -> Map.of("t", "v"));
           }
 
           @Override

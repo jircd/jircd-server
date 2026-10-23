@@ -114,6 +114,7 @@ public final class NickCommandHandler implements CommandHandler {
 
     if (isChange) {
       broadcastNickChange(session, oldHostmask, requested);
+      extensionRegistry.committedEvents().nickChanged(session, oldHostmask, previous, requested);
     }
   }
 

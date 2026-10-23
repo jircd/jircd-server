@@ -43,13 +43,12 @@ public final class HostmaskReplyBudget {
   private HostmaskReplyBudget() {}
 
   /**
-   * Worst-case bytes per reply under the widths reserved before providers declared theirs; callers
+   * Worst-case bytes per reply with no provider decorations, i.e. core's own fields only; callers
    * compare to the limit.
    */
   public static Map<String, Integer> worstCaseBytes(
       int serverBytes, int nicknameMax, int channelMax) {
-    return worstCaseBytes(
-        serverBytes, nicknameMax, channelMax, ReplyBudgetCatalog.legacyCompatible());
+    return worstCaseBytes(serverBytes, nicknameMax, channelMax, ReplyBudgetCatalog.empty());
   }
 
   /**

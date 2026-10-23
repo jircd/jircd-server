@@ -16,13 +16,15 @@
 package net.jircd.core.session;
 
 import java.util.Map;
+import net.jircd.core.extension.capability.FramingPlan;
+import net.jircd.core.extension.capability.OutputGroup;
+import net.jircd.core.extension.capability.RequestContext;
 
 /**
  * Produces the message-tags a recipient should see on a delivered {@link OutboundMessage},
  * live-checked against that recipient's currently negotiated-and-enabled capabilities (research.md
- * "Message fan-out concurrency model"). The Foundational default renders no tags at all; {@code
- * jircd-capabilities/*} wires the real {@code message-tags}/{@code server-time} decoration in
- * (T092).
+ * "Message fan-out concurrency model"). The default renders no tags at all and frames a group as
+ * plain members; {@link CapabilityTagRenderer} asks the capability providers that own each.
  */
 @FunctionalInterface
 public interface TagRenderer {
@@ -60,4 +62,13 @@ public interface TagRenderer {
   }
 
   Map<String, String> render(ClientSession recipient, OutboundMessage message);
+
+  /**
+   * How {@code group} is framed for {@code recipient}: the complete ordered messages, including any
+   * opener and closer. The default sends the members plain; capability renderers ask the provider
+   * that owns group framing. A plan returned here is complete: it is queued whole or not at all.
+   */
+  default FramingPlan frame(ClientSession recipient, OutputGroup group, RequestContext context) {
+    return FramingPlan.plain(group);
+  }
 }

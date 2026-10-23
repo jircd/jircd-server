@@ -21,19 +21,20 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * A completed join. The NAMES tokens and then the recipients are read from the live channel in two
+ * A completed join. The member facts and then the recipients are read from the live channel in two
  * separate weakly consistent traversals after the membership monitors are released, so neither is a
  * snapshot of one instant and the two need not agree. The joiner is always among the recipients;
- * with a concurrent departure it may be missing from the listing, which is never patched.
+ * with a concurrent departure it may be missing from the facts, which are never patched. The facts
+ * are unformatted: the NAMES tokens are rendered for the requester afterwards.
  */
 public record JoinResult(
     Channel channel,
     Set<ClientSession> recipients,
     boolean grantedOperator,
     boolean alreadyMember,
-    List<String> memberListing) {
+    List<MemberFacts> members) {
   public JoinResult {
     recipients = Collections.unmodifiableSet(new LinkedHashSet<>(recipients));
-    memberListing = List.copyOf(memberListing);
+    members = List.copyOf(members);
   }
 }

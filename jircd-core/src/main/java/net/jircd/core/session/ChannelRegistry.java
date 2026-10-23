@@ -25,7 +25,6 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
-import net.jircd.protocol.CapabilityName;
 
 /**
  * Owns channel existence and membership transitions, with case-folded channel-name uniqueness.
@@ -107,13 +106,11 @@ public final class ChannelRegistry {
       }
     }
     joinSnapshotHook.accept(channel);
-    List<String> listing =
-        channel.memberListing(
-            session.negotiatedCapabilities().contains(CapabilityName.MULTI_PREFIX));
+    List<MemberFacts> members = channel.memberFacts();
     Set<ClientSession> recipients = new LinkedHashSet<>(channel.members());
     recipients.add(session);
     return Optional.of(
-        new JoinResult(channel, recipients, grantedOperator, alreadyMember, listing));
+        new JoinResult(channel, recipients, grantedOperator, alreadyMember, members));
   }
 
   /**

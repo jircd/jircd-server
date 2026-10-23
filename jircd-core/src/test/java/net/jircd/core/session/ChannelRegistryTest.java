@@ -283,6 +283,16 @@ class ChannelRegistryTest {
     assertThat(replies.toString(StandardCharsets.UTF_8)).contains(" 441 operator target ");
   }
 
+  /** The ordinary rendering of a join's member facts: nickname with the highest status. */
+  private static List<String> listing(JoinResult result) {
+    return result.members().stream()
+        .map(
+            fact ->
+                (fact.heldStatuses().isEmpty() ? "" : fact.heldStatuses().getFirst())
+                    + fact.member().nickname())
+        .toList();
+  }
+
   @Test
   void joinCapturesRecipientsAndNamesAndSkipsAdmissionForAnExistingMember() {
     ChannelRegistry registry = new ChannelRegistry();
@@ -293,11 +303,11 @@ class ChannelRegistryTest {
     assertThat(first.grantedOperator()).isTrue();
     assertThat(first.alreadyMember()).isFalse();
     assertThat(first.recipients()).containsExactly(alice);
-    assertThat(first.memberListing()).containsExactly("@alice");
+    assertThat(listing(first)).containsExactly("@alice");
     assertThat(second.channel()).isSameAs(first.channel());
     assertThat(second.grantedOperator()).isFalse();
     assertThat(second.recipients()).containsExactlyInAnyOrder(alice, bob);
-    assertThat(second.memberListing()).containsExactlyInAnyOrder("@alice", "bob");
+    assertThat(listing(second)).containsExactlyInAnyOrder("@alice", "bob");
     JoinResult repeated =
         registry
             .join(
@@ -312,9 +322,9 @@ class ChannelRegistryTest {
     assertThat(repeated.recipients()).containsExactlyInAnyOrder(alice, bob);
     assertThat(alice.channelMemberships()).containsExactly(first.channel());
     Set<ClientSession> joinRecipients = first.recipients();
-    List<String> joinListing = first.memberListing();
+    List<MemberFacts> joinMembers = first.members();
     assertThatThrownBy(joinRecipients::clear).isInstanceOf(UnsupportedOperationException.class);
-    assertThatThrownBy(joinListing::clear).isInstanceOf(UnsupportedOperationException.class);
+    assertThatThrownBy(joinMembers::clear).isInstanceOf(UnsupportedOperationException.class);
   }
 
   @Test
@@ -624,7 +634,7 @@ class ChannelRegistryTest {
       }
       JoinResult result = join.get(5, TimeUnit.SECONDS).orElseThrow();
       assertThat(result.recipients()).contains(joiner, operator);
-      assertThat(result.memberListing()).containsExactly("@operator");
+      assertThat(listing(result)).containsExactly("@operator");
     }
   }
 

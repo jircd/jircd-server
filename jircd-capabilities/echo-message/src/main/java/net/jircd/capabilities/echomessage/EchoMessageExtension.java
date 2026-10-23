@@ -15,15 +15,19 @@
  */
 package net.jircd.capabilities.echomessage;
 
+import java.util.Set;
 import net.jircd.core.extension.AbstractCapabilityExtension;
-import net.jircd.core.session.ClientSession;
+import net.jircd.core.extension.capability.CapabilityRegistrar;
+import net.jircd.core.extension.capability.DeliveryRole;
 import net.jircd.protocol.CapabilityName;
 
 /**
  * The {@code echo-message} capability (FR-025): unlike {@code message-tags}/{@code server-time},
- * this affects recipient-set construction, not per-recipient formatting — {@link
- * net.jircd.core.session.command.MessageCommandHandler} calls {@link #includeSenderInFanOut} once,
- * when building a fan-out's recipient list, to decide whether the sender's own session is included.
+ * this affects recipient-set construction, not per-recipient formatting. It registers a recipient
+ * hook that asks core to add a {@link DeliveryRole#SENDER_COPY} for the sender of a permitted
+ * {@code PRIVMSG}, {@code NOTICE} or {@code TAGMSG}. Core applies the hook only when the sender
+ * negotiated this capability, merges the copy with any ordinary role so a recipient gets the
+ * message once, and applies the same recipient rules to it as to every other recipient.
  */
 public final class EchoMessageExtension extends AbstractCapabilityExtension {
 
@@ -34,7 +38,7 @@ public final class EchoMessageExtension extends AbstractCapabilityExtension {
   }
 
   @Override
-  public boolean includeSenderInFanOut(ClientSession sender) {
-    return sender.negotiatedCapabilities().contains(ID);
+  public void register(CapabilityRegistrar registrar) {
+    registrar.onRecipients((intent, context) -> Set.of(DeliveryRole.SENDER_COPY));
   }
 }

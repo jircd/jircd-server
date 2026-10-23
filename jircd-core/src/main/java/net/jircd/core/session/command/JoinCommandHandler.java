@@ -24,9 +24,10 @@ import net.jircd.core.session.Channel;
 import net.jircd.core.session.ChannelRegistry;
 import net.jircd.core.session.ClientSession;
 import net.jircd.core.session.CoreChannelModes;
+import net.jircd.core.session.MemberFacts;
+import net.jircd.core.session.MemberReplies;
 import net.jircd.core.session.PresentedIdentity;
 import net.jircd.core.session.Recipients;
-import net.jircd.protocol.CapabilityName;
 import net.jircd.protocol.ChannelName;
 import net.jircd.protocol.Command;
 import net.jircd.protocol.Hostmask;
@@ -140,6 +141,9 @@ public final class JoinCommandHandler implements CommandHandler {
     Message joinNotification =
         new Message(Map.of(), presentedForm, Command.JOIN, "JOIN", List.of(channel.name()));
     Recipients.deliver(result.recipients(), joinNotification);
+    extensionRegistry
+        .committedEvents()
+        .joined(session, presentedForm, channel.name(), result.recipients());
 
     Channel.Topic topic = channel.topicState();
     if (topic != null) {
@@ -154,7 +158,7 @@ public final class JoinCommandHandler implements CommandHandler {
           Long.toString(topic.setAt()));
     }
 
-    sendNamesReply(session, channel, serverName.get(), result.memberListing());
+    sendNamesReply(extensionRegistry, session, channel, serverName.get(), result.members());
   }
 
   /** The pre-lock displayed identity, or the runtime failure raised while resolving it. */
@@ -215,11 +219,35 @@ public final class JoinCommandHandler implements CommandHandler {
     return null;
   }
 
-  public static void sendNamesReply(ClientSession requester, Channel channel, String serverName) {
-    sendNamesReply(requester, channel, serverName, listingFor(requester, channel));
+  /**
+   * Sends the channel's current members, rendered for {@code requester}, then the closing numeric.
+   */
+  public static void sendNamesReply(
+      ExtensionRegistry extensionRegistry,
+      ClientSession requester,
+      Channel channel,
+      String serverName) {
+    sendNamesReply(extensionRegistry, requester, channel, serverName, channel.memberFacts());
   }
 
-  /** Sends a membership snapshot captured by a join transition, followed by its closing numeric. */
+  /**
+   * Sends member facts captured by a join transition, rendered for {@code requester}, followed by
+   * the closing numeric.
+   */
+  public static void sendNamesReply(
+      ExtensionRegistry extensionRegistry,
+      ClientSession requester,
+      Channel channel,
+      String serverName,
+      List<MemberFacts> members) {
+    sendNamesReply(
+        requester,
+        channel,
+        serverName,
+        new MemberReplies(extensionRegistry).namesTokens(requester, members));
+  }
+
+  /** Sends already rendered listing tokens, followed by the closing numeric. */
   public static void sendNamesReply(
       ClientSession requester, Channel channel, String serverName, List<String> memberListing) {
     sendNamesLine(requester, channel, serverName, memberListing);
@@ -237,14 +265,16 @@ public final class JoinCommandHandler implements CommandHandler {
    * NamesCommandHandler}) can call this once per visible channel and send exactly one closing reply
    * of its own afterward, instead of one per channel.
    */
-  public static void sendNamesLine(ClientSession requester, Channel channel, String serverName) {
-    sendNamesLine(requester, channel, serverName, listingFor(requester, channel));
-  }
-
-  /** The listing in the form the requester negotiated: every prefix with {@code multi-prefix}. */
-  private static List<String> listingFor(ClientSession requester, Channel channel) {
-    return channel.memberListing(
-        requester.negotiatedCapabilities().contains(CapabilityName.MULTI_PREFIX));
+  public static void sendNamesLine(
+      ExtensionRegistry extensionRegistry,
+      ClientSession requester,
+      Channel channel,
+      String serverName) {
+    sendNamesLine(
+        requester,
+        channel,
+        serverName,
+        new MemberReplies(extensionRegistry).namesTokens(requester, channel.memberFacts()));
   }
 
   private static void sendNamesLine(

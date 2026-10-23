@@ -133,6 +133,7 @@ public final class DisconnectCleanup {
       Message quit =
           new Message(java.util.Map.of(), prefix, Command.QUIT, "QUIT", java.util.List.of(reason));
       Recipients.deliver(neighbors, quit);
+      extensionRegistry.committedEvents().quit(session, prefix, reason, neighbors);
       // One WHOWAS entry per disconnection, regardless of
       // cause (QUIT, KILL, keep-alive timeout) — this is the single point every cause funnels
       // through, so no cause-specific recording is needed anywhere else. presentedHostname is a

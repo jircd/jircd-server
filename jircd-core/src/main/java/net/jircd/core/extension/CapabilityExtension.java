@@ -15,11 +15,8 @@
  */
 package net.jircd.core.extension;
 
-import java.util.Map;
 import net.jircd.core.capability.Capability;
 import net.jircd.core.extension.capability.CapabilityRegistrar;
-import net.jircd.core.session.ClientSession;
-import net.jircd.core.session.OutboundMessage;
 
 /**
  * An {@link Extension} that also provides exactly one client-negotiable {@link Capability}
@@ -36,39 +33,12 @@ public interface CapabilityExtension extends Extension {
    * visible until the descriptor is published, and an exception here fails the provider with
    * nothing published.
    *
-   * <p>Providers that have not migrated stage nothing and keep the legacy {@link #contributeTags}
-   * and {@link #includeSenderInFanOut} hooks. Core routes a provider's tags through exactly one
-   * path: a provider that publishes any hooks is never also asked for {@link #contributeTags}.
+   * <p>A provider that stages nothing still offers its capability; core simply has no behavior to
+   * run for it.
    *
    * <p>Runs while the registry's lifecycle lock is held, so it must not call {@code
    * ExtensionRegistry.enable/disable} or {@code ConfigurationReloader.reload} (they throw {@link
    * IllegalStateException}).
    */
   default void register(CapabilityRegistrar registrar) {}
-
-  /**
-   * <b>Temporary bridge, removed once every provider has migrated.</b> Tags this capability
-   * contributes to a delivered message, for a recipient that has this capability negotiated
-   * (T088/T089) — the caller ({@code CapabilityTagRenderer}) checks that precondition before
-   * calling this; implementations don't re-check it themselves. Extensions that don't decorate tags
-   * (e.g. {@code echo-message}) leave this at its no-op default.
-   *
-   * <p>This is a pure function of the immutable message: equal message inputs produce equal maps,
-   * independently of wall clock, randomness, recipient or mutable external state. Identifiers and
-   * timestamps derive from {@link OutboundMessage#messageId()} and {@link
-   * OutboundMessage#sentAt()}. Contribution byte metadata is memoized once per message and
-   * capability identity; rendering may invoke this function again at drain time.
-   */
-  default Map<String, String> contributeTags(OutboundMessage message) {
-    return Map.of();
-  }
-
-  /**
-   * Whether the sender's own session should be included among a fan-out's recipients (T090) — only
-   * {@code echo-message} overrides this; every other capability affects per-recipient formatting
-   * ({@link #contributeTags}), not recipient-set construction.
-   */
-  default boolean includeSenderInFanOut(ClientSession sender) {
-    return false;
-  }
 }

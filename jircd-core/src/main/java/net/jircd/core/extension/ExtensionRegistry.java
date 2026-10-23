@@ -38,6 +38,7 @@ import net.jircd.core.extension.capability.ReplyLimits;
 import net.jircd.core.extension.capability.RuntimeSnapshot;
 import net.jircd.core.session.ChannelMode;
 import net.jircd.core.session.ClientSession;
+import net.jircd.core.session.CommittedEvents;
 import net.jircd.core.session.UserMode;
 import net.jircd.core.session.command.CommandHandler;
 import net.jircd.core.session.command.Replies;
@@ -87,6 +88,7 @@ public final class ExtensionRegistry {
 
   private final CapabilityRuntime capabilityRuntime = new CapabilityRuntime();
   private final HookDispatcher hookDispatcher = new HookDispatcher(FaultReporter.logging());
+  private final CommittedEvents committedEvents = new CommittedEvents(this);
 
   /**
    * Serializes enable and disable. It is not the registry monitor and no message path takes it, so
@@ -115,6 +117,11 @@ public final class ExtensionRegistry {
   /** The handle {@link CapabilityExtension}s receive through {@link ServerContext}. */
   public CapabilityServices capabilityServices() {
     return new CapabilityServices(capabilityRuntime::snapshot);
+  }
+
+  /** Publishes committed state transitions to the providers that listen for them. */
+  public CommittedEvents committedEvents() {
+    return committedEvents;
   }
 
   /** The containing dispatcher every capability hook call goes through. */
@@ -441,7 +448,7 @@ public final class ExtensionRegistry {
         net.jircd.protocol.MessageSerializer.utf8Bytes(context.serverName().get()),
         features.nicknameMaxLength(),
         features.channelNameMaxLength(),
-        ReplyBudgetCatalog.legacyCompatible().plus(active.replyBudgetCatalog()));
+        active.replyBudgetCatalog());
   }
 
   /** Whether {@code stop} failed; the failure is logged, not thrown. */

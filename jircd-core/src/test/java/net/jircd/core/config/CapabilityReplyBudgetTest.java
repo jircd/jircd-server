@@ -61,17 +61,20 @@ class CapabilityReplyBudgetTest {
   }
 
   @Test
-  void twoSymbolStatusReproducesTheCurrentSafeEnvelope() {
-    ReplyBudgetCatalog legacy = ReplyBudgetCatalog.legacyCompatible();
+  void aTwoSymbolStatusProviderReservesTheOperatorAndVoiceSymbols() {
+    ReplyBudgetCatalog legacy = catalog("multi-prefix", ReplySlot.STATUS, 2);
     assertThat(legacy.worstCaseBytes(ReplyLayout.NAMES_MEMBER, LIMITS))
         .isEqualTo(S + 2 * 9 + 50 + 15);
     int u = ServerConfiguration.IDENT_MAX_BYTES;
     int h = ServerConfiguration.PRESENTED_HOST_MAX_BYTES;
-    // WHO with F = 2 + P = 4 is exactly the previously hard-coded assumption.
+    // WHO with F = 2 + P = 4 for the two-symbol status.
     assertThat(legacy.worstCaseBytes(ReplyLayout.WHO_ENTRY, LIMITS))
         .isEqualTo(2 * S + 2 * 9 + 50 + u + h + 22);
-    assertThat(HostmaskReplyBudget.worstCaseBytes(S, 9, 50))
+    assertThat(HostmaskReplyBudget.worstCaseBytes(S, 9, 50, legacy))
         .containsEntry("352 (WHO)", 2 * S + 2 * 9 + 50 + u + h + 22);
+    // With no provider the reserved width is core's single highest-status byte.
+    assertThat(HostmaskReplyBudget.worstCaseBytes(S, 9, 50))
+        .containsEntry("352 (WHO)", 2 * S + 2 * 9 + 50 + u + h + 21);
   }
 
   @Test
@@ -176,12 +179,13 @@ class CapabilityReplyBudgetTest {
     assertThatThrownBy(
             () ->
                 ConfigurationLoader.validateNamesBudget(
-                    "test.jircd.local", 216, 51, ReplyBudgetCatalog.legacyCompatible()))
+                    "test.jircd.local", 216, 51, catalog("multi-prefix", ReplySlot.STATUS, 2)))
         .isInstanceOf(ConfigurationException.class)
         .hasMessageContaining("353=514")
         .hasMessageContaining("budget=");
     Map<String, Integer> names =
-        HostmaskReplyBudget.namesWorstCaseBytes(16, 215, 51, ReplyBudgetCatalog.legacyCompatible());
+        HostmaskReplyBudget.namesWorstCaseBytes(
+            16, 215, 51, catalog("multi-prefix", ReplySlot.STATUS, 2));
     assertThat(names).containsEntry("353", 512);
   }
 
