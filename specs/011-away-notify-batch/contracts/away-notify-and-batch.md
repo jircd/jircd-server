@@ -30,8 +30,15 @@ client→server in this direction):
 
 - The changed user's own confirmation reply (`306 RPL_NOWAWAY` / `305 RPL_UNAWAY`) is
   unaffected by this feature — it is sent to the changed user regardless of whether they or
-  anyone else has negotiated `away-notify` (unchanged, pre-existing `AwayCommandHandler`
-  behavior).
+  anyone else has negotiated `away-notify` (core's `AwayCommandHandler` keeps the away state
+  and these confirmations; the notice to peers belongs to the `away-notify` module, see below).
+- **Ownership** (014-capability-plugin-spi): core publishes a committed `AWAY_CHANGED` event
+  after the away state changes and with no registry or channel monitor held — for every accepted
+  `AWAY`, including a repeated identical reason. The `away-notify` module answers it with the
+  notice above addressed to the event's audience: the deduplicated peers who share a channel
+  with the user, never the user itself. Core narrows the notice to recipients that negotiated
+  the capability and delivers it; a listener fault never undoes the away state. Without the
+  module the state and confirmations are unchanged and no notice is sent.
 - A recipient who has not negotiated `away-notify` observes zero behavior change from this
   feature — the underlying `AWAY` command's existing behavior for the sender themselves, and
   for `WHOIS`/`WHO`/`PRIVMSG`'s existing away-reply behavior, is entirely unchanged (FR-005).
@@ -62,8 +69,8 @@ BATCH +<reference-tag> <type> [<type-param> ...]
 BATCH -<reference-tag>
 ```
 
-The open/close `BATCH` lines carry no prefix — `SessionWriter`, which owns `enqueueBatch`, has
-no server-name dependency to draw one from, and a prefix-less framing line has established
+The open/close `BATCH` lines carry no prefix — the `batch` module builds them, it has no
+server-name dependency to draw one from, and a prefix-less framing line has established
 precedent in this codebase (`KillCommandHandler`'s `ERROR` line uses the same `null` prefix for
 the same reason: a server-framing line with no natural sender identity).
 
@@ -79,9 +86,19 @@ the same reason: a server-framing line with no natural sender identity).
   `batch` and `message-tags` — a recipient with `batch` alone still receives the member
   messages, but completely unwrapped, with no tag and no framing (research.md, Decision 2).
   This is stricter than the bare wire format above might suggest, and is a deliberate
-  defensive choice: `SessionWriter.enqueueRaw`'s tag serialization applies zero capability
-  gating on its own, so a caller/tag combination that reached an unprepared client once already
-  in this codebase (005-fix-batch-conformance FR-010) must not be possible to reproduce here.
+  defensive choice: the writer's tag serialization applies zero capability gating on its own,
+  so a caller/tag combination that reached an unprepared client once already in this codebase
+  (005-fix-batch-conformance FR-010) must not be possible to reproduce here. `message-tags` is
+  a session prerequisite of the `batch` group shaper, not a hard dependency: `batch` alone is
+  still offered and acknowledged, and simply gets plain members.
+- **Ownership** (014-capability-plugin-spi): the `batch` module owns the reference, the `BATCH`
+  lines and the `batch` tag. Core's `SessionWriter.enqueueGroup` takes a finite group, asks the
+  owning provider for a framing plan for that recipient, validates it, and queues every frame —
+  opener and closer included — as one entry that is admitted whole or not at all (a group that
+  cannot fit overflows that recipient only). A member that already carries a `batch` tag keeps
+  it, which is how a caller nests groups. Core currently chooses the framing when the group is
+  prepared; choosing it again at admission, under concurrent capability changes, belongs to the
+  later runtime-lifecycle change and is not provided here.
 - Two or more concurrent groups delivered to the same recipient use distinct reference tags and
   are never ambiguous about which member belongs to which group (FR-009).
 - This feature ships the mechanism only — no currently-shipped command routes any of its
