@@ -39,6 +39,10 @@ public interface CapabilityExtension extends Extension {
    * <p>Providers that have not migrated stage nothing and keep the legacy {@link #contributeTags}
    * and {@link #includeSenderInFanOut} hooks. Core routes a provider's tags through exactly one
    * path: a provider that publishes any hooks is never also asked for {@link #contributeTags}.
+   *
+   * <p>Runs while the registry's lifecycle lock is held, so it must not call {@code
+   * ExtensionRegistry.enable/disable} or {@code ConfigurationReloader.reload} (they throw {@link
+   * IllegalStateException}).
    */
   default void register(CapabilityRegistrar registrar) {}
 

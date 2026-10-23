@@ -94,6 +94,21 @@ public final class MessageSerializer {
     return section.isEmpty() ? 0 : utf8Bytes(section) - 2;
   }
 
+  /**
+   * Whether the escaped tag data fits {@code limit} bytes. The raw character count is a lower bound
+   * of the escaped UTF-8 size, so an oversized map is rejected before any escaped section is built.
+   */
+  public static boolean tagDataBytesAtMost(Map<String, String> tags, long limit) {
+    long raw = 0;
+    for (Map.Entry<String, String> entry : tags.entrySet()) {
+      raw += (long) entry.getKey().length() + entry.getValue().length();
+      if (raw > limit) {
+        return false;
+      }
+    }
+    return tagDataBytes(tags) <= limit;
+  }
+
   private static String serializeTags(Map<String, String> tags) {
     if (tags.isEmpty()) {
       return "";

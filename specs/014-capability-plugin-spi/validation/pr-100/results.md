@@ -7,7 +7,7 @@ Refreshed after review round 2. Recorded on the uncommitted working tree of bran
 | Command | Outcome |
 | --- | --- |
 | `./gradlew spotlessApply` | applied, then clean |
-| `./gradlew build --rerun-tasks` | **BUILD SUCCESSFUL** in 1m 27s: every task re-executed, 1125 tests passed (the last plain `./gradlew build`, with some modules up to date, took 9m 7s on a loaded machine), 0 failed, 0 skipped; Spotless, SpotBugs (main and test), PMD (main and test) and `testCodeCoverageVerification` all green |
+| `./gradlew build` (after the PR #104 Sourcery fixes; not `--rerun-tasks`, so some modules were up to date) | **BUILD SUCCESSFUL**: 1148 tests in the module XML reports, 0 failed, 0 skipped; Spotless, SpotBugs (main and test), PMD (main and test) and `testCodeCoverageVerification` all green |
 
 An earlier plain `./gradlew build` on the same tree failed `spotlessJavaCheck` and `pmdTest` (two test files emptied by my own scripting error, then four PMD test-source notes); both were fixed and the build re-run. A later plain build also passed before one last change (a stop failure after withdrawal is now recorded as FAILED, with a test), after which the `--rerun-tasks` run above is the final one.
 

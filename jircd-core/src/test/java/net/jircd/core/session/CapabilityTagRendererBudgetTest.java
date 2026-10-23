@@ -92,20 +92,20 @@ class CapabilityTagRendererBudgetTest {
   }
 
   @Test
-  void oversizedServerDataIsRejectedEvenWithNoClientTags() {
+  void anOversizedLegacyServerContributionIsOmittedAtPreparationNotTheMessage() {
     OutboundMessage message = OutboundMessage.now("sender!ident@host", "PRIVMSG", "bob", "hello");
-    assertThatThrownBy(() -> renderer(Map.of("s", "x".repeat(4093))).render(recipient(), message))
-        .isInstanceOf(MessageSerializer.MessageTooLongException.class);
+    assertThat(renderer(Map.of("s", "x".repeat(4093))).render(recipient(), message)).isEmpty();
   }
 
   @Test
-  void rejectedRenderedTagsDoNotStopSubsequentWrites() {
+  void anOversizedLegacyContributionDoesNotDropTheMessageOrStopSubsequentWrites() {
     ByteArrayOutputStream out = new ByteArrayOutputStream();
     try (SessionWriter writer =
         new SessionWriter(recipient(), out, renderer(Map.of("s", "x".repeat(4093))))) {
       writer.enqueue(OutboundMessage.now("sender!ident@host", "PRIVMSG", "bob", "hello"));
       writer.enqueueRaw(Message.of(Command.PING, "alive"));
     }
-    assertThat(out.toString(StandardCharsets.UTF_8)).isEqualTo("PING alive\r\n");
+    assertThat(out.toString(StandardCharsets.UTF_8))
+        .isEqualTo(":sender!ident@host PRIVMSG bob hello\r\nPING alive\r\n");
   }
 }

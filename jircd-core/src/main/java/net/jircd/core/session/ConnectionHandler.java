@@ -306,7 +306,8 @@ public final class ConnectionHandler {
 
       @Override
       public void unregister(Command command, CommandHandler installed) {
-        handlers.remove(command, installed);
+        // Identity, not equals: a replacement that considers itself equal must survive.
+        handlers.computeIfPresent(command, (key, current) -> current == installed ? null : current);
       }
     };
   }

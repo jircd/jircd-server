@@ -184,4 +184,36 @@ class CapabilityReplyBudgetTest {
         HostmaskReplyBudget.namesWorstCaseBytes(16, 215, 51, ReplyBudgetCatalog.legacyCompatible());
     assertThat(names).containsEntry("353", 512);
   }
+
+  // ---- a bound that is fine at the reference limits but not at the configured ones
+
+  @Test
+  void aBoundThatExceedsOrThrowsAtTheConfiguredLimitsIsAValidationErrorNotAnIllegalArgument() {
+    ReplyBudgetCatalog tooWide =
+        new ReplyBudgetCatalog(
+            List.of(
+                new ReplyContribution(
+                    "wide", ReplySlot.IDENTITY, l -> l.nicknameMax() > 100 ? 600 : 10)));
+    ReplyBudgetCatalog throwing =
+        new ReplyBudgetCatalog(
+            List.of(
+                new ReplyContribution(
+                    "boom",
+                    ReplySlot.IDENTITY,
+                    l -> {
+                      if (l.nicknameMax() > 100) throw new IllegalStateException("no");
+                      return 10;
+                    })));
+    String configured =
+        "serverName: test.jircd.local\nnicknameMaxLength: 150\nchannelNameMaxLength: 50\n";
+    for (ReplyBudgetCatalog catalog : List.of(tooWide, throwing)) {
+      ConfigurationLoader loader = new ConfigurationLoader(Set.of(), Set.of(), () -> catalog);
+      assertThatThrownBy(
+              () ->
+                  loader.load(
+                      new ByteArrayInputStream(configured.getBytes(StandardCharsets.UTF_8))))
+          .isInstanceOf(ConfigurationException.class)
+          .hasMessageContaining("reply bound");
+    }
+  }
 }

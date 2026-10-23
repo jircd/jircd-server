@@ -280,8 +280,16 @@ public final class ConfigurationLoader {
       int channelNameMaxLength,
       ReplyBudgetCatalog catalog)
       throws ConfigurationException {
-    validateNamesBudget(serverName, nicknameMaxLength, channelNameMaxLength, catalog);
-    validateHostmaskBudget(serverName, nicknameMaxLength, channelNameMaxLength, catalog);
+    try {
+      validateNamesBudget(serverName, nicknameMaxLength, channelNameMaxLength, catalog);
+      validateHostmaskBudget(serverName, nicknameMaxLength, channelNameMaxLength, catalog);
+    } catch (IllegalArgumentException e) {
+      // A provider's reply bound that fails or leaves 0..512 at these limits.
+      throw new ConfigurationException(
+          "A provider reply bound is invalid for the configured serverName, nicknameMaxLength and"
+              + " channelNameMaxLength: "
+              + e.getMessage());
+    }
   }
 
   /**

@@ -60,4 +60,35 @@ class ConnectionHandlerCommandTableTest {
     registrar.unregister(Command.OPER, admin);
     assertThat(registrar.isRegistered(Command.OPER)).isFalse();
   }
+
+  /** Two distinct handlers that consider themselves equal, as a value-like handler might. */
+  private static final class EqualHandler implements CommandHandler {
+    @Override
+    public void handle(ClientSession session, net.jircd.protocol.Message message) {
+      // Not invoked.
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      return other instanceof EqualHandler;
+    }
+
+    @Override
+    public int hashCode() {
+      return 1;
+    }
+  }
+
+  @Test
+  void unregisterComparesTheInstalledHandlerByIdentityNotEquality() {
+    CommandRegistrar registrar = handler().commandRegistrar();
+    CommandHandler provider = new EqualHandler();
+    CommandHandler replacement = new EqualHandler();
+    registrar.register(Command.OPER, provider);
+    registrar.register(Command.OPER, replacement);
+    registrar.unregister(Command.OPER, provider);
+    assertThat(registrar.isRegistered(Command.OPER)).isTrue();
+    registrar.unregister(Command.OPER, replacement);
+    assertThat(registrar.isRegistered(Command.OPER)).isFalse();
+  }
 }

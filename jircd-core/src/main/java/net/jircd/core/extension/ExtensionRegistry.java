@@ -22,6 +22,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.ServiceLoader;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
 import net.jircd.core.capability.Capability;
 import net.jircd.core.config.HostmaskReplyBudget;
 import net.jircd.core.extension.capability.CapabilityDescriptor;
@@ -36,10 +37,14 @@ import net.jircd.core.extension.capability.ReplyBudgetCatalog;
 import net.jircd.core.extension.capability.ReplyLimits;
 import net.jircd.core.extension.capability.RuntimeSnapshot;
 import net.jircd.core.session.ChannelMode;
+import net.jircd.core.session.ClientSession;
 import net.jircd.core.session.UserMode;
 import net.jircd.core.session.command.CommandHandler;
+import net.jircd.core.session.command.Replies;
 import net.jircd.protocol.Command;
+import net.jircd.protocol.Message;
 import net.jircd.protocol.MessageSerializer;
+import net.jircd.protocol.NumericReply;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -66,6 +71,9 @@ public final class ExtensionRegistry {
     final Extension extension;
     volatile Extension.State state = Extension.State.DISABLED;
 
+    /** A FAILED provider whose cleanup did not finish; a later {@code disable} retries it. */
+    volatile boolean cleanupPending;
+
     Entry(Extension extension) {
       this.extension = extension;
     }
@@ -80,10 +88,23 @@ public final class ExtensionRegistry {
   private final CapabilityRuntime capabilityRuntime = new CapabilityRuntime();
   private final HookDispatcher hookDispatcher = new HookDispatcher(FaultReporter.logging());
 
-  /** Commands each enabled provider installed in core, so disable can remove exactly those. */
+  /**
+   * Serializes enable and disable. It is not the registry monitor and no message path takes it, so
+   * provider callbacks (start, register, stop) run while it is held without blocking delivery or
+   * any registry read, and two lifecycle changes still never interleave.
+   */
+  private final ReentrantLock lifecycle = new ReentrantLock();
+
+  /**
+   * Commands each provider installed in core, so disable can remove exactly those. A record whose
+   * removal failed stays here until a retry removes it.
+   */
   private final Map<String, List<InstalledCommand>> installedCommands = new ConcurrentHashMap<>();
 
-  /** The exact handler instance a provider installed, so removal never touches a replacement. */
+  /**
+   * The exact handler instance a provider installed, so removal never touches a replacement. The
+   * handler itself runs only while the current snapshot contains its provider.
+   */
   private record InstalledCommand(Command command, CommandHandler handler) {}
 
   /** The currently published capability hooks; read-only, lifecycle stays with this registry. */
@@ -216,8 +237,35 @@ public final class ExtensionRegistry {
         .toList();
   }
 
-  /** Enables the named extension, rejecting a conflicting {@code extensionPoint} claim (FR-012). */
-  public synchronized void enable(String id) {
+  /**
+   * Enables the named extension, rejecting a conflicting {@code extensionPoint} claim (FR-012).
+   * Provider callbacks run under the lifecycle lock only, never the registry monitor.
+   */
+  public void enable(String id) {
+    requireNoLifecycleCallback();
+    lifecycle.lock();
+    try {
+      enableLocked(id);
+    } finally {
+      lifecycle.unlock();
+    }
+  }
+
+  /**
+   * Provider callbacks run with the lifecycle lock held, so they must not start another lifecycle
+   * change or a configuration reload: it would queue behind (or deadlock with) the lock they hold.
+   *
+   * @throws IllegalStateException if the calling thread is inside a lifecycle callback
+   */
+  public void requireNoLifecycleCallback() {
+    if (lifecycle.isHeldByCurrentThread()) {
+      throw new IllegalStateException(
+          "Extension lifecycle changes and reloads cannot be requested from a provider lifecycle"
+              + " callback (start, stop, register)");
+    }
+  }
+
+  private void enableLocked(String id) {
     Entry entry = byId.get(id);
     if (entry == null) {
       throw new IllegalArgumentException("Unknown extension id: " + id);
@@ -239,24 +287,37 @@ public final class ExtensionRegistry {
                 + "'");
       }
     }
+    // A cleanup a failed disable left unfinished (leftover handlers, a stop that failed, the
+    // extension-point claim) is completed before the provider starts afresh.
+    if (entry.cleanupPending) throwIfPresent(cleanUp(entry));
+    boolean enabled = false;
     try {
       entry.extension.start(serverContext);
       if (entry.extension instanceof CapabilityExtension capability) publish(capability);
       entry.state = Extension.State.ENABLED;
+      entry.cleanupPending = false;
       if (point != null) {
         extensionPointOwners.put(point, id);
       }
-    } catch (RuntimeException | LinkageError e) {
-      // A start that threw may have acquired resources first; stop must tolerate that.
-      stopQuietly(entry.extension);
-      entry.state = Extension.State.FAILED;
-      throw e;
+      enabled = true;
+    } finally {
+      if (!enabled) {
+        // Whatever failed, including an Error: a start that threw may have acquired resources
+        // first, so stop runs (and must tolerate that) and the provider is recorded as failed.
+        boolean stopFailed = stopQuietly(entry.extension);
+        entry.state = Extension.State.FAILED;
+        entry.cleanupPending = stopFailed || installedCommands.containsKey(id);
+        // A claim is only kept while cleanup is unfinished.
+        if (!entry.cleanupPending && point != null) extensionPointOwners.remove(point, id);
+      }
     }
   }
 
   /**
-   * Stages, validates and atomically publishes a provider's hooks; on any failure nothing is left
-   * published or registered.
+   * Stages and validates a provider's hooks, installs its commands, and only then publishes the
+   * hooks in one atomic step, so no reader ever sees hooks of an enable that fails; on any failure
+   * nothing is left published or registered, apart from handlers core could not remove, which are
+   * kept for retry and refuse to run.
    */
   private void publish(CapabilityExtension capability) {
     CapabilityDescriptor descriptor = stage(capability);
@@ -264,25 +325,20 @@ public final class ExtensionRegistry {
     validateReplyBudget(next);
     List<HookRegistration> commands = commandsOf(descriptor);
     requireUnownedCommands(commands);
-    capabilityRuntime.publish(descriptor);
-    boolean installed = false;
     List<InstalledCommand> done = new ArrayList<>();
+    boolean published = false;
     try {
       installCommands(commands, done);
-      installed = true;
+      capabilityRuntime.publish(descriptor);
+      published = true;
     } finally {
-      if (installed) {
-        installedCommands.put(descriptor.providerId(), List.copyOf(done));
-      } else {
-        // Any failure, including an Error, leaves neither a handler nor a publication behind;
-        // a failing removal is reported but must not skip the withdrawal.
-        try {
-          removeCommands(done);
-        } catch (RuntimeException | LinkageError e) {
-          LOG.warn("Rolling back commands of '{}' failed", descriptor.providerId(), e);
-        } finally {
-          capabilityRuntime.withdraw(descriptor.providerId());
-        }
+      String id = descriptor.providerId();
+      if (!done.isEmpty()) installedCommands.put(id, List.copyOf(done));
+      if (!published) {
+        // Any failure, including an Error, leaves neither a published hook nor a runnable handler.
+        capabilityRuntime.withdraw(id);
+        Throwable removal = removeInstalled(id);
+        if (removal != null) LOG.warn("Rolling back commands of '{}' failed", id, removal);
       }
     }
   }
@@ -307,24 +363,53 @@ public final class ExtensionRegistry {
   private void installCommands(List<HookRegistration> commands, List<InstalledCommand> done) {
     if (serverContext == null) return;
     for (HookRegistration registration : commands) {
-      CommandHandler handler = hookDispatcher.guardedCommand(registration);
+      // A command runs only while the published snapshot has its provider, so commands and hooks
+      // become available, and stop being available, in the same atomic step.
+      String providerId = registration.providerId();
+      CommandHandler handler =
+          hookDispatcher.guardedCommand(
+              registration,
+              () -> capabilityRuntime.snapshot().descriptor(providerId).isPresent(),
+              this::refuseWithdrawn);
       serverContext.commandRegistrar().register(registration.command(), handler);
       done.add(new InstalledCommand(registration.command(), handler));
     }
   }
 
-  /** Attempts every removal; the first failure is thrown afterwards with the others suppressed. */
-  private void removeCommands(List<InstalledCommand> commands) {
-    if (serverContext == null) return;
+  /** A handler core could not remove answers as an unknown command once its provider is gone. */
+  private void refuseWithdrawn(ClientSession session, Message message) {
+    String command = message.rawCommand() != null ? message.rawCommand() : message.command().name();
+    Replies.sendFitted(
+        session,
+        serverContext.serverName().get(),
+        NumericReply.ERR_UNKNOWNCOMMAND,
+        List.of(command),
+        "Unknown command");
+  }
+
+  /**
+   * Attempts every removal of the provider's handlers. A record whose removal failed stays for a
+   * retry; the first failure is returned with the later distinct ones suppressed.
+   */
+  private Throwable removeInstalled(String id) {
+    List<InstalledCommand> records = installedCommands.get(id);
+    if (records == null) return null;
     Throwable first = null;
-    for (InstalledCommand installed : commands) {
+    List<InstalledCommand> remaining = new ArrayList<>();
+    for (InstalledCommand installed : records) {
       try {
         serverContext.commandRegistrar().unregister(installed.command(), installed.handler());
       } catch (RuntimeException | LinkageError e) {
         first = accumulate(first, e);
+        remaining.add(installed);
       }
     }
-    throwIfPresent(first);
+    if (remaining.isEmpty()) {
+      installedCommands.remove(id);
+    } else {
+      installedCommands.put(id, List.copyOf(remaining));
+    }
+    return first;
   }
 
   /**
@@ -359,33 +444,59 @@ public final class ExtensionRegistry {
         ReplyBudgetCatalog.legacyCompatible().plus(active.replyBudgetCatalog()));
   }
 
-  private static void stopQuietly(Extension extension) {
+  /** Whether {@code stop} failed; the failure is logged, not thrown. */
+  private static boolean stopQuietly(Extension extension) {
     try {
       extension.stop();
+      return false;
     } catch (RuntimeException | LinkageError e) {
       LOG.warn("Extension '{}' failed to stop after a failed start", extension.id(), e);
+      return true;
     }
   }
 
-  /** Disables the named extension, releasing any {@code extensionPoint} it held. */
-  public synchronized void disable(String id) {
+  /**
+   * Disables the named extension. Cleanup completes fully or the provider is recorded FAILED:
+   * withdrawn from every new capture, with any handler core could not remove refusing to run. A
+   * FAILED provider whose cleanup is unfinished keeps its {@code extensionPoint} claim, so no other
+   * provider can take the point while its resources may still be live; calling {@code disable}
+   * again retries the cleanup, and the claim is released when that succeeds. Provider callbacks run
+   * under the lifecycle lock only, never the registry monitor.
+   */
+  public void disable(String id) {
+    requireNoLifecycleCallback();
+    lifecycle.lock();
+    try {
+      disableLocked(id);
+    } finally {
+      lifecycle.unlock();
+    }
+  }
+
+  private void disableLocked(String id) {
     Entry entry = byId.get(id);
     if (entry == null) {
       throw new IllegalArgumentException("Unknown extension id: " + id);
     }
-    if (entry.state != Extension.State.ENABLED) {
+    boolean retry = entry.state == Extension.State.FAILED && entry.cleanupPending;
+    if (entry.state != Extension.State.ENABLED && !retry) {
       return;
     }
+    throwIfPresent(cleanUp(entry));
+  }
+
+  /**
+   * Withdraws the provider (which may refuse while a published dependent needs it), removes its
+   * handlers and stops it. A clean run leaves it DISABLED and releases its extension-point claim; a
+   * failure leaves it FAILED, withdrawn, with the claim and the unfinished work kept for a retry.
+   * Returns the failure instead of throwing so callers decide.
+   */
+  private Throwable cleanUp(Entry entry) {
+    String id = entry.extension.id();
     // Withdrawal comes first and may refuse (a published dependent); stop then runs outside any
     // snapshot, so callbacks already holding an older one finish against it.
     capabilityRuntime.withdraw(id);
-    Throwable failure = null;
-    try {
-      removeCommands(installedCommands.getOrDefault(id, List.of()));
-    } catch (RuntimeException | LinkageError e) {
-      failure = e;
-    }
-    installedCommands.remove(id);
+    Throwable failure = removeInstalled(id);
     try {
       entry.extension.stop();
     } catch (RuntimeException | LinkageError e) {
@@ -393,11 +504,12 @@ public final class ExtensionRegistry {
       failure = accumulate(failure, e);
     }
     entry.state = failure == null ? Extension.State.DISABLED : Extension.State.FAILED;
+    entry.cleanupPending = failure != null;
     String point = extensionPoint(entry.extension);
-    if (point != null) {
+    if (point != null && failure == null) {
       extensionPointOwners.remove(point, id);
     }
-    throwIfPresent(failure);
+    return failure;
   }
 
   private static String extensionPoint(Extension extension) {

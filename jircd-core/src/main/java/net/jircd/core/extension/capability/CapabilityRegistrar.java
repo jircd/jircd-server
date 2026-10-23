@@ -76,20 +76,23 @@ public final class CapabilityRegistrar {
   /** Declares hard availability dependencies on other providers; self, duplicates rejected. */
   public synchronized void requiresProviders(String... providerIds) {
     requireOpen();
+    // Validated as a whole against a copy, so a rejected call stages none of its ids.
+    Set<String> candidate = new LinkedHashSet<>(requiredProviders);
     for (String id : providerIds) {
       Tokens.require(id, "required provider id");
       if (id.equals(providerId)) {
         throw new IllegalArgumentException("provider '" + id + "' cannot require itself");
       }
-      if (requiredProviders.contains(id)) {
+      if (candidate.contains(id)) {
         throw new IllegalArgumentException("duplicate required provider '" + id + "'");
       }
-      if (requiredProviders.size() >= MAX_REQUIRED_PROVIDERS) {
+      if (candidate.size() >= MAX_REQUIRED_PROVIDERS) {
         throw new IllegalStateException(
             "more than " + MAX_REQUIRED_PROVIDERS + " required providers");
       }
-      requiredProviders.add(id);
+      candidate.add(id);
     }
+    requiredProviders.addAll(candidate);
   }
 
   public Registration onEvent(EventKind kind, Hooks.EventHook hook) {

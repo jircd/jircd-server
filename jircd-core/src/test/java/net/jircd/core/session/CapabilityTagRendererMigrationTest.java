@@ -221,4 +221,115 @@ class CapabilityTagRendererMigrationTest {
         .contains("msgid=")
         .doesNotContain("t=x");
   }
+
+  private static Provider legacy(String id, java.util.function.Supplier<Map<String, String>> tags) {
+    return new Provider(false, false) {
+      @Override
+      public String id() {
+        return id;
+      }
+
+      @Override
+      public Capability providedCapability() {
+        return new Capability(id);
+      }
+
+      @Override
+      public Map<String, String> contributeTags(OutboundMessage message) {
+        return tags.get();
+      }
+    };
+  }
+
+  private static String wireOf(ExtensionRegistry registry, List<String> negotiated) {
+    ClientSession session = new ClientSession("r", "host", RateLimitBucket.withDefaults());
+    session.replaceNegotiatedCapabilities(negotiated);
+    java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+    try (SessionWriter writer =
+        new SessionWriter(session, out, new CapabilityTagRenderer(registry), 1 << 20)) {
+      writer.enqueue(OutboundMessage.now("n!u@h", "PRIVMSG", "#c", "kept"));
+    }
+    return out.toString(java.nio.charset.StandardCharsets.UTF_8);
+  }
+
+  @Test
+  void aLegacyProviderThatThrowsOrReturnsNullContributesNothingAndTheMessageStillGoesOut() {
+    ExtensionRegistry registry = new ExtensionRegistry();
+    registry.register(
+        legacy(
+            "boom",
+            () -> {
+              throw new IllegalStateException("boom");
+            }));
+    registry.register(legacy("nul", () -> null));
+    registry.register(legacy("fine", () -> Map.of("msgid", "ok")));
+    registry.enable("boom");
+    registry.enable("nul");
+    registry.enable("fine");
+    assertThat(wireOf(registry, List.of("boom", "nul", "fine")))
+        .isEqualTo("@msgid=ok :n!u@h PRIVMSG #c kept\r\n");
+  }
+
+  @Test
+  void oversizedLegacyTagsAreOmittedAtEnqueueNotAtDrainSoTheMessageIsNotDropped() {
+    ExtensionRegistry registry = new ExtensionRegistry();
+    registry.register(legacy("huge", () -> Map.of("msgid", "m".repeat(4100))));
+    registry.register(legacy("one", () -> Map.of("a", "x".repeat(2500))));
+    registry.register(legacy("two", () -> Map.of("b", "y".repeat(2500))));
+    registry.enable("huge");
+    registry.enable("one");
+    registry.enable("two");
+    String wire = wireOf(registry, List.of("huge", "one", "two"));
+    assertThat(wire).endsWith(" :n!u@h PRIVMSG #c kept\r\n").doesNotContain("msgid=");
+    // Together they overflow one origin: exactly one of the two survives, whichever came first.
+    assertThat(wire.contains("a=") ^ wire.contains("b=")).isTrue();
+  }
+
+  @Test
+  void legacySelectionFollowsTheCapturedSnapshotNotTheLiveEnabledState() throws Exception {
+    java.util.concurrent.CountDownLatch stopping = new java.util.concurrent.CountDownLatch(1);
+    java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+    Provider slow =
+        new Provider(false, false) {
+          @Override
+          public String id() {
+            return "slow";
+          }
+
+          @Override
+          public Capability providedCapability() {
+            return new Capability("slow");
+          }
+
+          @Override
+          public Map<String, String> contributeTags(OutboundMessage message) {
+            return Map.of("t", "legacy");
+          }
+
+          @Override
+          public void stop() {
+            stopping.countDown();
+            try {
+              release.await();
+            } catch (InterruptedException _) {
+              Thread.currentThread().interrupt();
+            }
+          }
+        };
+    ExtensionRegistry registry = new ExtensionRegistry();
+    registry.register(slow);
+    registry.enable("slow");
+    Thread disabler = new Thread(() -> registry.disable("slow"));
+    disabler.start();
+    assertThat(stopping.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+    ClientSession session = new ClientSession("r", "host", RateLimitBucket.withDefaults());
+    session.replaceNegotiatedCapabilities(List.of("slow"));
+    // Withdrawn from the published view: no tags, even while stop() has not returned.
+    assertThat(
+            new CapabilityTagRenderer(registry)
+                .render(session, OutboundMessage.now("n!u@h", "PRIVMSG", "#c", "x")))
+        .isEmpty();
+    release.countDown();
+    disabler.join(10_000);
+  }
 }

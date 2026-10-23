@@ -22,6 +22,7 @@ import java.util.Map;
 import java.util.Set;
 import net.jircd.core.extension.CapabilityExtension;
 import net.jircd.core.extension.ExtensionRegistry;
+import net.jircd.core.extension.capability.HookDispatcher;
 import net.jircd.core.extension.capability.HookKind;
 import net.jircd.core.extension.capability.HookRegistration;
 import net.jircd.core.extension.capability.RuntimeSnapshot;
@@ -47,48 +48,53 @@ public final class CapabilityTagRenderer implements TagRenderer {
     if (negotiated.isEmpty()) return TagRenderer.NONE.prepare(recipient, message);
     boolean forwardClientTags = negotiated.contains(CapabilityName.MESSAGE_TAGS);
     WireBytes.Tags bytes = forwardClientTags ? message.clientTagBytes() : WireBytes.Tags.NONE;
-    // One captured view per preparation: the typed hooks of migrated providers come from it, and
-    // only providers that published none are asked through the legacy method.
+    // One captured view per preparation: the typed hooks and the unmigrated providers both come
+    // from it, so a provider withdrawn after the capture contributes nothing inconsistent.
     RuntimeSnapshot snapshot = extensionRegistry.capabilitySnapshot();
-    List<CapabilityExtension> legacy = legacySelection(snapshot, negotiated);
+    HookDispatcher dispatcher = extensionRegistry.hookDispatcher();
     Map<String, String> composed = new LinkedHashMap<>();
-    for (CapabilityExtension capability : legacy) {
-      composed.putAll(message.legacyTags(capability));
-      bytes = bytes.plus(message.contributionBytes(capability));
-    }
-    List<Map<String, String>> typed = new ArrayList<>();
-    for (HookRegistration hook : snapshot.hooksFor(HookKind.OUTBOUND_TAGS, negotiated)) {
+    List<Map<String, String>> contributions = new ArrayList<>();
+    for (CapabilityExtension capability : legacySelection(snapshot, negotiated)) {
       OutboundMessage.Contribution contribution =
-          message.contribution(hook, extensionRegistry.hookDispatcher());
+          message.legacyContribution(capability, dispatcher);
       if (fitsAlongside(composed, contribution.tags())) {
         composed.putAll(contribution.tags());
-        typed.add(contribution.tags());
+        contributions.add(contribution.tags());
         bytes = bytes.plus(contribution.bytes());
       } else {
-        // Each contribution fit its own bound, and the legacy ones are budgeted at drain; their
-        // aggregate must fit one origin as well. The latecomer is dropped and reported so the core
-        // message still goes out.
-        extensionRegistry.hookDispatcher().reportAggregateOverflow(hook);
+        dispatcher.reportAggregateOverflow(capability.id());
       }
     }
-    if (legacy.isEmpty() && typed.isEmpty() && !forwardClientTags) {
+    for (HookRegistration hook : snapshot.hooksFor(HookKind.OUTBOUND_TAGS, negotiated)) {
+      OutboundMessage.Contribution contribution = message.contribution(hook, dispatcher);
+      if (fitsAlongside(composed, contribution.tags())) {
+        composed.putAll(contribution.tags());
+        contributions.add(contribution.tags());
+        bytes = bytes.plus(contribution.bytes());
+      } else {
+        // Each contribution fit its own bound; their aggregate must fit one origin as well. The
+        // latecomer is dropped and reported so the core message still goes out.
+        dispatcher.reportAggregateOverflow(hook);
+      }
+    }
+    if (contributions.isEmpty() && !forwardClientTags) {
       return TagRenderer.NONE.prepare(recipient, message);
     }
-    List<CapabilityExtension> selection = List.copyOf(legacy);
-    List<Map<String, String>> contributed = List.copyOf(typed);
+    List<Map<String, String>> selected = List.copyOf(contributions);
     // Merging can collapse many overlapping contributions into one legal tag section.
     // No emitted section exceeds the protocol maximum, even when the summed bound does.
     return new PreparedTags(
         Math.min(bytes.wireBytes(), MessageSerializer.MAX_TAG_SECTION_BYTES),
-        () -> renderSelected(message, forwardClientTags, contributed, selection));
+        () -> renderSelected(message, forwardClientTags, selected));
   }
 
+  /** The enabled unmigrated providers of the captured snapshot that the recipient negotiated. */
   private List<CapabilityExtension> legacySelection(
       RuntimeSnapshot snapshot, Set<String> negotiated) {
     List<CapabilityExtension> selected = new ArrayList<>();
-    for (var extension : extensionRegistry.enabled()) {
-      if (extension instanceof CapabilityExtension capability
-          && !snapshot.hasHooks(capability.id())
+    for (String providerId : snapshot.providerIds()) {
+      if (snapshot.hasHooks(providerId)) continue;
+      if (extensionRegistry.find(providerId).orElse(null) instanceof CapabilityExtension capability
           && negotiated.contains(capability.providedCapability().name())) {
         selected.add(capability);
       }
@@ -100,8 +106,8 @@ public final class CapabilityTagRenderer implements TagRenderer {
     if (composed.isEmpty()) return true; // one contribution was already checked against its bound
     Map<String, String> candidate = new LinkedHashMap<>(composed);
     candidate.putAll(added);
-    return MessageSerializer.tagDataBytes(candidate)
-        <= MessageSerializer.MAX_TAG_DATA_BYTES_PER_ORIGIN;
+    return MessageSerializer.tagDataBytesAtMost(
+        candidate, MessageSerializer.MAX_TAG_DATA_BYTES_PER_ORIGIN);
   }
 
   @Override
@@ -110,17 +116,12 @@ public final class CapabilityTagRenderer implements TagRenderer {
   }
 
   private static Map<String, String> renderSelected(
-      OutboundMessage message,
-      boolean forwardClientTags,
-      List<Map<String, String>> contributed,
-      List<CapabilityExtension> selection) {
+      OutboundMessage message, boolean forwardClientTags, List<Map<String, String>> contributions) {
     Map<String, String> tags = new LinkedHashMap<>();
     if (forwardClientTags) tags.putAll(message.forwardedClientTags());
     checkOriginBudget(tags);
     Map<String, String> serverTags = new LinkedHashMap<>();
-    contributed.forEach(serverTags::putAll);
-    for (CapabilityExtension capability : selection)
-      serverTags.putAll(capability.contributeTags(message));
+    contributions.forEach(serverTags::putAll);
     checkOriginBudget(serverTags);
     tags.putAll(serverTags);
     return tags;

@@ -17,14 +17,17 @@ package net.jircd.core.extension.capability;
 
 import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.BooleanSupplier;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
+import java.util.function.UnaryOperator;
 import net.jircd.core.session.ClientSession;
 import net.jircd.core.session.FrameSequence;
 import net.jircd.core.session.OutboundMessage;
@@ -68,6 +71,7 @@ public final class HookDispatcher {
           validated(
               registration,
               () -> registration.hook(Hooks.EventHook.class).apply(event),
+              ArrayList::new,
               intents -> validEventIntents(intents, event));
       for (EventIntent intent : result.orElse(List.of())) {
         List<ClientSession> negotiated =
@@ -145,6 +149,7 @@ public final class HookDispatcher {
       validated(
               registration,
               () -> registration.hook(Hooks.RecipientHook.class).apply(intent, context),
+              HashSet::new,
               RECIPIENT_HOOK_ROLES::containsAll)
           .ifPresent(roles::addAll);
     }
@@ -159,9 +164,37 @@ public final class HookDispatcher {
     return validated(
             registration,
             () -> registration.hook(Hooks.OutboundTagHook.class).apply(message),
+            LinkedHashMap::new,
             tags -> validTags(tags, registration))
         .map(Map::copyOf)
         .orElse(Map.of());
+  }
+
+  /**
+   * The temporary legacy path: a not yet migrated provider's tags, contained like a hook. A throw,
+   * a {@code null} or more than one origin may carry is dropped whole and reported, so the core
+   * message still goes out.
+   */
+  public Map<String, String> legacyOutboundTags(
+      String providerId, Supplier<Map<String, String>> call) {
+    Map<String, String> copy;
+    try {
+      Map<String, String> raw = call.get();
+      if (raw == null) {
+        reporter.report(providerId, HookKind.OUTBOUND_TAGS, FaultCategory.NULL_RESULT);
+        return Map.of();
+      }
+      copy = Map.copyOf(raw);
+    } catch (RuntimeException | LinkageError _) {
+      reporter.report(providerId, HookKind.OUTBOUND_TAGS, FaultCategory.EXCEPTION);
+      return Map.of();
+    }
+    if (!MessageSerializer.tagDataBytesAtMost(
+        copy, MessageSerializer.MAX_TAG_DATA_BYTES_PER_ORIGIN)) {
+      reporter.report(providerId, HookKind.OUTBOUND_TAGS, FaultCategory.INVALID_RESULT);
+      return Map.of();
+    }
+    return copy;
   }
 
   private static boolean validTags(Map<String, String> tags, HookRegistration registration) {
@@ -173,7 +206,7 @@ public final class HookDispatcher {
         return false;
       }
     }
-    return MessageSerializer.tagDataBytes(tags) <= registration.maxBytes();
+    return MessageSerializer.tagDataBytesAtMost(tags, registration.maxBytes());
   }
 
   /** The requester's status string: the owner's replacement, else core's highest status. */
@@ -369,10 +402,29 @@ public final class HookDispatcher {
     fault(registration, FaultCategory.INVALID_RESULT);
   }
 
+  /** The same for a legacy provider, which has no registration. */
+  public void reportAggregateOverflow(String providerId) {
+    reporter.report(providerId, HookKind.OUTBOUND_TAGS, FaultCategory.INVALID_RESULT);
+  }
+
   /** Wraps a provider command handler so its fault is contained and reported. */
   public CommandHandler guardedCommand(HookRegistration registration) {
+    return guardedCommand(registration, () -> true, (session, message) -> {});
+  }
+
+  /**
+   * Wraps a provider command handler so its fault is contained and reported, and so it refuses to
+   * run once {@code live} turns false (the provider was withdrawn but core could not remove the
+   * handler): {@code refused} answers instead.
+   */
+  public CommandHandler guardedCommand(
+      HookRegistration registration, BooleanSupplier live, CommandHandler refused) {
     CommandHandler handler = registration.commandHandler();
     return (session, message) -> {
+      if (!live.getAsBoolean()) {
+        refused.handle(session, message);
+        return;
+      }
       try {
         handler.handle(session, message);
       } catch (RuntimeException | LinkageError _) {
@@ -381,11 +433,26 @@ public final class HookDispatcher {
     };
   }
 
+  /** For results that are already immutable values. */
   private <T> Optional<T> validated(
       HookRegistration registration, Supplier<T> call, Predicate<T> valid) {
+    return validated(registration, call, UnaryOperator.identity(), valid);
+  }
+
+  /**
+   * Runs the hook, snapshots its result with {@code copier} and validates and returns only that
+   * copy, so a container the provider keeps changing cannot differ from what was checked. A failure
+   * while copying is a hook fault like any other.
+   */
+  private <T> Optional<T> validated(
+      HookRegistration registration,
+      Supplier<T> call,
+      UnaryOperator<T> copier,
+      Predicate<T> valid) {
     T result;
     try {
-      result = call.get();
+      T raw = call.get();
+      result = raw == null ? null : copier.apply(raw);
     } catch (RuntimeException | LinkageError _) {
       fault(registration, FaultCategory.EXCEPTION);
       return Optional.empty();

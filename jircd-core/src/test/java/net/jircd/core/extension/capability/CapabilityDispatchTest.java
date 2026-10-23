@@ -590,4 +590,108 @@ class CapabilityDispatchTest {
         .isEmpty();
     assertThat(faults).hasSize(1);
   }
+
+  // ---- results are copied before they are validated
+
+  private static final class ShiftingMap extends java.util.AbstractMap<String, String> {
+    int iterations;
+
+    @Override
+    public Set<Entry<String, String>> entrySet() {
+      return new java.util.AbstractSet<>() {
+        @Override
+        public java.util.Iterator<Entry<String, String>> iterator() {
+          iterations++;
+          return Map.of(iterations == 1 ? "a" : "stolen", "v").entrySet().iterator();
+        }
+
+        @Override
+        public int size() {
+          return 1;
+        }
+      };
+    }
+  }
+
+  private static final class OneShotRoles extends java.util.AbstractSet<DeliveryRole> {
+    int reads;
+
+    @Override
+    public java.util.Iterator<DeliveryRole> iterator() {
+      reads++;
+      if (reads > 1) throw new java.util.ConcurrentModificationException();
+      return Set.of(DeliveryRole.SENDER_COPY).iterator();
+    }
+
+    @Override
+    public int size() {
+      return 1;
+    }
+  }
+
+  @Test
+  void aTagResultThatChangesAfterTheFirstReadIsValidatedAndUsedAsOneCopy() {
+    Map<String, String> tags =
+        dispatcher.outboundTags(tagHook(Set.of("a"), 16, new ShiftingMap()), message());
+    assertThat(tags).containsExactly(Map.entry("a", "v"));
+    assertThat(faults).isEmpty();
+  }
+
+  @Test
+  void aRecipientRoleSetThatCannotBeReadTwiceStillYieldsItsValidatedCopy() {
+    RuntimeSnapshot snapshot =
+        snapshotOf("echo", r -> r.onRecipients((i, c) -> new OneShotRoles()));
+    DeliveryIntent intent =
+        new DeliveryIntent(UUID.randomUUID(), Set.of(DeliveryRole.ORDINARY_TARGET));
+    assertThat(dispatcher.recipientRoles(snapshot, Set.of("echo"), intent, CONTEXT))
+        .containsExactly(DeliveryRole.SENDER_COPY);
+    assertThat(faults).isEmpty();
+  }
+
+  @Test
+  void anEventIntentListThatCannotBeReadTwiceStillYieldsItsValidatedCopy() {
+    ClientSession listening = session("a");
+    listening.replaceNegotiatedCapabilities(Set.of("watcher"));
+    int[] reads = {0};
+    List<EventIntent> once =
+        new java.util.AbstractList<>() {
+          @Override
+          public EventIntent get(int index) {
+            reads[0]++;
+            if (reads[0] > 1) throw new java.util.ConcurrentModificationException();
+            return new EventIntent(Message.of(Command.AWAY, "gone"), List.of(listening));
+          }
+
+          @Override
+          public int size() {
+            return 1;
+          }
+        };
+    RuntimeSnapshot snapshot =
+        snapshotOf("watcher", r -> r.onEvent(EventKind.AWAY_CHANGED, e -> once));
+    assertThat(dispatcher.event(snapshot, event(listening))).hasSize(1);
+    assertThat(faults).isEmpty();
+  }
+
+  // ---- the temporary legacy tag path is contained like a hook
+
+  @Test
+  void aLegacyContributionThatThrowsIsNullOrOversizedIsDroppedAndReported() {
+    assertThat(
+            dispatcher.legacyOutboundTags(
+                "old",
+                () -> {
+                  throw new IllegalStateException("boom");
+                }))
+        .isEmpty();
+    assertThat(dispatcher.legacyOutboundTags("old", () -> null)).isEmpty();
+    assertThat(dispatcher.legacyOutboundTags("old", () -> Map.of("a", "x".repeat(4100)))).isEmpty();
+    assertThat(dispatcher.legacyOutboundTags("old", () -> Map.of("a", "v")))
+        .containsExactly(Map.entry("a", "v"));
+    assertThat(faults)
+        .containsExactly(
+            new Fault("old", HookKind.OUTBOUND_TAGS, FaultCategory.EXCEPTION),
+            new Fault("old", HookKind.OUTBOUND_TAGS, FaultCategory.NULL_RESULT),
+            new Fault("old", HookKind.OUTBOUND_TAGS, FaultCategory.INVALID_RESULT));
+  }
 }

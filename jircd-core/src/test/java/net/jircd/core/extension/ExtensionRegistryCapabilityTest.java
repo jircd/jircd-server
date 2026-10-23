@@ -18,11 +18,14 @@ package net.jircd.core.extension;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import net.jircd.core.capability.Capability;
@@ -44,6 +47,7 @@ class ExtensionRegistryCapabilityTest {
     final Consumer<CapabilityRegistrar> staging;
     final RuntimeException startFailure;
     volatile RuntimeException stopFailure;
+    volatile Error startError;
     final AtomicInteger starts = new AtomicInteger();
     final AtomicInteger stops = new AtomicInteger();
 
@@ -62,6 +66,7 @@ class ExtensionRegistryCapabilityTest {
     public void start(ServerContext context) {
       starts.incrementAndGet();
       if (startFailure != null) throw startFailure;
+      if (startError != null) throw startError;
     }
 
     @Override
@@ -92,12 +97,14 @@ class ExtensionRegistryCapabilityTest {
   private boolean failUnregister;
   private Error unregisterError;
   private RuntimeException sharedUnregisterFailure;
+  private Runnable onRegister = () -> {};
 
   /** Core's command table as a provider sees it: ownership query, install and removal. */
   private final CommandRegistrar commands =
       new CommandRegistrar() {
         @Override
         public void register(Command command, CommandHandler handler) {
+          onRegister.run();
           if (handlers.size() >= failAfterRegistrations) throw new NoClassDefFoundError("x");
           registeredCommands.add(command.name());
           handlers.put(command, handler);
@@ -599,5 +606,251 @@ class ExtensionRegistryCapabilityTest {
     registry.register(tagProvider("alpha", "a"));
     registry.enable("alpha");
     assertThat(registry.capabilitySnapshot().providerIds()).containsExactly("alpha");
+  }
+
+  // ---- Sourcery review of PR #104
+
+  @Test
+  void aLeftoverHandlerRefusesToRunAndIsRemovedByRetryingTheDisable() {
+    ExtensionRegistry registry = registry("test.jircd.local");
+    AtomicInteger handled = new AtomicInteger();
+    registry.register(
+        new Provider(
+            "cmd", r -> r.command(Command.TAGMSG, (s, m) -> handled.incrementAndGet()), null));
+    registry.enable("cmd");
+    failUnregister = true;
+    assertThatThrownBy(() -> registry.disable("cmd")).isInstanceOf(IllegalStateException.class);
+    ClientSession session = new ClientSession("c", "host", RateLimitBucket.withDefaults());
+    Message tagmsg = Message.of(Command.TAGMSG, "#c");
+    assertThat(handlers).containsKey(Command.TAGMSG);
+    handlers.get(Command.TAGMSG).handle(session, tagmsg);
+    assertThat(handled).hasValue(0);
+    failUnregister = false;
+    registry.disable("cmd");
+    assertThat(handlers).doesNotContainKey(Command.TAGMSG);
+    assertThat(registry.stateOf("cmd")).isEqualTo(Extension.State.DISABLED);
+    registry.enable("cmd");
+    handlers.get(Command.TAGMSG).handle(session, tagmsg);
+    assertThat(handled).hasValue(1);
+  }
+
+  @Test
+  void aFailedRollbackKeepsTheLeftoverForRetryAndItsHandlerRefusesToRun() {
+    ExtensionRegistry registry = registry("test.jircd.local");
+    AtomicInteger handled = new AtomicInteger();
+    failAfterRegistrations = 1;
+    failUnregister = true;
+    registry.register(
+        new Provider(
+            "two",
+            r -> {
+              r.command(Command.TAGMSG, (s, m) -> handled.incrementAndGet());
+              r.command(Command.AWAY, (s, m) -> {});
+            },
+            null));
+    assertThatThrownBy(() -> registry.enable("two")).isInstanceOf(NoClassDefFoundError.class);
+    ClientSession session = new ClientSession("c", "host", RateLimitBucket.withDefaults());
+    assertThat(handlers).containsKey(Command.TAGMSG);
+    handlers.get(Command.TAGMSG).handle(session, Message.of(Command.TAGMSG, "#c"));
+    assertThat(handled).hasValue(0);
+    failUnregister = false;
+    registry.disable("two");
+    assertThat(handlers).isEmpty();
+    assertThat(registry.stateOf("two")).isEqualTo(Extension.State.DISABLED);
+  }
+
+  @Test
+  void hooksAreNeverVisibleBeforeTheCommandsAreInstalledNorAfterAFailedEnable() {
+    ExtensionRegistry registry = registry("test.jircd.local");
+    List<Set<String>> seen = new ArrayList<>();
+    onRegister = () -> seen.add(registry.capabilitySnapshot().providerIds());
+    failAfterRegistrations = 1;
+    registry.register(
+        new Provider(
+            "two",
+            r -> {
+              r.onOutboundTags(Set.of("a"), 16, message -> Map.of("a", "v"));
+              r.command(Command.TAGMSG, (s, m) -> {});
+              r.command(Command.AWAY, (s, m) -> {});
+            },
+            null));
+    assertThatThrownBy(() -> registry.enable("two")).isInstanceOf(NoClassDefFoundError.class);
+    assertThat(seen).isNotEmpty().allSatisfy(ids -> assertThat(ids).isEmpty());
+    assertThat(registry.capabilitySnapshot().providerIds()).isEmpty();
+  }
+
+  @Test
+  void providerCallbacksRunOutsideTheRegistryMonitor() {
+    ExtensionRegistry registry = registry("test.jircd.local");
+    boolean[] otherThreadFinished = {false};
+    String[] readResult = {null};
+    registry.register(
+        new CapabilityExtension() {
+          @Override
+          public String id() {
+            return "blocker";
+          }
+
+          @Override
+          public void start(ServerContext context) {
+            CountDownLatch done = new CountDownLatch(1);
+            Thread other =
+                new Thread(
+                    () -> {
+                      synchronized (registry) {
+                        readResult[0] =
+                            registry.enabled().size() + "/" + registry.stateOf("blocker");
+                        done.countDown();
+                      }
+                    });
+            other.start();
+            try {
+              otherThreadFinished[0] = done.await(5, TimeUnit.SECONDS);
+            } catch (InterruptedException _) {
+              Thread.currentThread().interrupt();
+            }
+          }
+
+          @Override
+          public void stop() {
+            // No resources.
+          }
+
+          @Override
+          public Capability providedCapability() {
+            return new Capability("blocker");
+          }
+        });
+    registry.enable("blocker");
+    assertThat(otherThreadFinished[0]).isTrue();
+    assertThat(readResult[0]).isNotNull();
+  }
+
+  @Test
+  void anyErrorFromStartOrStagingStillStopsTheProviderAndRecordsItFailed() {
+    ExtensionRegistry registry = registry("test.jircd.local");
+    Provider failingStart = new Provider("start", r -> {}, null);
+    failingStart.startError = new AssertionError("start");
+    Provider failingStaging =
+        new Provider(
+            "stage",
+            r -> {
+              throw new AssertionError("stage");
+            },
+            null);
+    registry.register(failingStart);
+    registry.register(failingStaging);
+    assertThatThrownBy(() -> registry.enable("start")).isInstanceOf(AssertionError.class);
+    assertThatThrownBy(() -> registry.enable("stage")).isInstanceOf(AssertionError.class);
+    assertThat(failingStart.stops).hasValue(1);
+    assertThat(failingStaging.stops).hasValue(1);
+    assertThat(registry.stateOf("start")).isEqualTo(Extension.State.FAILED);
+    assertThat(registry.stateOf("stage")).isEqualTo(Extension.State.FAILED);
+    assertThat(registry.capabilitySnapshot().providerIds()).isEmpty();
+  }
+
+  private static final class PointOwner implements ServerExtension {
+    private final String id;
+    volatile RuntimeException stopFailure;
+    volatile RuntimeException startFailure;
+
+    PointOwner(String id) {
+      this.id = id;
+    }
+
+    @Override
+    public String id() {
+      return id;
+    }
+
+    @Override
+    public String extensionPoint() {
+      return "shared-point";
+    }
+
+    @Override
+    public void start(ServerContext context) {
+      if (startFailure != null) throw startFailure;
+    }
+
+    @Override
+    public void stop() {
+      if (stopFailure != null) throw stopFailure;
+    }
+  }
+
+  @Test
+  void aFailedStopKeepsTheExtensionPointClaimUntilARetriedDisableSucceeds() {
+    ExtensionRegistry registry = registry("test.jircd.local");
+    PointOwner first = new PointOwner("first");
+    registry.register(first);
+    registry.register(new PointOwner("second"));
+    registry.enable("first");
+    first.stopFailure = new IllegalStateException("stuck");
+    assertThatThrownBy(() -> registry.disable("first")).isSameAs(first.stopFailure);
+    assertThat(registry.stateOf("first")).isEqualTo(Extension.State.FAILED);
+    assertThatThrownBy(() -> registry.enable("second"))
+        .isInstanceOf(ExtensionRegistry.ExtensionPointConflictException.class);
+    first.stopFailure = null;
+    registry.disable("first");
+    assertThat(registry.stateOf("first")).isEqualTo(Extension.State.DISABLED);
+    registry.enable("second");
+    assertThat(registry.stateOf("second")).isEqualTo(Extension.State.ENABLED);
+  }
+
+  @Test
+  void aFailedReEnableAfterAFailedStopFinishesThePendingCleanupAndReleasesTheClaim() {
+    ExtensionRegistry registry = registry("test.jircd.local");
+    PointOwner first = new PointOwner("first");
+    registry.register(first);
+    registry.register(new PointOwner("second"));
+    registry.enable("first");
+    first.stopFailure = new IllegalStateException("stuck");
+    assertThatThrownBy(() -> registry.disable("first")).isSameAs(first.stopFailure);
+    first.stopFailure = null;
+    first.startFailure = new IllegalStateException("will not start");
+    assertThatThrownBy(() -> registry.enable("first")).isSameAs(first.startFailure);
+    assertThat(registry.stateOf("first")).isEqualTo(Extension.State.FAILED);
+    registry.enable("second");
+    assertThat(registry.stateOf("second")).isEqualTo(Extension.State.ENABLED);
+  }
+
+  @Test
+  void aProviderCallbackCannotReEnterTheLifecycle() {
+    ExtensionRegistry registry = registry("test.jircd.local");
+    registry.register(tagProvider("other", "o"));
+    java.util.concurrent.atomic.AtomicReference<Throwable> enableAttempt =
+        new java.util.concurrent.atomic.AtomicReference<>();
+    java.util.concurrent.atomic.AtomicReference<Throwable> disableAttempt =
+        new java.util.concurrent.atomic.AtomicReference<>();
+    registry.register(
+        new CapabilityExtension() {
+          @Override
+          public String id() {
+            return "reentrant";
+          }
+
+          @Override
+          public void start(ServerContext context) {
+            enableAttempt.set(catchThrowable(() -> registry.enable("other")));
+            disableAttempt.set(catchThrowable(() -> registry.disable("other")));
+          }
+
+          @Override
+          public void stop() {
+            // No resources.
+          }
+
+          @Override
+          public Capability providedCapability() {
+            return new Capability("reentrant");
+          }
+        });
+    registry.enable("reentrant");
+    assertThat(enableAttempt.get())
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("lifecycle");
+    assertThat(disableAttempt.get()).isInstanceOf(IllegalStateException.class);
+    assertThat(registry.stateOf("other")).isEqualTo(Extension.State.DISABLED);
   }
 }

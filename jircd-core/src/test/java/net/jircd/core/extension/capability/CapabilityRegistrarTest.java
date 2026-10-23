@@ -277,4 +277,16 @@ class CapabilityRegistrarTest {
     assertThat(snapshot.without("alpha").hooks(HookKind.OUTBOUND_TAGS)).hasSize(1);
     assertThat(RuntimeSnapshot.EMPTY.hooks(HookKind.EVENT)).isEmpty();
   }
+
+  @Test
+  void aRejectedRequiresProvidersCallStagesNoneOfItsIds() {
+    CapabilityRegistrar registrar = registrar("me");
+    assertThatThrownBy(() -> registrar.requiresProviders("fine", "fine"))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> registrar.requiresProviders("fine", "me"))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> registrar.requiresProviders("fine", "bad id"))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThat(registrar.build().requiresProviders()).isEmpty();
+  }
 }

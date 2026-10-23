@@ -22,6 +22,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import net.jircd.core.extension.CapabilityExtension;
+import net.jircd.core.extension.capability.FaultReporter;
 import net.jircd.core.extension.capability.HookDispatcher;
 import net.jircd.core.extension.capability.HookRegistration;
 
@@ -30,6 +31,9 @@ import net.jircd.core.extension.capability.HookRegistration;
  * Recipient selection and rendering remain in the tag renderer; metadata never changes content.
  */
 public final class OutboundMessage {
+  private static final HookDispatcher LEGACY_DISPATCHER =
+      new HookDispatcher(FaultReporter.logging());
+
   private final String senderPresentedForm;
   private final String command;
   private final String target;
@@ -115,20 +119,21 @@ public final class OutboundMessage {
   }
 
   synchronized WireBytes.Tags contributionBytes(CapabilityExtension capability) {
-    return legacyContribution(capability).bytes();
+    return legacyContribution(capability, LEGACY_DISPATCHER).bytes();
   }
 
-  /** The legacy provider's tags, evaluated once per envelope so enqueue can budget them. */
-  synchronized Map<String, String> legacyTags(CapabilityExtension capability) {
-    return legacyContribution(capability).tags();
-  }
-
-  private Contribution legacyContribution(CapabilityExtension capability) {
+  /**
+   * The legacy provider's tags, evaluated once per envelope so enqueue can budget them. A throw, a
+   * {@code null} or an oversized map is contained by {@code dispatcher}: an empty contribution.
+   */
+  synchronized Contribution legacyContribution(
+      CapabilityExtension capability, HookDispatcher dispatcher) {
     if (contributions == null) contributions = new IdentityHashMap<>();
     return contributions.computeIfAbsent(
         capability,
         key -> {
-          Map<String, String> tags = Map.copyOf(key.contributeTags(this));
+          Map<String, String> tags =
+              dispatcher.legacyOutboundTags(key.id(), () -> key.contributeTags(this));
           return new Contribution(tags, WireBytes.tags(tags));
         });
   }

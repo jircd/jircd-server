@@ -52,22 +52,43 @@ final class FrameSyntax {
     Map<String, String> client = new HashMap<>();
     for (var entry : tags.entrySet()) {
       String key = entry.getKey();
-      if (key.isEmpty() || hasAny(key, " ;=\r\n\0"))
-        throw new IllegalArgumentException("Invalid tag key");
+      if (!validKey(key)) throw new IllegalArgumentException("Invalid tag key");
       // CR and LF are escaped by the serializer, but NUL would be emitted unchanged.
       if (entry.getValue().indexOf('\0') >= 0)
         throw new IllegalArgumentException("Invalid tag value");
       (key.startsWith("+") ? client : server).put(key, entry.getValue());
     }
     for (Map<String, String> origin : java.util.List.of(server, client)) {
-      if (MessageSerializer.tagDataBytes(origin)
-          > MessageSerializer.MAX_TAG_DATA_BYTES_PER_ORIGIN) {
+      if (!MessageSerializer.tagDataBytesAtMost(
+          origin, MessageSerializer.MAX_TAG_DATA_BYTES_PER_ORIGIN)) {
         throw new IllegalArgumentException(
             "Tag origin exceeds "
                 + MessageSerializer.MAX_TAG_DATA_BYTES_PER_ORIGIN
                 + " data bytes");
       }
     }
+  }
+
+  /**
+   * IRCv3 key: optional {@code +}, optional {@code vendor/} (a hostname), then
+   * letters-digits-hyphens.
+   */
+  private static boolean validKey(String key) {
+    String body = key.startsWith("+") ? key.substring(1) : key;
+    int slash = body.indexOf('/');
+    String name = slash < 0 ? body : body.substring(slash + 1);
+    if (slash >= 0 && !validVendor(body.substring(0, slash))) return false;
+    return !name.isEmpty() && name.chars().allMatch(c -> isAlnum(c) || c == '-');
+  }
+
+  private static boolean validVendor(String vendor) {
+    if (vendor.isEmpty() || vendor.startsWith(".") || vendor.endsWith(".")) return false;
+    return !vendor.contains("..")
+        && vendor.chars().allMatch(c -> isAlnum(c) || c == '-' || c == '.');
+  }
+
+  private static boolean isAlnum(int c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9');
   }
 
   private static boolean validCommand(String command) {

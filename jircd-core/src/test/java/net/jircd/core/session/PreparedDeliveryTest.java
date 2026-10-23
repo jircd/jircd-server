@@ -255,4 +255,23 @@ class PreparedDeliveryTest {
       }
     }
   }
+
+  @Test
+  void tagKeysMustMatchTheIrcv3KeyGrammar() {
+    for (String key :
+        List.of("a\tb", "a\u0001b", "a\u007fb", "a_b", "+", "vendor/", "/name", "a/b/c")) {
+      List<Message> frames =
+          List.of(
+              new Message(Map.of(key, "v"), "srv", Command.NOTICE, "NOTICE", List.of("#c", "x")));
+      assertThatThrownBy(() -> FrameSequence.of(frames))
+          .as("key %s", key.replace("\t", "\\t"))
+          .isInstanceOf(IllegalArgumentException.class);
+    }
+    for (String key : List.of("time", "msgid", "+draft/reply", "example.com/foo-bar", "+typing")) {
+      List<Message> frames =
+          List.of(
+              new Message(Map.of(key, "v"), "srv", Command.NOTICE, "NOTICE", List.of("#c", "x")));
+      assertThat(FrameSequence.of(frames).lines()).hasSize(1);
+    }
+  }
 }
