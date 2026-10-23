@@ -17,6 +17,7 @@ package net.jircd.core.extension;
 
 import java.util.Map;
 import net.jircd.core.capability.Capability;
+import net.jircd.core.extension.capability.CapabilityRegistrar;
 import net.jircd.core.session.ClientSession;
 import net.jircd.core.session.OutboundMessage;
 
@@ -29,10 +30,28 @@ public interface CapabilityExtension extends Extension {
   Capability providedCapability();
 
   /**
-   * Tags this capability contributes to a delivered message, for a recipient that has this
-   * capability negotiated (T088/T089) — the caller ({@code CapabilityTagRenderer}) checks that
-   * precondition before calling this; implementations don't re-check it themselves. Extensions that
-   * don't decorate tags (e.g. {@code echo-message}) leave this at its no-op default.
+   * Stages this provider's typed hooks. Called once per enable after {@link #start}, and also
+   * before any enable to discover the reply decorations the provider could apply, so it must have
+   * no side effects and acquire no resources; those belong in {@code start}. Nothing staged is
+   * visible until the descriptor is published, and an exception here fails the provider with
+   * nothing published.
+   *
+   * <p>Providers that have not migrated stage nothing and keep the legacy {@link #contributeTags}
+   * and {@link #includeSenderInFanOut} hooks. Core routes a provider's tags through exactly one
+   * path: a provider that publishes any hooks is never also asked for {@link #contributeTags}.
+   *
+   * <p>Runs while the registry's lifecycle lock is held, so it must not call {@code
+   * ExtensionRegistry.enable/disable} or {@code ConfigurationReloader.reload} (they throw {@link
+   * IllegalStateException}).
+   */
+  default void register(CapabilityRegistrar registrar) {}
+
+  /**
+   * <b>Temporary bridge, removed once every provider has migrated.</b> Tags this capability
+   * contributes to a delivered message, for a recipient that has this capability negotiated
+   * (T088/T089) — the caller ({@code CapabilityTagRenderer}) checks that precondition before
+   * calling this; implementations don't re-check it themselves. Extensions that don't decorate tags
+   * (e.g. {@code echo-message}) leave this at its no-op default.
    *
    * <p>This is a pure function of the immutable message: equal message inputs produce equal maps,
    * independently of wall clock, randomness, recipient or mutable external state. Identifiers and

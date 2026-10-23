@@ -29,7 +29,21 @@ public interface Extension {
 
   String id();
 
+  /**
+   * Prepares resources. If this throws, {@link #stop()} is still called so whatever was acquired
+   * before the failure is released; {@code stop} must therefore tolerate a partial start.
+   *
+   * <p>Runs while the registry's lifecycle lock is held: do not call {@code
+   * ExtensionRegistry.enable/disable} or {@code ConfigurationReloader.reload} from here (directly
+   * or by waiting on another thread that does); they fail fast with {@link IllegalStateException}
+   * on the calling thread and would deadlock from another.
+   */
   void start(ServerContext context);
 
+  /**
+   * Releases everything {@link #start} acquired. Must tolerate a partial start and being called
+   * again after a failure (a failed disable is retried). The same lifecycle-lock rule as {@link
+   * #start} applies.
+   */
   void stop();
 }

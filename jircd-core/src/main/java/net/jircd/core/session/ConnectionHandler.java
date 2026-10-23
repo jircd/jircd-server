@@ -39,6 +39,7 @@ import java.util.function.Consumer;
 import java.util.function.Supplier;
 import net.jircd.core.config.ConnectionLimitPolicy;
 import net.jircd.core.config.ServerConfiguration;
+import net.jircd.core.extension.CommandRegistrar;
 import net.jircd.core.extension.ConnectionAdmissionExtension;
 import net.jircd.core.extension.Extension;
 import net.jircd.core.extension.ExtensionRegistry;
@@ -286,6 +287,29 @@ public final class ConnectionHandler {
 
   public void registerHandler(Command command, CommandHandler handler) {
     handlers.put(command, handler);
+  }
+
+  /**
+   * The extension-facing view of this command table: install, ownership query, conditional removal.
+   */
+  public CommandRegistrar commandRegistrar() {
+    return new CommandRegistrar() {
+      @Override
+      public void register(Command command, CommandHandler handler) {
+        registerHandler(command, handler);
+      }
+
+      @Override
+      public boolean isRegistered(Command command) {
+        return handlers.containsKey(command);
+      }
+
+      @Override
+      public void unregister(Command command, CommandHandler installed) {
+        // Identity, not equals: a replacement that considers itself equal must survive.
+        handlers.computeIfPresent(command, (key, current) -> current == installed ? null : current);
+      }
+    };
   }
 
   /**

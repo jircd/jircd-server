@@ -17,6 +17,10 @@ package net.jircd.core.config;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import net.jircd.core.extension.capability.ReplyBudgetCatalog;
+import net.jircd.core.extension.capability.ReplyLayout;
+import net.jircd.core.extension.capability.ReplyLimits;
+import net.jircd.protocol.MessageSerializer;
 
 /**
  * Worst-case wire size, including CRLF and excluding message tags, of every server reply that
@@ -36,21 +40,33 @@ public final class HostmaskReplyBudget {
   /** Epoch seconds are 10 digits until the year 2286. */
   private static final int TIMESTAMP_BYTES = 10;
 
-  /** A WHO flags field at its widest: away, operator and both channel statuses (multi-prefix). */
-  private static final int WHO_FLAGS_BYTES = 4;
-
   private HostmaskReplyBudget() {}
 
-  /** Worst-case bytes per reply, keyed by a label naming it; callers compare to the limit. */
+  /**
+   * Worst-case bytes per reply under the widths reserved before providers declared theirs; callers
+   * compare to the limit.
+   */
   public static Map<String, Integer> worstCaseBytes(
       int serverBytes, int nicknameMax, int channelMax) {
+    return worstCaseBytes(
+        serverBytes, nicknameMax, channelMax, ReplyBudgetCatalog.legacyCompatible());
+  }
+
+  /**
+   * Worst-case bytes per reply, keyed by a label naming it. The channel WHO entry follows the
+   * decorations in {@code catalog}; every other entry has core-owned fixed fields.
+   */
+  public static Map<String, Integer> worstCaseBytes(
+      int serverBytes, int nicknameMax, int channelMax, ReplyBudgetCatalog catalog) {
     int s = serverBytes;
     int n = nicknameMax;
     int c = channelMax;
     int hostmask = n + U + H + 2;
     Map<String, Integer> worst = new LinkedHashMap<>();
     // ":S 352 N C U H S N F :0 " + CRLF: the server name appears twice.
-    worst.put("352 (WHO)", 2 * s + 2 * n + c + U + H + 13 + WHO_FLAGS_BYTES + 5);
+    worst.put(
+        "352 (WHO)",
+        Math.toIntExact(catalog.worstCaseBytes(ReplyLayout.WHO_ENTRY, ReplyLimits.of(s, n, c))));
     // ":S 333 N C nick!user@host ts" + CRLF
     worst.put("333 (TOPICWHOTIME)", s + n + c + hostmask + TIMESTAMP_BYTES + 9 + 2);
     // ":S 311 N nick user host * :" + CRLF; 314 (WHOWAS) has the same shape
@@ -60,5 +76,46 @@ public final class HostmaskReplyBudget {
     // ":nick!user@host INVITE N C" + CRLF, the longest S-free prefix line
     worst.put("INVITE", hostmask + n + c + 12);
     return worst;
+  }
+
+  /**
+   * Worst-case bytes of the NAMES member and closing numerics, keyed by numeric, under {@code
+   * catalog}'s status and identity decorations.
+   */
+  public static Map<String, Integer> namesWorstCaseBytes(
+      int serverBytes, int nicknameMax, int channelMax, ReplyBudgetCatalog catalog) {
+    ReplyLimits limits = ReplyLimits.of(serverBytes, nicknameMax, channelMax);
+    Map<String, Integer> worst = new LinkedHashMap<>();
+    worst.put("353", Math.toIntExact(catalog.worstCaseBytes(ReplyLayout.NAMES_MEMBER, limits)));
+    worst.put("366", Math.toIntExact(catalog.worstCaseBytes(ReplyLayout.NAMES_END, limits)));
+    return worst;
+  }
+
+  /**
+   * Checks every reply this class and NAMES cover against the 512-byte command limit.
+   *
+   * @throws IllegalArgumentException naming each reply that does not fit
+   */
+  public static void requireFits(
+      int serverBytes, int nicknameMax, int channelMax, ReplyBudgetCatalog catalog) {
+    Map<String, Integer> all = new LinkedHashMap<>();
+    all.putAll(namesWorstCaseBytes(serverBytes, nicknameMax, channelMax, catalog));
+    all.putAll(worstCaseBytes(serverBytes, nicknameMax, channelMax, catalog));
+    StringBuilder over = new StringBuilder();
+    all.forEach(
+        (reply, bytes) -> {
+          if (bytes > MessageSerializer.MAX_COMMAND_BYTES) {
+            if (!over.isEmpty()) over.append(", ");
+            over.append(reply).append('=').append(bytes);
+          }
+        });
+    if (!over.isEmpty()) {
+      throw new IllegalArgumentException(
+          "Provider reply decorations exceed the "
+              + MessageSerializer.MAX_COMMAND_BYTES
+              + "-byte reply limit for the configured serverName/nicknameMaxLength/"
+              + "channelNameMaxLength: "
+              + over);
+    }
   }
 }

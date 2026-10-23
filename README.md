@@ -321,6 +321,39 @@ release), use `distZip` or `distTar`, which land in
 archives — pushing a `vX.Y.Z` tag builds and publishes these automatically
 (see [`.github/workflows/release.yml`](.github/workflows/release.yml)).
 
+### Writing a capability provider (SPI, in transition)
+
+A capability module (`jircd-capabilities/*`) is a `CapabilityExtension` that owns its behaviour
+through typed registrations instead of core branching on its name. Override
+`CapabilityExtension.register(CapabilityRegistrar)` to stage hooks; nothing is visible until the
+whole descriptor validates and is published, and a failed enable leaves nothing published.
+
+| Registration | Purpose |
+| --- | --- |
+| `onOutboundTags(keys, maxBytes, hook)` | Owned server tags for recipients that negotiated the capability; pure in the immutable message, validated against the declared escaped-byte bound |
+| `onEvent`, `onInboundTags`, `onRecipients` | Committed-event delivery, client-tag selection, sender-copy roles |
+| `onMemberStatus`, `onNamesIdentity`, `onReplyField` | Bounded decorations of schema-declared reply slots |
+| `onOutputGroup` | Framing of a finite group, falling back to plain members |
+| `command` | Provider-owned command; it can never replace a command core or another extension handles, and is removed (answered as unknown) when the provider is withdrawn |
+
+Hook results are untrusted. An exception, a `null` or an out-of-bounds result is dropped whole,
+reported by provider id, hook and category only, and replaced by the documented default; committed
+core state and other providers are unaffected. Hooks must be pure, nonblocking and thread-safe. Core
+applies the owner's enabled state and the declared negotiation prerequisites, so a hook never reads
+a session's capability set.
+
+**Status.** Only `server-time` is migrated. The other five providers still use the temporary
+`contributeTags` / `includeSenderInFanOut` bridge, which is removed once the last one migrates;
+core routes a provider's tags through exactly one path. Runtime FAILED withdrawal of a faulty
+provider, event publication and the remaining migrations are later changes in the same feature
+(`specs/014-capability-plugin-spi/`). `0.1.0-SNAPSHOT` is unreleased, so the SPI changes carry no
+version bump until the first release.
+
+Reply decorations are budgeted by generic layouts (`ReplyLayout`) rather than a per-capability
+width: startup, `REHASH` and runtime enable reserve every installed provider's declared slot bytes
+with the same arithmetic. Until `multi-prefix` declares its own bound the server keeps reserving the
+two-symbol status width, so accepted configurations stay accepted.
+
 ### Outbound queue (SendQ) policy
 
 Each connection has a bounded outbound queue, measured in bytes of queued wire data (escaped

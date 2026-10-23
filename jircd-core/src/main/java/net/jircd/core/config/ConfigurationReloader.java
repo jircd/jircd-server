@@ -66,13 +66,25 @@ public final class ConfigurationReloader {
    * lengths happen as one ordered operation per reload. Listener settings (including backlog) are
    * validated and published here, but sockets are only bound at application startup; applying
    * listener changes requires a server restart.
+   *
+   * @throws IllegalStateException if called from inside a provider lifecycle callback ({@code
+   *     start}, {@code stop}, {@code register}), which would wait on the lifecycle lock its own
+   *     thread holds
    */
-  public synchronized ServerConfiguration reload() throws ConfigurationException, IOException {
+  public ServerConfiguration reload() throws ConfigurationException, IOException {
+    // Checked before the reload monitor is taken, so a callback never queues behind a reload that
+    // is itself waiting for the lifecycle lock the callback holds.
+    extensionRegistry.requireNoLifecycleCallback();
+    return reloadSerialized();
+  }
+
+  private synchronized ServerConfiguration reloadSerialized()
+      throws ConfigurationException, IOException {
     ServerConfiguration reloaded;
     try (InputStream in = new FileInputStream(configPath.toFile())) {
       reloaded = loader.load(in);
     }
-    ConfigurationLoader.validateReplyBudgets(
+    loader.checkReplyBudgets(
         runningServerName, reloaded.nicknameMaxLength(), reloaded.channelNameMaxLength());
     reconcile(reloaded);
     this.current = reloaded;
@@ -98,10 +110,11 @@ public final class ConfigurationReloader {
       try {
         if (desiredEnabled && !currentlyEnabled) {
           extensionRegistry.enable(id);
-        } else if (!desiredEnabled && currentlyEnabled) {
+        } else if (!desiredEnabled) {
+          // Idempotent; for a FAILED provider it retries the cleanup that is still pending.
           extensionRegistry.disable(id);
         }
-      } catch (RuntimeException e) {
+      } catch (RuntimeException | LinkageError e) {
         LOG.warn("Failed to reconcile extension '{}' to desired state {}", id, desiredEnabled, e);
       }
     }

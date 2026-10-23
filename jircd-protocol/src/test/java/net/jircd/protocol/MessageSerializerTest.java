@@ -182,4 +182,17 @@ class MessageSerializerTest {
     byte[] truncatedMultiByte = {(byte) 0xE2, (byte) 0x82}; // incomplete 3-byte sequence
     assertThat(Utf8Validator.isValidUtf8(truncatedMultiByte)).isFalse();
   }
+
+  @Test
+  void tagDataBytesAtMostAgreesWithTheExactCountAndRejectsOversizeFromRawLength() {
+    Map<String, String> escaped = Map.of("a", "x;y"); // a=x\:y is 6 bytes
+    assertThat(MessageSerializer.tagDataBytesAtMost(escaped, 6)).isTrue();
+    assertThat(MessageSerializer.tagDataBytesAtMost(escaped, 5)).isFalse();
+    assertThat(MessageSerializer.tagDataBytesAtMost(Map.of(), 0)).isTrue();
+    assertThat(MessageSerializer.tagDataBytesAtMost(Map.of("a", "é"), 4)).isTrue();
+    assertThat(MessageSerializer.tagDataBytesAtMost(Map.of("a", "é"), 3)).isFalse();
+    // Longer raw than the limit cannot fit: decided without building the escaped section.
+    assertThat(MessageSerializer.tagDataBytesAtMost(Map.of("a", "x".repeat(20_000_000)), 4094))
+        .isFalse();
+  }
 }

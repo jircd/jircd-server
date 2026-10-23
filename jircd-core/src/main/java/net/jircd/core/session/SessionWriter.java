@@ -117,6 +117,16 @@ public final class SessionWriter implements AutoCloseable {
     enqueueEntry(new Entry(message.componentBytes() + tags.wireBytes(), message, tags));
   }
 
+  /**
+   * Enqueues a prepared delivery as one entry: all of its frames are admitted, or none is (the
+   * session overflows instead). Its exact byte charge is released once, when it is written or
+   * discarded.
+   */
+  public void enqueue(PreparedDelivery delivery) {
+    if (closing.get() || overflowed.get()) return;
+    enqueueEntry(new Entry(delivery.frames().bytes(), delivery.frames(), null));
+  }
+
   /** Enqueues a pre-built line, charging its escaped tag and component bytes including CRLF. */
   public void enqueueRaw(Message rawMessage) {
     if (closing.get() || overflowed.get()) return;
@@ -260,14 +270,16 @@ public final class SessionWriter implements AutoCloseable {
     }
   }
 
-  private void writeLine(String line) {
+  private boolean writeLine(String line) {
     try {
       out.write((line + "\r\n").getBytes(StandardCharsets.UTF_8));
       out.flush();
+      return true;
     } catch (IOException e) {
       LOG.debug("Write failed for connection {}: {}", session.connectionId(), e.toString());
       // A failed best-effort ERROR must not steal the SendQ reason from its pending cleanup.
       if (!overflowed.get()) onWriteFailure.get().run();
+      return false;
     }
   }
 
@@ -281,6 +293,10 @@ public final class SessionWriter implements AutoCloseable {
         }
         if (entry.message() instanceof Message raw) {
           writeMessage(raw, true);
+        } else if (entry.message() instanceof FrameSequence sequence) {
+          for (String line : sequence.lines()) {
+            if (!writeLine(line)) break;
+          }
         } else {
           writeFanOutMessage((OutboundMessage) entry.message(), entry.tags());
         }

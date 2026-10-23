@@ -22,12 +22,18 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import net.jircd.core.extension.CapabilityExtension;
+import net.jircd.core.extension.capability.FaultReporter;
+import net.jircd.core.extension.capability.HookDispatcher;
+import net.jircd.core.extension.capability.HookRegistration;
 
 /**
  * Immutable fan-out content shared by recipients, with message-scoped contribution byte metadata.
  * Recipient selection and rendering remain in the tag renderer; metadata never changes content.
  */
 public final class OutboundMessage {
+  private static final HookDispatcher LEGACY_DISPATCHER =
+      new HookDispatcher(FaultReporter.logging());
+
   private final String senderPresentedForm;
   private final String command;
   private final String target;
@@ -38,7 +44,11 @@ public final class OutboundMessage {
   private final long componentBytes;
   private final Map<String, String> forwardedClientTags;
   private final WireBytes.Tags clientTagBytes;
-  private Map<CapabilityExtension, WireBytes.Tags> contributions;
+  private Map<CapabilityExtension, Contribution> contributions;
+  private Map<HookRegistration, Contribution> hookContributions;
+
+  /** A hook's validated, immutable tags with their exact escaped size, computed once. */
+  record Contribution(Map<String, String> tags, WireBytes.Tags bytes) {}
 
   /** Creates shared message content, defensively copying client tags. */
   public OutboundMessage(
@@ -109,9 +119,40 @@ public final class OutboundMessage {
   }
 
   synchronized WireBytes.Tags contributionBytes(CapabilityExtension capability) {
+    return legacyContribution(capability, LEGACY_DISPATCHER).bytes();
+  }
+
+  /**
+   * The legacy provider's tags, evaluated once per envelope so enqueue can budget them. A throw, a
+   * {@code null} or an oversized map is contained by {@code dispatcher}: an empty contribution.
+   */
+  synchronized Contribution legacyContribution(
+      CapabilityExtension capability, HookDispatcher dispatcher) {
     if (contributions == null) contributions = new IdentityHashMap<>();
     return contributions.computeIfAbsent(
-        capability, key -> WireBytes.tags(key.contributeTags(this)));
+        capability,
+        key -> {
+          Map<String, String> tags =
+              dispatcher.legacyOutboundTags(key.id(), () -> key.contributeTags(this));
+          return new Contribution(tags, WireBytes.tags(tags));
+        });
+  }
+
+  /**
+   * The validated contribution of {@code hook} for this envelope. A pure hook yields the same map
+   * for the same immutable message, so it is evaluated once here and shared by every recipient; the
+   * registration identity is only the memoization key. Nothing evaluated here reaches the writer
+   * queue except as these immutable results.
+   */
+  synchronized Contribution contribution(HookRegistration hook, HookDispatcher dispatcher) {
+    if (hookContributions == null) hookContributions = new IdentityHashMap<>();
+    Contribution cached = hookContributions.get(hook);
+    if (cached == null) {
+      Map<String, String> tags = dispatcher.outboundTags(hook, this);
+      cached = new Contribution(tags, WireBytes.tags(tags));
+      hookContributions.put(hook, cached);
+    }
+    return cached;
   }
 
   @Override

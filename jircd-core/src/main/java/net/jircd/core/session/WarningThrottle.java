@@ -27,6 +27,7 @@ import java.util.function.LongSupplier;
 public final class WarningThrottle {
 
   private static final class State {
+    boolean admittedOnce;
     long lastAdmittedNanos;
     long suppressed;
   }
@@ -53,17 +54,10 @@ public final class WarningThrottle {
    */
   public synchronized long admit(String key) {
     long now = nanoClock.getAsLong();
-    boolean[] created = {false};
-    State state =
-        states.computeIfAbsent(
-            key,
-            _ -> {
-              created[0] = true;
-              State fresh = new State();
-              fresh.lastAdmittedNanos = now;
-              return fresh;
-            });
-    if (created[0]) {
+    State state = states.computeIfAbsent(key, _ -> new State());
+    if (!state.admittedOnce) {
+      state.admittedOnce = true;
+      state.lastAdmittedNanos = now;
       return 0;
     }
     if (now - state.lastAdmittedNanos < intervalNanos) {
