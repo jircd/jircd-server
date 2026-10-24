@@ -19,7 +19,11 @@ import java.util.Objects;
 
 /**
  * An immutable fact about a state transition that has already committed. {@code before}/{@code
- * after} are empty strings when the transition has no such value.
+ * after} are empty strings when the transition has no such value, and so is {@code actor} when the
+ * subject caused the transition itself.
+ *
+ * <p>Only events caused by one session's own commands are ordered, in the order it issued them; see
+ * {@link EventKind}.
  */
 public record CommittedEvent(
     EventKind kind,
@@ -27,7 +31,8 @@ public record CommittedEvent(
     String subject,
     String before,
     String after,
-    Audience audience) {
+    Audience audience,
+    String actor) {
 
   public CommittedEvent {
     Objects.requireNonNull(kind);
@@ -35,5 +40,17 @@ public record CommittedEvent(
     Objects.requireNonNull(before);
     Objects.requireNonNull(after);
     Objects.requireNonNull(audience);
+    Objects.requireNonNull(actor);
+  }
+
+  /** An event the subject caused itself. */
+  public CommittedEvent(
+      EventKind kind,
+      long operationId,
+      String subject,
+      String before,
+      String after,
+      Audience audience) {
+    this(kind, operationId, subject, before, after, audience, "");
   }
 }

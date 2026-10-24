@@ -37,6 +37,7 @@ import net.jircd.core.extension.capability.EventIntent;
 import net.jircd.core.extension.capability.EventKind;
 import net.jircd.core.session.command.AwayCommandHandler;
 import net.jircd.core.session.command.JoinCommandHandler;
+import net.jircd.core.session.command.KickCommandHandler;
 import net.jircd.core.session.command.NickCommandHandler;
 import net.jircd.core.session.command.PartCommandHandler;
 import net.jircd.core.session.command.RegistrationCompletion;
@@ -87,6 +88,8 @@ class CommittedEventTest {
       new JoinCommandHandler(channels, extensions, () -> "server", () -> 50);
   private final PartCommandHandler part =
       new PartCommandHandler(channels, extensions, () -> "server");
+  private final KickCommandHandler kick =
+      new KickCommandHandler(channels, extensions, () -> "server");
   private final AwayCommandHandler away = new AwayCommandHandler(() -> "server", extensions);
   private final NickCommandHandler nick =
       new NickCommandHandler(
@@ -241,6 +244,94 @@ class CommittedEventTest {
     assertThat(parts.getFirst().after()).isEqualTo("bye");
     assertThat(spy.audiences.get(parts.getFirst())).containsExactly(alice);
     assertThat(channels.lookup("#c").orElseThrow().members()).doesNotContain(bob);
+  }
+
+  // --- KICK ---
+
+  @Test
+  void aKickCarriesTheKickedIdentityTheKickerTheReasonAndThePreRemovalAudience() throws Exception {
+    ClientSession alice = user("alice");
+    ClientSession bob = user("bob");
+    ClientSession carol = user("carol");
+    run(join, alice, "JOIN #c");
+    run(join, bob, "JOIN #c");
+    run(join, carol, "JOIN #c");
+
+    run(kick, alice, "KICK #c bob :out");
+
+    List<CommittedEvent> kicks = events(EventKind.KICKED);
+    assertThat(kicks).hasSize(1);
+    CommittedEvent kicked = kicks.getFirst();
+    assertThat(kicked.subject()).isEqualTo("bob!ident@host.example");
+    assertThat(kicked.actor()).isEqualTo("alice!ident@host.example");
+    assertThat(kicked.before()).isEqualTo("#c");
+    assertThat(kicked.after()).isEqualTo("out");
+    assertThat(spy.audiences.get(kicked)).containsExactlyInAnyOrder(alice, carol);
+    assertThat(channels.lookup("#c").orElseThrow().members()).doesNotContain(bob);
+  }
+
+  @Test
+  void aKickWithoutACommentReportsTheKickersNicknameAsTheReason() throws Exception {
+    ClientSession alice = user("alice");
+    ClientSession bob = user("bob");
+    run(join, alice, "JOIN #c");
+    run(join, bob, "JOIN #c");
+
+    run(kick, alice, "KICK #c bob");
+
+    assertThat(events(EventKind.KICKED)).extracting(CommittedEvent::after).containsExactly("alice");
+  }
+
+  @Test
+  void aRejectedKickPublishesNothing() throws Exception {
+    ClientSession alice = user("alice");
+    ClientSession bob = user("bob");
+    ClientSession carol = user("carol");
+    run(join, alice, "JOIN #c");
+    run(join, bob, "JOIN #c");
+
+    run(kick, bob, "KICK #c alice"); // not an operator
+    run(kick, carol, "KICK #c alice"); // not a member
+    run(kick, alice, "KICK #c carol"); // target not on the channel
+    run(kick, alice, "KICK #nowhere bob"); // no such channel
+    run(kick, alice, "KICK #c"); // not enough parameters
+
+    assertThat(events(EventKind.KICKED)).isEmpty();
+    assertThat(channels.lookup("#c").orElseThrow().members()).contains(alice, bob);
+  }
+
+  // --- ordering ---
+
+  @Test
+  void eventsASessionCausesItselfArePublishedInTheOrderItIssuedThem() throws Exception {
+    ClientSession alice = user("alice");
+    ClientSession bob = user("bob");
+    run(join, alice, "JOIN #c");
+
+    run(join, bob, "JOIN #c");
+    run(part, bob, "PART #c");
+    run(join, bob, "JOIN #c");
+    run(nick, bob, "NICK robert");
+    cleanup.cleanup(bob, "gone");
+
+    // Only the events bob's own commands caused; one that another session causes (KICKED) has no
+    // order relative to these.
+    List<CommittedEvent> bobs;
+    synchronized (spy.events) {
+      bobs =
+          spy.events.stream()
+              .filter(e -> e.subject().startsWith("bob!") || e.subject().startsWith("robert!"))
+              .toList();
+    }
+    assertThat(bobs)
+        .extracting(CommittedEvent::kind)
+        .containsExactly(
+            EventKind.JOINED,
+            EventKind.PARTED,
+            EventKind.JOINED,
+            EventKind.NICK_CHANGED,
+            EventKind.QUIT);
+    assertThat(bobs).extracting(CommittedEvent::operationId).isSorted();
   }
 
   // --- NICK ---

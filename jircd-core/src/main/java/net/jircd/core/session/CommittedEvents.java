@@ -41,6 +41,11 @@ import org.slf4j.LoggerFactory;
  * resolved and the audience is traversed only on demand, at most once per event, so an event costs
  * nothing when no capability wants it. A rejected or no-op operation publishes nothing; the caller
  * decides what counts as a transition.
+ *
+ * <p>Ordering: events caused by one session's own commands are published in the order that session
+ * issued them (its commands run serially). An event another session causes about it, such as {@code
+ * KICKED}, has no order relative to those, and nothing is ordered across subjects; no lock or
+ * global sequence is kept for it.
  */
 public final class CommittedEvents {
   private static final Logger LOG = LoggerFactory.getLogger(CommittedEvents.class);
@@ -64,6 +69,16 @@ public final class CommittedEvents {
       String before,
       String after,
       Supplier<? extends Collection<ClientSession>> audience) {
+    publish(kind, subject, () -> "", before, after, audience);
+  }
+
+  private void publish(
+      EventKind kind,
+      Supplier<String> subject,
+      Supplier<String> actor,
+      String before,
+      String after,
+      Supplier<? extends Collection<ClientSession>> audience) {
     RuntimeSnapshot snapshot = extensionRegistry.capabilitySnapshot();
     if (!listened(snapshot, kind)) return;
     try {
@@ -74,7 +89,8 @@ public final class CommittedEvents {
               subject.get(),
               before,
               after,
-              new Audience(() -> List.copyOf(audience.get())));
+              new Audience(() -> List.copyOf(audience.get())),
+              actor.get());
       for (EventIntent intent : extensionRegistry.hookDispatcher().event(snapshot, event)) {
         Recipients.deliver(intent.recipients(), intent.message());
       }
@@ -84,6 +100,11 @@ public final class CommittedEvents {
       // cost it those. Only the type is logged; the message may carry extension or client data.
       LOG.warn("Committed {} event not published: {}", kind, e.getClass().getSimpleName());
     }
+  }
+
+  /** Whether some enabled provider listens for {@code kind}. */
+  public boolean listensTo(EventKind kind) {
+    return listened(extensionRegistry.capabilitySnapshot(), kind);
   }
 
   private static boolean listened(RuntimeSnapshot snapshot, EventKind kind) {
@@ -130,6 +151,30 @@ public final class CommittedEvents {
         channel,
         reason,
         () -> recipients.stream().filter(member -> member != session).toList());
+  }
+
+  /**
+   * {@code kicked} was removed from {@code channel} by the session presented as {@code
+   * kickerPresentedForm}; {@code recipients} were captured before it left. The kicked member is the
+   * subject and is not in the audience. {@code kickedPresentedForm} is the identity captured when
+   * the kick was prepared; it is never resolved again here, because the session may have changed
+   * nickname since, so a caller without one publishes nothing.
+   */
+  public void kicked(
+      String kickerPresentedForm,
+      ClientSession kicked,
+      String kickedPresentedForm,
+      String channel,
+      String reason,
+      Collection<ClientSession> recipients) {
+    Objects.requireNonNull(kickedPresentedForm);
+    publish(
+        EventKind.KICKED,
+        () -> kickedPresentedForm,
+        () -> kickerPresentedForm,
+        channel,
+        reason,
+        () -> recipients.stream().filter(member -> member != kicked).toList());
   }
 
   /** {@code session} disconnected; {@code neighbors} were captured as its memberships went. */
