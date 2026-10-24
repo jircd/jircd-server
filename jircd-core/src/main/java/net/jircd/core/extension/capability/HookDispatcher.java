@@ -97,12 +97,37 @@ public final class HookDispatcher {
     return true;
   }
 
+  /**
+   * The merged inbound-tag decisions together with which capability selected each forwarded tag, so
+   * a tag is later shown only to recipients of the capability that chose to forward it.
+   *
+   * @param ownersByKey forwarded tag key to the names of every capability whose hook selected it; a
+   *     recipient of any one of them may see the tag
+   */
+  public record InboundSelection(InboundTagResult merged, Map<String, Set<String>> ownersByKey) {
+    public InboundSelection {
+      Map<String, Set<String>> copy = new LinkedHashMap<>();
+      ownersByKey.forEach((key, owners) -> copy.put(key, Set.copyOf(owners)));
+      ownersByKey = Map.copyOf(copy);
+    }
+  }
+
   /** Merged inbound-tag decisions from hooks whose sender prerequisites are met. */
   public InboundTagResult inboundTags(
       RuntimeSnapshot snapshot,
       Set<String> senderNegotiated,
       InboundTags input,
       RequestContext context) {
+    return inboundSelection(snapshot, senderNegotiated, input, context).merged();
+  }
+
+  /** As {@link #inboundTags}, also recording the capability that selected each forwarded tag. */
+  public InboundSelection inboundSelection(
+      RuntimeSnapshot snapshot,
+      Set<String> senderNegotiated,
+      InboundTags input,
+      RequestContext context) {
+    Map<String, Set<String>> owners = new LinkedHashMap<>();
     Map<String, String> forwarded = new LinkedHashMap<>();
     Map<String, String> attributes = new LinkedHashMap<>();
     for (HookRegistration registration : snapshot.hooks(HookKind.INBOUND_TAGS)) {
@@ -115,12 +140,21 @@ public final class HookDispatcher {
       result.ifPresent(
           r -> {
             forwarded.putAll(r.forwarded());
+            r.forwarded()
+                .keySet()
+                .forEach(
+                    key ->
+                        owners
+                            .computeIfAbsent(key, ignored -> new java.util.LinkedHashSet<>())
+                            .add(registration.capabilityName()));
             attributes.putAll(r.context());
           });
     }
-    return forwarded.isEmpty() && attributes.isEmpty()
-        ? InboundTagResult.NONE
-        : new InboundTagResult(forwarded, attributes);
+    InboundTagResult merged =
+        forwarded.isEmpty() && attributes.isEmpty()
+            ? InboundTagResult.NONE
+            : new InboundTagResult(forwarded, attributes);
+    return new InboundSelection(merged, owners);
   }
 
   private static boolean validInbound(
@@ -168,33 +202,6 @@ public final class HookDispatcher {
             tags -> validTags(tags, registration))
         .map(Map::copyOf)
         .orElse(Map.of());
-  }
-
-  /**
-   * The temporary legacy path: a not yet migrated provider's tags, contained like a hook. A throw,
-   * a {@code null} or more than one origin may carry is dropped whole and reported, so the core
-   * message still goes out.
-   */
-  public Map<String, String> legacyOutboundTags(
-      String providerId, Supplier<Map<String, String>> call) {
-    Map<String, String> copy;
-    try {
-      Map<String, String> raw = call.get();
-      if (raw == null) {
-        reporter.report(providerId, HookKind.OUTBOUND_TAGS, FaultCategory.NULL_RESULT);
-        return Map.of();
-      }
-      copy = Map.copyOf(raw);
-    } catch (RuntimeException | LinkageError _) {
-      reporter.report(providerId, HookKind.OUTBOUND_TAGS, FaultCategory.EXCEPTION);
-      return Map.of();
-    }
-    if (!MessageSerializer.tagDataBytesAtMost(
-        copy, MessageSerializer.MAX_TAG_DATA_BYTES_PER_ORIGIN)) {
-      reporter.report(providerId, HookKind.OUTBOUND_TAGS, FaultCategory.INVALID_RESULT);
-      return Map.of();
-    }
-    return copy;
   }
 
   private static boolean validTags(Map<String, String> tags, HookRegistration registration) {
@@ -400,11 +407,6 @@ public final class HookDispatcher {
   /** Reports a tag hook whose contribution was dropped because the aggregate would overflow. */
   public void reportAggregateOverflow(HookRegistration registration) {
     fault(registration, FaultCategory.INVALID_RESULT);
-  }
-
-  /** The same for a legacy provider, which has no registration. */
-  public void reportAggregateOverflow(String providerId) {
-    reporter.report(providerId, HookKind.OUTBOUND_TAGS, FaultCategory.INVALID_RESULT);
   }
 
   /** Wraps a provider command handler so its fault is contained and reported. */

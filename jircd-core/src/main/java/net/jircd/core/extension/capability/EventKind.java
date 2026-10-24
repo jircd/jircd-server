@@ -15,11 +15,21 @@
  */
 package net.jircd.core.extension.capability;
 
-/** Committed state transitions a capability may observe. */
+/**
+ * Committed state transitions a capability may observe.
+ *
+ * <p>Ordering: events caused by one session's own commands are published in the order that session
+ * issued them, because its commands run serially on its connection thread and each event is
+ * published after its transition. An event another session causes about it ({@link #KICKED}) has no
+ * order relative to those, and nothing is ordered across subjects; {@code operationId} is not a
+ * global sequence, and a listener must not infer one.
+ */
 public enum EventKind {
   AWAY_CHANGED,
   JOINED,
   PARTED,
+  /** A channel operator removed {@code subject}; {@code actor} is the kicker. */
+  KICKED,
   QUIT,
   NICK_CHANGED
 }

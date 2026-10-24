@@ -15,33 +15,24 @@
  */
 package net.jircd.core.session.command;
 
-import java.util.Collection;
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Set;
 import java.util.function.Supplier;
 import net.jircd.core.extension.ExtensionRegistry;
-import net.jircd.core.session.Channel;
 import net.jircd.core.session.ChannelRegistry;
 import net.jircd.core.session.ClientSession;
-import net.jircd.core.session.CoreChannelModes;
+import net.jircd.core.session.MessageDelivery;
 import net.jircd.core.session.NicknameRegistry;
-import net.jircd.core.session.OutboundMessage;
-import net.jircd.core.session.PresentedIdentity;
-import net.jircd.protocol.Hostmask;
 import net.jircd.protocol.NumericReply;
 
 /**
- * {@code PRIVMSG}/{@code NOTICE} — channel and direct messaging (FR-004, FR-005). Builds one shared
- * {@link OutboundMessage} and enqueues it onto every recipient's {@code SessionWriter} — this
- * handler applies no capability-dependent formatting itself; that happens per-recipient at drain
- * time.
+ * {@code PRIVMSG}/{@code NOTICE} — channel and direct messaging (FR-004, FR-005). Target
+ * resolution, the send gates and recipient selection are {@link MessageDelivery}'s; this handler
+ * applies no capability-dependent formatting itself, which happens per recipient when the message
+ * is queued.
  */
 public final class MessageCommandHandler implements CommandHandler {
 
-  private final ChannelRegistry channelRegistry;
-  private final NicknameRegistry nicknameRegistry;
-  private final ExtensionRegistry extensionRegistry;
+  private final MessageDelivery delivery;
   private final Supplier<String> serverName;
   private final boolean notice;
 
@@ -51,9 +42,8 @@ public final class MessageCommandHandler implements CommandHandler {
       ExtensionRegistry extensionRegistry,
       Supplier<String> serverName,
       boolean notice) {
-    this.channelRegistry = channelRegistry;
-    this.nicknameRegistry = nicknameRegistry;
-    this.extensionRegistry = extensionRegistry;
+    this.delivery =
+        new MessageDelivery(channelRegistry, nicknameRegistry, extensionRegistry, serverName);
     this.serverName = serverName;
     this.notice = notice;
   }
@@ -84,15 +74,7 @@ public final class MessageCommandHandler implements CommandHandler {
       return;
     }
 
-    Set<ClientSession> recipients =
-        resolveRecipients(
-            channelRegistry,
-            nicknameRegistry,
-            extensionRegistry,
-            serverName,
-            session,
-            target,
-            !notice);
+    MessageDelivery.AuthorizedTarget recipients = delivery.authorize(session, target, !notice);
     if (recipients.isEmpty()) {
       return;
     }
@@ -110,117 +92,10 @@ public final class MessageCommandHandler implements CommandHandler {
       }
     }
 
-    String presentedForm = PresentedIdentity.presentedForm(session, extensionRegistry);
-    // 005-fix-batch-conformance FR-010 — pass the sender's own tags through, the same way
-    // TagmsgCommandHandler already does; CapabilityTagRenderer merges these into the
+    // 005-fix-batch-conformance FR-010 — the sender's own client-only tags are offered to the
+    // providers that forward them; CapabilityTagRenderer merges the selected ones into the
     // per-recipient rendered map alongside server-contributed ones (msgid/time).
-    OutboundMessage outbound =
-        OutboundMessage.now(presentedForm, commandName, target, body, message.tags());
-    for (ClientSession recipient :
-        deliveryTargets(
-            recipients, session, target, includeSenderInFanOut(extensionRegistry, session))) {
-      if (recipient.writer() != null) {
-        recipient.writer().enqueue(outbound);
-      }
-    }
-  }
-
-  /**
-   * Who receives a fan-out: a direct target always gets it (even when it is the sender itself,
-   * exactly once); a channel's own member set drops the sender unless {@code echo-message} wants it
-   * included; and a direct message to someone else additionally echoes to the sender only under
-   * {@code echo-message}. Shared by {@code PRIVMSG}/{@code NOTICE} and {@code TAGMSG}.
-   */
-  static Collection<ClientSession> deliveryTargets(
-      Set<ClientSession> recipients, ClientSession sender, String target, boolean echoToSender) {
-    Set<ClientSession> targets = new LinkedHashSet<>(recipients);
-    if (target.startsWith("#")) {
-      if (!echoToSender) {
-        targets.remove(sender);
-      }
-    } else if (echoToSender) {
-      targets.add(sender); // a direct recipients set is Set.of(target); no-op for a self-target
-    }
-    return targets;
-  }
-
-  /**
-   * Resolves {@code target} into its recipient set for {@code PRIVMSG}/{@code NOTICE}/{@code
-   * TAGMSG} alike (002-extended-irc-commands FR-022, research.md "TAGMSG delivery reuse"): a
-   * channel name must exist and pass the {@code SEND} gate below, a nickname must be connected.
-   * Returns an empty set on failure, having already sent the appropriate error to {@code session}
-   * when {@code reportErrors} is {@code true} ({@code NOTICE}-style silence otherwise).
-   */
-  static Set<ClientSession> resolveRecipients(
-      ChannelRegistry channelRegistry,
-      NicknameRegistry nicknameRegistry,
-      ExtensionRegistry extensionRegistry,
-      Supplier<String> serverName,
-      ClientSession session,
-      String target,
-      boolean reportErrors) {
-    if (target.startsWith("#")) {
-      var channel = channelRegistry.lookup(target);
-      if (channel.isEmpty() || !passesSendGate(channel.get(), session, extensionRegistry)) {
-        if (reportErrors) {
-          Replies.sendFitted(
-              session,
-              serverName.get(),
-              NumericReply.ERR_CANNOTSENDTOCHAN,
-              List.of(target),
-              "Cannot send to channel");
-        }
-        return Set.of();
-      }
-      return channel.get().members();
-    }
-    var recipient = nicknameRegistry.lookup(target);
-    if (recipient.isEmpty()) {
-      if (reportErrors) {
-        Replies.sendFitted(
-            session,
-            serverName.get(),
-            NumericReply.ERR_NOSUCHNICK,
-            List.of(target),
-            "No such nick/channel");
-      }
-      return Set.of();
-    }
-    return Set.of(recipient.get());
-  }
-
-  /** Whether {@code echo-message} (Story 2) wants {@code session} included in its own fan-out. */
-  static boolean includeSenderInFanOut(ExtensionRegistry extensionRegistry, ClientSession session) {
-    return extensionRegistry.enabled().stream()
-        .filter(net.jircd.core.extension.CapabilityExtension.class::isInstance)
-        .map(net.jircd.core.extension.CapabilityExtension.class::cast)
-        .anyMatch(capability -> capability.includeSenderInFanOut(session));
-  }
-
-  /**
-   * The {@code SEND}-gate check point FR-043 requires: every currently-recognized flag whose {@code
-   * gates} includes {@code SEND}, checked independently — {@code members-only} requires membership;
-   * {@code moderated} requires operator or voice (FR-045); {@code ban-mask} requires neither the
-   * sender's presented nor real identity to match any active ban (FR-062, dual-matched to resist
-   * {@code cloak} evasion) — muting a matched sender without removing them from members.
-   */
-  private static boolean passesSendGate(
-      Channel channel, ClientSession session, ExtensionRegistry extensionRegistry) {
-    if (channel.activeModes().contains(CoreChannelModes.MEMBERS_ONLY)
-        && !channel.members().contains(session)) {
-      return false;
-    }
-    if (channel.activeModes().contains(CoreChannelModes.MODERATED)
-        && !channel.operators().contains(session)
-        && !channel.voiced().contains(session)) {
-      return false;
-    }
-    if (!channel.bans().isEmpty()) {
-      String presented = PresentedIdentity.presentedForm(session, extensionRegistry);
-      String real = Hostmask.format(session.nickname(), session.ident(), session.realHostname());
-      return !channel.matchesMask(CoreChannelModes.BAN_MASK, presented, real)
-          || channel.matchesMask(CoreChannelModes.BAN_EXCEPTION, presented, real);
-    }
-    return true;
+    delivery.deliver(
+        session, commandName, target, body, message.tags(), recipients, recipient -> true);
   }
 }

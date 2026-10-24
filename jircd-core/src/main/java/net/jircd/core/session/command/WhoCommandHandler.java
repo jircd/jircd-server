@@ -26,10 +26,10 @@ import net.jircd.core.session.Channel;
 import net.jircd.core.session.ChannelRegistry;
 import net.jircd.core.session.ChannelVisibility;
 import net.jircd.core.session.ClientSession;
+import net.jircd.core.session.MemberReplies;
 import net.jircd.core.session.NicknameRegistry;
 import net.jircd.core.session.PresentedIdentity;
 import net.jircd.core.session.UserMode;
-import net.jircd.protocol.CapabilityName;
 import net.jircd.protocol.Message;
 import net.jircd.protocol.NumericReply;
 
@@ -52,6 +52,7 @@ public final class WhoCommandHandler implements CommandHandler {
   private final ExtensionRegistry extensionRegistry;
   private final Supplier<String> serverName;
   private final BooleanSupplier whoMaskEnabled;
+  private final MemberReplies memberReplies;
 
   public WhoCommandHandler(
       ChannelRegistry channelRegistry,
@@ -64,6 +65,7 @@ public final class WhoCommandHandler implements CommandHandler {
     this.extensionRegistry = extensionRegistry;
     this.serverName = serverName;
     this.whoMaskEnabled = whoMaskEnabled;
+    this.memberReplies = new MemberReplies(extensionRegistry);
   }
 
   @Override
@@ -147,9 +149,7 @@ public final class WhoCommandHandler implements CommandHandler {
       flags.append('*');
     }
     if (channel != null) {
-      flags.append(
-          channel.statusPrefixes(
-              target, requester.negotiatedCapabilities().contains(CapabilityName.MULTI_PREFIX)));
+      flags.append(memberReplies.whoStatus(requester, channel.memberFacts(target)));
     }
 
     Replies.sendFitted(

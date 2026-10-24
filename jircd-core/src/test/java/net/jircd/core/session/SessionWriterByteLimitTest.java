@@ -25,12 +25,14 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import net.jircd.core.extension.AbstractCapabilityExtension;
 import net.jircd.core.extension.ExtensionRegistry;
+import net.jircd.core.extension.capability.CapabilityRegistrar;
 import net.jircd.protocol.Command;
 import net.jircd.protocol.Message;
 import org.junit.jupiter.api.Test;
@@ -76,7 +78,12 @@ class SessionWriterByteLimitTest {
             first.clientTags(),
             first.sentAt(),
             first.messageId());
-    first.contributionBytes(capability("large", Map.of("s", "x".repeat(4092))));
+    ExtensionRegistry registry = new ExtensionRegistry();
+    registry.register(capability("large", Map.of("s", "x".repeat(4092))));
+    registry.enable("large");
+    ClientSession recipient = session();
+    recipient.negotiatedCapabilities().add("large");
+    new CapabilityTagRenderer(registry).prepare(recipient, first);
     assertThat(first)
         .isEqualTo(equal)
         .hasSameHashCodeAs(equal)
@@ -162,12 +169,14 @@ class SessionWriterByteLimitTest {
     if ((capabilities & 1) != 0) recipient.negotiatedCapabilities().add("message-tags");
     if ((capabilities & 2) != 0) recipient.negotiatedCapabilities().add("server-time");
     OutboundMessage message =
-        OutboundMessage.now(
-            "n!u@h",
-            "PRIVMSG",
-            "#é",
-            "€ body",
-            Map.of("+test", "é; \\\r\n", "+empty", "", "hidden", "filtered"));
+        ForwardedTags.selectedBy(
+            "message-tags",
+            OutboundMessage.now(
+                "n!u@h",
+                "PRIVMSG",
+                "#é",
+                "€ body",
+                Map.of("+test", "é; \\\r\n", "+empty", "", "hidden", "filtered")));
     assertCharge(recipient, new CapabilityTagRenderer(registry), message, true);
   }
 
@@ -187,11 +196,13 @@ class SessionWriterByteLimitTest {
   }
 
   @Test
-  void overlappingLargeContributionsStillAdmitTheLegalLineAtTheFloor() throws Exception {
+  void manyLargeContributionsStillAdmitTheLegalLineAtTheFloor() throws Exception {
+    // Each owner has its own key, so together they overflow one origin: the later ones are dropped
+    // at enqueue and the charge never exceeds what the queue can hold.
     ExtensionRegistry registry = new ExtensionRegistry();
     ClientSession recipient = session();
     for (int i = 0; i < 8; i++) {
-      var contributor = capability("overlap" + i, Map.of("s", "x".repeat(4092)));
+      var contributor = capability("overlap" + i, Map.of("s" + i, "x".repeat(4090)));
       registry.register(contributor);
       registry.enable(contributor.id());
       recipient.negotiatedCapabilities().add(contributor.id());
@@ -204,10 +215,10 @@ class SessionWriterByteLimitTest {
   }
 
   @Test
-  void collisionsAndTruncatedTextHaveConservativeCharges() throws Exception {
+  void sameNamedClientAndServerTagsAndTruncatedTextHaveConservativeCharges() throws Exception {
     ExtensionRegistry registry = new ExtensionRegistry();
-    var first = capability("message-tags", Map.of("+same", "one"));
-    var second = capability("server-time", Map.of("+same", "two"));
+    var first = capability("message-tags", Map.of("same", "one"));
+    var second = capability("server-time", Map.of("time", "two"));
     registry.register(first);
     registry.enable(first.id());
     registry.register(second);
@@ -217,7 +228,10 @@ class SessionWriterByteLimitTest {
     assertCharge(
         recipient,
         new CapabilityTagRenderer(registry),
-        OutboundMessage.now("n!u@h", "PRIVMSG", "#c", "é".repeat(600), Map.of("+same", "client")),
+        ForwardedTags.selectedBy(
+            "message-tags",
+            OutboundMessage.now(
+                "n!u@h", "PRIVMSG", "#c", "é".repeat(600), Map.of("+same", "client"))),
         false);
   }
 
@@ -230,8 +244,10 @@ class SessionWriterByteLimitTest {
     ClientSession recipient = session();
     recipient.negotiatedCapabilities().add("message-tags");
     OutboundMessage message =
-        OutboundMessage.now(
-            "n!u@h", "PRIVMSG", "#c", " ".repeat(491), Map.of("+c", "x".repeat(4091)));
+        ForwardedTags.selectedBy(
+            "message-tags",
+            OutboundMessage.now(
+                "n!u@h", "PRIVMSG", "#c", " ".repeat(491), Map.of("+c", "x".repeat(4091))));
     var renderer = new CapabilityTagRenderer(registry);
     assertCharge(recipient, renderer, message, true);
   }
@@ -242,9 +258,14 @@ class SessionWriterByteLimitTest {
     var capability =
         new AbstractCapabilityExtension("message-tags") {
           @Override
-          public Map<String, String> contributeTags(OutboundMessage message) {
-            calls.incrementAndGet();
-            return Map.of("msgid", message.messageId().toString());
+          public void register(CapabilityRegistrar registrar) {
+            registrar.onOutboundTags(
+                Set.of("msgid"),
+                42,
+                message -> {
+                  calls.incrementAndGet();
+                  return Map.of("msgid", message.messageId().toString());
+                });
           }
         };
     ExtensionRegistry registry = new ExtensionRegistry();
@@ -267,9 +288,14 @@ class SessionWriterByteLimitTest {
     var different =
         new AbstractCapabilityExtension("message-tags") {
           @Override
-          public Map<String, String> contributeTags(OutboundMessage input) {
-            calls.incrementAndGet();
-            return Map.of("msgid", "different");
+          public void register(CapabilityRegistrar registrar) {
+            registrar.onOutboundTags(
+                Set.of("msgid"),
+                42,
+                input -> {
+                  calls.incrementAndGet();
+                  return Map.of("msgid", "different");
+                });
           }
         };
     other.register(different);
@@ -406,12 +432,7 @@ class SessionWriterByteLimitTest {
   }
 
   private static AbstractCapabilityExtension capability(String id, Map<String, String> tags) {
-    return new AbstractCapabilityExtension(id) {
-      @Override
-      public Map<String, String> contributeTags(OutboundMessage message) {
-        return tags;
-      }
-    };
+    return new TagProvider(id, tags);
   }
 
   private static void assertCharge(

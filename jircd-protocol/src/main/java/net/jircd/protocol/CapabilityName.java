@@ -16,14 +16,11 @@
 package net.jircd.protocol;
 
 /**
- * IRCv3 capability names this server implements — the one shared source of truth for a wire value
- * that both server-side code and a future client both need: each {@code jircd-capabilities/*}
- * module's own {@code Extension} class exposes its id via one of these constants (rather than its
- * own private literal), and {@code jircd-core} command handlers that must check a recipient's
- * negotiated set reference the same constant directly — {@code jircd-core} cannot depend on {@code
- * jircd-capabilities} (wrong dependency direction), but both already depend on this module, so
- * routing through here removes the duplication instead of requiring every caller to re-declare its
- * own copy of the string.
+ * IRCv3 capability names this server implements — the shared vocabulary of the wire value, so each
+ * {@code jircd-capabilities/*} module's own {@code Extension} class exposes its id through one of
+ * these constants rather than its own private literal, and clients and tests refer to the same
+ * spelling. Names only: {@code jircd-core} never branches on a concrete capability name; each
+ * module owns its behavior through the typed registrations of the capability SPI.
  */
 public final class CapabilityName {
 

@@ -16,23 +16,17 @@
 package net.jircd.core.session.command;
 
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
 import java.util.function.Supplier;
 import net.jircd.core.extension.ExtensionRegistry;
 import net.jircd.core.session.ClientSession;
-import net.jircd.core.session.PresentedIdentity;
-import net.jircd.core.session.Recipients;
-import net.jircd.protocol.CapabilityName;
-import net.jircd.protocol.Command;
 import net.jircd.protocol.Message;
 import net.jircd.protocol.NumericReply;
 
 /**
  * {@code AWAY} — sets or clears the sender's away status. A reason given while already away
  * replaces the previous one in place, confirmed the same way as setting it for the first time; no
- * parameter clears it. Every successful change also broadcasts an {@code AWAY} notice to
- * channel-mates who negotiated the {@code away-notify} capability.
+ * parameter clears it. Every successful change is published as a committed {@code AWAY_CHANGED}
+ * event; which peers are told about it, and how, is up to the capability providers that listen.
  */
 public final class AwayCommandHandler implements CommandHandler {
 
@@ -50,6 +44,7 @@ public final class AwayCommandHandler implements CommandHandler {
     // An empty trailing argument clears away status the same
     // way a fully-absent one already does, rather than setting an empty-string away reason.
     if (message.params().isEmpty() || message.params().getFirst().isEmpty()) {
+      String previous = session.awayReason();
       session.setAwayReason(null);
       Replies.sendFitted(
           session,
@@ -57,31 +52,18 @@ public final class AwayCommandHandler implements CommandHandler {
           NumericReply.RPL_UNAWAY,
           List.of(),
           "You are no longer marked as being away");
-      broadcastAwayChange(session, null);
+      extensionRegistry.committedEvents().awayChanged(session, nullToEmpty(previous), "");
       return;
     }
     String reason = message.params().getFirst();
+    String previous = session.awayReason();
     session.setAwayReason(reason);
     Replies.sendFitted(
         session, server, NumericReply.RPL_NOWAWAY, List.of(), "You have been marked as being away");
-    broadcastAwayChange(session, reason);
+    extensionRegistry.committedEvents().awayChanged(session, nullToEmpty(previous), reason);
   }
 
-  /**
-   * Fans out to every channel-mate opted into {@code away-notify}, deduplicated to one notice per
-   * recipient regardless of how many channels they share with {@code session}. The sender is
-   * excluded, unlike {@code NICK}, whose notice also goes to the changing client itself.
-   */
-  private void broadcastAwayChange(ClientSession session, String reason) {
-    Set<ClientSession> recipients =
-        Recipients.sharedChannelNeighbors(
-            session, false, m -> m.negotiatedCapabilities().contains(CapabilityName.AWAY_NOTIFY));
-    if (recipients.isEmpty()) {
-      return;
-    }
-    String prefix = PresentedIdentity.presentedForm(session, extensionRegistry);
-    List<String> params = reason != null ? List.of(reason) : List.of();
-    Message notice = new Message(Map.of(), prefix, Command.AWAY, "AWAY", params);
-    Recipients.deliver(recipients, notice);
+  private static String nullToEmpty(String value) {
+    return value == null ? "" : value;
   }
 }

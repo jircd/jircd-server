@@ -45,6 +45,7 @@ class MultiPrefixReplyTest {
       channels.join("#c", boss, ignored -> true).orElseThrow().channel();
 
   MultiPrefixReplyTest() {
+    MultiPrefixStub.enableIn(extensions);
     // boss is the first joiner, so already an operator; plain stays unprivileged.
     channel.grantVoice(boss);
     channels.join("#c", plain, ignored -> true);

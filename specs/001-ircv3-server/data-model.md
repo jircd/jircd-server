@@ -159,11 +159,14 @@ a channel a `PRIVMSG` was sent to).
 
 **Validation rules**: `OutboundMessage` MUST NOT contain a `message-tags`
 prefix, a `time` tag, a `msgid` tag, or any other capability-dependent
-decoration — those are computed by each recipient's own writer thread at
-drain time (research.md "Message fan-out concurrency model"), by
-re-checking that recipient's `ClientSession.negotiatedCapabilities`
-against the live state of the corresponding `CapabilityExtension`
-(`Capability` validation rules, above). `messageId` itself is NOT
+decoration. Each recipient's tags are selected when the message is queued
+(research.md "Message fan-out concurrency model"): the providers' typed
+outbound-tag hooks contribute them from this immutable message, evaluated once
+per envelope and shared as validated immutable results, for the providers that
+recipient's `ClientSession.negotiatedCapabilities` names
+(014-capability-plugin-spi); the drain only renders that captured selection.
+The client-only tags forwarded are those the `message-tags` provider's
+inbound-tag hook selected at construction. `messageId` itself is NOT
 capability-dependent — it's generated unconditionally for every
 `OutboundMessage`, the same as `sentAt` — only whether it's *rendered as
 a tag* depends on the recipient's negotiated capabilities; the id's
@@ -613,7 +616,7 @@ independent of that extension.
 
 | Field | Type | Notes |
 |---|---|---|
-| `name` | string | One of `message-tags`, `server-time`, `echo-message` for this release (FR-025). |
+| `name` | string | One of `message-tags`, `server-time`, `echo-message`, `away-notify`, `batch`, `multi-prefix` (FR-025, extended by 011-away-notify-batch and issue #96). |
 | `available` | boolean | Derived from whether the owning `CapabilityExtension` is currently `ENABLED` (FR-007, FR-025). |
 
 **Validation rules**: A capability's `available` state MUST be sourced from
@@ -642,7 +645,9 @@ split is a compiler-enforced domain distinction, not just documentation:
 - **`CapabilityExtension`**: also provides exactly one `Capability` and is
   therefore visible to clients via `CAP LS`. Lives under
   `jircd-capabilities/`. This release's set: `message-tags`, `server-time`,
-  `echo-message`.
+  `echo-message`, `away-notify`, `batch`, `multi-prefix`. Each owns its behavior through typed
+  hook registrations (014-capability-plugin-spi); core keeps only `CAP` negotiation and the
+  generic mechanisms those hooks plug into, with no branch on a capability's name.
 - **`ServerExtension`**: no client-negotiable `Capability`; administrator-
   only, a client never learns it exists. Lives under
   `jircd-server-extensions/`. This release's set: `cloak` (FR-031),
@@ -662,7 +667,7 @@ extension-provided behavior (FR-020).
 
 | Field | Type | Notes |
 |---|---|---|
-| `id` | string | Stable identifier used in Server Configuration (FR-012). This release's full set: `message-tags`, `server-time`, `echo-message` (`CapabilityExtension`), `cloak`, `admin` (`ServerExtension`) — one Gradle subproject each. |
+| `id` | string | Stable identifier used in Server Configuration (FR-012). This release's full set: `message-tags`, `server-time`, `echo-message`, `away-notify`, `batch`, `multi-prefix` (`CapabilityExtension`), `cloak`, `admin` (`ServerExtension`) — one Gradle subproject each. |
 | `state` | enum: `ENABLED`, `DISABLED`, `FAILED` | `FAILED` = failed to start/errored at runtime without affecting other extensions (FR-020). |
 | `providedCapability` | `Capability` name, 0..1 | Present only for `CapabilityExtension`; absent for `ServerExtension` (e.g., cloak, admin). |
 | `extensionPoint` | string, 0..1 | Set only for extensions that supply a value or decision core code consumes rather than just adding a capability (e.g., `cloak` claims `hostname-display`). `null` for extensions with no such claim. `connection-admission` (FR-066, research.md "Connection-admission extension point") is a second recognized point — unclaimed by any extension in this release, since the future "G-line"-style connection-blocking extension it's reserved for isn't built yet; `jircd-core` still calls out to it on every accepted connection, always permitting the connection through while nothing claims it, the same default-permissive fallback `hostname-display` has when `cloak` is disabled. |

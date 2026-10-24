@@ -31,23 +31,12 @@ public record ReplyBudgetCatalog(List<ReplyContribution> contributions) {
 
   private static final ReplyBudgetCatalog EMPTY = new ReplyBudgetCatalog(List.of());
 
-  /**
-   * Widths the server reserved before providers declared them: a two-symbol status (@ and +), so
-   * configurations accepted today stay accepted until the multi-prefix provider declares its own.
-   */
-  private static final ReplyBudgetCatalog LEGACY =
-      new ReplyBudgetCatalog(List.of(new ReplyContribution("legacy", ReplySlot.STATUS, l -> 2)));
-
   public ReplyBudgetCatalog {
     contributions = List.copyOf(contributions);
   }
 
   public static ReplyBudgetCatalog empty() {
     return EMPTY;
-  }
-
-  public static ReplyBudgetCatalog legacyCompatible() {
-    return LEGACY;
   }
 
   /** The slot decorations declared by {@code descriptors}' hooks. */

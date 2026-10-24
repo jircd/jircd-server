@@ -24,15 +24,25 @@ import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Set;
 import net.jircd.core.extension.ExtensionRegistry;
+import net.jircd.core.extension.capability.ReplyBudgetCatalog;
+import net.jircd.core.extension.capability.ReplyContribution;
+import net.jircd.core.extension.capability.ReplySlot;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class ReplyBudgetConfigurationTest {
   @TempDir Path directory;
 
-  private final ConfigurationLoader loader = new ConfigurationLoader(Set.of(), Set.of());
+  /** What the installed multi-prefix provider declares: the operator and voice symbols. */
+  private static final ReplyBudgetCatalog TWO_SYMBOL_STATUS =
+      new ReplyBudgetCatalog(
+          List.of(new ReplyContribution("multi-prefix", ReplySlot.STATUS, limits -> 2)));
+
+  private final ConfigurationLoader loader =
+      new ConfigurationLoader(Set.of(), Set.of(), () -> TWO_SYMBOL_STATUS);
 
   private ServerConfiguration load(String yaml) throws ConfigurationException {
     return loader.load(new ByteArrayInputStream(yaml.getBytes(StandardCharsets.UTF_8)));
@@ -70,8 +80,11 @@ class ReplyBudgetConfigurationTest {
 
   @Test
   void accepts353ExactlyAtTheConservativeBoundary() throws Exception {
-    ConfigurationLoader.validateNamesBudget("test.jircd.local", 215, 51);
-    assertThatThrownBy(() -> ConfigurationLoader.validateNamesBudget("test.jircd.local", 216, 51))
+    ConfigurationLoader.validateNamesBudget("test.jircd.local", 215, 51, TWO_SYMBOL_STATUS);
+    assertThatThrownBy(
+            () ->
+                ConfigurationLoader.validateNamesBudget(
+                    "test.jircd.local", 216, 51, TWO_SYMBOL_STATUS))
         .isInstanceOf(ConfigurationException.class)
         .hasMessageContaining("353=514");
   }

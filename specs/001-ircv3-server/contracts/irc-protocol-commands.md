@@ -196,6 +196,17 @@ defined, the same class of gap the nickname/channel grammars closed for
   "Message identifiers"). Unlike `server-time`'s `time` tag, `msgid`
   isn't gated by a second, separately-declinable capability — there is
   no way to negotiate `message-tags` without also getting `msgid`.
+- **Ownership** (014-capability-plugin-spi): each capability module owns its behavior; core
+  keeps `CAP` negotiation, tag syntax and size validation, authorized delivery and byte
+  budgets. `message-tags` selects the client-only (`+`) tags to forward, contributes `msgid`
+  and owns `TAGMSG`; `server-time` contributes `time` independently of `message-tags`;
+  `echo-message` asks for the sender copy through a recipient role that core merges with the
+  ordinary one, so a self-targeted message is still delivered once; `away-notify`, `batch` and
+  `multi-prefix` are described in their own contract notes. Removing a module from the
+  classpath removes both its `CAP LS` offer and its behavior; core and the other modules are
+  unaffected. How a capability change is applied to already-connected sessions at runtime is
+  specified separately (014-capability-plugin-spi, runtime lifecycle) and is not part of this
+  ownership change.
 - `005`'s token set (FR-055) is deliberately minimal: every token
   restates a value this specification already committed to elsewhere
   (casemapping, grammar limits, mode prefixes, UTF-8 enforcement), none
@@ -322,8 +333,12 @@ was previously missing and needed its own definition (FR-048).
   today's single highest prefix (`@nick`, `H@`). The choice follows the client
   receiving the reply, never the member listed, and applies to `NAMES`
   (targeted and bare), the `353` sent on `JOIN`/`SAJOIN`, and the
-  channel-scoped `WHO`. Core behavior gated on the capability id; the
-  `jircd-capabilities/multi-prefix` module only registers the capability.
+  channel-scoped `WHO`. Ownership (014-capability-plugin-spi): core keeps the
+  member facts — every held status, highest first in `PREFIX` order — and renders the
+  highest status by default; the `jircd-capabilities/multi-prefix` module replaces the status
+  slot of the `353` token and the `352` flags with all of them for a requester that negotiated
+  it, and declares the two-symbol bound the reply budget reserves. Without the module every
+  requester sees the highest status only.
 
 ### User Queries (Story 7)
 
@@ -677,7 +692,7 @@ any given server to implement it.
 | `HELP`, `HELPOP` | Modern IRC | **Implemented** (issue #77) — a short built-in topic list: `704`, `705`…, `706` with the topic as subject (`index` for a bare `HELP`), `524 ERR_HELPNOTFOUND` for an unknown topic. Both commands behave identically |
 | `CAP` | IRCv3 | **Implemented** — see "Connection Registration" above |
 | `AUTHENTICATE` | IRCv3 (SASL) | Recognized only — deferred with Story 3 (FR-009/FR-010); MUST NOT be offered as a capability (contracts note above) |
-| `TAGMSG` | IRCv3 | Recognized only — no tag-only-message feature in this release, though `message-tags` (FR-025) itself is implemented for regular messages |
+| `TAGMSG` | IRCv3 | **Implemented** by the `message-tags` module (002-extended-irc-commands FR-020–FR-023; ownership per 014-capability-plugin-spi) — a tag-only message that reuses core's target resolution and send gates and reaches only recipients that negotiated `message-tags`. Without that module the command is unknown (`421`) |
 | `EXTENSION` | This project | **Implemented** — see "Administration" above; not an RFC 1459/2812 command |
 | `WHOHOST` | This project | **Implemented** — see "Administration" above; not an RFC 1459/2812 command |
 | `SAJOIN` | Common IRCd convention | **Implemented** — see "Administration" above; not an RFC 1459/2812 command, but a well-known real-world administrator-override convention (research.md "Administrator channel override"), reused rather than inventing a project-specific name |

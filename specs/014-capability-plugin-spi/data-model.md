@@ -38,7 +38,7 @@ Disable/failure removes withdrawn names physically. Enable does not restore them
 
 ## CommittedEvent, Audience and MemberSnapshot
 
-CommittedEvent holds kind, logical operation id, immutable subject before/after facts and permitted audience. Publish exactly once after a successful core transition, retaining existing repeated accepted-AWAY semantics. No event for rejected/no-op JOIN/nick or duplicate cleanup.
+CommittedEvent holds kind, logical operation id, immutable subject before/after facts, an optional actor (the kicker for `KICKED`) and permitted audience. Ordering: events caused by one session's own commands are published in the order that session issued them (its commands run serially); an event another session causes about it (`KICKED`) has no order relative to those, nothing is ordered across subjects, and `operationId` is not a global sequence. Publish exactly once after a successful core transition, retaining existing repeated accepted-AWAY semantics. No event for rejected/no-op JOIN/nick or duplicate cleanup.
 
 Audience deduplicates permitted peers with explicit self policy and no global-session scan. Capture departure peers before removal. MemberSnapshot contains permitted nickname/ident/display-host, consistently ordered held statuses and generic reply facts; it contains no multi-prefix flag. Across members preserve existing weak snapshot semantics; core default is highest status + nickname. Release domain locks before any hook.
 

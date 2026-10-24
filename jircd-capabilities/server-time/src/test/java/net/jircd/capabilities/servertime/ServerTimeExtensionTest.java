@@ -114,11 +114,6 @@ class ServerTimeExtensionTest {
   }
 
   @Test
-  void legacyHookIsNoLongerUsedByTheProvider() {
-    assertThat(new ServerTimeExtension().contributeTags(message(Instant.EPOCH))).isEmpty();
-  }
-
-  @Test
   void decoratesWithoutMessageTagsNegotiatedOrEnabled() {
     ExtensionRegistry registry = new ExtensionRegistry();
     registry.register(new ServerTimeExtension());

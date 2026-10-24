@@ -76,10 +76,7 @@ public final class ConfigurationLoader {
   public void checkReplyBudgets(String serverName, int nicknameMaxLength, int channelNameMaxLength)
       throws ConfigurationException {
     validateReplyBudgets(
-        serverName,
-        nicknameMaxLength,
-        channelNameMaxLength,
-        ReplyBudgetCatalog.legacyCompatible().plus(discoveredReplyCatalog.get()));
+        serverName, nicknameMaxLength, channelNameMaxLength, discoveredReplyCatalog.get());
   }
 
   public ServerConfiguration load(InputStream yamlInput) throws ConfigurationException {
@@ -271,7 +268,7 @@ public final class ConfigurationLoader {
       String serverName, int nicknameMaxLength, int channelNameMaxLength)
       throws ConfigurationException {
     validateReplyBudgets(
-        serverName, nicknameMaxLength, channelNameMaxLength, ReplyBudgetCatalog.legacyCompatible());
+        serverName, nicknameMaxLength, channelNameMaxLength, ReplyBudgetCatalog.empty());
   }
 
   static void validateReplyBudgets(
@@ -300,7 +297,7 @@ public final class ConfigurationLoader {
       String serverName, int nicknameMaxLength, int channelNameMaxLength)
       throws ConfigurationException {
     validateHostmaskBudget(
-        serverName, nicknameMaxLength, channelNameMaxLength, ReplyBudgetCatalog.legacyCompatible());
+        serverName, nicknameMaxLength, channelNameMaxLength, ReplyBudgetCatalog.empty());
   }
 
   static void validateHostmaskBudget(
@@ -348,7 +345,7 @@ public final class ConfigurationLoader {
       String serverName, int nicknameMaxLength, int channelNameMaxLength)
       throws ConfigurationException {
     validateNamesBudget(
-        serverName, nicknameMaxLength, channelNameMaxLength, ReplyBudgetCatalog.legacyCompatible());
+        serverName, nicknameMaxLength, channelNameMaxLength, ReplyBudgetCatalog.empty());
   }
 
   static void validateNamesBudget(

@@ -90,5 +90,13 @@ public final class PartCommandHandler implements CommandHandler {
         reason != null ? List.of(channel.name(), reason) : List.of(channel.name());
     Message partNotification = new Message(Map.of(), presentedForm, Command.PART, "PART", params);
     Recipients.deliver(departed.get().recipients(), partNotification);
+    extensionRegistry
+        .committedEvents()
+        .parted(
+            session,
+            presentedForm,
+            channel.name(),
+            reason == null ? "" : reason,
+            departed.get().recipients());
   }
 }

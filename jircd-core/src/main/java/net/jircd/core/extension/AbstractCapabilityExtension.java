@@ -20,9 +20,8 @@ import net.jircd.core.capability.Capability;
 /**
  * The {@code id}/{@code providedCapability} boilerplate every {@link CapabilityExtension} shares,
  * with documented no-op lifecycle defaults: {@link #start} and {@link #stop} do nothing, because a
- * provider that holds no resources has nothing to prepare or release. A migrated provider overrides
- * {@link #register} to stage its typed hooks; a provider still on the temporary bridge overrides
- * {@link #contributeTags}/{@link #includeSenderInFanOut} instead.
+ * provider that holds no resources has nothing to prepare or release. A provider overrides {@link
+ * #register} to stage its typed hooks.
  */
 public abstract class AbstractCapabilityExtension implements CapabilityExtension {
 

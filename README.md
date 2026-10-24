@@ -61,8 +61,8 @@ reload.
 
 Startup and reload reject unsafe combinations of the resolved server-name byte
 length `S`, nickname limit `N`, and channel byte limit `Cmax`: both
-`S + 2N + Cmax + 15 <= 512` (353) and `S + N + Cmax + 29 <= 512` (366)
-must hold. Validation names the keys, computed reply sizes, and available channel
+`S + 2N + Cmax + 15 <= 512` (353, with the two-symbol `multi-prefix` status
+installed) and `S + N + Cmax + 29 <= 512` (366) must hold. Validation names the keys, computed reply sizes, and available channel
 byte budget. Reduce the configured limits or use a shorter server name to migrate
 an incompatible configuration; a failed reload keeps the previous settings.
 Replies that carry a nick!user@host are budgeted too, with a username of up to 27
@@ -321,20 +321,25 @@ release), use `distZip` or `distTar`, which land in
 archives — pushing a `vX.Y.Z` tag builds and publishes these automatically
 (see [`.github/workflows/release.yml`](.github/workflows/release.yml)).
 
-### Writing a capability provider (SPI, in transition)
+### Writing a capability provider (SPI)
 
 A capability module (`jircd-capabilities/*`) is a `CapabilityExtension` that owns its behaviour
 through typed registrations instead of core branching on its name. Override
 `CapabilityExtension.register(CapabilityRegistrar)` to stage hooks; nothing is visible until the
-whole descriptor validates and is published, and a failed enable leaves nothing published.
+whole descriptor validates and is published, and a failed enable leaves nothing published. Core
+keeps CAP negotiation and the generic mechanisms (authorized delivery, committed events, reply
+layouts and budgets, whole-frame queue admission); all six bundled capabilities now own their
+behaviour, so removing a module from the classpath removes its offer and its behaviour together.
 
-| Registration | Purpose |
-| --- | --- |
-| `onOutboundTags(keys, maxBytes, hook)` | Owned server tags for recipients that negotiated the capability; pure in the immutable message, validated against the declared escaped-byte bound |
-| `onEvent`, `onInboundTags`, `onRecipients` | Committed-event delivery, client-tag selection, sender-copy roles |
-| `onMemberStatus`, `onNamesIdentity`, `onReplyField` | Bounded decorations of schema-declared reply slots |
-| `onOutputGroup` | Framing of a finite group, falling back to plain members |
-| `command` | Provider-owned command; it can never replace a command core or another extension handles, and is removed (answered as unknown) when the provider is withdrawn |
+| Registration | Purpose | Used by |
+| --- | --- | --- |
+| `onOutboundTags(keys, maxBytes, hook)` | Owned server tags for recipients that negotiated the capability; pure in the immutable message, validated against the declared escaped-byte bound | `server-time` (`time`), `message-tags` (`msgid`) |
+| `onInboundTags` | Selects the client-only (`+`) tags to forward and provider-scoped request context; a recipient that negotiated the owner sees the forwarded tags | `message-tags` |
+| `onRecipients` | Asks for a `SENDER_COPY` role for the sender of a permitted `PRIVMSG`/`NOTICE`/`TAGMSG`; core merges roles so a recipient gets the message once | `echo-message` |
+| `onEvent(kind, hook)` | Reacts to a committed `AWAY_CHANGED`, `JOINED`, `PARTED`, `KICKED`, `QUIT` or `NICK_CHANGED` with delivery intents for peers drawn from the event's audience; recipients are narrowed to those that negotiated the capability | `away-notify` |
+| `onMemberStatus`, `onNamesIdentity`, `onReplyField` | Bounded decorations of schema-declared reply slots (the status of a NAMES token or channel WHO entry, the NAMES identity) | `multi-prefix` (status) |
+| `onOutputGroup(prerequisites, hook)` | Framing of a finite group; the group is validated and queued whole, or sent plain when the owner or a prerequisite was not negotiated | `batch` |
+| `command` | Provider-owned command; it can never replace a command core or another extension handles, and is removed (answered as unknown) when the provider is withdrawn | `message-tags` (`TAGMSG`) |
 
 Hook results are untrusted. An exception, a `null` or an out-of-bounds result is dropped whole,
 reported by provider id, hook and category only, and replaced by the documented default; committed
@@ -342,17 +347,35 @@ core state and other providers are unaffected. Hooks must be pure, nonblocking a
 applies the owner's enabled state and the declared negotiation prerequisites, so a hook never reads
 a session's capability set.
 
-**Status.** Only `server-time` is migrated. The other five providers still use the temporary
-`contributeTags` / `includeSenderInFanOut` bridge, which is removed once the last one migrates;
-core routes a provider's tags through exactly one path. Runtime FAILED withdrawal of a faulty
-provider, event publication and the remaining migrations are later changes in the same feature
-(`specs/014-capability-plugin-spi/`). `0.1.0-SNAPSHOT` is unreleased, so the SPI changes carry no
-version bump until the first release.
+Core publishes committed events (`CommittedEvents`) after the state change and with no registry or
+channel monitor held; a kind nobody listens for costs nothing, and a faulty listener never undoes
+the transition. Client messages go through `MessageDelivery`, which owns target resolution, the
+send gates, the envelope (one id and send time for every recipient) and role selection.
+
+**Status.** Runtime FAILED withdrawal of a faulty provider, atomic runtime enable/disable with
+`CAP NEW`/`DEL`, and the dedicated load measurements are later changes in the same feature
+(`specs/014-capability-plugin-spi/`); this change does not provide them.
+
+**Migrating code that used the earlier API.** `0.1.0-SNAPSHOT` is unreleased, so these changes
+carry no version bump until the first release.
+
+| Removed | Use instead |
+| --- | --- |
+| `CapabilityExtension.contributeTags` | `CapabilityRegistrar.onOutboundTags` |
+| `CapabilityExtension.includeSenderInFanOut` | `CapabilityRegistrar.onRecipients` returning `DeliveryRole.SENDER_COPY` |
+| `Channel.memberListing(boolean)`, `Channel.statusPrefixes(member, boolean)` | `Channel.memberFacts()` / `heldStatuses(member)` for unformatted facts; `MemberReplies` renders them for a requester. `memberListing()` is the highest-status form |
+| `JoinResult.memberListing()` | `JoinResult.members()` (unformatted `MemberFacts`) |
+| `JoinCommandHandler.sendNamesReply(requester, channel, server)` and `sendNamesLine(requester, channel, server)` | The overloads that take the `ExtensionRegistry` first. `sendNamesReply(requester, channel, server, List<String> tokens)` still sends tokens you rendered |
+| `SessionWriter.enqueueBatch` | `SessionWriter.enqueueGroup`; framing comes from the owning provider |
+| `MessageCommandHandler.resolveRecipients`, `deliveryTargets`, `includeSenderInFanOut` | `MessageDelivery.authorize` and `deliver` |
+| `TagmsgCommandHandler` in core | Owned by the `message-tags` module |
+| `ReplyBudgetCatalog.legacyCompatible()` | `ReplyBudgetCatalog.empty()` plus the providers' own declared bounds |
 
 Reply decorations are budgeted by generic layouts (`ReplyLayout`) rather than a per-capability
 width: startup, `REHASH` and runtime enable reserve every installed provider's declared slot bytes
-with the same arithmetic. Until `multi-prefix` declares its own bound the server keeps reserving the
-two-symbol status width, so accepted configurations stay accepted.
+with the same arithmetic. `multi-prefix` declares the two operator and voice symbols of
+`PREFIX=(ov)@+`, so with the module installed (as in every shipped build) the reserved envelope is
+unchanged; a server without it reserves only core's one-byte highest status.
 
 ### Outbound queue (SendQ) policy
 

@@ -16,21 +16,38 @@
 package net.jircd.capabilities.multiprefix;
 
 import net.jircd.core.extension.AbstractCapabilityExtension;
+import net.jircd.core.extension.capability.CapabilityRegistrar;
+import net.jircd.core.extension.capability.MemberSnapshot;
 import net.jircd.protocol.CapabilityName;
 
 /**
- * The {@code multi-prefix} capability: like {@code away-notify}, it gates behaviour that lives in
- * core. {@code Channel.memberListing}/{@code statusPrefixes}, reached from {@code JOIN}, {@code
- * NAMES} and {@code WHO}, list every status prefix a member holds when the requester's negotiated
- * set contains {@link CapabilityName#MULTI_PREFIX}. The prefix logic itself stays in core beside
- * {@code ISUPPORT PREFIX}, which defines the order; this module only registers the capability so it
- * is advertised, ACKed and configurable.
+ * The {@code multi-prefix} capability: replaces the status slot of {@code NAMES} entries and
+ * channel {@code WHO} flags with every status symbol a member holds, in {@code PREFIX} order, for a
+ * requester that negotiated it. Core keeps the member facts, the {@code PREFIX} order that defines
+ * the statuses and the default of the highest status only; this module only chooses how many to
+ * show.
  */
 public final class MultiPrefixExtension extends AbstractCapabilityExtension {
 
   public static final String CAPABILITY_ID = CapabilityName.MULTI_PREFIX;
 
+  /**
+   * The most statuses a member can hold, one byte each: the operator and voice symbols of {@code
+   * PREFIX=(ov)@+}. Core reserves this width in the reply budget of every entry the slot decorates.
+   */
+  static final long MAX_STATUS_BYTES = 2;
+
   public MultiPrefixExtension() {
     super(CAPABILITY_ID);
+  }
+
+  @Override
+  public void register(CapabilityRegistrar registrar) {
+    registrar.onMemberStatus(limits -> MAX_STATUS_BYTES, MultiPrefixExtension::allStatuses);
+  }
+
+  /** Every held status, highest first, exactly as core ordered them. */
+  static String allStatuses(MemberSnapshot member) {
+    return String.join("", member.heldStatuses());
   }
 }

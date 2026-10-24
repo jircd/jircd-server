@@ -21,10 +21,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
-import net.jircd.core.capability.Capability;
-import net.jircd.core.extension.CapabilityExtension;
 import net.jircd.core.extension.ExtensionRegistry;
-import net.jircd.core.extension.ServerContext;
 import net.jircd.protocol.CapabilityName;
 import net.jircd.protocol.Command;
 import net.jircd.protocol.Message;
@@ -34,34 +31,9 @@ import org.junit.jupiter.api.Test;
 class CapabilityTagRendererBudgetTest {
   private static CapabilityTagRenderer renderer(Map<String, String> serverTags) {
     ExtensionRegistry registry = new ExtensionRegistry();
-    registry.register(
-        new CapabilityExtension() {
-          @Override
-          public String id() {
-            return "test-tags";
-          }
-
-          @Override
-          public void start(ServerContext context) {
-            // This tag-only test extension has no resources to initialize.
-          }
-
-          @Override
-          public void stop() {
-            // This tag-only test extension has no resources to release.
-          }
-
-          @Override
-          public Capability providedCapability() {
-            return new Capability("test-tags");
-          }
-
-          @Override
-          public Map<String, String> contributeTags(OutboundMessage message) {
-            return serverTags;
-          }
-        });
+    registry.register(new TagProvider("test-tags", serverTags));
     registry.enable("test-tags");
+    ClientTagForwarder.enableIn(registry);
     return new CapabilityTagRenderer(registry);
   }
 
@@ -76,8 +48,10 @@ class CapabilityTagRendererBudgetTest {
   @Test
   void clientAndServerOriginsMayEachUse4094DataBytes() {
     OutboundMessage message =
-        OutboundMessage.now(
-            "sender!ident@host", "PRIVMSG", "bob", "hello", Map.of("+c", "x".repeat(4091)));
+        ForwardedTags.selectedBy(
+            "message-tags",
+            OutboundMessage.now(
+                "sender!ident@host", "PRIVMSG", "bob", "hello", Map.of("+c", "x".repeat(4091))));
     Map<String, String> tags = renderer(Map.of("s", "y".repeat(4092))).render(recipient(), message);
     assertThat(MessageSerializer.tagDataBytes(tags)).isEqualTo(8189);
   }
@@ -85,20 +59,22 @@ class CapabilityTagRendererBudgetTest {
   @Test
   void oversizedClientDataIsRejectedAfterEscaping() {
     OutboundMessage message =
-        OutboundMessage.now(
-            "sender!ident@host", "PRIVMSG", "bob", "hello", Map.of("+c", " ".repeat(2046)));
+        ForwardedTags.selectedBy(
+            "message-tags",
+            OutboundMessage.now(
+                "sender!ident@host", "PRIVMSG", "bob", "hello", Map.of("+c", " ".repeat(2046))));
     assertThatThrownBy(() -> renderer(Map.of()).render(recipient(), message))
         .isInstanceOf(MessageSerializer.MessageTooLongException.class);
   }
 
   @Test
-  void anOversizedLegacyServerContributionIsOmittedAtPreparationNotTheMessage() {
+  void anOversizedServerContributionIsOmittedAtPreparationNotTheMessage() {
     OutboundMessage message = OutboundMessage.now("sender!ident@host", "PRIVMSG", "bob", "hello");
     assertThat(renderer(Map.of("s", "x".repeat(4093))).render(recipient(), message)).isEmpty();
   }
 
   @Test
-  void anOversizedLegacyContributionDoesNotDropTheMessageOrStopSubsequentWrites() {
+  void anOversizedContributionDoesNotDropTheMessageOrStopSubsequentWrites() {
     ByteArrayOutputStream out = new ByteArrayOutputStream();
     try (SessionWriter writer =
         new SessionWriter(recipient(), out, renderer(Map.of("s", "x".repeat(4093))))) {

@@ -130,6 +130,7 @@ class HostmaskReplyFitTest {
     ExtensionRegistry extensions = new ExtensionRegistry();
     extensions.register(new LongHost());
     extensions.enable("long-host");
+    MultiPrefixStub.enableIn(extensions);
     ByteArrayOutputStream ownerOut = new ByteArrayOutputStream();
     ByteArrayOutputStream askerOut = new ByteArrayOutputStream();
     ClientSession owner = user("o".repeat(nick), ownerOut, "");
@@ -169,7 +170,9 @@ class HostmaskReplyFitTest {
     asker.writer().close();
     owner.writer().close();
 
-    Map<String, Integer> worst = HostmaskReplyBudget.worstCaseBytes(serverBytes, nick, chan);
+    Map<String, Integer> worst =
+        HostmaskReplyBudget.worstCaseBytes(
+            serverBytes, nick, chan, extensions.capabilitySnapshot().replyBudgetCatalog());
     List<String> sent = lines(askerOut);
     assertThat(wireBytes(only(sent, "333")))
         .as(only(sent, "333"))

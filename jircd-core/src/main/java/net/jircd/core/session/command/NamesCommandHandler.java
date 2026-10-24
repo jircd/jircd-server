@@ -56,7 +56,7 @@ public final class NamesCommandHandler implements CommandHandler {
     if (message.params().isEmpty()) {
       for (var channel : channelRegistry.all()) {
         if (!ChannelVisibility.isHiddenFrom(channel, session, extensionRegistry)) {
-          JoinCommandHandler.sendNamesLine(session, channel, serverName.get());
+          JoinCommandHandler.sendNamesLine(extensionRegistry, session, channel, serverName.get());
         }
       }
       Replies.sendFitted(
@@ -83,6 +83,6 @@ public final class NamesCommandHandler implements CommandHandler {
           "End of /NAMES list");
       return;
     }
-    JoinCommandHandler.sendNamesReply(session, found.get(), serverName.get());
+    JoinCommandHandler.sendNamesReply(extensionRegistry, session, found.get(), serverName.get());
   }
 }

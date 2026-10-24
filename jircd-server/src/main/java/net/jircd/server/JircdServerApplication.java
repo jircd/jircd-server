@@ -53,7 +53,6 @@ import net.jircd.core.session.command.NickCommandHandler;
 import net.jircd.core.session.command.PartCommandHandler;
 import net.jircd.core.session.command.PingPongCommandHandler;
 import net.jircd.core.session.command.QuitCommandHandler;
-import net.jircd.core.session.command.TagmsgCommandHandler;
 import net.jircd.core.session.command.TimeCommandHandler;
 import net.jircd.core.session.command.TopicCommandHandler;
 import net.jircd.core.session.command.UserCommandHandler;
@@ -266,8 +265,8 @@ public final class JircdServerApplication {
   }
 
   /**
-   * VERSION/TIME/LUSERS/AWAY/WHOWAS/TAGMSG (002-extended-irc-commands), plus MOTD, ISON, ADMIN,
-   * STATS and HELP/HELPOP.
+   * VERSION/TIME/LUSERS/AWAY/WHOWAS (002-extended-irc-commands), plus MOTD, ISON, ADMIN, STATS and
+   * HELP/HELPOP.
    */
   private void registerExtendedCommandHandlers(net.jircd.core.session.command.MotdService motd) {
     connectionHandler.registerHandler(
@@ -310,10 +309,6 @@ public final class JircdServerApplication {
         Command.AWAY, new AwayCommandHandler(() -> serverName, extensionRegistry));
     connectionHandler.registerHandler(
         Command.WHOWAS, new WhowasCommandHandler(whowasHistory, () -> serverName));
-    connectionHandler.registerHandler(
-        Command.TAGMSG,
-        new TagmsgCommandHandler(
-            channelRegistry, nicknameRegistry, extensionRegistry, () -> serverName));
   }
 
   /** {@code KICK}/channel-{@code MODE}/{@code INVITE} (Story 5, FR-013/FR-014/FR-064/FR-065). */

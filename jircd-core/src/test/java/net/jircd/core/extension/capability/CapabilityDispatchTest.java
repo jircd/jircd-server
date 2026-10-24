@@ -672,26 +672,4 @@ class CapabilityDispatchTest {
     assertThat(dispatcher.event(snapshot, event(listening))).hasSize(1);
     assertThat(faults).isEmpty();
   }
-
-  // ---- the temporary legacy tag path is contained like a hook
-
-  @Test
-  void aLegacyContributionThatThrowsIsNullOrOversizedIsDroppedAndReported() {
-    assertThat(
-            dispatcher.legacyOutboundTags(
-                "old",
-                () -> {
-                  throw new IllegalStateException("boom");
-                }))
-        .isEmpty();
-    assertThat(dispatcher.legacyOutboundTags("old", () -> null)).isEmpty();
-    assertThat(dispatcher.legacyOutboundTags("old", () -> Map.of("a", "x".repeat(4100)))).isEmpty();
-    assertThat(dispatcher.legacyOutboundTags("old", () -> Map.of("a", "v")))
-        .containsExactly(Map.entry("a", "v"));
-    assertThat(faults)
-        .containsExactly(
-            new Fault("old", HookKind.OUTBOUND_TAGS, FaultCategory.EXCEPTION),
-            new Fault("old", HookKind.OUTBOUND_TAGS, FaultCategory.NULL_RESULT),
-            new Fault("old", HookKind.OUTBOUND_TAGS, FaultCategory.INVALID_RESULT));
-  }
 }

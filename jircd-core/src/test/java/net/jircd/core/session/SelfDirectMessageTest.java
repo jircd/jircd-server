@@ -19,8 +19,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.Set;
 import net.jircd.core.extension.AbstractCapabilityExtension;
 import net.jircd.core.extension.ExtensionRegistry;
+import net.jircd.core.extension.capability.CapabilityRegistrar;
+import net.jircd.core.extension.capability.DeliveryRole;
 import net.jircd.core.session.command.MessageCommandHandler;
 import net.jircd.protocol.MessageParser;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -36,8 +39,8 @@ class SelfDirectMessageTest {
     }
 
     @Override
-    public boolean includeSenderInFanOut(ClientSession sender) {
-      return sender.negotiatedCapabilities().contains("echo-message");
+    public void register(CapabilityRegistrar registrar) {
+      registrar.onRecipients((intent, context) -> Set.of(DeliveryRole.SENDER_COPY));
     }
   }
 

@@ -162,12 +162,6 @@ public final class RuntimeSnapshot {
     return Optional.ofNullable(providers.get(providerId));
   }
 
-  /** Whether {@code providerId} published at least one hook, i.e. has migrated off legacy hooks. */
-  public boolean hasHooks(String providerId) {
-    CapabilityDescriptor descriptor = providers.get(providerId);
-    return descriptor != null && !descriptor.registrations().isEmpty();
-  }
-
   public Set<String> providerIds() {
     return providers.keySet();
   }

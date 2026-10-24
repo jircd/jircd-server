@@ -21,10 +21,8 @@
  *
  * <p>Every hook result is untrusted and is validated against the bounds declared at registration
  * before it can affect output. A faulty result is dropped, reported by provider id, hook kind and
- * category only, and replaced by the documented default. This package is the foundation delivered
- * with the server-time migration; the other providers still use the temporary {@code
- * contributeTags}/{@code includeSenderInFanOut} bridge on {@link
- * net.jircd.core.extension.CapabilityExtension}, and runtime FAILED withdrawal of a faulty provider
- * is delivered later.
+ * category only, and replaced by the documented default. All six bundled capabilities register
+ * their behavior here; core keeps only {@code CAP} negotiation and the generic mechanisms the hooks
+ * plug into. Runtime FAILED withdrawal of a faulty provider is delivered later.
  */
 package net.jircd.core.extension.capability;
