@@ -7,14 +7,14 @@ Recorded on the uncommitted working tree of branch `014-capability-migrations` (
 | Command | Outcome |
 | --- | --- |
 | `./gradlew spotlessApply` | applied, then clean |
-| `./gradlew build --rerun-tasks` | **BUILD SUCCESSFUL** (1 m 36 s, rerun after review round 2): 1254 tests in the module XML reports, 0 failed, 0 skipped; Spotless, SpotBugs (main and test), PMD (main and test) and `testCodeCoverageVerification` all green |
+| `./gradlew build --rerun-tasks` | **BUILD SUCCESSFUL** (1 m 37 s with `testCodeCoverageReport`, rerun after the PR #106 Sourcery round): 1262 tests in the module XML reports, 0 failed, 0 skipped; Spotless, SpotBugs (main and test), PMD (main and test) and `testCodeCoverageVerification` all green |
 
 Two earlier plain builds failed before this one and were fixed, not retried: `pmdTest` flagged `CloseResource` on test writers closed by an `@AfterEach` (suppressed with that reason at the six declarations) and `spotbugsTest` flagged `USO_UNSAFE_OBJECT_SYNCHRONIZATION` on a `synchronized` HashMap in `CommittedEventTest` (now a `ConcurrentHashMap`).
 
 | Module | Tests |
 | --- | --- |
 | jircd-protocol | 58 |
-| jircd-core | 810 |
+| jircd-core | 818 |
 | jircd-capabilities: away-notify / batch / echo-message / message-tags / multi-prefix / server-time | 7 / 11 / 13 / 13 / 5 / 6 |
 | jircd-server-extensions:admin | 20 |
 | jircd-integration-tests | 311 (302 existing and group probes, plus the 9 of `CapabilityProviderAbsenceTest`) |
@@ -25,8 +25,8 @@ Report: `build/reports/jacoco/testCodeCoverageReport/` (`html/`, `testCodeCovera
 
 | | Covered | Floor | After #100 | Result |
 | --- | --- | --- | --- | --- |
-| Line | **95.56%** (5744 of 6011) | 85% | 94.95% | pass, higher |
-| Branch | **88.61%** (2341 of 2642) | 75% | 87.30% | pass, higher |
+| Line | **95.72%** (5791 of 6050) | 85% | 94.95% | pass, higher |
+| Branch | **88.70%** (2356 of 2656) | 75% | 87.30% | pass, higher |
 
 By package: `net.jircd.core.session` lines 1709 of 1746, branches 665 of 748; `net.jircd.core.extension.capability` lines 618 of 639, branches 314 of 354; each capability module's `main` code is fully covered by line (`message-tags` 51/51, `batch` 19/19, `away-notify` 10/10, `echo-message` 4/4, `multi-prefix` 5/5).
 
