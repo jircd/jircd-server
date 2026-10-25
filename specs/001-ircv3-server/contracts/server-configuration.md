@@ -448,3 +448,39 @@ administratorCredentials:
   `rateLimit`, `listeners`, and `administratorCredentials`, none of which
   `EXTENSION` touches); `EXTENSION` is the narrower, file-independent
   equivalent scoped to a single extension's state.
+- **Runtime capability changes** (014-capability-plugin-spi, #97; amends
+  "Path equivalence" above): `EXTENSION`, `REHASH` and `SIGHUP` all change a
+  capability through the same lifecycle. Under the capability runtime's
+  administrative mutex, one step publishes the new immutable runtime
+  snapshot and removes every withdrawn name from the negotiated set of every
+  connected session, registered or not; disabling a provider also withdraws,
+  in that same step, every provider that declares it as a hard dependency.
+  `CAP DEL` (for removals) and then `CAP NEW` (for additions) are queued
+  afterwards to each notification-eligible client — one that sent
+  `CAP LS 302` or later, or negotiated `cap-notify` — whether or not it held
+  the name; other clients get neither. Provider `start`/`stop` run outside
+  that mutex. Enabling a capability never restores anyone's earlier
+  negotiation: behavior resumes for a client only after it requests the
+  capability again. A repeated toggle changes nothing and sends nothing.
+  Output that was already prepared from the earlier state may still be
+  delivered after the `DEL`; there is no output cutoff. Anything prepared
+  after the change uses the new state. `REHASH` validates the whole file
+  first, including the whole candidate provider graph (every hard
+  prerequisite of an enabled provider enabled, no dependency cycle, no
+  duplicate offer or owned slot); an invalid file changes no configuration,
+  negotiation or notification. A valid reload is one lifecycle operation
+  that no `EXTENSION` toggle can interleave with: providers to enable start
+  first, prerequisites before their dependents, then one publication swaps
+  in every capability change together with the new reply limits and
+  configuration (so one `CAP DEL`/`NEW` per reload), and only then are
+  withdrawn providers stopped, each before what it requires. A command a
+  withdrawn provider owned may be taken over by a provider the same reload
+  enables; it moves to the new owner in that publication. A provider
+  whose start fails ends `FAILED`, together with any provider in the same
+  reload that requires it, and is reported to the `REHASH` sender without
+  undoing the rest. `EXTENSION` reports the state the toggle actually left.
+  A nickname change and the client's own `NICK` line are serialized with
+  publication, so a notification always addresses the nickname the client
+  knows at that point.
+  Complete runtime fault withdrawal (a hook that faults at runtime) is
+  specified with #102.

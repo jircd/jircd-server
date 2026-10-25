@@ -339,7 +339,7 @@ behaviour, so removing a module from the classpath removes its offer and its beh
 | `onEvent(kind, hook)` | Reacts to a committed `AWAY_CHANGED`, `JOINED`, `PARTED`, `KICKED`, `QUIT` or `NICK_CHANGED` with delivery intents for peers drawn from the event's audience; recipients are narrowed to those that negotiated the capability | `away-notify` |
 | `onMemberStatus`, `onNamesIdentity`, `onReplyField` | Bounded decorations of schema-declared reply slots (the status of a NAMES token or channel WHO entry, the NAMES identity) | `multi-prefix` (status) |
 | `onOutputGroup(prerequisites, hook)` | Framing of a finite group; the group is validated and queued whole, or sent plain when the owner or a prerequisite was not negotiated | `batch` |
-| `command` | Provider-owned command; it can never replace a command core or another extension handles, and is removed (answered as unknown) when the provider is withdrawn | `message-tags` (`TAGMSG`) |
+| `command` | Provider-owned command, part of the published snapshot rather than core's command table, so it appears, disappears or moves to another provider exactly when the snapshot does; it can never replace a command core or a server extension handles, and is answered as unknown while no published provider owns it | `message-tags` (`TAGMSG`) |
 
 Hook results are untrusted. An exception, a `null` or an out-of-bounds result is dropped whole,
 reported by provider id, hook and category only, and replaced by the documented default; committed
@@ -352,9 +352,18 @@ channel monitor held; a kind nobody listens for costs nothing, and a faulty list
 the transition. Client messages go through `MessageDelivery`, which owns target resolution, the
 send gates, the envelope (one id and send time for every recipient) and role selection.
 
-**Status.** Runtime FAILED withdrawal of a faulty provider, atomic runtime enable/disable with
-`CAP NEW`/`DEL`, and the dedicated load measurements are later changes in the same feature
-(`specs/014-capability-plugin-spi/`); this change does not provide them.
+**Runtime enable and disable.** `EXTENSION`, `REHASH` and `SIGHUP` share one lifecycle. Under the
+capability runtime's administrative mutex, a disable publishes the new snapshot and removes the
+withdrawn name, together with any hard dependents', from every connected session in one step; then
+`CAP DEL` goes to every client that sent `CAP LS 302` or negotiated `cap-notify`. An enable sends
+`CAP NEW` but restores no one's negotiation. Core advertises `cap-notify` in `CAP LS` even with no
+provider installed. Work prepared before a change may still be delivered after the `DEL`; anything
+prepared after it sees the new state. A batch group picks framed or plain at admission, against the
+current state, so a queued group always keeps its close. Provider `start`/`stop` run outside the
+mutex and must tolerate overlapping callbacks from captured work.
+
+**Status.** Runtime FAILED withdrawal of a provider whose hook faults, and the dedicated load
+measurements, are a later change in the same feature (`specs/014-capability-plugin-spi/`).
 
 **Migrating code that used the earlier API.** `0.1.0-SNAPSHOT` is unreleased, so these changes
 carry no version bump until the first release.
@@ -370,6 +379,11 @@ carry no version bump until the first release.
 | `MessageCommandHandler.resolveRecipients`, `deliveryTargets`, `includeSenderInFanOut` | `MessageDelivery.authorize` and `deliver` |
 | `TagmsgCommandHandler` in core | Owned by the `message-tags` module |
 | `ReplyBudgetCatalog.legacyCompatible()` | `ReplyBudgetCatalog.empty()` plus the providers' own declared bounds |
+| Mutating `ClientSession.negotiatedCapabilities()` | It is now an immutable snapshot; replace the whole set with `replaceNegotiatedCapabilities` |
+| `CapabilityNegotiator.isAcceptable`, `apply` | `CapabilityNegotiator.candidate` (validates without changing anything) and `request` (validates and applies under the administrative mutex) |
+| `CapabilityNegotiationGrammar.ls`, `list` | `lsReplies`, `listReplies` (with 302 continuation lines); `notifications` for `CAP NEW`/`DEL` |
+| A capability provider's command looked up in core's command table (`CommandRegistrar`) | `ExtensionRegistry.capabilityCommand(Command)`; dispatch consults it after core's table. `HookDispatcher.guardedCommand(registration, live, refused)` is gone; the one-argument form wraps faults |
+| `CapabilityRuntime.withdraw` returning a snapshot; `ExtensionRegistry.disable` refusing while a dependent is enabled | `withdraw` returns the withdrawn provider ids; disabling a prerequisite withdraws its hard dependents in the same step |
 
 Reply decorations are budgeted by generic layouts (`ReplyLayout`) rather than a per-capability
 width: startup, `REHASH` and runtime enable reserve every installed provider's declared slot bytes
