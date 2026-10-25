@@ -274,7 +274,8 @@ class CapabilityRegistrarTest {
     assertThat(snapshot.hooks(HookKind.OUTBOUND_TAGS))
         .extracting(HookRegistration::providerId)
         .containsExactly("alpha", "beta");
-    assertThat(snapshot.without("alpha").hooks(HookKind.OUTBOUND_TAGS)).hasSize(1);
+    assertThat(snapshot.withoutAll(java.util.Set.of("alpha")).hooks(HookKind.OUTBOUND_TAGS))
+        .hasSize(1);
     assertThat(RuntimeSnapshot.EMPTY.hooks(HookKind.EVENT)).isEmpty();
   }
 

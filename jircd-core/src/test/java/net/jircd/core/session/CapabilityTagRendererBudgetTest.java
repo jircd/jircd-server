@@ -40,8 +40,8 @@ class CapabilityTagRendererBudgetTest {
   private static ClientSession recipient() {
     ClientSession recipient =
         new ClientSession("recipient", "host", RateLimitBucket.withDefaults());
-    recipient.negotiatedCapabilities().add(CapabilityName.MESSAGE_TAGS);
-    recipient.negotiatedCapabilities().add("test-tags");
+    TestNegotiation.add(recipient, CapabilityName.MESSAGE_TAGS);
+    TestNegotiation.add(recipient, "test-tags");
     return recipient;
   }
 

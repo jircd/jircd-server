@@ -25,6 +25,7 @@ import net.jircd.core.extension.ExtensionRegistry;
 import net.jircd.core.extension.ServerContext;
 import net.jircd.core.session.ClientSession;
 import net.jircd.core.session.RateLimitBucket;
+import net.jircd.core.session.TestNegotiation;
 import org.junit.jupiter.api.Test;
 
 class CapabilityNegotiatorTest {
@@ -48,7 +49,8 @@ class CapabilityNegotiatorTest {
     CapabilityNegotiator negotiator = new CapabilityNegotiator(registry);
     ClientSession session = new ClientSession("c1", "host.example", RateLimitBucket.withDefaults());
 
-    assertThat(negotiator.currentlyOfferedCapabilityNames()).isEmpty();
+    // Core cap-notify is offered with no provider enabled; it is not a provider.
+    assertThat(negotiator.currentlyOfferedCapabilityNames()).containsExactly("cap-notify");
 
     negotiator.beginNegotiation(session);
     assertThat(session.isNegotiatingCapabilities()).isTrue();
@@ -67,7 +69,7 @@ class CapabilityNegotiatorTest {
     CapabilityNegotiator negotiator = new CapabilityNegotiator(registry);
     ClientSession session = new ClientSession("c1", "host.example", RateLimitBucket.withDefaults());
 
-    session.negotiatedCapabilities().add("message-tags");
+    TestNegotiation.add(session, "message-tags");
 
     assertThat(negotiator.request(session, List.of("echo-message", "batch"))).isFalse();
     assertThat(session.negotiatedCapabilities()).containsExactly("message-tags");
@@ -79,7 +81,7 @@ class CapabilityNegotiatorTest {
     offer(registry, "echo-message", "message-tags");
     CapabilityNegotiator negotiator = new CapabilityNegotiator(registry);
     ClientSession session = new ClientSession("c1", "host.example", RateLimitBucket.withDefaults());
-    session.negotiatedCapabilities().add("message-tags");
+    TestNegotiation.add(session, "message-tags");
 
     assertThat(negotiator.request(session, List.of("echo-message", "-message-tags"))).isTrue();
     assertThat(session.negotiatedCapabilities()).containsExactly("echo-message");
@@ -92,7 +94,7 @@ class CapabilityNegotiatorTest {
     CapabilityNegotiator negotiator = new CapabilityNegotiator(registry);
     ClientSession session = new ClientSession("c1", "host.example", RateLimitBucket.withDefaults());
 
-    session.negotiatedCapabilities().add("message-tags");
+    TestNegotiation.add(session, "message-tags");
 
     assertThat(negotiator.request(session, List.of("echo-message", "-nope"))).isFalse();
     assertThat(session.negotiatedCapabilities()).containsExactly("message-tags");
@@ -104,7 +106,7 @@ class CapabilityNegotiatorTest {
     offer(registry, "echo-message", "message-tags");
     CapabilityNegotiator negotiator = new CapabilityNegotiator(registry);
     ClientSession session = new ClientSession("c1", "host.example", RateLimitBucket.withDefaults());
-    session.negotiatedCapabilities().add("message-tags");
+    TestNegotiation.add(session, "message-tags");
     var before = session.negotiatedCapabilities();
 
     assertThat(negotiator.request(session, List.of("echo-message", "-message-tags"))).isTrue();
@@ -114,14 +116,14 @@ class CapabilityNegotiatorTest {
   }
 
   @Test
-  void isAcceptableDoesNotChangeTheSession() {
+  void candidateDoesNotChangeTheSession() {
     ExtensionRegistry registry = new ExtensionRegistry();
     offer(registry, "echo-message");
     CapabilityNegotiator negotiator = new CapabilityNegotiator(registry);
     ClientSession session = new ClientSession("c1", "host.example", RateLimitBucket.withDefaults());
 
-    assertThat(negotiator.isAcceptable(List.of("echo-message"))).isTrue();
-    assertThat(negotiator.isAcceptable(List.of("echo-message", "nope"))).isFalse();
+    assertThat(negotiator.candidate(session, List.of("echo-message"))).isPresent();
+    assertThat(negotiator.candidate(session, List.of("echo-message", "nope"))).isEmpty();
     assertThat(session.negotiatedCapabilities()).isEmpty();
   }
 

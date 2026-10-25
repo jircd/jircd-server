@@ -19,10 +19,8 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Path;
-import net.jircd.core.extension.Extension;
+import java.util.Map;
 import net.jircd.core.extension.ExtensionRegistry;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * The core, manually-triggered reload operation (research.md "Configuration reload mechanism") —
@@ -32,7 +30,15 @@ import org.slf4j.LoggerFactory;
  */
 public final class ConfigurationReloader {
 
-  private static final Logger LOG = LoggerFactory.getLogger(ConfigurationReloader.class);
+  /**
+   * A reload that validated and was applied, with each extension whose reconciliation failed and
+   * why. A provider whose start fails ends FAILED without undoing the rest of the reload.
+   */
+  public record ReloadOutcome(ServerConfiguration configuration, Map<String, String> failures) {
+    public ReloadOutcome {
+      failures = Map.copyOf(failures);
+    }
+  }
 
   private final Path configPath;
   private final ConfigurationLoader loader;
@@ -72,51 +78,52 @@ public final class ConfigurationReloader {
    *     thread holds
    */
   public ServerConfiguration reload() throws ConfigurationException, IOException {
+    return reloadWithOutcome().configuration();
+  }
+
+  /**
+   * As {@link #reload()}, also reporting each extension whose reconciliation failed.
+   *
+   * @throws IllegalStateException if called from inside a provider lifecycle callback
+   */
+  public ReloadOutcome reloadWithOutcome() throws ConfigurationException, IOException {
     // Checked before the reload monitor is taken, so a callback never queues behind a reload that
     // is itself waiting for the lifecycle lock the callback holds.
     extensionRegistry.requireNoLifecycleCallback();
     return reloadSerialized();
   }
 
-  private synchronized ServerConfiguration reloadSerialized()
-      throws ConfigurationException, IOException {
+  /**
+   * The whole desired configuration is validated before anything changes: the file, the reply
+   * budgets, and the candidate provider graph (hard dependencies present and acyclic, offers and
+   * owned slots unique). A validation failure changes no configuration, negotiation or
+   * notification. A valid reload is then one lifecycle operation that no {@code EXTENSION} toggle
+   * interleaves with: providers to enable start first, prerequisites first, then a single
+   * publication swaps the capability snapshot together with the new reply limits, the advertised
+   * lengths and {@link #current()}, and only then are withdrawn providers stopped. Enable never
+   * restores an earlier negotiation.
+   */
+  private synchronized ReloadOutcome reloadSerialized() throws ConfigurationException, IOException {
     ServerConfiguration reloaded;
     try (InputStream in = new FileInputStream(configPath.toFile())) {
       reloaded = loader.load(in);
     }
     loader.checkReplyBudgets(
         runningServerName, reloaded.nicknameMaxLength(), reloaded.channelNameMaxLength());
-    reconcile(reloaded);
-    this.current = reloaded;
-    extensionRegistry.updateConfiguredLengths(
-        reloaded.nicknameMaxLength(),
-        reloaded.channelNameMaxLength(),
-        reloaded.topicMaxLength(),
-        reloaded.maxModesPerCommand());
-    return reloaded;
-  }
-
-  private void reconcile(ServerConfiguration configuration) {
-    reconcileSection(configuration.capabilityStates());
-    reconcileSection(configuration.serverExtensionStates());
-  }
-
-  private void reconcileSection(java.util.Map<String, Boolean> desiredStates) {
-    for (var entry : desiredStates.entrySet()) {
-      String id = entry.getKey();
-      boolean desiredEnabled = entry.getValue();
-      Extension.State state = extensionRegistry.stateOf(id);
-      boolean currentlyEnabled = state == Extension.State.ENABLED;
-      try {
-        if (desiredEnabled && !currentlyEnabled) {
-          extensionRegistry.enable(id);
-        } else if (!desiredEnabled) {
-          // Idempotent; for a FAILED provider it retries the cleanup that is still pending.
-          extensionRegistry.disable(id);
-        }
-      } catch (RuntimeException | LinkageError e) {
-        LOG.warn("Failed to reconcile extension '{}' to desired state {}", id, desiredEnabled, e);
-      }
+    ExtensionRegistry.DesiredState desired =
+        new ExtensionRegistry.DesiredState(
+            reloaded.capabilityStates(),
+            reloaded.serverExtensionStates(),
+            reloaded.nicknameMaxLength(),
+            reloaded.channelNameMaxLength(),
+            reloaded.topicMaxLength(),
+            reloaded.maxModesPerCommand());
+    Map<String, String> failures;
+    try {
+      failures = extensionRegistry.applyDesiredState(desired, () -> this.current = reloaded);
+    } catch (ExtensionRegistry.InvalidDesiredStateException e) {
+      throw new ConfigurationException(e.getMessage());
     }
+    return new ReloadOutcome(reloaded, failures);
   }
 }

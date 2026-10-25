@@ -44,6 +44,7 @@ import net.jircd.core.extension.ConnectionAdmissionExtension;
 import net.jircd.core.extension.Extension;
 import net.jircd.core.extension.ExtensionRegistry;
 import net.jircd.core.extension.ServerExtension;
+import net.jircd.core.extension.capability.CapabilityControl;
 import net.jircd.core.session.command.CommandHandler;
 import net.jircd.core.session.command.Replies;
 import net.jircd.protocol.Command;
@@ -147,7 +148,14 @@ public final class ConnectionHandler {
   private final Consumer<Socket> acceptedSocketCustomizer;
   private boolean accepting = true;
   private final Map<Thread, Socket> connections = new ConcurrentHashMap<>();
+
+  /**
+   * Every accepted connection, named or not, from before its first command until it ends: the
+   * sessions a capability publication prunes and notifies. Insertion, removal and writer attachment
+   * happen under the capability runtime's administrative mutex, so no session escapes a prune.
+   */
   private final Set<ClientSession> liveSessions = ConcurrentHashMap.newKeySet();
+
   private final Semaphore rejectionSlots = new Semaphore(64);
   private final Map<Thread, Socket> rejections = new ConcurrentHashMap<>();
   private final Map<Command, CommandHandler> handlers = new ConcurrentHashMap<>();
@@ -283,6 +291,7 @@ public final class ConnectionHandler {
     this.sendqLimitBytes = settings.sendqLimitBytes();
     this.registrationTimeout = settings.registrationTimeout();
     this.tagRenderer = new CapabilityTagRenderer(extensionRegistry);
+    extensionRegistry.attachLiveSessions(liveSessions);
   }
 
   public void registerHandler(Command command, CommandHandler handler) {
@@ -291,17 +300,27 @@ public final class ConnectionHandler {
 
   /**
    * The extension-facing view of this command table: install, ownership query, conditional removal.
+   * Ownership covers both command sources dispatch reads: this table and the commands of the
+   * published capability providers, keyed by the same {@link Command} dispatch folds a line to. A
+   * command a published provider owns is registered, and installing over it is refused, so a server
+   * extension can never shadow it. Extensions install from their lifecycle callbacks, which the
+   * registry serializes with provider publication, so the check and the install cannot be split by
+   * a provider enable.
    */
   public CommandRegistrar commandRegistrar() {
     return new CommandRegistrar() {
       @Override
       public void register(Command command, CommandHandler handler) {
+        if (ownedByProvider(command)) {
+          throw new IllegalArgumentException(
+              "Command " + command + " is owned by a capability provider and cannot be replaced");
+        }
         registerHandler(command, handler);
       }
 
       @Override
       public boolean isRegistered(Command command) {
-        return handlers.containsKey(command);
+        return handlers.containsKey(command) || ownedByProvider(command);
       }
 
       @Override
@@ -310,6 +329,10 @@ public final class ConnectionHandler {
         handlers.computeIfPresent(command, (key, current) -> current == installed ? null : current);
       }
     };
+  }
+
+  private boolean ownedByProvider(Command command) {
+    return extensionRegistry.capabilitySnapshot().command(command).isPresent();
   }
 
   /**
@@ -521,7 +544,8 @@ public final class ConnectionHandler {
                 java.time.Clock.systemUTC()),
             socket instanceof javax.net.ssl.SSLSocket,
             socket.getInetAddress());
-    liveSessions.add(session);
+    CapabilityControl control = extensionRegistry.capabilityControl();
+    control.runUnderControl(() -> liveSessions.add(session));
     try {
       serveSession(
           session,
@@ -532,7 +556,7 @@ public final class ConnectionHandler {
           registrationTimeout,
           acceptedAt);
     } finally {
-      liveSessions.remove(session);
+      control.runUnderControl(() -> liveSessions.remove(session));
     }
   }
 
@@ -554,7 +578,7 @@ public final class ConnectionHandler {
       closeQuietly(socket);
       return;
     }
-    session.attachWriter(writer);
+    extensionRegistry.capabilityControl().runUnderControl(() -> session.attachWriter(writer));
     AtomicReference<Thread> overflowCleanup = new AtomicReference<>();
     writer.setOnSendqOverflow(
         () -> startOverflowCleanup(session, writer, socket, connectionId, overflowCleanup));
@@ -765,7 +789,8 @@ public final class ConnectionHandler {
     return -1;
   }
 
-  private void processLine(ClientSession session, byte[] lineBytes) {
+  /** Parses and dispatches one inbound line; package-private as a seam for dispatch tests. */
+  void processLine(ClientSession session, byte[] lineBytes) {
     if (!Utf8Validator.isValidUtf8(lineBytes)) {
       // 005-fix-batch-conformance FR-012 — a definitive, client-visible connection end (the same
       // enqueue-then-cleanup shape QuitCommandHandler/KillCommandHandler/LivenessMonitor already
@@ -823,7 +848,12 @@ public final class ConnectionHandler {
       return;
     }
 
+    // Core and server-extension commands first; then a capability provider's, resolved from one
+    // read of the published snapshot so a reload moving it never leaves it briefly unknown.
     CommandHandler handler = handlers.get(message.command());
+    if (handler == null) {
+      handler = extensionRegistry.capabilityCommand(message.command()).orElse(null);
+    }
     if (handler == null) {
       Replies.sendFitted(
           session,

@@ -57,7 +57,7 @@ class SelfDirectMessageTest {
     alice.setNickname("alice");
     alice.setIdent("ident");
     if (echoNegotiated) {
-      alice.negotiatedCapabilities().add("echo-message");
+      TestNegotiation.add(alice, "echo-message");
     }
     NicknameRegistry nicknames = new NicknameRegistry();
     assertThat(nicknames.claim("alice", alice)).isTrue();

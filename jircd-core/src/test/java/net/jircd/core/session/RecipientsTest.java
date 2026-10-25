@@ -61,8 +61,8 @@ class RecipientsTest {
     ClientSession self = session("self");
     ClientSession subscribed = session("subscribed");
     ClientSession other = session("other");
-    subscribed.negotiatedCapabilities().add(CapabilityName.AWAY_NOTIFY);
-    self.negotiatedCapabilities().add(CapabilityName.AWAY_NOTIFY);
+    TestNegotiation.add(subscribed, CapabilityName.AWAY_NOTIFY);
+    TestNegotiation.add(self, CapabilityName.AWAY_NOTIFY);
     ChannelRegistry registry = new ChannelRegistry();
     for (ClientSession member : List.of(self, subscribed, other)) {
       registry.join("#a", member, ignored -> true);

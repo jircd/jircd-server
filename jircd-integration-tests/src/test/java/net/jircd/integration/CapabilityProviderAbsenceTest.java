@@ -38,7 +38,7 @@ import org.junit.jupiter.api.io.TempDir;
  * behavior with it, and nothing else. The catalog is the ServiceLoader view a server starts with: a
  * class loader that hides one provider class from the {@code CapabilityExtension} service file. No
  * jar or class file is touched or deleted, and the desired configuration enables only providers
- * that are present, as an administrator's would.
+ * that are present, as an administrator's would. Core cap-notify is offered whatever is missing.
  */
 class CapabilityProviderAbsenceTest {
 
@@ -50,14 +50,14 @@ class CapabilityProviderAbsenceTest {
 
   @TempDir Path directory;
 
-  /** A class loader whose view of the capability service file lacks one provider class. */
+  /** A class loader whose view of the capability service file lacks some provider classes. */
   private static final class WithoutProvider extends ClassLoader {
-    private final String hiddenClassSuffix;
+    private final Set<String> hiddenClassSuffixes;
     private final Path scratch;
 
-    WithoutProvider(String hiddenClassSuffix, Path scratch) {
+    WithoutProvider(Set<String> hiddenClassSuffixes, Path scratch) {
       super(CapabilityProviderAbsenceTest.class.getClassLoader());
-      this.hiddenClassSuffix = hiddenClassSuffix;
+      this.hiddenClassSuffixes = hiddenClassSuffixes;
       this.scratch = scratch;
     }
 
@@ -74,7 +74,7 @@ class CapabilityProviderAbsenceTest {
           kept =
               new String(in.readAllBytes(), StandardCharsets.UTF_8)
                   .lines()
-                  .filter(line -> !line.trim().endsWith(hiddenClassSuffix))
+                  .filter(line -> hiddenClassSuffixes.stream().noneMatch(line.trim()::endsWith))
                   .toList();
         }
         Path file = Files.createTempFile(scratch, "services-", ".txt");
@@ -107,20 +107,33 @@ class CapabilityProviderAbsenceTest {
   }
 
   private TestServer startWithout(String absent) throws Exception {
+    return startHiding(Set.of(providerClass(absent)), yamlWithout(absent));
+  }
+
+  private TestServer startHiding(Set<String> hiddenClasses, String yaml) throws Exception {
     Thread thread = Thread.currentThread();
     ClassLoader original = thread.getContextClassLoader();
-    thread.setContextClassLoader(new WithoutProvider(providerClass(absent), directory));
+    thread.setContextClassLoader(new WithoutProvider(hiddenClasses, directory));
     try {
-      return TestServer.start(yamlWithout(absent));
+      return TestServer.start(yaml);
     } finally {
       thread.setContextClassLoader(original);
     }
   }
 
+  /** What LS must offer: the given providers plus core cap-notify, which no provider owns. */
+  private static List<String> withCapNotify(List<String> providers) {
+    List<String> offers = new ArrayList<>(providers);
+    offers.add("cap-notify");
+    return offers;
+  }
+
   private static Set<String> offered(RawIrcClient client) throws Exception {
     client.send("CAP LS 302");
     String response = client.readUntil("CAP * LS", TIMEOUT);
-    String caps = response.substring(response.indexOf("LS :") + "LS :".length()).trim();
+    String caps = response.substring(response.indexOf(" LS ") + " LS ".length()).trim();
+    // A one-name list is sent without the trailing-parameter colon.
+    if (caps.startsWith(":")) caps = caps.substring(1);
     return caps.isEmpty() ? Set.of() : Set.of(caps.split(" "));
   }
 
@@ -140,7 +153,21 @@ class CapabilityProviderAbsenceTest {
   void theFullCatalogOffersAllSixAndTheBaselineIsWhatTheAbsenceTestsSubtract() throws Exception {
     try (TestServer server = TestServer.start(yamlWithout("none"));
         RawIrcClient client = RawIrcClient.connectPlaintext(server.plaintextPort())) {
-      assertThat(offered(client)).containsExactlyInAnyOrderElementsOf(PROVIDERS);
+      assertThat(offered(client)).containsExactlyInAnyOrderElementsOf(withCapNotify(PROVIDERS));
+    }
+  }
+
+  @Test
+  void withEveryProviderMissingLsStillOffersCapNotifyAndItCanBeRequested() throws Exception {
+    Set<String> all = new java.util.HashSet<>();
+    PROVIDERS.forEach(p -> all.add(providerClass(p)));
+    try (TestServer server = startHiding(all, "");
+        RawIrcClient client = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+      assertThat(offered(client)).containsExactly("cap-notify");
+      client.send("CAP REQ :cap-notify");
+      assertThat(client.readUntil("CAP * ACK", TIMEOUT)).endsWith("ACK cap-notify");
+      client.send("CAP LIST");
+      assertThat(client.readUntil("CAP * LIST", TIMEOUT)).endsWith("LIST cap-notify");
     }
   }
 
@@ -153,9 +180,11 @@ class CapabilityProviderAbsenceTest {
             .as("offers without %s", absent)
             .doesNotContain(absent)
             .containsExactlyInAnyOrderElementsOf(
-                PROVIDERS.stream().filter(p -> !p.equals(absent)).toList());
+                withCapNotify(PROVIDERS.stream().filter(p -> !p.equals(absent)).toList()));
         client.send("CAP REQ :" + absent);
         assertThat(client.readUntil("CAP * NAK", TIMEOUT)).contains(absent);
+        client.send("CAP REQ :cap-notify");
+        assertThat(client.readUntil("CAP * ACK", TIMEOUT)).endsWith("ACK cap-notify");
       }
     }
   }

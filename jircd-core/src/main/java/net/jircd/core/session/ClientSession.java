@@ -23,6 +23,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import net.jircd.protocol.CapabilityName;
+import net.jircd.protocol.CapabilityNegotiationGrammar;
 
 /**
  * A single connected client's live state, from TCP accept to disconnect. {@code connectionId} is
@@ -42,7 +44,8 @@ public final class ClientSession {
   private final String connectionId;
   private final ConnectionLifecycle lifecycle = new ConnectionLifecycle();
   private final AtomicReference<Set<String>> negotiatedCapabilities =
-      new AtomicReference<>(ConcurrentHashMap.newKeySet());
+      new AtomicReference<>(Set.of());
+  private final AtomicInteger highestCapVersion = new AtomicInteger();
   private final Set<Channel> channelMemberships = ConcurrentHashMap.newKeySet();
   private final Set<Channel> channelMembershipsView =
       Collections.unmodifiableSet(channelMemberships);
@@ -188,18 +191,45 @@ public final class ClientSession {
     this.awayReason = awayReason;
   }
 
+  /**
+   * The capabilities this client explicitly negotiated: an immutable snapshot, never a live view.
+   * Implicit notification support from {@code CAP LS 302} is not in it; see {@link
+   * #notificationEligible()}.
+   */
   public Set<String> negotiatedCapabilities() {
     return negotiatedCapabilities.get();
   }
 
   /**
-   * Atomically replaces the whole negotiated set, so a concurrent reader sees either the old set or
-   * the new one, never a half-applied {@code CAP REQ}.
+   * Replaces the whole negotiated set in one step, so a concurrent reader sees either the old set
+   * or the new one, never a half-applied {@code CAP REQ}. Server code changes negotiation only
+   * under the capability runtime's administrative mutex (CAP and runtime pruning), so a request
+   * cannot bring back a name a concurrent disable has just pruned.
    */
   public void replaceNegotiatedCapabilities(java.util.Collection<String> capabilities) {
-    Set<String> replacement = ConcurrentHashMap.newKeySet();
-    replacement.addAll(capabilities);
-    negotiatedCapabilities.set(replacement);
+    negotiatedCapabilities.set(Set.copyOf(capabilities));
+  }
+
+  /** The highest {@code CAP LS} version this connection has indicated; {@code 0} for none. */
+  public int highestCapVersion() {
+    return highestCapVersion.get();
+  }
+
+  /**
+   * Remembers {@code version} if it is higher than any indicated before: once 302 or later, a later
+   * lower or omitted version cannot take notification support away.
+   */
+  public void recordCapVersion(int version) {
+    highestCapVersion.accumulateAndGet(version, Math::max);
+  }
+
+  /**
+   * Whether this client gets {@code CAP NEW}/{@code DEL}: implied by {@code CAP LS 302} or later,
+   * or negotiated explicitly with {@code cap-notify}. Derived, never set on its own.
+   */
+  public boolean notificationEligible() {
+    return highestCapVersion.get() >= CapabilityNegotiationGrammar.NOTIFY_VERSION
+        || negotiatedCapabilities.get().contains(CapabilityName.CAP_NOTIFY);
   }
 
   public boolean isNegotiatingCapabilities() {

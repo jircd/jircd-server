@@ -103,8 +103,24 @@ public final class NickCommandHandler implements CommandHandler {
     String oldHostmask =
         isChange ? PresentedIdentity.presentedForm(session, extensionRegistry) : null;
 
-    session.setNickname(requested);
-    // Disconnect cleanup reads the nickname after claiming CLOSING. If it ran before the line
+    Message notification =
+        isChange
+            ? new Message(Map.of(), oldHostmask, Command.NICK, "NICK", List.of(requested))
+            : null;
+    // The change and the client's own NICK line are one step under the administrative mutex, the
+    // one a capability publication holds while it addresses CAP DEL/NEW. Its target is therefore
+    // the nickname the client knows at that point in its stream: the old one before this line,
+    // the new one after. Peers are told outside the mutex.
+    extensionRegistry
+        .capabilityControl()
+        .runUnderControl(
+            () -> {
+              session.setNickname(requested);
+              if (notification != null && !session.lifecycle().isClosing()) {
+                Recipients.deliver(List.of(session), notification);
+              }
+            });
+    // Disconnect cleanup reads the nickname after claiming CLOSING. If it ran before the change
     // above it saw nothing to release, and CLOSING is then visible here: roll the claim back.
     if (session.lifecycle().isClosing()) {
       nicknameRegistry.release(requested, session);
@@ -112,16 +128,10 @@ public final class NickCommandHandler implements CommandHandler {
     }
     registrationCompletion.tryComplete(session);
 
-    if (isChange) {
-      broadcastNickChange(session, oldHostmask, requested);
+    if (notification != null) {
+      Recipients.deliver(
+          Recipients.sharedChannelNeighbors(session, false, s -> true), notification);
       extensionRegistry.committedEvents().nickChanged(session, oldHostmask, previous, requested);
     }
-  }
-
-  private static void broadcastNickChange(
-      ClientSession session, String oldHostmask, String requested) {
-    Message notification =
-        new Message(Map.of(), oldHostmask, Command.NICK, "NICK", List.of(requested));
-    Recipients.deliver(Recipients.sharedChannelNeighbors(session, true, s -> true), notification);
   }
 }

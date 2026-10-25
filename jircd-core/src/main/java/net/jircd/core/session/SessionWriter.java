@@ -29,7 +29,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import net.jircd.core.config.ServerConfiguration;
+import net.jircd.core.extension.capability.FramingPlan;
 import net.jircd.core.extension.capability.OutputGroup;
+import net.jircd.core.extension.capability.PreparedGroup;
 import net.jircd.core.extension.capability.RequestContext;
 import net.jircd.protocol.Command;
 import net.jircd.protocol.Message;
@@ -212,13 +214,14 @@ public final class SessionWriter implements AutoCloseable {
     // back to plain members. The plan stays bounded by its frame count and the per-frame limits.
     OutputGroup group =
         new OutputGroup(UUID.randomUUID().toString(), type, typeParams, members, Long.MAX_VALUE);
-    List<Message> frames = tagRenderer.frame(session, group, context).frames();
-    if (frames.isEmpty()) {
-      return;
-    }
-    FrameSequence sequence;
+    // Both alternatives are prepared and serialized here, outside every lock; admission only picks
+    // one and appends it whole. A null sequence is an alternative with no frames.
+    PreparedGroup prepared = tagRenderer.prepareGroup(session, group, context);
+    FrameSequence framed;
+    FrameSequence plain;
     try {
-      sequence = FrameSequence.of(frames);
+      framed = sequence(prepared.framed());
+      plain = prepared.plain() == prepared.framed() ? framed : sequence(prepared.plain());
     } catch (IllegalArgumentException e) {
       LOG.warn(
           "Dropping an unrepresentable output group for connection {}: {}",
@@ -226,7 +229,17 @@ public final class SessionWriter implements AutoCloseable {
           e.getMessage());
       return;
     }
-    enqueueEntry(new Entry(sequence.bytes(), sequence, null));
+    tagRenderer.admitGroup(
+        session,
+        prepared,
+        chosen -> {
+          FrameSequence sequence = chosen == prepared.framed() ? framed : plain;
+          if (sequence != null) enqueueEntry(new Entry(sequence.bytes(), sequence, null));
+        });
+  }
+
+  private static FrameSequence sequence(FramingPlan plan) {
+    return plan.frames().isEmpty() ? null : FrameSequence.of(plan.frames());
   }
 
   private void handleOverflow() {
