@@ -23,6 +23,7 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.net.BindException;
 import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketException;
@@ -145,8 +146,8 @@ class ListenerLifecycleTest {
   @ParameterizedTest
   @ValueSource(booleans = {false, true})
   void stopClosesEveryListenerOfTheSameType(boolean tls) throws Exception {
-    try (ServerSocket firstReservation = new ServerSocket(0);
-        ServerSocket secondReservation = new ServerSocket(0)) {
+    try (ServerSocket firstReservation = loopbackListener();
+        ServerSocket secondReservation = loopbackListener()) {
       int firstPort = firstReservation.getLocalPort();
       int secondPort = secondReservation.getLocalPort();
       var application = application(listener(firstPort, tls) + listener(secondPort, tls));
@@ -169,8 +170,8 @@ class ListenerLifecycleTest {
   @ParameterizedTest
   @ValueSource(booleans = {false, true})
   void startupFailureClosesEarlierListenersBeforeRethrowing(boolean tls) throws Exception {
-    try (ServerSocket firstReservation = new ServerSocket(0);
-        ServerSocket occupied = new ServerSocket(0)) {
+    try (ServerSocket firstReservation = loopbackListener();
+        ServerSocket occupied = loopbackListener()) {
       int firstPort = firstReservation.getLocalPort();
       var application =
           application(listener(firstPort, tls) + listener(occupied.getLocalPort(), tls));
@@ -187,8 +188,8 @@ class ListenerLifecycleTest {
 
   @Test
   void startupFailureClosesConnectionsAcceptedDuringTheAttempt() throws Exception {
-    try (ServerSocket firstReservation = new ServerSocket(0);
-        ServerSocket occupied = new ServerSocket(0);
+    try (ServerSocket firstReservation = loopbackListener();
+        ServerSocket occupied = loopbackListener();
         ServerSocket pairing = loopbackListener();
         Socket client = new Socket(pairing.getInetAddress(), pairing.getLocalPort());
         Socket accepted = pairing.accept()) {
@@ -330,7 +331,7 @@ class ListenerLifecycleTest {
   @ParameterizedTest
   @ValueSource(booleans = {false, true})
   void failedSecondStartPreservesListenersFromSuccessfulStart(boolean tls) throws Exception {
-    try (var reservation = new ServerSocket(0)) {
+    try (var reservation = loopbackListener()) {
       int port = reservation.getLocalPort();
       var application = application(listener(0, tls) + listener(port, tls));
       reservation.close();
@@ -350,7 +351,7 @@ class ListenerLifecycleTest {
 
   @Test
   void rollbackLeavesResourcesOwnedBeforeTheAttemptUntouched() throws Exception {
-    try (var occupied = new ServerSocket(0)) {
+    try (var occupied = loopbackListener()) {
       var application = application(listener(occupied.getLocalPort(), false));
       var attempts = new AtomicInteger();
       ownedListeners(application).add(attempts::incrementAndGet);
@@ -417,15 +418,34 @@ class ListenerLifecycleTest {
     try {
       application.start();
       int boundPort = tls ? application.tlsPort() : application.plaintextPort();
+      var originalListeners = new ArrayList<>(ownedListeners(application));
       Files.writeString(
           application.reloader().configPath(),
           "serverName: test.jircd.local\nlisteners:\n" + listener(0, tls) + "    backlog: 2048\n");
       assertThat(application.reloader().reload().listeners().getFirst().backlog()).isEqualTo(2048);
       assertThat(tls ? application.tlsPort() : application.plaintextPort()).isEqualTo(boundPort);
+      assertThat(ownedListeners(application)).containsExactlyElementsOf(originalListeners);
       try (RawIrcClient client =
           tls ? RawIrcClient.connectTls(boundPort) : RawIrcClient.connectPlaintext(boundPort)) {
         client.registerAndAwaitWelcome("backlog", "backlog");
       }
+    } finally {
+      application.stop();
+    }
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void lifecycleListenerReservesItsLoopbackEndpoint(boolean tls) throws Exception {
+    var application = application(listener(0, tls));
+    try (ServerSocket competing = new ServerSocket()) {
+      application.start();
+      int port = tls ? application.tlsPort() : application.plaintextPort();
+      // On macOS a more specific bind can share a wildcard listener's port and steal clients.
+      // Guards only on macOS: Linux rejects this even with SO_REUSEADDR, so passes without the fix.
+      competing.setReuseAddress(true);
+      var endpoint = new InetSocketAddress(TestServer.LOOPBACK, port);
+      assertThatThrownBy(() -> competing.bind(endpoint)).isInstanceOf(BindException.class);
     } finally {
       application.stop();
     }
@@ -449,8 +469,11 @@ class ListenerLifecycleTest {
   }
 
   private static String listener(int port, boolean tls) {
+    // Match RawIrcClient's destination so another process cannot steal loopback connections (#105).
     return "  - port: "
         + port
+        + "\n    bindAddress: "
+        + TestServer.LOOPBACK
         + "\n    tls: "
         + tls
         + "\n"
@@ -473,7 +496,8 @@ class ListenerLifecycleTest {
   private static void assertBound(int port) {
     assertThatThrownBy(
             () -> {
-              try (var socket = new ServerSocket(port)) {
+              try (var socket =
+                  new ServerSocket(port, 1, InetAddress.ofLiteral(TestServer.LOOPBACK))) {
                 socket.getLocalPort();
               }
             })
@@ -481,7 +505,7 @@ class ListenerLifecycleTest {
   }
 
   private static void assertAvailable(int port) throws IOException {
-    try (var socket = new ServerSocket(port)) {
+    try (var socket = new ServerSocket(port, 1, InetAddress.ofLiteral(TestServer.LOOPBACK))) {
       assertThat(socket.getLocalPort()).isEqualTo(port);
     }
   }
@@ -489,7 +513,7 @@ class ListenerLifecycleTest {
   // Bind to loopback, not the wildcard: on macOS a more specific bind of the same port by another
   // process wins the connect, and accept() would then wait forever. The timeout bounds that case.
   private static ServerSocket loopbackListener() throws IOException {
-    ServerSocket listener = new ServerSocket(0, 1, InetAddress.getLoopbackAddress());
+    ServerSocket listener = new ServerSocket(0, 1, InetAddress.ofLiteral(TestServer.LOOPBACK));
     listener.setSoTimeout(5000);
     return listener;
   }
