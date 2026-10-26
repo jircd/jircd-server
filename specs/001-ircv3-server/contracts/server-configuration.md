@@ -467,8 +467,9 @@ administratorCredentials:
   after the change uses the new state. `REHASH` validates the whole file
   first, including the whole candidate provider graph (every hard
   prerequisite of an enabled provider enabled, no dependency cycle, no
-  duplicate offer or owned slot); an invalid file changes no configuration,
-  negotiation or notification. A valid reload is one lifecycle operation
+  duplicate offer or owned slot, no provider command that core or a server
+  extension already handles); an invalid file changes no configuration,
+  negotiation or notification, and starts or stops no provider. A valid reload is one lifecycle operation
   that no `EXTENSION` toggle can interleave with: providers to enable start
   first, prerequisites before their dependents, then one publication swaps
   in every capability change together with the new reply limits and
@@ -477,8 +478,11 @@ administratorCredentials:
   withdrawn provider owned may be taken over by a provider the same reload
   enables; it moves to the new owner in that publication. A provider
   whose start fails ends `FAILED`, together with any provider in the same
-  reload that requires it, and is reported to the `REHASH` sender without
-  undoing the rest. `EXTENSION` reports the state the toggle actually left.
+  reload that requires it, and is reported without undoing the rest: to the
+  `REHASH` sender, or in the server log for `SIGHUP`. `EXTENSION` reports the
+  state the toggle actually left; a disable whose withdrawn dependent fails
+  to stop reports that failure even though the named provider itself is
+  disabled.
   A nickname change and the client's own `NICK` line are serialized with
   publication, so a notification always addresses the nickname the client
   knows at that point.

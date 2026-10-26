@@ -678,4 +678,84 @@ class ExtensionRegistryCapabilityTest {
     assertThat(disableAttempt.get()).isInstanceOf(IllegalStateException.class);
     assertThat(registry.stateOf("other")).isEqualTo(Extension.State.DISABLED);
   }
+
+  /** Offers {@code capability} under its own id; the name may fail to resolve until fixed. */
+  private static final class Offering implements CapabilityExtension {
+    private final String id;
+    private final String capability;
+    volatile boolean nameFails;
+
+    Offering(String id, String capability) {
+      this.id = id;
+      this.capability = capability;
+    }
+
+    @Override
+    public String id() {
+      return id;
+    }
+
+    @Override
+    public void start(ServerContext context) {
+      // Holds nothing.
+    }
+
+    @Override
+    public void stop() {
+      // Holds nothing.
+    }
+
+    @Override
+    public Capability providedCapability() {
+      if (nameFails) throw new IllegalStateException("no name yet");
+      return new Capability(capability);
+    }
+  }
+
+  @Test
+  void aProviderWhoseCapabilityNameThrowsIsNotRegisteredAndCanRegisterOnceFixed() {
+    ExtensionRegistry registry = registry("irc.example");
+    Offering flaky = new Offering("flaky", "flaky");
+    flaky.nameFails = true;
+
+    // Rejected the way discovery skips a provider, and nothing about it is kept.
+    assertThatThrownBy(() -> registry.register(flaky))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("flaky");
+    assertThat(registry.find("flaky")).isEmpty();
+    assertThat(registry.knownCapabilityNames()).doesNotContain("flaky");
+
+    flaky.nameFails = false;
+    registry.register(flaky);
+    assertThat(registry.find("flaky")).containsSame(flaky);
+    assertThat(registry.knownCapabilityNames()).contains("flaky");
+  }
+
+  @Test
+  void aProviderClaimingCoreCapNotifyIsNeverPublishedSoItsDisableCannotWithdrawIt() {
+    ExtensionRegistry registry = registry("irc.example");
+    registry.register(new Offering("impostor", "cap-notify"));
+    ClientSession session = new ClientSession("c1", "host", RateLimitBucket.withDefaults());
+    session.replaceNegotiatedCapabilities(List.of("cap-notify"));
+    registry.attachLiveSessions(List.of(session));
+
+    assertThatThrownBy(() -> registry.enable("impostor")).hasMessageContaining("core capability");
+    SupportedFeatures features = registry.supportedFeatures();
+    Map<String, String> failures =
+        registry.applyDesiredState(
+            new ExtensionRegistry.DesiredState(
+                Map.of("impostor", true),
+                Map.of(),
+                features.nicknameMaxLength(),
+                features.channelNameMaxLength(),
+                features.topicMaxLength(),
+                features.maxModesPerCommand()),
+            () -> {});
+    assertThat(failures).containsKey("impostor");
+    registry.disable("impostor");
+
+    assertThat(registry.capabilitySnapshot().offeredNames()).isEmpty();
+    assertThat(registry.stateOf("impostor")).isEqualTo(Extension.State.FAILED);
+    assertThat(session.negotiatedCapabilities()).containsExactly("cap-notify");
+  }
 }

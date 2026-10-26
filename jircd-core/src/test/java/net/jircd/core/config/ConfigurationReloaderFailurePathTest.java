@@ -33,6 +33,7 @@ import net.jircd.core.extension.CommandRegistrar;
 import net.jircd.core.extension.Extension;
 import net.jircd.core.extension.ExtensionRegistry;
 import net.jircd.core.extension.ServerContext;
+import net.jircd.core.extension.SupportedFeatures;
 import net.jircd.core.extension.capability.CapabilityRegistrar;
 import net.jircd.core.session.ClientSession;
 import net.jircd.core.session.RateLimitBucket;
@@ -208,9 +209,12 @@ class ConfigurationReloaderFailurePathTest {
     Probe a = register(new Probe("a", null, null));
     registry.enable("a");
     a.stopFails = true;
+    events.clear();
 
     assertThat(reloader("capabilities: {a: disabled}\n").reloadWithOutcome().failures())
         .containsEntry("a", "stuck a");
+    // Stopped once: the failure is reported, and the retry waits for the next disable or reload.
+    assertThat(events).containsExactly("stop a");
     assertThat(registry.stateOf("a")).isEqualTo(Extension.State.FAILED);
     assertThat(registry.capabilitySnapshot().providerIds()).isEmpty();
   }
@@ -262,17 +266,63 @@ class ConfigurationReloaderFailurePathTest {
   }
 
   @Test
-  void aDependentWhoseStopFailsWhenItsPrerequisiteIsDisabledEndsFailedAlone() {
+  void aDependentWhoseStopFailsWhenItsPrerequisiteIsDisabledEndsFailedAndIsReported() {
     register(new Probe("a", null, null));
     Probe b = register(new Probe("b", "a", null));
     registry.enable("a");
     registry.enable("b");
     b.stopFails = true;
 
-    registry.disable("a");
+    // The prerequisite itself stops cleanly, but the dependent's failure is the disable's outcome.
+    assertThatThrownBy(() -> registry.disable("a"))
+        .hasMessageContaining("'b'")
+        .hasMessageContaining("stuck b");
 
     assertThat(registry.stateOf("a")).isEqualTo(Extension.State.DISABLED);
     assertThat(registry.stateOf("b")).isEqualTo(Extension.State.FAILED);
     assertThat(registry.capabilitySnapshot().providerIds()).isEmpty();
+  }
+
+  @Test
+  void aProviderCommandThatCoreOwnsRejectsTheReloadBeforeAnythingStartsOrStops() throws Exception {
+    attachContext();
+    handlers.put(Command.TAGMSG, (s, m) -> events.add("handled by core"));
+    register(new Probe("a", null, Command.TAGMSG));
+
+    ConfigurationReloader reloader = reloader("capabilities: {a: enabled}\n");
+    assertThatThrownBy(reloader::reload)
+        .isInstanceOf(ConfigurationException.class)
+        .hasMessageContaining("TAGMSG");
+
+    assertThat(events).isEmpty();
+    assertThat(registry.stateOf("a")).isEqualTo(Extension.State.DISABLED);
+    assertThat(registry.capabilitySnapshot().providerIds()).isEmpty();
+  }
+
+  @Test
+  void aConfigurationPublicationThatThrowsPublishesNothingAndRollsTheStartsBack() {
+    register(new Probe("a", null, null));
+    SupportedFeatures features = registry.supportedFeatures();
+    int nicknameLength = features.nicknameMaxLength();
+    ExtensionRegistry.DesiredState desired =
+        new ExtensionRegistry.DesiredState(
+            Map.of("a", true),
+            Map.of(),
+            nicknameLength + 1,
+            features.channelNameMaxLength(),
+            features.topicMaxLength(),
+            features.maxModesPerCommand());
+    Runnable failing =
+        () -> {
+          throw new IllegalStateException("configuration not published");
+        };
+
+    assertThatThrownBy(() -> registry.applyDesiredState(desired, failing))
+        .hasMessage("configuration not published");
+
+    assertThat(events).containsExactly("start a", "stop a");
+    assertThat(registry.capabilitySnapshot().providerIds()).isEmpty();
+    assertThat(registry.stateOf("a")).isEqualTo(Extension.State.FAILED);
+    assertThat(registry.supportedFeatures().nicknameMaxLength()).isEqualTo(nicknameLength);
   }
 }

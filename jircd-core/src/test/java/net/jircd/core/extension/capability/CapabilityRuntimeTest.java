@@ -16,6 +16,7 @@
 package net.jircd.core.extension.capability;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -480,5 +481,30 @@ class CapabilityRuntimeTest {
     assertThat(published.effective(owner, Set.of("framer"))).isFalse();
     registry.disable("framer");
     assertThat(registry.capabilitySnapshot().effective(owner, Set.of("framer", "tags"))).isFalse();
+  }
+
+  @Test
+  void aPublicationWhoseAlongsideStepThrowsSwapsPrunesAndNotifiesNothing() {
+    CapabilityRuntime direct = new CapabilityRuntime();
+    direct.attachLiveSessions(live);
+    CapabilityRegistrar registrar = new CapabilityRegistrar("alpha", "alpha");
+    direct.publish(registrar.build());
+    ClientSession session = connect("c1", "alpha");
+    session.recordCapVersion(302);
+    ByteArrayOutputStream out = new ByteArrayOutputStream();
+    RuntimeSnapshot before = direct.snapshot();
+    try (SessionWriter writer = new SessionWriter(session, out, TagRenderer.NONE)) {
+      session.attachWriter(writer);
+      Runnable failing =
+          () -> {
+            throw new IllegalStateException("not published");
+          };
+      assertThatThrownBy(
+              () -> direct.publish(current -> current.withoutAll(Set.of("alpha")), failing))
+          .hasMessage("not published");
+    }
+    assertThat(direct.snapshot()).isSameAs(before);
+    assertThat(session.negotiatedCapabilities()).containsExactly("alpha");
+    assertThat(lines(out)).isEmpty();
   }
 }

@@ -578,11 +578,13 @@ public final class ConnectionHandler {
       closeQuietly(socket);
       return;
     }
-    extensionRegistry.capabilityControl().runUnderControl(() -> session.attachWriter(writer));
+    // Callbacks first: once attached, a publication can queue to this writer, and an overflow or
+    // write failure must already reach the connection's cleanup rather than the no-op defaults.
     AtomicReference<Thread> overflowCleanup = new AtomicReference<>();
     writer.setOnSendqOverflow(
         () -> startOverflowCleanup(session, writer, socket, connectionId, overflowCleanup));
     writer.setOnWriteFailure(() -> disconnectCleanup.cleanup(session, "Excess Flood"));
+    extensionRegistry.capabilityControl().runUnderControl(() -> session.attachWriter(writer));
 
     LivenessMonitor livenessMonitor =
         new LivenessMonitor(

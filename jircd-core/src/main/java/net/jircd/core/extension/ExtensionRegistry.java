@@ -227,18 +227,31 @@ public final class ExtensionRegistry {
         }
       }
     }
+    // Resolved before the entry is inserted, so a provider that cannot name its capability leaves
+    // nothing behind and can register again once fixed.
+    String name = capabilityName(extension);
     Entry existing = byId.putIfAbsent(extension.id(), new Entry(extension));
     if (existing != null && existing.extension != extension) {
       throw new IllegalArgumentException("Duplicate extension id: " + extension.id());
     }
-    if (existing == null && extension instanceof CapabilityExtension capability) {
-      String name = capability.providedCapability().name();
+    if (existing == null && name != null) {
       knownCapabilityNames.updateAndGet(
           names -> {
             Set<String> grown = new HashSet<>(names);
             grown.add(name);
             return Set.copyOf(grown);
           });
+    }
+  }
+
+  /** A capability provider's offered name, or {@code null} for a server extension. */
+  private static String capabilityName(Extension extension) {
+    if (!(extension instanceof CapabilityExtension capability)) return null;
+    try {
+      return capability.providedCapability().name();
+    } catch (RuntimeException | LinkageError e) {
+      throw new IllegalArgumentException(
+          "Extension '" + extension.id() + "' cannot name its capability: " + describe(e), e);
     }
   }
 
@@ -475,13 +488,14 @@ public final class ExtensionRegistry {
    * Applies a whole desired configuration as one lifecycle operation: the lifecycle lock is held
    * throughout, so no {@code EXTENSION} toggle interleaves. The candidate provider graph is
    * validated first (hard dependencies present and acyclic, offers, owned keys, slots and commands
-   * unique, reply budgets at the new lengths); if it is invalid nothing changes. Providers to
-   * enable are then started, prerequisites first, outside the administrative mutex. One publication
-   * then swaps in the new snapshot with the new reply limits, prunes every session, queues {@code
-   * DEL}/{@code NEW}, and runs {@code publishConfiguration} in the same critical section. Withdrawn
-   * providers are stopped afterwards, each before what it requires. A provider whose start fails
-   * ends {@code FAILED} alone (with any dependent in the same reload); the rest still applies.
-   * Server extensions are reconciled one by one inside the same lifecycle hold.
+   * unique, no command core or a server extension handles, reply budgets at the new lengths); if it
+   * is invalid nothing changes and no provider is started or stopped. Providers to enable are then
+   * started, prerequisites first, outside the administrative mutex. One publication then swaps in
+   * the new snapshot with the new reply limits, prunes every session, queues {@code DEL}/{@code
+   * NEW}, and runs {@code publishConfiguration} in the same critical section. Withdrawn providers
+   * are stopped afterwards, each before what it requires. A provider whose start fails ends {@code
+   * FAILED} alone (with any dependent in the same reload); the rest still applies. Server
+   * extensions are reconciled one by one inside the same lifecycle hold.
    *
    * @return each extension that could not reach its desired state, with why
    * @throws InvalidDesiredStateException if the desired provider graph is invalid; nothing changed
@@ -554,7 +568,9 @@ public final class ExtensionRegistry {
 
   /**
    * Stops the withdrawn providers, each before what it requires, then retries the cleanup of any
-   * FAILED provider desired disabled whose cleanup is unfinished.
+   * FAILED provider desired disabled whose cleanup was unfinished before this reload. A provider
+   * this reload already stopped is not stopped again: its failure is reported, and the next disable
+   * or reload retries it.
    */
   private void finishWithdrawn(
       List<String> withdrawn, DesiredState desired, Map<String, String> failures) {
@@ -564,7 +580,10 @@ public final class ExtensionRegistry {
     }
     for (var entry : desired.capabilities().entrySet()) {
       Entry pending = byId.get(entry.getKey());
-      if (Boolean.FALSE.equals(entry.getValue()) && pending != null && pending.cleanupPending) {
+      if (Boolean.FALSE.equals(entry.getValue())
+          && pending != null
+          && pending.cleanupPending
+          && !withdrawn.contains(entry.getKey())) {
         Throwable failure = finish(pending);
         if (failure != null) failures.put(entry.getKey(), describe(failure));
       }
@@ -631,7 +650,12 @@ public final class ExtensionRegistry {
     }
   }
 
-  /** The published providers minus the withdrawn, plus the staged, must form a valid snapshot. */
+  /**
+   * The published providers minus the withdrawn, plus the staged, must form a valid snapshot, and
+   * no staged provider may claim a command core or a server extension owns. No server extension
+   * starts or registers a command while the lifecycle lock is held for this reload's capability
+   * batch, so the check still holds when the batch is published.
+   */
   private void validateCandidate(
       RuntimeSnapshot current,
       List<String> withdrawn,
@@ -644,6 +668,7 @@ public final class ExtensionRegistry {
     candidate.addAll(staged);
     try {
       validateReplyBudget(RuntimeSnapshot.of(candidate), features);
+      for (CapabilityDescriptor descriptor : staged) requireUnownedCommands(commandsOf(descriptor));
     } catch (IllegalArgumentException | IllegalStateException e) {
       throw new InvalidDesiredStateException(
           "Invalid capability configuration: " + e.getMessage(), e);
@@ -701,9 +726,10 @@ public final class ExtensionRegistry {
 
   /**
    * Starts one provider of a batch, outside the administrative mutex. Its commands need no
-   * installation: they are part of the descriptor the batch publishes, so a command a withdrawn
-   * provider owned moves to its new owner in that one publication. Returns whether it is ready to
-   * publish; on failure it is stopped and FAILED, and nothing about it is visible.
+   * installation: they were validated with the candidate and are part of the descriptor the batch
+   * publishes, so a command a withdrawn provider owned moves to its new owner in that one
+   * publication. Returns whether it is ready to publish; if its start fails it is stopped and
+   * FAILED, and nothing about it is visible. A provider that never starts is never stopped here.
    */
   private boolean startForBatch(CapabilityDescriptor descriptor, Batch batch) {
     String id = descriptor.providerId();
@@ -711,7 +737,6 @@ public final class ExtensionRegistry {
     if (!mayStart(descriptor, entry, batch)) return false;
     boolean ready = false;
     try {
-      requireUnownedCommands(commandsOf(descriptor));
       entry.extension.start(serverContext);
       ready = true;
     } catch (RuntimeException | LinkageError e) {
@@ -772,10 +797,12 @@ public final class ExtensionRegistry {
    */
   private void publishBatch(CapabilityPlan plan, Batch batch, Runnable publishConfiguration) {
     ReplyLimits limits = replyLimits(plan.features());
+    // The callback runs first: if it throws, the lengths stay as they were and nothing is
+    // published.
     Runnable alongside =
         () -> {
-          supportedFeatures = plan.features();
           publishConfiguration.run();
+          supportedFeatures = plan.features();
         };
     Set<String> withdrawn = Set.copyOf(plan.withdrawn());
     List<CapabilityDescriptor> started = List.copyOf(batch.started);
@@ -856,11 +883,14 @@ public final class ExtensionRegistry {
    * stops them, dependents first, outside the administrative mutex. Their commands left with the
    * snapshot. A clean run leaves the provider DISABLED and releases its extension-point claim; a
    * failure leaves it FAILED, withdrawn, with the claim and the unfinished work kept for a retry. A
-   * withdrawn dependent is finished the same way and keeps its own outcome. Returns the provider's
-   * failure instead of throwing so callers decide.
+   * withdrawn dependent is finished the same way and keeps its own outcome. Returns the failure
+   * instead of throwing so callers decide: the provider's own, or else the first dependent's, so a
+   * dependent left FAILED is never reported as a clean disable. Every other failure is attached as
+   * suppressed.
    */
   private Throwable cleanUp(Entry entry) {
     String id = entry.extension.id();
+    List<Throwable> dependentFailures = new ArrayList<>();
     // Withdrawal comes first; stop then runs outside any snapshot, so callbacks already holding an
     // older one finish against it.
     for (String dependent : capabilityRuntime.withdraw(id)) {
@@ -868,14 +898,21 @@ public final class ExtensionRegistry {
       if (dependent.equals(id) || other == null) continue;
       Throwable dependentFailure = finish(other);
       if (dependentFailure != null) {
-        LOG.warn(
-            "Cleaning up '{}' after withdrawing its prerequisite '{}' failed",
-            dependent,
-            id,
-            dependentFailure);
+        dependentFailures.add(
+            new IllegalStateException(
+                "'"
+                    + dependent
+                    + "' failed to stop after its prerequisite '"
+                    + id
+                    + "' was withdrawn: "
+                    + describe(dependentFailure),
+                dependentFailure));
       }
     }
-    return finish(entry);
+    Throwable failure = finish(entry);
+    if (failure == null && !dependentFailures.isEmpty()) failure = dependentFailures.removeFirst();
+    if (failure != null) dependentFailures.forEach(failure::addSuppressed);
+    return failure;
   }
 
   /** Stops an already withdrawn provider and records the outcome. */

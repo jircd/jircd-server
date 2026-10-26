@@ -145,9 +145,11 @@ public final class CapabilityRuntime {
 
   /**
    * As {@link #publish(UnaryOperator)}, also running {@code alongside} in the same critical
-   * section, right after the swap, so related configuration a reload publishes becomes visible to
+   * section, right before the swap, so related configuration a reload publishes becomes visible to
    * captures together with the snapshot. {@code alongside} must be core code that only publishes
-   * values; it runs whether or not the offered set changed.
+   * values; it runs whether or not the offered set changed. If it throws, the snapshot is not
+   * swapped and nothing is pruned or queued: from the swap on, nothing that can fail runs before
+   * the prune and the per-recipient notifications.
    */
   public RuntimeSnapshot publish(UnaryOperator<RuntimeSnapshot> change, Runnable alongside) {
     synchronized (control) {
@@ -157,8 +159,8 @@ public final class CapabilityRuntime {
       next.offeredNames().forEach(removed::remove);
       Set<String> added = new HashSet<>(next.offeredNames());
       before.offeredNames().forEach(added::remove);
-      snapshot.set(next);
       alongside.run();
+      snapshot.set(next);
       if (removed.isEmpty() && added.isEmpty()) return next;
       List<ClientSession> sessions = new ArrayList<>(liveSessions.get());
       for (ClientSession session : sessions) prune(session, removed);

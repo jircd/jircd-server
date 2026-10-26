@@ -555,4 +555,43 @@ class MessageDeliveryTest {
     assertThat(received(owner)).contains("+private=secret");
     assertThat(received(other)).doesNotContain("private").doesNotContain("secret");
   }
+
+  @Test
+  void theSnapshotAndTheSendersNegotiationAreCapturedTogetherUnderTheMutex() throws Exception {
+    Provider provider = new Provider();
+    enable(provider);
+    ClientSession alice = user("alice", "copy");
+    user("bob");
+    MessageDelivery.AuthorizedTarget authorized = delivery.authorize(alice, "bob", true);
+    AtomicReference<Thread> worker = new AtomicReference<>();
+    AtomicReference<Thread.State> observed = new AtomicReference<>();
+
+    // While the mutex is held no publication can land, so a coherent capture has to wait for it;
+    // two separate reads would not, and could pair the old snapshot with a newly pruned set.
+    extensions
+        .capabilityControl()
+        .runUnderControl(
+            () -> {
+              Thread thread =
+                  Thread.ofPlatform()
+                      .start(
+                          () ->
+                              // Gated out: no writer is touched, only the capture can wait.
+                              delivery.deliver(
+                                  alice, "PRIVMSG", "bob", "hi", Map.of(), authorized, r -> false));
+              worker.set(thread);
+              long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
+              while (System.nanoTime() < deadline
+                  && thread.getState() != Thread.State.BLOCKED
+                  && thread.getState() != Thread.State.TERMINATED) {
+                Thread.onSpinWait();
+              }
+              observed.set(thread.getState());
+            });
+    worker.get().join();
+
+    assertThat(observed.get()).isEqualTo(Thread.State.BLOCKED);
+    // Alice's negotiation, captured with the snapshot, still selects the provider's hook.
+    assertThat(provider.recipientCalls).hasValue(1);
+  }
 }
