@@ -132,6 +132,8 @@ Hard dependencies are a validated DAG with atomic dependent withdrawal; session 
 
 ## Complexity Tracking
 
+**Amendment (2026-10-24, #97 implementation)**: "the existing administrative control mutex" throughout this plan is the two-level arrangement recorded in [research.md](research.md) Decision 2. The existing `ExtensionRegistry` lifecycle lock serializes whole transitions, including a whole reload, and is the only lock provider callbacks run under. A short `CapabilityRuntime` mutex, taken after it, covers publication + prune + notification enqueue, CAP state, live-session tracking, nickname changes, captures and group admission. No such single mutex existed before #97.
+
 No constitution violations. Immutable typed registrations/bounds serve current modules. Existing administrative control provides atomic snapshot/prune; only batch's finite admission needs its short current-prerequisite selection. No new lifecycle synchronization subsystem or general event bus is justified.
 
 ## Risks and accepted tradeoffs

@@ -24,7 +24,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
-import java.util.function.BooleanSupplier;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.function.UnaryOperator;
@@ -327,6 +326,18 @@ public final class HookDispatcher {
       Set<String> recipientNegotiated,
       OutputGroup group,
       RequestContext context) {
+    return prepareOutputGroup(snapshot, recipientNegotiated, group, context).framed();
+  }
+
+  /**
+   * As {@link #outputGroup}, keeping the plain alternative and the registration whose plan was
+   * chosen, so admission can still choose plain if that owner is no longer effective then.
+   */
+  public PreparedGroup prepareOutputGroup(
+      RuntimeSnapshot snapshot,
+      Set<String> recipientNegotiated,
+      OutputGroup group,
+      RequestContext context) {
     for (HookRegistration registration :
         snapshot.hooksFor(HookKind.OUTPUT_GROUP, recipientNegotiated)) {
       Optional<FramingPlan> plan =
@@ -334,9 +345,11 @@ public final class HookDispatcher {
               registration,
               () -> registration.hook(Hooks.OutputGroupHook.class).apply(group, context),
               p -> validPlan(p, group));
-      if (plan.isPresent()) return plan.get();
+      if (plan.isPresent()) {
+        return new PreparedGroup(plan.get(), FramingPlan.plain(group), registration);
+      }
     }
-    return FramingPlan.plain(group);
+    return PreparedGroup.plain(group);
   }
 
   /**
@@ -411,22 +424,8 @@ public final class HookDispatcher {
 
   /** Wraps a provider command handler so its fault is contained and reported. */
   public CommandHandler guardedCommand(HookRegistration registration) {
-    return guardedCommand(registration, () -> true, (session, message) -> {});
-  }
-
-  /**
-   * Wraps a provider command handler so its fault is contained and reported, and so it refuses to
-   * run once {@code live} turns false (the provider was withdrawn but core could not remove the
-   * handler): {@code refused} answers instead.
-   */
-  public CommandHandler guardedCommand(
-      HookRegistration registration, BooleanSupplier live, CommandHandler refused) {
     CommandHandler handler = registration.commandHandler();
     return (session, message) -> {
-      if (!live.getAsBoolean()) {
-        refused.handle(session, message);
-        return;
-      }
       try {
         handler.handle(session, message);
       } catch (RuntimeException | LinkageError _) {

@@ -60,13 +60,20 @@ public final class RehashCommandHandler implements CommandHandler {
       return;
     }
     try {
-      configurationReloader.reload();
+      ConfigurationReloader.ReloadOutcome outcome = configurationReloader.reloadWithOutcome();
       Replies.sendFitted(
           session,
           serverName.get(),
           NumericReply.RPL_REHASHING,
           List.of(configurationReloader.configPath().toString()),
           "Rehashing");
+      // A valid reload still applies; a provider that failed to change is reported, not hidden.
+      outcome
+          .failures()
+          .forEach(
+              (id, reason) ->
+                  AdminNotices.send(
+                      session, serverName.get(), "Rehash could not apply " + id + ": " + reason));
     } catch (ConfigurationException e) {
       AdminNotices.send(session, serverName.get(), "Rehash failed: " + e.getMessage());
     } catch (IOException e) {

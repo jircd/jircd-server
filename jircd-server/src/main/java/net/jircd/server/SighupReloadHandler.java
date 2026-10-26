@@ -15,6 +15,7 @@
  */
 package net.jircd.server;
 
+import net.jircd.core.config.ConfigurationReloader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import sun.misc.Signal;
@@ -32,15 +33,28 @@ public final class SighupReloadHandler {
   private SighupReloadHandler() {}
 
   public static void install(JircdServerApplication application) {
-    Signal.handle(
-        new Signal("HUP"),
-        signal -> {
-          try {
-            application.reloader().reload();
-            LOG.info("Configuration reloaded via SIGHUP");
-          } catch (Exception e) {
-            LOG.warn("SIGHUP reload failed, running configuration left untouched", e);
-          }
-        });
+    Signal.handle(new Signal("HUP"), signal -> reload(application.reloader()));
+  }
+
+  /**
+   * One SIGHUP reload, reported as {@code REHASH} reports it: a valid reload still applies, and
+   * each extension that could not reach its desired state is logged with why instead of the reload
+   * being reported as clean.
+   */
+  public static void reload(ConfigurationReloader reloader) {
+    try {
+      ConfigurationReloader.ReloadOutcome outcome = reloader.reloadWithOutcome();
+      if (outcome.failures().isEmpty()) {
+        LOG.info("Configuration reloaded via SIGHUP");
+      }
+      outcome
+          .failures()
+          .forEach(
+              (id, reason) ->
+                  LOG.warn(
+                      "Configuration reloaded via SIGHUP, but could not apply {}: {}", id, reason));
+    } catch (Exception e) {
+      LOG.warn("SIGHUP reload failed, running configuration left untouched", e);
+    }
   }
 }

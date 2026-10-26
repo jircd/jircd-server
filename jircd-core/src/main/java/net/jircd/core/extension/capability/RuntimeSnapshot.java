@@ -17,16 +17,20 @@ package net.jircd.core.extension.capability;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.TreeSet;
+import net.jircd.protocol.Command;
 
 /**
  * An immutable, coherent table of published providers and their hook indexes in deterministic
@@ -40,10 +44,11 @@ public final class RuntimeSnapshot {
   private final Map<String, CapabilityDescriptor> providers;
   private final Map<HookKind, List<HookRegistration>> hooks;
   private final ReplyLimits limits;
+  private final Map<Command, HookRegistration> commands;
 
   private RuntimeSnapshot(Map<String, CapabilityDescriptor> providers, ReplyLimits limits) {
     this.limits = limits;
-    this.providers = Map.copyOf(providers);
+    this.providers = Collections.unmodifiableMap(new TreeMap<>(providers));
     Map<HookKind, List<HookRegistration>> index = new EnumMap<>(HookKind.class);
     for (HookKind kind : HookKind.values()) index.put(kind, new ArrayList<>());
     providers.values().stream()
@@ -51,6 +56,11 @@ public final class RuntimeSnapshot {
         .forEach(d -> d.registrations().forEach(r -> index.get(r.kind()).add(r)));
     index.replaceAll((kind, list) -> List.copyOf(list));
     this.hooks = index;
+    Map<Command, HookRegistration> byCommand = new EnumMap<>(Command.class);
+    for (HookRegistration registration : index.get(HookKind.COMMAND)) {
+      byCommand.put(registration.command(), registration);
+    }
+    this.commands = Collections.unmodifiableMap(byCommand);
   }
 
   /**
@@ -132,20 +142,72 @@ public final class RuntimeSnapshot {
   }
 
   /**
-   * A snapshot without {@code providerId}.
-   *
-   * @throws IllegalStateException if another published provider still requires it
+   * {@code providerId} and every published provider that requires it, directly or transitively:
+   * what one withdrawal takes out together, in {@link #withdrawalOrder} order. Empty if {@code
+   * providerId} is not published.
    */
-  public RuntimeSnapshot without(String providerId) {
-    for (CapabilityDescriptor other : providers.values()) {
-      if (other.requiresProviders().contains(providerId)) {
-        throw new IllegalStateException(
-            "provider '" + providerId + "' is required by '" + other.providerId() + "'");
+  public Set<String> withdrawalClosure(String providerId) {
+    return new LinkedHashSet<>(withdrawalOrder(Set.of(providerId)));
+  }
+
+  /**
+   * The published providers among {@code roots} and every published provider that requires one of
+   * them, transitively, ordered so each comes before every provider it requires: the order to stop
+   * them in. Deterministic; unpublished roots are ignored.
+   */
+  public List<String> withdrawalOrder(Collection<String> roots) {
+    List<String> ordered = new ArrayList<>();
+    Set<String> placed = new HashSet<>();
+    for (String root : new TreeSet<>(roots)) {
+      if (providers.containsKey(root)) placeDependentsFirst(root, placed, ordered);
+    }
+    return ordered;
+  }
+
+  private void placeDependentsFirst(String id, Set<String> placed, List<String> ordered) {
+    if (!placed.add(id)) return;
+    for (CapabilityDescriptor dependent : providers.values()) {
+      if (dependent.requiresProviders().contains(id)) {
+        placeDependentsFirst(dependent.providerId(), placed, ordered);
       }
     }
+    ordered.add(id);
+  }
+
+  /**
+   * The registration of the published provider that owns {@code command}, if any. Validation
+   * guarantees at most one owner.
+   */
+  public Optional<HookRegistration> command(Command command) {
+    return Optional.ofNullable(commands.get(command));
+  }
+
+  /** The published providers' descriptors, in provider-id order. */
+  public Collection<CapabilityDescriptor> descriptors() {
+    return providers.values();
+  }
+
+  /** A snapshot without the published providers in {@code providerIds}. */
+  public RuntimeSnapshot withoutAll(Set<String> providerIds) {
     Map<String, CapabilityDescriptor> remaining = new HashMap<>(providers);
-    remaining.remove(providerId);
+    remaining.keySet().removeAll(providerIds);
     return of(remaining.values()).withLimits(limits);
+  }
+
+  /** The capability names the published providers offer, sorted. Core cap-notify is not one. */
+  public List<String> offeredNames() {
+    return providers.values().stream().map(CapabilityDescriptor::capabilityName).sorted().toList();
+  }
+
+  /**
+   * Whether {@code registration} is published in this snapshot and its owner and declared
+   * prerequisites are all in {@code negotiated}: the generic check a group admission makes against
+   * the current state, never keyed to a capability name.
+   */
+  public boolean effective(HookRegistration registration, Set<String> negotiated) {
+    return hooks.get(registration.kind()).contains(registration)
+        && registration.ownerNegotiated(negotiated)
+        && registration.prerequisitesMet(negotiated);
   }
 
   /** The validated configured limits slot bounds are evaluated against at dispatch. */

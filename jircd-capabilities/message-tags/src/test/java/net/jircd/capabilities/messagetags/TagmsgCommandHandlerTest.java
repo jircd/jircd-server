@@ -105,7 +105,10 @@ class TagmsgCommandHandlerTest {
   }
 
   private void tagmsg(ClientSession sender, String line) throws Exception {
-    commands.get(Command.TAGMSG).handle(sender, MessageParser.parse(line));
+    extensions
+        .capabilityCommand(Command.TAGMSG)
+        .orElseThrow()
+        .handle(sender, MessageParser.parse(line));
   }
 
   private String received(ClientSession session) {
@@ -114,10 +117,12 @@ class TagmsgCommandHandlerTest {
   }
 
   @Test
-  void theProviderInstallsTagmsgAndWithdrawalRemovesIt() {
-    assertThat(commands).containsKey(Command.TAGMSG);
+  void theProviderOwnsTagmsgWhileEnabledAndWithdrawalRemovesIt() {
+    // A provider's command is part of the published snapshot, not core's command table.
+    assertThat(extensions.capabilityCommand(Command.TAGMSG)).isPresent();
+    assertThat(commands).isEmpty();
     extensions.disable("message-tags");
-    assertThat(commands).doesNotContainKey(Command.TAGMSG);
+    assertThat(extensions.capabilityCommand(Command.TAGMSG)).isEmpty();
   }
 
   @Test

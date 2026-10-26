@@ -45,6 +45,11 @@ Core `capability/CapabilityNegotiator` and `session/command/CapCommandHandler` l
 
 **Batch exception**: A finite group is a complete validated queue operation with a close. Prepare framed/plain alternatives outside locks; at group admission make a current prerequisite choice under the existing administrative mutex and append under the writer queue lock. If batch or message-tags is ineffective then, choose plain. This narrow selection has no hook call/retry and does not synchronize ordinary output admission. An admitted group keeps its close even if it overlaps DEL.
 
+**Amendment (2026-10-24, #97 implementation)**: no single existing mutex covered all of this. `ExtensionRegistry`'s lifecycle lock serialized enable/disable but is held across provider `start`/`register`/`stop`. `ConfigurationReloader`'s monitor is held across file I/O. `ConnectionHandler.liveSessions` and CAP REQ took no lock. With the user's agreement, "the existing administrative control mutex" in these design documents and their contracts is implemented as two levels:
+- **Outer lifecycle lock:** the existing `ExtensionRegistry` lock serializes whole transitions, including an entire valid reload. Provider callbacks run under it and under nothing else.
+- **Administrative mutex:** a short inner monitor owned by `CapabilityRuntime`. It is taken only for snapshot publication together with the all-session prune, the reload's reply limits and configuration, and the `DEL`/`NEW` enqueue; CAP LS/LIST/REQ; `liveSessions` insertion, removal and writer attachment; a nickname change with its own `NICK` echo; coherent captures; and group admission. It never runs a provider callback, socket I/O or a channel monitor.
+- **Lock order:** lifecycle lock, then the administrative mutex, then at most one session writer's queue lock.
+
 **Alternatives**: A stricter guarantee suppressing captured output after DEL was rejected by the user as unnecessary complexity. Waiting for socket drain lets a slow client block administrative changes. Eventual background pruning does not satisfy atomic all-session state changes.
 
 ## Decision 3 — Advertise core cap-notify

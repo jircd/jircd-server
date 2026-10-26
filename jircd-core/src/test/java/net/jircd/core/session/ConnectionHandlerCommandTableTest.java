@@ -16,15 +16,25 @@
 package net.jircd.core.session;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import net.jircd.core.config.ServerConfiguration;
+import net.jircd.core.extension.AbstractCapabilityExtension;
 import net.jircd.core.extension.CommandRegistrar;
 import net.jircd.core.extension.ExtensionRegistry;
+import net.jircd.core.extension.ServerContext;
+import net.jircd.core.extension.capability.CapabilityRegistrar;
 import net.jircd.core.session.command.CommandHandler;
 import net.jircd.protocol.Command;
 import org.junit.jupiter.api.Test;
 
-/** The registrar over the real command table removes only the handler instance it installed. */
+/**
+ * The registrar over the real command table removes only the handler instance it installed, and its
+ * ownership checks cover both command sources: core's table and the published providers'.
+ */
 class ConnectionHandlerCommandTableTest {
 
   private static ConnectionHandler handler() {
@@ -90,5 +100,73 @@ class ConnectionHandlerCommandTableTest {
     assertThat(registrar.isRegistered(Command.OPER)).isTrue();
     registrar.unregister(Command.OPER, replacement);
     assertThat(registrar.isRegistered(Command.OPER)).isFalse();
+  }
+
+  /** Owns TAGMSG as a capability provider. */
+  private static final class TagmsgOwner extends AbstractCapabilityExtension {
+    private final List<String> handled;
+
+    TagmsgOwner(List<String> handled) {
+      super("owner");
+      this.handled = handled;
+    }
+
+    @Override
+    public void register(CapabilityRegistrar registrar) {
+      registrar.command(Command.TAGMSG, (session, message) -> handled.add("provider"));
+    }
+  }
+
+  @Test
+  void aCommandAPublishedProviderOwnsIsRegisteredAndCannotBeClaimedByALaterServerExtension() {
+    ExtensionRegistry extensions = new ExtensionRegistry();
+    ConnectionHandler table =
+        new ConnectionHandler(
+            extensions,
+            new DisconnectCleanup(
+                new NicknameRegistry(),
+                new ChannelRegistry(),
+                new WhowasHistory(() -> 100),
+                extensions),
+            () -> "test.local",
+            new ConnectionHandler.Settings(
+                () -> new ServerConfiguration.RateLimit(100, 100),
+                () -> 60,
+                () -> 524288,
+                () -> new ServerConfiguration.ConnectionLimits(10, 10)),
+            socket -> {},
+            task -> Thread.ofVirtual().unstarted(task));
+    CommandRegistrar registrar = table.commandRegistrar();
+    extensions.attachContext(
+        new ServerContext(
+            null,
+            null,
+            extensions,
+            () -> "test.local",
+            null,
+            null,
+            registrar,
+            extensions.capabilityServices()));
+    List<String> handled = new ArrayList<>();
+    extensions.register(new TagmsgOwner(handled));
+    extensions.enable("owner");
+
+    assertThat(registrar.isRegistered(Command.TAGMSG)).isTrue();
+    CommandHandler serverExtension = (session, message) -> handled.add("server extension");
+    assertThatThrownBy(() -> registrar.register(Command.TAGMSG, serverExtension))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("TAGMSG");
+
+    ClientSession client = new ClientSession("c1", "host", RateLimitBucket.withDefaults());
+    client.setNickname("client");
+    assertThat(client.lifecycle().completeRegistration()).isTrue();
+    // Lowercase on the wire: dispatch folds it to the same command the checks use.
+    table.processLine(client, "tagmsg #c".getBytes(StandardCharsets.UTF_8));
+    assertThat(handled).containsExactly("provider");
+
+    extensions.disable("owner");
+    assertThat(registrar.isRegistered(Command.TAGMSG)).isFalse();
+    registrar.register(Command.TAGMSG, serverExtension);
+    assertThat(registrar.isRegistered(Command.TAGMSG)).isTrue();
   }
 }

@@ -98,9 +98,10 @@ hostmask prefix — not any client's identity.
 
 | Command | Direction | Preconditions | Effect | Replies (see numeric-replies contract) |
 |---|---|---|---|---|
-| `CAP LS [version]` | C→S | Any time before registration completes | Server returns its currently-available capability list | `CAP <nick\|*> LS :<capabilities>` — the target is the client's nick once set, else `*` |
-| `CAP LIST` | C→S | Any time | Server returns the requesting client's own currently NEGOTIATED capabilities, distinct from `LS`'s full offered list (005-fix-batch-conformance FR-007) | `CAP <nick\|*> LIST :<negotiated capabilities>` — same target rule |
-| `CAP REQ :<caps>` | C→S | After `CAP LS` | Atomic: if every name (or `-name` removal) is currently offered, the server applies all of them and sends one `ACK`; if any is unknown or not offered, it sends one `NAK` and changes nothing; an empty request is NAKed with an empty list; a reply that would exceed 512 bytes gets `417` and changes nothing (issue #71) | `CAP <nick\|*> ACK`/`CAP <nick\|*> NAK` — the reply echoes back the full requested list exactly as given, including repeats and `-` prefixes (005-fix-batch-conformance FR-009); the target is the client's nick once set, else `*` |
+| `CAP LS [version]` | C→S | Any time before registration completes | Server returns its currently-available capability list: core `cap-notify` plus every enabled provider's capability, sorted. The highest version a connection has sent is remembered (digit-only, saturating; a malformed, signed or empty version counts as none); once it is 302 or more, a later lower or omitted version does not lower it | `CAP <nick\|*> LS :<capabilities>` — the target is the client's nick once set, else `*`. A 302-or-later client gets `CAP <target> LS * :<part>` continuation lines when the list does not fit one line; an older client always gets one line, and enabling a provider whose offer would not fit that line is rejected |
+| `CAP LIST` | C→S | Any time | Server returns the requesting client's own currently NEGOTIATED capabilities, distinct from `LS`'s full offered list (005-fix-batch-conformance FR-007). After a runtime disable the pruned names are gone. Explicitly negotiated `cap-notify` is listed; support implied only by `CAP LS 302` is not | `CAP <nick\|*> LIST :<negotiated capabilities>` — same target rule |
+| `CAP REQ :<caps>` | C→S | After `CAP LS` | Atomic, applied to a candidate set token by token in order: an addition must be currently offered (including `cap-notify`); a `-name` removal is accepted if the client holds the name, offered or not, or if the name is a known capability it does not hold (for example one a disable already pruned, an acknowledged no-op); an unknown name the client does not hold refuses the request. `-cap-notify` is refused once the client has sent `CAP LS 302` or later; an older client may remove it. Any refusal sends one `NAK` and changes nothing; an empty request is NAKed with an empty list; a reply that would exceed 512 bytes gets `417` and changes nothing (issue #71). Validation, the size check, the change and the reply happen in one step that a concurrent runtime disable cannot interleave with | `CAP <nick\|*> ACK`/`CAP <nick\|*> NAK` — the reply echoes back the full requested list exactly as given, including repeats and `-` prefixes (005-fix-batch-conformance FR-009); the target is the client's nick once set, else `*` |
+| `CAP NEW :<caps>` / `CAP DEL :<caps>` | S→C | After a runtime enable or disable (`EXTENSION`, `REHASH`, `SIGHUP`) changes the offered set | Sent to every connected client that sent `CAP LS 302` or later or negotiated `cap-notify`, whether or not it held the names; never to others, and never for a toggle that changed nothing or a client's own `REQ` | `CAP <nick\|*> DEL :<names>` then `CAP <nick\|*> NEW :<names>`: names only, sorted and deduplicated, split on name boundaries into independently valid lines if too long. `NEW` restores no negotiation |
 | `CAP END` | C→S | After negotiation | Ends negotiation; registration may complete | (none; unblocks registration) |
 | `CAP <unrecognized subcommand>` | C→S | Any time | Rejected | `410 ERR_INVALIDCAPCMD <subcommand> :<reason>` (005-fix-batch-conformance FR-008; was previously the generic `421`) — the second param echoes back the client's own invalid subcommand token verbatim (irctest `cap.py::testInvalidCapSubcommand`), not folded into the reason text |
 | `NICK <nickname>` | C→S | Session not yet holding a nickname, or changing an existing one | Atomically claims the nickname (FR-002) | `433 ERR_NICKNAMEINUSE` on conflict; for a post-registration change, a `NICK <nickname>` notification (prefixed with the OLD hostmask) is broadcast to the changing client itself and every channel it's currently a member of (005-fix-batch-conformance FR-001/FR-002) — the initial pre-registration claim stays silent, confirmed via the registration burst instead; reclaiming the exact current nickname (same case, a true no-op) broadcasts nothing at all, distinct from a case-only change which is still a real change and does broadcast (irctest `regressions.py::testCaseChanges`) |
@@ -185,10 +186,13 @@ defined, the same class of gap the nickname/channel grammars closed for
 - `CAP` negotiation MUST be usable before `NICK`/`USER` completes
   registration (FR-006), and registration MUST still succeed for clients
   that skip `CAP` entirely (FR-008).
-- Only `message-tags`, `server-time`, `echo-message`, `away-notify`, `batch`
-  and `multi-prefix` may appear in the `CAP LS` response (FR-025, extended by
-  011-away-notify-batch and issue #96); the SASL capability referenced in the
-  spec is deferred with Story 3 and MUST NOT appear.
+- Only `message-tags`, `server-time`, `echo-message`, `away-notify`, `batch`,
+  `multi-prefix` and core `cap-notify` may appear in the `CAP LS` response
+  (FR-025, extended by 011-away-notify-batch, issue #96 and #97); the SASL
+  capability referenced in the spec is deferred with Story 3 and MUST NOT
+  appear. `cap-notify` is core infrastructure, not an extension: it is
+  offered even when no capability provider is installed and cannot be
+  toggled.
 - `message-tags` itself now contributes one tag unconditionally: `msgid`,
   a server-generated unique identifier present on every message relayed
   to a recipient that has negotiated `message-tags` at all, regardless
@@ -204,9 +208,14 @@ defined, the same class of gap the nickname/channel grammars closed for
   ordinary one, so a self-targeted message is still delivered once; `away-notify`, `batch` and
   `multi-prefix` are described in their own contract notes. Removing a module from the
   classpath removes both its `CAP LS` offer and its behavior; core and the other modules are
-  unaffected. How a capability change is applied to already-connected sessions at runtime is
-  specified separately (014-capability-plugin-spi, runtime lifecycle) and is not part of this
-  ownership change.
+  unaffected.
+- **Runtime changes** (014-capability-plugin-spi, #97): disabling a capability removes it from
+  every connected session's negotiated set in the same step as its offer, so `CAP LIST` and any
+  output prepared afterwards reflect it; output prepared before may still arrive after the
+  `CAP DEL`. A batch group queued before the change keeps its closing `BATCH`; a group queued
+  after `batch` or `message-tags` stopped being effective for its recipient is sent plain, and
+  `batch` itself stays negotiated. See "Runtime capability changes" in
+  `server-configuration.md`.
 - `005`'s token set (FR-055) is deliberately minimal: every token
   restates a value this specification already committed to elsewhere
   (casemapping, grammar limits, mode prefixes, UTF-8 enforcement), none

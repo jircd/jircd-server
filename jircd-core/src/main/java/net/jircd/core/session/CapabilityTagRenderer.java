@@ -20,12 +20,15 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Consumer;
 import net.jircd.core.extension.ExtensionRegistry;
+import net.jircd.core.extension.capability.CapabilityRuntime;
 import net.jircd.core.extension.capability.FramingPlan;
 import net.jircd.core.extension.capability.HookDispatcher;
 import net.jircd.core.extension.capability.HookKind;
 import net.jircd.core.extension.capability.HookRegistration;
 import net.jircd.core.extension.capability.OutputGroup;
+import net.jircd.core.extension.capability.PreparedGroup;
 import net.jircd.core.extension.capability.RequestContext;
 import net.jircd.core.extension.capability.RuntimeSnapshot;
 import net.jircd.protocol.MessageSerializer;
@@ -44,11 +47,13 @@ public final class CapabilityTagRenderer implements TagRenderer {
 
   @Override
   public PreparedTags prepare(ClientSession recipient, OutboundMessage message) {
-    Set<String> negotiated = recipient.negotiatedCapabilities();
+    // One view per preparation, captured under the administrative mutex: the snapshot and this
+    // recipient's negotiation come from the same side of any publication and prune. Work prepared
+    // from it may be queued after a later DEL; it is not rechecked.
+    CapabilityRuntime.CapturedView view = extensionRegistry.capabilityControl().capture(recipient);
+    Set<String> negotiated = view.negotiated();
     if (negotiated.isEmpty()) return TagRenderer.NONE.prepare(recipient, message);
-    // One captured view per preparation: the typed hooks and the unmigrated providers both come
-    // from it, so a provider withdrawn after the capture contributes nothing inconsistent.
-    RuntimeSnapshot snapshot = extensionRegistry.capabilitySnapshot();
+    RuntimeSnapshot snapshot = view.snapshot();
     // The tags an inbound-tag provider selected go to recipients that negotiated that provider.
     Map<String, String> forwarded = message.forwardedFor(negotiated);
     boolean forwardClientTags = !forwarded.isEmpty();
@@ -89,13 +94,41 @@ public final class CapabilityTagRenderer implements TagRenderer {
 
   @Override
   public FramingPlan frame(ClientSession recipient, OutputGroup group, RequestContext context) {
+    return prepareGroup(recipient, group, context).framed();
+  }
+
+  @Override
+  public PreparedGroup prepareGroup(
+      ClientSession recipient, OutputGroup group, RequestContext context) {
+    CapabilityRuntime.CapturedView view = extensionRegistry.capabilityControl().capture(recipient);
     return extensionRegistry
         .hookDispatcher()
-        .outputGroup(
-            extensionRegistry.capabilitySnapshot(),
-            recipient.negotiatedCapabilities(),
-            group,
-            context);
+        .prepareOutputGroup(view.snapshot(), view.negotiated(), group, context);
+  }
+
+  /**
+   * The one current prerequisite choice output makes: under the administrative mutex, framed only
+   * if its owner is still published and it and its prerequisites are still negotiated by {@code
+   * recipient}, else plain; the choice is appended whole before the mutex is released. Ordinary
+   * output never rechecks its captured view like this.
+   */
+  @Override
+  public void admitGroup(
+      ClientSession recipient, PreparedGroup group, Consumer<FramingPlan> append) {
+    if (group.owner() == null) {
+      append.accept(group.framed());
+      return;
+    }
+    extensionRegistry
+        .capabilityControl()
+        .runUnderControl(
+            () ->
+                append.accept(
+                    extensionRegistry
+                            .capabilitySnapshot()
+                            .effective(group.owner(), recipient.negotiatedCapabilities())
+                        ? group.framed()
+                        : group.plain()));
   }
 
   @Override

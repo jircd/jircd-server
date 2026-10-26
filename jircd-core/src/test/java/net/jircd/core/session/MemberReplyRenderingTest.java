@@ -197,4 +197,48 @@ class MemberReplyRenderingTest {
     assertThat(seen.get().displayHost()).isEmpty();
     assertThat(Set.of(seen.get().nickname())).isNotEmpty();
   }
+
+  /** Runs {@code reply} on another thread while the mutex is held; its state once it settles. */
+  private Thread.State stateWhileTheMutexIsHeld(Runnable reply) throws InterruptedException {
+    java.util.concurrent.atomic.AtomicReference<Thread> worker =
+        new java.util.concurrent.atomic.AtomicReference<>();
+    java.util.concurrent.atomic.AtomicReference<Thread.State> observed =
+        new java.util.concurrent.atomic.AtomicReference<>();
+    extensions
+        .capabilityControl()
+        .runUnderControl(
+            () -> {
+              Thread thread = Thread.ofPlatform().start(reply);
+              worker.set(thread);
+              long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
+              while (System.nanoTime() < deadline
+                  && thread.getState() != Thread.State.BLOCKED
+                  && thread.getState() != Thread.State.TERMINATED) {
+                Thread.onSpinWait();
+              }
+              observed.set(thread.getState());
+            });
+    worker.get().join();
+    return observed.get();
+  }
+
+  @Test
+  void namesAndWhoCaptureTheSnapshotAndTheRequestersNegotiationTogether() throws Exception {
+    populated();
+    extensions.register(new AllStatuses());
+    extensions.enable("all-statuses");
+    ClientSession requester = requester("all-statuses");
+    MemberFacts both =
+        channel.memberFacts().stream()
+            .filter(fact -> "both".equals(fact.member().nickname()))
+            .findFirst()
+            .orElseThrow();
+
+    // A coherent capture waits for the mutex a publication holds; two separate reads would not.
+    assertThat(stateWhileTheMutexIsHeld(() -> replies.namesTokens(requester, List.of(both))))
+        .isEqualTo(Thread.State.BLOCKED);
+    assertThat(stateWhileTheMutexIsHeld(() -> replies.whoStatus(requester, both)))
+        .isEqualTo(Thread.State.BLOCKED);
+    assertThat(replies.whoStatus(requester, both)).isEqualTo("@+");
+  }
 }

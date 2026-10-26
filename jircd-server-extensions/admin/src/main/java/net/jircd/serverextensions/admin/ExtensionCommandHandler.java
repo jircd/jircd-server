@@ -18,6 +18,7 @@ package net.jircd.serverextensions.admin;
 import java.util.List;
 import java.util.Locale;
 import java.util.function.Supplier;
+import net.jircd.core.extension.Extension;
 import net.jircd.core.extension.ExtensionRegistry;
 import net.jircd.core.session.ClientSession;
 import net.jircd.core.session.command.CommandHandler;
@@ -80,11 +81,11 @@ public final class ExtensionCommandHandler implements CommandHandler {
       switch (action) {
         case "ENABLE" -> {
           extensionRegistry.enable(extensionId);
-          AdminNotices.send(session, serverName.get(), extensionId + " is now enabled");
+          reportOutcome(session, extensionId);
         }
         case "DISABLE" -> {
           extensionRegistry.disable(extensionId);
-          AdminNotices.send(session, serverName.get(), extensionId + " is now disabled");
+          reportOutcome(session, extensionId);
         }
         default ->
             Replies.sendFitted(
@@ -98,5 +99,16 @@ public final class ExtensionCommandHandler implements CommandHandler {
       AdminNotices.send(
           session, serverName.get(), "Failed to toggle " + extensionId + ": " + e.getMessage());
     }
+  }
+
+  /**
+   * Reports the state the toggle actually left, not the one requested. A repeated toggle is a no-op
+   * that reports the unchanged state and sends no capability notification.
+   */
+  private void reportOutcome(ClientSession session, String extensionId) {
+    Extension.State state = extensionRegistry.stateOf(extensionId);
+    // Known here: the id was found before the toggle, and registrations are never removed.
+    String outcome = state == null ? "unknown" : state.name().toLowerCase(Locale.ROOT);
+    AdminNotices.send(session, serverName.get(), extensionId + " is now " + outcome);
   }
 }

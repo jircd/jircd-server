@@ -82,7 +82,7 @@ class SessionWriterByteLimitTest {
     registry.register(capability("large", Map.of("s", "x".repeat(4092))));
     registry.enable("large");
     ClientSession recipient = session();
-    recipient.negotiatedCapabilities().add("large");
+    TestNegotiation.add(recipient, "large");
     new CapabilityTagRenderer(registry).prepare(recipient, first);
     assertThat(first)
         .isEqualTo(equal)
@@ -166,8 +166,8 @@ class SessionWriterByteLimitTest {
     registry.register(second);
     registry.enable(second.id());
     ClientSession recipient = session();
-    if ((capabilities & 1) != 0) recipient.negotiatedCapabilities().add("message-tags");
-    if ((capabilities & 2) != 0) recipient.negotiatedCapabilities().add("server-time");
+    if ((capabilities & 1) != 0) TestNegotiation.add(recipient, "message-tags");
+    if ((capabilities & 2) != 0) TestNegotiation.add(recipient, "server-time");
     OutboundMessage message =
         ForwardedTags.selectedBy(
             "message-tags",
@@ -187,7 +187,7 @@ class SessionWriterByteLimitTest {
     registry.register(large);
     registry.enable(large.id());
     ClientSession recipient = session();
-    recipient.negotiatedCapabilities().add("large");
+    TestNegotiation.add(recipient, "large");
     assertCharge(
         recipient,
         new CapabilityTagRenderer(registry),
@@ -205,7 +205,7 @@ class SessionWriterByteLimitTest {
       var contributor = capability("overlap" + i, Map.of("s" + i, "x".repeat(4090)));
       registry.register(contributor);
       registry.enable(contributor.id());
-      recipient.negotiatedCapabilities().add(contributor.id());
+      TestNegotiation.add(recipient, contributor.id());
     }
     assertCharge(
         recipient,
@@ -224,7 +224,7 @@ class SessionWriterByteLimitTest {
     registry.register(second);
     registry.enable(second.id());
     ClientSession recipient = session();
-    recipient.negotiatedCapabilities().addAll(List.of("message-tags", "server-time"));
+    TestNegotiation.addAll(recipient, List.of("message-tags", "server-time"));
     assertCharge(
         recipient,
         new CapabilityTagRenderer(registry),
@@ -242,7 +242,7 @@ class SessionWriterByteLimitTest {
     registry.register(large);
     registry.enable(large.id());
     ClientSession recipient = session();
-    recipient.negotiatedCapabilities().add("message-tags");
+    TestNegotiation.add(recipient, "message-tags");
     OutboundMessage message =
         ForwardedTags.selectedBy(
             "message-tags",
@@ -273,7 +273,7 @@ class SessionWriterByteLimitTest {
     registry.enable(capability.id());
     var renderer = new CapabilityTagRenderer(registry);
     ClientSession recipient = session();
-    recipient.negotiatedCapabilities().add("message-tags");
+    TestNegotiation.add(recipient, "message-tags");
     OutboundMessage message = OutboundMessage.now("n!u@h", "PRIVMSG", "#c", "hello");
     try (var threads = Executors.newVirtualThreadPerTaskExecutor()) {
       var tasks = new java.util.ArrayList<java.util.concurrent.Future<?>>();
@@ -320,12 +320,12 @@ class SessionWriterByteLimitTest {
         writer.enqueue(OutboundMessage.now("n!u@h", "PRIVMSG", "#c", "before"));
         long before = writer.queuedBytes();
         registry.enable(capability.id());
-        recipient.negotiatedCapabilities().add("message-tags");
+        TestNegotiation.add(recipient, "message-tags");
         writer.enqueue(OutboundMessage.now("n!u@h", "PRIVMSG", "#c", "after"));
         long after = writer.queuedBytes() - before;
         assertThat(after).isGreaterThan(4096);
         registry.disable(capability.id());
-        recipient.negotiatedCapabilities().clear();
+        TestNegotiation.clear(recipient);
       } finally {
         out.releaseAll();
       }

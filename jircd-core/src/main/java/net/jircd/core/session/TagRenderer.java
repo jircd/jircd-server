@@ -16,8 +16,10 @@
 package net.jircd.core.session;
 
 import java.util.Map;
+import java.util.function.Consumer;
 import net.jircd.core.extension.capability.FramingPlan;
 import net.jircd.core.extension.capability.OutputGroup;
+import net.jircd.core.extension.capability.PreparedGroup;
 import net.jircd.core.extension.capability.RequestContext;
 
 /**
@@ -70,5 +72,26 @@ public interface TagRenderer {
    */
   default FramingPlan frame(ClientSession recipient, OutputGroup group, RequestContext context) {
     return FramingPlan.plain(group);
+  }
+
+  /**
+   * Both complete alternatives for {@code group}: the framing {@link #frame} would choose now, and
+   * the plain members. Prepared outside every core lock; the default frames nothing.
+   */
+  default PreparedGroup prepareGroup(
+      ClientSession recipient, OutputGroup group, RequestContext context) {
+    FramingPlan framed = frame(recipient, group, context);
+    return new PreparedGroup(framed, FramingPlan.plain(group), null);
+  }
+
+  /**
+   * Chooses one of {@code group}'s alternatives against the current state and hands it to {@code
+   * append}, which queues it whole. Capability renderers choose under the administrative mutex,
+   * framed only while its owner and declared prerequisites are still effective for {@code
+   * recipient}; no provider runs then. The default keeps the framing as prepared.
+   */
+  default void admitGroup(
+      ClientSession recipient, PreparedGroup group, Consumer<FramingPlan> append) {
+    append.accept(group.framed());
   }
 }

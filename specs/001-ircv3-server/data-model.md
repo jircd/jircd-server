@@ -24,7 +24,8 @@ guarded by this aggregate.
 | `outboundQueue` | bounded queue of `OutboundMessage` (below) | The *only* path by which any other session delivers a message to this one (FR-004 fan-out); drained exclusively by this session's own writer thread, per research.md "Message fan-out concurrency model". Never written to directly from another session's thread. Queue elements are **not** pre-formatted wire lines — this session's own writer thread does that at drain time, using this session's own `negotiatedCapabilities` (see `OutboundMessage`). |
 | `registrationState` | enum: `CONNECTING`, `REGISTERED`, `CLOSING` | A session must reach `REGISTERED` (nickname + user info accepted, FR-001) before most commands are valid. |
 | `nickname` | string, 0..1 | Present once registration succeeds; unique across all sessions (FR-002), compared case-insensitively per FR-052's casemapping (research.md "IRC casemapping"), not stored/compared in a normalized form — the original casing a client registered with is preserved and shown to others, only the *comparison* folds case; MUST also conform to the nickname grammar (contracts/irc-protocol-commands.md "Connection Registration Grammar") — uniqueness and format are independent checks (`433` vs. `432`). |
-| `negotiatedCapabilities` | set of `Capability` names | Populated via CAP negotiation (FR-006, FR-007); empty for clients that never negotiate (FR-008). |
+| `negotiatedCapabilities` | set of `Capability` names | Populated via CAP negotiation (FR-006, FR-007); empty for clients that never negotiate (FR-008). An immutable set replaced as a whole, and only under the capability runtime's administrative mutex (a `CAP REQ`, or the prune of a runtime disable), so a request cannot bring back a name a disable removed (014-capability-plugin-spi, #97). Holds explicitly negotiated names only, `cap-notify` included when requested. |
+| `highestCapVersion` | integer | The highest `CAP LS` version the connection has sent; never lowered. 302 or more implies notification support, which the client cannot remove. Notification eligibility is derived: this is 302 or more, or `cap-notify` is negotiated. |
 | `channelMemberships` | set of `Channel` references | Channels this session has joined; drives cleanup on disconnect (FR-017). |
 | `rateLimitBucket` | token bucket state | Per-connection (FR-016); see research.md "Rate limiting". |
 | `ident` | string, 0..1 | Absent until this session's `USER` command is processed (FR-001), then derived from its username field (FR-030); not independently verified (see spec.md Assumptions re: RFC 1413). Its presence is also the source-of-truth signal for "this session has already processed a `USER` command" (FR-001's one-shot restriction, `UserCommandHandler` precondition) — no separate boolean field duplicates that fact. |
@@ -692,6 +693,18 @@ direction, no restart, quiesced per research.md); `ENABLED` → `FAILED`
 (runtime error, isolated per FR-020) — a `FAILED` extension does not
 auto-recover; it requires an administrator action (out of scope to specify
 the exact recovery UX here).
+
+For a `CapabilityExtension` (014-capability-plugin-spi, #97) the state change
+and its effect on sessions are one step: publishing the new immutable runtime
+snapshot and pruning withdrawn names from every live session (registered or
+not) happen together under the capability runtime's administrative mutex,
+which CAP state changes, live-session insertion and removal, and output
+captures also use. A provider's hard dependents are withdrawn with it.
+`CAP DEL`/`NEW` follow to notification-eligible sessions. Enable restores no
+earlier negotiation. Work captured from the earlier state may still finish
+after the `DEL`. The provider's `start`/`stop` run outside that mutex and
+must be safe to overlap with such captured work. Core `cap-notify` is not an
+`Extension` and has no state.
 
 ## ServerConfiguration — *Aggregate Root, Server Extensibility (config) / Administration*
 

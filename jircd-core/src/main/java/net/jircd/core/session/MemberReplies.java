@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import net.jircd.core.extension.ExtensionRegistry;
+import net.jircd.core.extension.capability.CapabilityRuntime;
 import net.jircd.core.extension.capability.HookDispatcher;
 import net.jircd.core.extension.capability.HookKind;
 import net.jircd.core.extension.capability.MemberSnapshot;
@@ -31,7 +32,8 @@ import net.jircd.core.extension.capability.RuntimeSnapshot;
  * are separate slots, each replaceable by at most one provider the requester negotiated, so a
  * provider that lists every status and one that changes the identity compose without knowing of one
  * another. The hooks run on the caller's thread outside every registry and channel monitor, against
- * one published snapshot captured per call, and a faulty hook costs only its own contribution.
+ * one published snapshot and the requester's negotiation, captured together per call, and a faulty
+ * hook costs only its own contribution.
  *
  * <p>Identity fields are resolved only if a provider could use them: the presented hostname may run
  * hostname-display extension code, which a plain NAMES must not pay for on every member.
@@ -45,8 +47,9 @@ public final class MemberReplies {
 
   /** One NAMES token per member, in the order given. */
   public List<String> namesTokens(ClientSession requester, List<MemberFacts> facts) {
-    RuntimeSnapshot snapshot = extensionRegistry.capabilitySnapshot();
-    Set<String> negotiated = requester.negotiatedCapabilities();
+    CapabilityRuntime.CapturedView view = extensionRegistry.capabilityControl().capture(requester);
+    RuntimeSnapshot snapshot = view.snapshot();
+    Set<String> negotiated = view.negotiated();
     boolean customStatus = !snapshot.hooksFor(HookKind.MEMBER_STATUS, negotiated).isEmpty();
     boolean customIdentity = !snapshot.hooksFor(HookKind.NAMES_IDENTITY, negotiated).isEmpty();
     List<String> tokens = new ArrayList<>(facts.size());
@@ -68,8 +71,9 @@ public final class MemberReplies {
 
   /** The status symbols to append to a channel WHO entry's {@code H}/{@code G}/{@code *} flags. */
   public String whoStatus(ClientSession requester, MemberFacts fact) {
-    RuntimeSnapshot snapshot = extensionRegistry.capabilitySnapshot();
-    Set<String> negotiated = requester.negotiatedCapabilities();
+    CapabilityRuntime.CapturedView view = extensionRegistry.capabilityControl().capture(requester);
+    RuntimeSnapshot snapshot = view.snapshot();
+    Set<String> negotiated = view.negotiated();
     if (snapshot.hooksFor(HookKind.MEMBER_STATUS, negotiated).isEmpty()) {
       return highest(fact);
     }

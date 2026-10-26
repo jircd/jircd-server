@@ -25,6 +25,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import net.jircd.core.extension.ExtensionRegistry;
+import net.jircd.core.extension.capability.CapabilityRuntime;
 import net.jircd.core.extension.capability.DeliveryIntent;
 import net.jircd.core.extension.capability.DeliveryRole;
 import net.jircd.core.extension.capability.HookDispatcher;
@@ -186,9 +187,12 @@ public final class MessageDelivery {
       OutboundMessage unsent = OutboundMessage.now("", command, target, body);
       return new Delivery(unsent, RequestContext.of(0, Map.of()), Map.of());
     }
-    RuntimeSnapshot snapshot = extensionRegistry.capabilitySnapshot();
+    // One coherent view: a disable between two separate reads could pair the old snapshot with
+    // the sender's newly pruned set and skip hooks the sender had negotiated.
+    CapabilityRuntime.CapturedView view = extensionRegistry.capabilityControl().capture(sender);
+    RuntimeSnapshot snapshot = view.snapshot();
     HookDispatcher dispatcher = extensionRegistry.hookDispatcher();
-    Set<String> senderNegotiated = sender.negotiatedCapabilities();
+    Set<String> senderNegotiated = view.negotiated();
 
     long requestId = REQUEST_IDS.incrementAndGet();
     RequestContext opening = RequestContext.of(requestId, Map.of());

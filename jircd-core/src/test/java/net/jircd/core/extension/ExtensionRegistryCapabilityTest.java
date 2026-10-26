@@ -95,16 +95,12 @@ class ExtensionRegistryCapabilityTest {
   private final Map<Command, CommandHandler> handlers = new java.util.EnumMap<>(Command.class);
   private int failAfterRegistrations = Integer.MAX_VALUE;
   private boolean failUnregister;
-  private Error unregisterError;
-  private RuntimeException sharedUnregisterFailure;
-  private Runnable onRegister = () -> {};
 
   /** Core's command table as a provider sees it: ownership query, install and removal. */
   private final CommandRegistrar commands =
       new CommandRegistrar() {
         @Override
         public void register(Command command, CommandHandler handler) {
-          onRegister.run();
           if (handlers.size() >= failAfterRegistrations) throw new NoClassDefFoundError("x");
           registeredCommands.add(command.name());
           handlers.put(command, handler);
@@ -117,8 +113,6 @@ class ExtensionRegistryCapabilityTest {
 
         @Override
         public void unregister(Command command, CommandHandler installed) {
-          if (unregisterError != null) throw unregisterError;
-          if (sharedUnregisterFailure != null) throw sharedUnregisterFailure;
           if (failUnregister) throw new IllegalStateException("cannot remove");
           handlers.remove(command, installed);
         }
@@ -240,16 +234,16 @@ class ExtensionRegistryCapabilityTest {
   }
 
   @Test
-  void disablingAProviderThatAnotherRequiresIsRefusedAndChangesNothing() {
+  void disablingAProviderThatAnotherRequiresWithdrawsBothInOnePublication() {
     ExtensionRegistry registry = registry("test.jircd.local");
     registry.register(tagProvider("base", "b"));
     registry.register(new Provider("dependent", r -> r.requiresProviders("base"), null));
     registry.enable("base");
     registry.enable("dependent");
-    assertThatThrownBy(() -> registry.disable("base")).isInstanceOf(IllegalStateException.class);
-    assertThat(registry.stateOf("base")).isEqualTo(Extension.State.ENABLED);
-    assertThat(registry.capabilitySnapshot().providerIds())
-        .containsExactlyInAnyOrder("base", "dependent");
+    registry.disable("base");
+    assertThat(registry.stateOf("base")).isEqualTo(Extension.State.DISABLED);
+    assertThat(registry.stateOf("dependent")).isEqualTo(Extension.State.DISABLED);
+    assertThat(registry.capabilitySnapshot().providerIds()).isEmpty();
   }
 
   @Test
@@ -262,21 +256,48 @@ class ExtensionRegistryCapabilityTest {
   }
 
   @Test
-  void providerCommandsAreInstalledOnEnableAndRemovedOnDisable() {
+  void providerCommandsResolveFromTheSnapshotAndNeverTouchCoresTable() {
     ExtensionRegistry registry = registry("test.jircd.local");
     AtomicInteger handled = new AtomicInteger();
     registry.register(
         new Provider(
             "cmd", r -> r.command(Command.TAGMSG, (s, m) -> handled.incrementAndGet()), null));
     registry.enable("cmd");
-    assertThat(registeredCommands).containsExactly("TAGMSG");
+    assertThat(registeredCommands).isEmpty();
     ClientSession session = new ClientSession("c", "host", RateLimitBucket.withDefaults());
-    handlers.get(Command.TAGMSG).handle(session, Message.of(Command.TAGMSG, "#c"));
+    registry
+        .capabilityCommand(Command.TAGMSG)
+        .orElseThrow()
+        .handle(session, Message.of(Command.TAGMSG, "#c"));
     assertThat(handled).hasValue(1);
     registry.disable("cmd");
-    assertThat(handlers).doesNotContainKey(Command.TAGMSG);
+    assertThat(registry.capabilityCommand(Command.TAGMSG)).isEmpty();
     registry.enable("cmd");
-    assertThat(handlers).containsKey(Command.TAGMSG);
+    assertThat(registry.capabilityCommand(Command.TAGMSG)).isPresent();
+    assertThat(handlers).isEmpty();
+  }
+
+  @Test
+  void aRegistrarThatCannotInstallOrRemoveHandlersCannotHalfEnableOrStrandAProvider() {
+    ExtensionRegistry registry = registry("test.jircd.local");
+    failAfterRegistrations = 0;
+    failUnregister = true;
+    Provider provider =
+        new Provider(
+            "two",
+            r -> {
+              r.command(Command.TAGMSG, (s, m) -> {});
+              r.command(Command.AWAY, (s, m) -> {});
+            },
+            null);
+    registry.register(provider);
+    registry.enable("two");
+    assertThat(registry.capabilityCommand(Command.TAGMSG)).isPresent();
+    assertThat(registry.capabilityCommand(Command.AWAY)).isPresent();
+    registry.disable("two");
+    assertThat(provider.stops).hasValue(1);
+    assertThat(registry.stateOf("two")).isEqualTo(Extension.State.DISABLED);
+    assertThat(registry.capabilityCommand(Command.TAGMSG)).isEmpty();
   }
 
   @Test
@@ -293,24 +314,6 @@ class ExtensionRegistryCapabilityTest {
     assertThat(registry.capabilitySnapshot().providerIds()).isEmpty();
     registry.disable("greedy");
     assertThat(handlers).containsEntry(Command.JOIN, core);
-  }
-
-  @Test
-  void aFailureInstallingLaterCommandsRollsBackTheEarlierOnesAndThePublication() {
-    ExtensionRegistry registry = registry("test.jircd.local");
-    failAfterRegistrations = 1;
-    registry.register(
-        new Provider(
-            "two",
-            r -> {
-              r.command(Command.TAGMSG, (s, m) -> {});
-              r.command(Command.AWAY, (s, m) -> {});
-            },
-            null));
-    assertThatThrownBy(() -> registry.enable("two")).isInstanceOf(NoClassDefFoundError.class);
-    assertThat(handlers).isEmpty();
-    assertThat(registry.capabilitySnapshot().providerIds()).isEmpty();
-    assertThat(registry.stateOf("two")).isEqualTo(Extension.State.FAILED);
   }
 
   @Test
@@ -337,81 +340,6 @@ class ExtensionRegistryCapabilityTest {
     handlers.put(Command.OPER, replacement); // e.g. admin enabled later and took OPER over
     registry.disable("early");
     assertThat(handlers).containsEntry(Command.OPER, replacement);
-  }
-
-  @Test
-  void anUnregisterFailureDuringRollbackStillWithdrawsThePublication() {
-    ExtensionRegistry registry = registry("test.jircd.local");
-    failAfterRegistrations = 1;
-    failUnregister = true;
-    registry.register(
-        new Provider(
-            "two",
-            r -> {
-              r.command(Command.TAGMSG, (s, m) -> {});
-              r.command(Command.AWAY, (s, m) -> {});
-            },
-            null));
-    assertThatThrownBy(() -> registry.enable("two")).isInstanceOf(NoClassDefFoundError.class);
-    assertThat(registry.capabilitySnapshot().providerIds()).isEmpty();
-    assertThat(registry.stateOf("two")).isEqualTo(Extension.State.FAILED);
-  }
-
-  @Test
-  void anUnregisterFailureDuringDisableStillStopsAndFinalizesTheProvider() {
-    ExtensionRegistry registry = registry("test.jircd.local");
-    Provider provider =
-        new Provider(
-            "two",
-            r -> {
-              r.command(Command.TAGMSG, (s, m) -> {});
-              r.command(Command.AWAY, (s, m) -> {});
-            },
-            null);
-    registry.register(provider);
-    registry.enable("two");
-    failUnregister = true;
-    assertThatThrownBy(() -> registry.disable("two"))
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("cannot remove");
-    assertThat(provider.stops).hasValue(1);
-    assertThat(registry.capabilitySnapshot().providerIds()).isEmpty();
-    assertThat(registry.stateOf("two")).isEqualTo(Extension.State.FAILED);
-  }
-
-  @Test
-  void oneSharedExceptionFromUnregisterAndStopStillFinalizesTheProvider() {
-    ExtensionRegistry registry = registry("test.jircd.local");
-    IllegalStateException shared = new IllegalStateException("shared");
-    Provider provider =
-        new Provider(
-            "two",
-            r -> {
-              r.command(Command.TAGMSG, (s, m) -> {});
-              r.command(Command.AWAY, (s, m) -> {});
-            },
-            null);
-    registry.register(provider);
-    registry.enable("two");
-    sharedUnregisterFailure = shared;
-    provider.stopFailure = shared;
-    assertThatThrownBy(() -> registry.disable("two")).isSameAs(shared);
-    assertThat(provider.stops).hasValue(1);
-    assertThat(registry.stateOf("two")).isEqualTo(Extension.State.FAILED);
-    assertThat(registry.capabilitySnapshot().providerIds()).isEmpty();
-  }
-
-  @Test
-  void aLinkageErrorFromUnregisterStillStopsAndFinalizesTheProvider() {
-    ExtensionRegistry registry = registry("test.jircd.local");
-    Provider provider = new Provider("one", r -> r.command(Command.TAGMSG, (s, m) -> {}), null);
-    registry.register(provider);
-    registry.enable("one");
-    unregisterError = new NoClassDefFoundError("gone");
-    assertThatThrownBy(() -> registry.disable("one")).isSameAs(unregisterError);
-    assertThat(provider.stops).hasValue(1);
-    assertThat(registry.stateOf("one")).isEqualTo(Extension.State.FAILED);
-    assertThat(registry.capabilitySnapshot().providerIds()).isEmpty();
   }
 
   @Test
@@ -531,43 +459,9 @@ class ExtensionRegistryCapabilityTest {
     registry.register(new Provider("cmd", r -> r.command(Command.TAGMSG, failing), null));
     registry.enable("cmd");
     ClientSession session = new ClientSession("c", "host", RateLimitBucket.withDefaults());
-    CommandHandler registered = handlers.get(Command.TAGMSG);
+    CommandHandler registered = registry.capabilityCommand(Command.TAGMSG).orElseThrow();
     Message tagmsg = Message.of(Command.TAGMSG, "#c");
     assertThatCode(() -> registered.handle(session, tagmsg)).doesNotThrowAnyException();
-  }
-
-  @Test
-  void aRejectedCommandRegistrationLeavesNothingPublished() {
-    ExtensionRegistry registry = new ExtensionRegistry();
-    registry.attachContext(
-        new ServerContext(
-            null,
-            null,
-            registry,
-            () -> "test.jircd.local",
-            null,
-            null,
-            new CommandRegistrar() {
-              @Override
-              public void register(Command command, CommandHandler handler) {
-                throw new IllegalStateException("taken");
-              }
-
-              @Override
-              public boolean isRegistered(Command command) {
-                return false;
-              }
-
-              @Override
-              public void unregister(Command command, CommandHandler installed) {
-                // Nothing was installed.
-              }
-            },
-            registry.capabilityServices()));
-    registry.register(new Provider("cmd", r -> r.command(Command.TAGMSG, (s, m) -> {}), null));
-    assertThatThrownBy(() -> registry.enable("cmd")).isInstanceOf(IllegalStateException.class);
-    assertThat(registry.capabilitySnapshot().providerIds()).isEmpty();
-    assertThat(registry.stateOf("cmd")).isEqualTo(Extension.State.FAILED);
   }
 
   @Test
@@ -609,75 +503,6 @@ class ExtensionRegistryCapabilityTest {
   }
 
   // ---- Sourcery review of PR #104
-
-  @Test
-  void aLeftoverHandlerRefusesToRunAndIsRemovedByRetryingTheDisable() {
-    ExtensionRegistry registry = registry("test.jircd.local");
-    AtomicInteger handled = new AtomicInteger();
-    registry.register(
-        new Provider(
-            "cmd", r -> r.command(Command.TAGMSG, (s, m) -> handled.incrementAndGet()), null));
-    registry.enable("cmd");
-    failUnregister = true;
-    assertThatThrownBy(() -> registry.disable("cmd")).isInstanceOf(IllegalStateException.class);
-    ClientSession session = new ClientSession("c", "host", RateLimitBucket.withDefaults());
-    Message tagmsg = Message.of(Command.TAGMSG, "#c");
-    assertThat(handlers).containsKey(Command.TAGMSG);
-    handlers.get(Command.TAGMSG).handle(session, tagmsg);
-    assertThat(handled).hasValue(0);
-    failUnregister = false;
-    registry.disable("cmd");
-    assertThat(handlers).doesNotContainKey(Command.TAGMSG);
-    assertThat(registry.stateOf("cmd")).isEqualTo(Extension.State.DISABLED);
-    registry.enable("cmd");
-    handlers.get(Command.TAGMSG).handle(session, tagmsg);
-    assertThat(handled).hasValue(1);
-  }
-
-  @Test
-  void aFailedRollbackKeepsTheLeftoverForRetryAndItsHandlerRefusesToRun() {
-    ExtensionRegistry registry = registry("test.jircd.local");
-    AtomicInteger handled = new AtomicInteger();
-    failAfterRegistrations = 1;
-    failUnregister = true;
-    registry.register(
-        new Provider(
-            "two",
-            r -> {
-              r.command(Command.TAGMSG, (s, m) -> handled.incrementAndGet());
-              r.command(Command.AWAY, (s, m) -> {});
-            },
-            null));
-    assertThatThrownBy(() -> registry.enable("two")).isInstanceOf(NoClassDefFoundError.class);
-    ClientSession session = new ClientSession("c", "host", RateLimitBucket.withDefaults());
-    assertThat(handlers).containsKey(Command.TAGMSG);
-    handlers.get(Command.TAGMSG).handle(session, Message.of(Command.TAGMSG, "#c"));
-    assertThat(handled).hasValue(0);
-    failUnregister = false;
-    registry.disable("two");
-    assertThat(handlers).isEmpty();
-    assertThat(registry.stateOf("two")).isEqualTo(Extension.State.DISABLED);
-  }
-
-  @Test
-  void hooksAreNeverVisibleBeforeTheCommandsAreInstalledNorAfterAFailedEnable() {
-    ExtensionRegistry registry = registry("test.jircd.local");
-    List<Set<String>> seen = new ArrayList<>();
-    onRegister = () -> seen.add(registry.capabilitySnapshot().providerIds());
-    failAfterRegistrations = 1;
-    registry.register(
-        new Provider(
-            "two",
-            r -> {
-              r.onOutboundTags(Set.of("a"), 16, message -> Map.of("a", "v"));
-              r.command(Command.TAGMSG, (s, m) -> {});
-              r.command(Command.AWAY, (s, m) -> {});
-            },
-            null));
-    assertThatThrownBy(() -> registry.enable("two")).isInstanceOf(NoClassDefFoundError.class);
-    assertThat(seen).isNotEmpty().allSatisfy(ids -> assertThat(ids).isEmpty());
-    assertThat(registry.capabilitySnapshot().providerIds()).isEmpty();
-  }
 
   @Test
   void providerCallbacksRunOutsideTheRegistryMonitor() {
@@ -852,5 +677,85 @@ class ExtensionRegistryCapabilityTest {
         .hasMessageContaining("lifecycle");
     assertThat(disableAttempt.get()).isInstanceOf(IllegalStateException.class);
     assertThat(registry.stateOf("other")).isEqualTo(Extension.State.DISABLED);
+  }
+
+  /** Offers {@code capability} under its own id; the name may fail to resolve until fixed. */
+  private static final class Offering implements CapabilityExtension {
+    private final String id;
+    private final String capability;
+    volatile boolean nameFails;
+
+    Offering(String id, String capability) {
+      this.id = id;
+      this.capability = capability;
+    }
+
+    @Override
+    public String id() {
+      return id;
+    }
+
+    @Override
+    public void start(ServerContext context) {
+      // Holds nothing.
+    }
+
+    @Override
+    public void stop() {
+      // Holds nothing.
+    }
+
+    @Override
+    public Capability providedCapability() {
+      if (nameFails) throw new IllegalStateException("no name yet");
+      return new Capability(capability);
+    }
+  }
+
+  @Test
+  void aProviderWhoseCapabilityNameThrowsIsNotRegisteredAndCanRegisterOnceFixed() {
+    ExtensionRegistry registry = registry("irc.example");
+    Offering flaky = new Offering("flaky", "flaky");
+    flaky.nameFails = true;
+
+    // Rejected the way discovery skips a provider, and nothing about it is kept.
+    assertThatThrownBy(() -> registry.register(flaky))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("flaky");
+    assertThat(registry.find("flaky")).isEmpty();
+    assertThat(registry.knownCapabilityNames()).doesNotContain("flaky");
+
+    flaky.nameFails = false;
+    registry.register(flaky);
+    assertThat(registry.find("flaky")).containsSame(flaky);
+    assertThat(registry.knownCapabilityNames()).contains("flaky");
+  }
+
+  @Test
+  void aProviderClaimingCoreCapNotifyIsNeverPublishedSoItsDisableCannotWithdrawIt() {
+    ExtensionRegistry registry = registry("irc.example");
+    registry.register(new Offering("impostor", "cap-notify"));
+    ClientSession session = new ClientSession("c1", "host", RateLimitBucket.withDefaults());
+    session.replaceNegotiatedCapabilities(List.of("cap-notify"));
+    registry.attachLiveSessions(List.of(session));
+
+    assertThatThrownBy(() -> registry.enable("impostor")).hasMessageContaining("core capability");
+    SupportedFeatures features = registry.supportedFeatures();
+    Map<String, String> failures =
+        registry.applyDesiredState(
+            new ExtensionRegistry.DesiredState(
+                Map.of("impostor", true),
+                Map.of(),
+                features.nicknameMaxLength(),
+                features.channelNameMaxLength(),
+                features.topicMaxLength(),
+                features.maxModesPerCommand()),
+            () -> {});
+    assertThat(failures).containsKey("impostor");
+    registry.disable("impostor");
+
+    assertThat(registry.capabilitySnapshot().offeredNames()).isEmpty();
+    assertThat(registry.stateOf("impostor")).isEqualTo(Extension.State.FAILED);
+    assertThat(session.negotiatedCapabilities()).containsExactly("cap-notify");
   }
 }
