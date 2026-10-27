@@ -1,0 +1,6 @@
+# Commits that only reformat code. `git blame` skips them once you run:
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+# GitHub's blame view reads this file automatically.
+
+# Format Java with AOSP style (4-space indentation) (#114)
+4df3964905f0ec37b2e7883520cc3d279fa4272d

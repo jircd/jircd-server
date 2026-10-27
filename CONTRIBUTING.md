@@ -68,11 +68,18 @@ Formatting and static analysis (Spotless, SpotBugs, PMD — see
 [`research.md`](specs/001-ircv3-server/research.md)) run as part of the
 build and are expected to pass cleanly before review.
 
-After cloning, run this once to enable the repo's pre-commit hook, which
-runs `spotlessCheck` before each commit:
+Java is formatted with google-java-format in AOSP style: 4-space
+indentation, 8 for continuation lines, 100 columns. Don't format by hand;
+run `./gradlew spotlessApply`.
+
+After cloning, run these once. The first enables the repo's pre-commit
+hook, which runs `spotlessCheck` before each commit. The second makes
+`git blame` skip the commits listed in `.git-blame-ignore-revs`, which
+only reformat code. GitHub's blame view already skips them.
 
 ```sh
 git config core.hooksPath .githooks
+git config blame.ignoreRevsFile .git-blame-ignore-revs
 ```
 
 ## Releasing
