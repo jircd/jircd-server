@@ -36,85 +36,89 @@ import net.jircd.protocol.NumericReply;
  */
 public final class LusersCommandHandler implements CommandHandler {
 
-  private final NicknameRegistry nicknameRegistry;
-  private final ChannelRegistry channelRegistry;
-  private final UserStatistics userStatistics;
-  private final IntSupplier unregisteredConnections;
-  private final Supplier<String> serverName;
+    private final NicknameRegistry nicknameRegistry;
+    private final ChannelRegistry channelRegistry;
+    private final UserStatistics userStatistics;
+    private final IntSupplier unregisteredConnections;
+    private final Supplier<String> serverName;
 
-  public LusersCommandHandler(
-      NicknameRegistry nicknameRegistry,
-      ChannelRegistry channelRegistry,
-      UserStatistics userStatistics,
-      IntSupplier unregisteredConnections,
-      Supplier<String> serverName) {
-    this.nicknameRegistry = nicknameRegistry;
-    this.channelRegistry = channelRegistry;
-    this.userStatistics = userStatistics;
-    this.unregisteredConnections = unregisteredConnections;
-    this.serverName = serverName;
-  }
-
-  @Override
-  public void handle(ClientSession session, Message message) {
-    String server = serverName.get();
-    List<ClientSession> users =
-        nicknameRegistry.all().stream()
-            .distinct() // a rename briefly holds the session under both nickname keys
-            .filter(s -> s.lifecycle().isRegistered())
-            .toList();
-    int clientCount = Math.max(0, userStatistics.registeredCount());
-    long invisibleCount =
-        users.stream().filter(s -> s.userModes().contains(UserMode.INVISIBLE)).count();
-    long operatorCount =
-        users.stream().filter(s -> s.userModes().contains(UserMode.OPERATOR)).count();
-    int channelCount = channelRegistry.all().size();
-    int unknownCount = unregisteredConnections.getAsInt();
-    String current = String.valueOf(clientCount);
-    String max = String.valueOf(Math.max(userStatistics.peak(), clientCount));
-    Replies.sendFitted(
-        session,
-        server,
-        NumericReply.RPL_LUSERCLIENT,
-        List.of(),
-        "There are " + clientCount + " users and " + invisibleCount + " invisible on 1 servers");
-    Replies.sendFitted(
-        session,
-        server,
-        NumericReply.RPL_LUSEROP,
-        List.of(String.valueOf(operatorCount)),
-        "operator(s) online");
-    if (unknownCount > 0) {
-      Replies.sendFitted(
-          session,
-          server,
-          NumericReply.RPL_LUSERUNKNOWN,
-          List.of(String.valueOf(unknownCount)),
-          "unknown connection(s)");
+    public LusersCommandHandler(
+            NicknameRegistry nicknameRegistry,
+            ChannelRegistry channelRegistry,
+            UserStatistics userStatistics,
+            IntSupplier unregisteredConnections,
+            Supplier<String> serverName) {
+        this.nicknameRegistry = nicknameRegistry;
+        this.channelRegistry = channelRegistry;
+        this.userStatistics = userStatistics;
+        this.unregisteredConnections = unregisteredConnections;
+        this.serverName = serverName;
     }
-    Replies.sendFitted(
-        session,
-        server,
-        NumericReply.RPL_LUSERCHANNELS,
-        List.of(String.valueOf(channelCount)),
-        "channels formed");
-    Replies.sendFitted(
-        session,
-        server,
-        NumericReply.RPL_LUSERME,
-        List.of(),
-        "I have " + clientCount + " clients and 1 servers");
-    Replies.sendFitted(
-        session,
-        server,
-        NumericReply.RPL_LOCALUSERS,
-        List.of(current, max),
-        "Current local users " + current + ", max " + max);
-    Replies.sendFitted(
-        session,
-        server,
-        NumericReply.RPL_GLOBALUSERS,
-        List.of(current, max),
-        "Current global users " + current + ", max " + max);
-  }
+
+    @Override
+    public void handle(ClientSession session, Message message) {
+        String server = serverName.get();
+        List<ClientSession> users =
+                nicknameRegistry.all().stream()
+                        .distinct() // a rename briefly holds the session under both nickname keys
+                        .filter(s -> s.lifecycle().isRegistered())
+                        .toList();
+        int clientCount = Math.max(0, userStatistics.registeredCount());
+        long invisibleCount =
+                users.stream().filter(s -> s.userModes().contains(UserMode.INVISIBLE)).count();
+        long operatorCount =
+                users.stream().filter(s -> s.userModes().contains(UserMode.OPERATOR)).count();
+        int channelCount = channelRegistry.all().size();
+        int unknownCount = unregisteredConnections.getAsInt();
+        String current = String.valueOf(clientCount);
+        String max = String.valueOf(Math.max(userStatistics.peak(), clientCount));
+        Replies.sendFitted(
+                session,
+                server,
+                NumericReply.RPL_LUSERCLIENT,
+                List.of(),
+                "There are "
+                        + clientCount
+                        + " users and "
+                        + invisibleCount
+                        + " invisible on 1 servers");
+        Replies.sendFitted(
+                session,
+                server,
+                NumericReply.RPL_LUSEROP,
+                List.of(String.valueOf(operatorCount)),
+                "operator(s) online");
+        if (unknownCount > 0) {
+            Replies.sendFitted(
+                    session,
+                    server,
+                    NumericReply.RPL_LUSERUNKNOWN,
+                    List.of(String.valueOf(unknownCount)),
+                    "unknown connection(s)");
+        }
+        Replies.sendFitted(
+                session,
+                server,
+                NumericReply.RPL_LUSERCHANNELS,
+                List.of(String.valueOf(channelCount)),
+                "channels formed");
+        Replies.sendFitted(
+                session,
+                server,
+                NumericReply.RPL_LUSERME,
+                List.of(),
+                "I have " + clientCount + " clients and 1 servers");
+        Replies.sendFitted(
+                session,
+                server,
+                NumericReply.RPL_LOCALUSERS,
+                List.of(current, max),
+                "Current local users " + current + ", max " + max);
+        Replies.sendFitted(
+                session,
+                server,
+                NumericReply.RPL_GLOBALUSERS,
+                List.of(current, max),
+                "Current global users " + current + ", max " + max);
+    }
 }

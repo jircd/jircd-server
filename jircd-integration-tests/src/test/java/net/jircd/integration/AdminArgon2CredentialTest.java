@@ -27,71 +27,72 @@ import org.junit.jupiter.api.Test;
  */
 class AdminArgon2CredentialTest {
 
-  @Test
-  void correctCredentialsGrantOperatorPrivilege() throws Exception {
-    try (TestServer server = TestServer.start(TestServer.argon2AdminEnabledYaml());
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void correctCredentialsGrantOperatorPrivilege() throws Exception {
+        try (TestServer server = TestServer.start(TestServer.argon2AdminEnabledYaml());
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      alice.registerAndAwaitWelcome("alice", "alice");
+            alice.registerAndAwaitWelcome("alice", "alice");
 
-      alice.send("OPER " + TestServer.ADMIN_USERNAME + " :" + TestServer.ADMIN_PASSWORD);
-      assertThat(alice.readUntil("381", Duration.ofSeconds(5))).contains("381");
+            alice.send("OPER " + TestServer.ADMIN_USERNAME + " :" + TestServer.ADMIN_PASSWORD);
+            assertThat(alice.readUntil("381", Duration.ofSeconds(5))).contains("381");
+        }
     }
-  }
 
-  @Test
-  void incorrectCredentialsAreRejectedWithoutGrantingPrivilege() throws Exception {
-    try (TestServer server = TestServer.start(TestServer.argon2AdminEnabledYaml());
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void incorrectCredentialsAreRejectedWithoutGrantingPrivilege() throws Exception {
+        try (TestServer server = TestServer.start(TestServer.argon2AdminEnabledYaml());
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      alice.registerAndAwaitWelcome("alice", "alice");
+            alice.registerAndAwaitWelcome("alice", "alice");
 
-      alice.send("OPER " + TestServer.ADMIN_USERNAME + " wrong-password");
-      assertThat(alice.readUntil("464", Duration.ofSeconds(5))).contains("464");
+            alice.send("OPER " + TestServer.ADMIN_USERNAME + " wrong-password");
+            assertThat(alice.readUntil("464", Duration.ofSeconds(5))).contains("464");
+        }
     }
-  }
 
-  @Test
-  void thirdConsecutiveFailedAttemptDisconnects() throws Exception {
-    try (TestServer server =
-            TestServer.start(TestServer.argon2AdminEnabledYaml() + "operFailureThreshold: 3\n");
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void thirdConsecutiveFailedAttemptDisconnects() throws Exception {
+        try (TestServer server =
+                        TestServer.start(
+                                TestServer.argon2AdminEnabledYaml() + "operFailureThreshold: 3\n");
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      alice.registerAndAwaitWelcome("alice", "alice");
+            alice.registerAndAwaitWelcome("alice", "alice");
 
-      for (int attempt = 1; attempt <= 2; attempt++) {
-        alice.send("OPER " + TestServer.ADMIN_USERNAME + " wrong-password");
-        assertThat(alice.readUntil("464", Duration.ofSeconds(5))).contains("464");
-      }
+            for (int attempt = 1; attempt <= 2; attempt++) {
+                alice.send("OPER " + TestServer.ADMIN_USERNAME + " wrong-password");
+                assertThat(alice.readUntil("464", Duration.ofSeconds(5))).contains("464");
+            }
 
-      alice.send("OPER " + TestServer.ADMIN_USERNAME + " wrong-password");
-      assertThatThrownBy(() -> alice.readUntil("_never_matches_", Duration.ofSeconds(5)))
-          .hasMessageContaining("Connection closed");
+            alice.send("OPER " + TestServer.ADMIN_USERNAME + " wrong-password");
+            assertThatThrownBy(() -> alice.readUntil("_never_matches_", Duration.ofSeconds(5)))
+                    .hasMessageContaining("Connection closed");
+        }
     }
-  }
 
-  @Test
-  void corruptedArgon2HashFailsCleanlyRatherThanCrashing() throws Exception {
-    // Passes ConfigurationLoader's "$argon2id$" prefix check but the hash segment is mangled —
-    // exercises AdminCredentialVerifier's catch-and-fail-closed branch (FR-003).
-    String corruptedHash = "$argon2id$v=19$m=65536,t=3,p=4$not-a-real-salt$not-a-real-hash!!!";
-    String yaml =
-        "server-extensions:\n"
-            + "  admin: enabled\n"
-            + "administratorCredentials:\n"
-            + "  - username: "
-            + TestServer.ADMIN_USERNAME
-            + "\n"
-            + "    hashedPassword: \""
-            + corruptedHash
-            + "\"\n";
-    try (TestServer server = TestServer.start(yaml);
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void corruptedArgon2HashFailsCleanlyRatherThanCrashing() throws Exception {
+        // Passes ConfigurationLoader's "$argon2id$" prefix check but the hash segment is mangled —
+        // exercises AdminCredentialVerifier's catch-and-fail-closed branch (FR-003).
+        String corruptedHash = "$argon2id$v=19$m=65536,t=3,p=4$not-a-real-salt$not-a-real-hash!!!";
+        String yaml =
+                "server-extensions:\n"
+                        + "  admin: enabled\n"
+                        + "administratorCredentials:\n"
+                        + "  - username: "
+                        + TestServer.ADMIN_USERNAME
+                        + "\n"
+                        + "    hashedPassword: \""
+                        + corruptedHash
+                        + "\"\n";
+        try (TestServer server = TestServer.start(yaml);
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      alice.registerAndAwaitWelcome("alice", "alice");
+            alice.registerAndAwaitWelcome("alice", "alice");
 
-      alice.send("OPER " + TestServer.ADMIN_USERNAME + " :" + TestServer.ADMIN_PASSWORD);
-      assertThat(alice.readUntil("464", Duration.ofSeconds(5))).contains("464");
+            alice.send("OPER " + TestServer.ADMIN_USERNAME + " :" + TestServer.ADMIN_PASSWORD);
+            assertThat(alice.readUntil("464", Duration.ofSeconds(5))).contains("464");
+        }
     }
-  }
 }

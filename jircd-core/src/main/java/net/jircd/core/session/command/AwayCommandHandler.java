@@ -30,40 +30,44 @@ import net.jircd.protocol.NumericReply;
  */
 public final class AwayCommandHandler implements CommandHandler {
 
-  private final Supplier<String> serverName;
-  private final ExtensionRegistry extensionRegistry;
+    private final Supplier<String> serverName;
+    private final ExtensionRegistry extensionRegistry;
 
-  public AwayCommandHandler(Supplier<String> serverName, ExtensionRegistry extensionRegistry) {
-    this.serverName = serverName;
-    this.extensionRegistry = extensionRegistry;
-  }
-
-  @Override
-  public void handle(ClientSession session, Message message) {
-    String server = serverName.get();
-    // An empty trailing argument clears away status the same
-    // way a fully-absent one already does, rather than setting an empty-string away reason.
-    if (message.params().isEmpty() || message.params().getFirst().isEmpty()) {
-      String previous = session.awayReason();
-      session.setAwayReason(null);
-      Replies.sendFitted(
-          session,
-          server,
-          NumericReply.RPL_UNAWAY,
-          List.of(),
-          "You are no longer marked as being away");
-      extensionRegistry.committedEvents().awayChanged(session, nullToEmpty(previous), "");
-      return;
+    public AwayCommandHandler(Supplier<String> serverName, ExtensionRegistry extensionRegistry) {
+        this.serverName = serverName;
+        this.extensionRegistry = extensionRegistry;
     }
-    String reason = message.params().getFirst();
-    String previous = session.awayReason();
-    session.setAwayReason(reason);
-    Replies.sendFitted(
-        session, server, NumericReply.RPL_NOWAWAY, List.of(), "You have been marked as being away");
-    extensionRegistry.committedEvents().awayChanged(session, nullToEmpty(previous), reason);
-  }
 
-  private static String nullToEmpty(String value) {
-    return value == null ? "" : value;
-  }
+    @Override
+    public void handle(ClientSession session, Message message) {
+        String server = serverName.get();
+        // An empty trailing argument clears away status the same
+        // way a fully-absent one already does, rather than setting an empty-string away reason.
+        if (message.params().isEmpty() || message.params().getFirst().isEmpty()) {
+            String previous = session.awayReason();
+            session.setAwayReason(null);
+            Replies.sendFitted(
+                    session,
+                    server,
+                    NumericReply.RPL_UNAWAY,
+                    List.of(),
+                    "You are no longer marked as being away");
+            extensionRegistry.committedEvents().awayChanged(session, nullToEmpty(previous), "");
+            return;
+        }
+        String reason = message.params().getFirst();
+        String previous = session.awayReason();
+        session.setAwayReason(reason);
+        Replies.sendFitted(
+                session,
+                server,
+                NumericReply.RPL_NOWAWAY,
+                List.of(),
+                "You have been marked as being away");
+        extensionRegistry.committedEvents().awayChanged(session, nullToEmpty(previous), reason);
+    }
+
+    private static String nullToEmpty(String value) {
+        return value == null ? "" : value;
+    }
 }

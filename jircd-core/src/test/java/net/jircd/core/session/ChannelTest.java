@@ -32,652 +32,681 @@ import org.junit.jupiter.params.provider.CsvSource;
 
 class ChannelTest {
 
-  @Test
-  void nonemptyTopicRequiresASetterAndPreservesThePreviousTopicOnRejection() {
-    Channel channel = new Channel("#topic");
-    channel.setTopic("old", "setter!user@host", 123L);
-    Channel.Topic previous = channel.topicState();
+    @Test
+    void nonemptyTopicRequiresASetterAndPreservesThePreviousTopicOnRejection() {
+        Channel channel = new Channel("#topic");
+        channel.setTopic("old", "setter!user@host", 123L);
+        Channel.Topic previous = channel.topicState();
 
-    assertThatThrownBy(() -> channel.setTopic("new", null, 456L))
-        .isInstanceOf(NullPointerException.class)
-        .hasMessage("setter");
-    assertThat(channel.topicState()).isSameAs(previous);
-  }
+        assertThatThrownBy(() -> channel.setTopic("new", null, 456L))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessage("setter");
+        assertThat(channel.topicState()).isSameAs(previous);
+    }
 
-  @Test
-  void clearingATopicDoesNotRequireASetter() {
-    Channel channel = new Channel("#topic");
-    channel.setTopic("old", "setter!user@host", 123L);
-    channel.setTopic("", null, 456L);
-    assertThat(channel.topicState()).isNull();
-    assertThat(channel.topic()).isNull();
+    @Test
+    void clearingATopicDoesNotRequireASetter() {
+        Channel channel = new Channel("#topic");
+        channel.setTopic("old", "setter!user@host", 123L);
+        channel.setTopic("", null, 456L);
+        assertThat(channel.topicState()).isNull();
+        assertThat(channel.topic()).isNull();
 
-    channel.setTopic("old", "setter!user@host", 123L);
-    channel.setTopic(null, null, 456L);
-    assertThat(channel.topicState()).isNull();
-    assertThat(channel.topic()).isNull();
-  }
+        channel.setTopic("old", "setter!user@host", 123L);
+        channel.setTopic(null, null, 456L);
+        assertThat(channel.topicState()).isNull();
+        assertThat(channel.topic()).isNull();
+    }
 
-  @ParameterizedTest
-  @CsvSource(
-      delimiter = ' ',
-      value = {
-        "a[b a{b",
-        "a{b a[b",
-        "a]b a}b",
-        "a}b a]b",
-        "a\\b a|b",
-        "a|b a\\b",
-        "a^b a~b",
-        "a~b a^b",
-        "Alice aLICE"
-      })
-  void findMemberUsesTheRfc1459CaseMapping(String joinedAs, String targeted) {
-    Channel channel = new Channel("#lobby");
-    ClientSession member = new ClientSession("id", "host.example", RateLimitBucket.withDefaults());
-    member.setNickname(joinedAs);
-    channel.addMember(member);
+    @ParameterizedTest
+    @CsvSource(
+            delimiter = ' ',
+            value = {
+                "a[b a{b",
+                "a{b a[b",
+                "a]b a}b",
+                "a}b a]b",
+                "a\\b a|b",
+                "a|b a\\b",
+                "a^b a~b",
+                "a~b a^b",
+                "Alice aLICE"
+            })
+    void findMemberUsesTheRfc1459CaseMapping(String joinedAs, String targeted) {
+        Channel channel = new Channel("#lobby");
+        ClientSession member =
+                new ClientSession("id", "host.example", RateLimitBucket.withDefaults());
+        member.setNickname(joinedAs);
+        channel.addMember(member);
 
-    assertThat(channel.findMember(targeted)).containsSame(member);
-  }
+        assertThat(channel.findMember(targeted)).containsSame(member);
+    }
 
-  @ParameterizedTest
-  @CsvSource(
-      delimiter = ' ',
-      value = {"a[b a]b", "a^b a_b"})
-  void findMemberDoesNotMatchDistinctNicknames(String joinedAs, String targeted) {
-    Channel channel = new Channel("#lobby");
-    ClientSession member = new ClientSession("id", "host.example", RateLimitBucket.withDefaults());
-    member.setNickname(joinedAs);
-    channel.addMember(member);
+    @ParameterizedTest
+    @CsvSource(
+            delimiter = ' ',
+            value = {"a[b a]b", "a^b a_b"})
+    void findMemberDoesNotMatchDistinctNicknames(String joinedAs, String targeted) {
+        Channel channel = new Channel("#lobby");
+        ClientSession member =
+                new ClientSession("id", "host.example", RateLimitBucket.withDefaults());
+        member.setNickname(joinedAs);
+        channel.addMember(member);
 
-    assertThat(channel.findMember(targeted)).isEmpty();
-  }
+        assertThat(channel.findMember(targeted)).isEmpty();
+    }
 
-  @Test
-  void memberListingUsesOperatorBeforeVoiceAndListsEachMemberOnceInIterationOrder() {
-    Channel channel = new Channel("#lobby");
-    List<ClientSession> members =
-        List.of(member("operator"), member("voiced"), member("both"), member("plain"));
-    // Package-private setup stays in the owner package; the first joiner receives operator status.
-    members.forEach(channel::addMember);
-    channel.grantVoice(members.get(1));
-    channel.grantOperator(members.get(2));
-    channel.grantVoice(members.get(2));
-    assertThat(channel.memberListing())
-        .containsExactlyInAnyOrder("@operator", "+voiced", "@both", "plain")
-        .doesNotHaveDuplicates();
-    assertThat(channel.memberListing())
-        .containsExactlyElementsOf(
-            channel.members().stream()
-                .map(
-                    m ->
-                        (channel.operators().contains(m)
-                                ? "@"
-                                : channel.voiced().contains(m) ? "+" : "")
-                            + m.nickname())
-                .toList());
-  }
+    @Test
+    void memberListingUsesOperatorBeforeVoiceAndListsEachMemberOnceInIterationOrder() {
+        Channel channel = new Channel("#lobby");
+        List<ClientSession> members =
+                List.of(member("operator"), member("voiced"), member("both"), member("plain"));
+        // Package-private setup stays in the owner package; the first joiner receives operator
+        // status.
+        members.forEach(channel::addMember);
+        channel.grantVoice(members.get(1));
+        channel.grantOperator(members.get(2));
+        channel.grantVoice(members.get(2));
+        assertThat(channel.memberListing())
+                .containsExactlyInAnyOrder("@operator", "+voiced", "@both", "plain")
+                .doesNotHaveDuplicates();
+        assertThat(channel.memberListing())
+                .containsExactlyElementsOf(
+                        channel.members().stream()
+                                .map(
+                                        m ->
+                                                (channel.operators().contains(m)
+                                                                ? "@"
+                                                                : channel.voiced().contains(m)
+                                                                        ? "+"
+                                                                        : "")
+                                                        + m.nickname())
+                                .toList());
+    }
 
-  @Test
-  void memberFactsHoldEveryStatusInPrefixOrderWithoutAnyCapabilityFlag() {
-    Channel channel = new Channel("#lobby");
-    ClientSession both = member("both");
-    ClientSession voiced = member("voiced");
-    ClientSession plain = member("plain");
-    ClientSession operator = member("operator");
-    // The first joiner becomes operator, so "both" starts as one and gains voice below.
-    List.of(both, voiced, plain, operator).forEach(channel::addMember);
-    channel.grantVoice(both);
-    channel.grantVoice(voiced);
-    channel.grantOperator(operator);
+    @Test
+    void memberFactsHoldEveryStatusInPrefixOrderWithoutAnyCapabilityFlag() {
+        Channel channel = new Channel("#lobby");
+        ClientSession both = member("both");
+        ClientSession voiced = member("voiced");
+        ClientSession plain = member("plain");
+        ClientSession operator = member("operator");
+        // The first joiner becomes operator, so "both" starts as one and gains voice below.
+        List.of(both, voiced, plain, operator).forEach(channel::addMember);
+        channel.grantVoice(both);
+        channel.grantVoice(voiced);
+        channel.grantOperator(operator);
 
-    assertThat(channel.memberFacts())
-        .extracting(fact -> fact.member().nickname(), MemberFacts::heldStatuses)
-        .containsExactlyInAnyOrder(
-            tuple("both", List.of("@", "+")),
-            tuple("voiced", List.of("+")),
-            tuple("plain", List.of()),
-            tuple("operator", List.of("@")));
-    assertThat(channel.memberListing())
-        .containsExactlyInAnyOrder("@both", "+voiced", "plain", "@operator");
-  }
+        assertThat(channel.memberFacts())
+                .extracting(fact -> fact.member().nickname(), MemberFacts::heldStatuses)
+                .containsExactlyInAnyOrder(
+                        tuple("both", List.of("@", "+")),
+                        tuple("voiced", List.of("+")),
+                        tuple("plain", List.of()),
+                        tuple("operator", List.of("@")));
+        assertThat(channel.memberListing())
+                .containsExactlyInAnyOrder("@both", "+voiced", "plain", "@operator");
+    }
 
-  /**
-   * The member only ever holds operator or voice, never both: each flip de-ops then voices, or
-   * de-voices then ops. A reader that read the two sets separately could see the old operator and
-   * the new voice and render "@+". The overlap is timing dependent, so this is a stress test: it
-   * failed on the unversioned two-read implementation, and passing proves no impossible state
-   * appeared in the reads made.
-   */
-  @Test
-  void heldStatusesNeverShowACombinationTheMemberDidNotHold() throws Exception {
-    Channel channel = new Channel("#lobby");
-    ClientSession anchor = member("anchor");
-    ClientSession flipper = member("flipper");
-    channel.addMember(anchor);
-    channel.addMember(flipper);
-    channel.grantOperator(flipper);
-    AtomicBoolean running = new AtomicBoolean(true);
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      var writer =
-          executor.submit(
-              () -> {
-                while (running.get()) {
-                  channel.revokeOperator(flipper);
-                  channel.grantVoice(flipper);
-                  channel.revokeVoice(flipper);
-                  channel.grantOperator(flipper);
+    /**
+     * The member only ever holds operator or voice, never both: each flip de-ops then voices, or
+     * de-voices then ops. A reader that read the two sets separately could see the old operator and
+     * the new voice and render "@+". The overlap is timing dependent, so this is a stress test: it
+     * failed on the unversioned two-read implementation, and passing proves no impossible state
+     * appeared in the reads made.
+     */
+    @Test
+    void heldStatusesNeverShowACombinationTheMemberDidNotHold() throws Exception {
+        Channel channel = new Channel("#lobby");
+        ClientSession anchor = member("anchor");
+        ClientSession flipper = member("flipper");
+        channel.addMember(anchor);
+        channel.addMember(flipper);
+        channel.grantOperator(flipper);
+        AtomicBoolean running = new AtomicBoolean(true);
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            var writer =
+                    executor.submit(
+                            () -> {
+                                while (running.get()) {
+                                    channel.revokeOperator(flipper);
+                                    channel.grantVoice(flipper);
+                                    channel.revokeVoice(flipper);
+                                    channel.grantOperator(flipper);
+                                }
+                            });
+            try {
+                int impossible = 0;
+                for (int i = 0; i < 2_000_000; i++) {
+                    if (channel.heldStatuses(flipper).size() > 1) impossible++;
                 }
-              });
-      try {
-        int impossible = 0;
-        for (int i = 0; i < 2_000_000; i++) {
-          if (channel.heldStatuses(flipper).size() > 1) impossible++;
+                assertThat(impossible).isZero();
+            } finally {
+                running.set(false);
+                writer.get(5, TimeUnit.SECONDS);
+            }
         }
-        assertThat(impossible).isZero();
-      } finally {
-        running.set(false);
-        writer.get(5, TimeUnit.SECONDS);
-      }
     }
-  }
 
-  @Test
-  void heldStatusesIsEmptyForANonMember() {
-    Channel channel = new Channel("#lobby");
+    @Test
+    void heldStatusesIsEmptyForANonMember() {
+        Channel channel = new Channel("#lobby");
 
-    assertThat(channel.heldStatuses(member("stranger"))).isEmpty();
-  }
-
-  @Test
-  void emptyChannelHasEmptyMemberListing() {
-    assertThat(new Channel("#empty").memberListing()).isEmpty();
-  }
-
-  @Test
-  void collectionsRejectExternalAdditions() {
-    Channel channel = new Channel("#c");
-    ClientSession outsider = member("outsider");
-    Set<ClientSession> members = channel.members();
-    Set<ClientSession> operators = channel.operators();
-    Set<ClientSession> voiced = channel.voiced();
-    Set<ChannelMode> activeModes = channel.activeModes();
-    List<BanEntry> bans = channel.bans();
-    BanEntry ban = new BanEntry("*!*@host", "setter", Instant.EPOCH);
-    assertThatThrownBy(() -> members.add(outsider))
-        .isInstanceOf(UnsupportedOperationException.class);
-    assertThatThrownBy(() -> operators.add(outsider))
-        .isInstanceOf(UnsupportedOperationException.class);
-    assertThatThrownBy(() -> voiced.add(outsider))
-        .isInstanceOf(UnsupportedOperationException.class);
-    assertThatThrownBy(() -> activeModes.add(CoreChannelModes.SECRET))
-        .isInstanceOf(UnsupportedOperationException.class);
-    assertThatThrownBy(() -> bans.add(ban)).isInstanceOf(UnsupportedOperationException.class);
-  }
-
-  /** Pins the serial order: resolve the member, PART, then attempt the operator grant. */
-  @Test
-  void grantRacingPartCannotLeaveAGhostOperator() throws Exception {
-    ChannelRegistry registry = new ChannelRegistry();
-    ClientSession target = member("target");
-    Channel channel = registry.join("#c", target, ignored -> true).orElseThrow().channel();
-    channel.revokeOperator(target);
-    CountDownLatch resolved = new CountDownLatch(1);
-    CountDownLatch removed = new CountDownLatch(1);
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      var grant =
-          executor.submit(
-              () -> {
-                ClientSession resolvedTarget = channel.findMember("target").orElseThrow();
-                resolved.countDown();
-                await(removed);
-                return channel.grantOperator(resolvedTarget);
-              });
-      var part =
-          executor.submit(
-              () -> {
-                await(resolved);
-                try {
-                  return registry.part(channel, target);
-                } finally {
-                  removed.countDown();
-                }
-              });
-      assertThat(part.get(5, TimeUnit.SECONDS)).isPresent();
-      assertThat(grant.get(5, TimeUnit.SECONDS)).isFalse();
+        assertThat(channel.heldStatuses(member("stranger"))).isEmpty();
     }
-    assertThat(channel.members()).doesNotContain(target);
-    assertThat(channel.operators()).doesNotContain(target);
-  }
 
-  @Test
-  void removingAnAbsentBanDoesNotChangeOtherBans() {
-    Channel channel = new Channel("#c");
-    BanEntry ban = new BanEntry("*!*@banned.example", "setter", Instant.EPOCH);
-    channel.addBan(ban);
-    channel.removeBan("*!*@absent.example");
-    assertThat(channel.bans()).containsExactly(ban);
-    channel.removeBan(ban.mask());
-    assertThat(channel.bans()).isEmpty();
-    channel.removeBan(ban.mask());
-    assertThat(channel.bans()).isEmpty();
-  }
-
-  @Test
-  void grantsRefuseNonMembersAndRevokesRemovePrivileges() {
-    Channel channel = new Channel("#c");
-    ClientSession outsider = member("outsider");
-    assertThat(channel.grantOperator(outsider)).isFalse();
-    assertThat(channel.grantVoice(outsider)).isFalse();
-    assertThat(channel.operators()).isEmpty();
-    assertThat(channel.voiced()).isEmpty();
-    assertThat(channel.revokeOperator(outsider)).isFalse();
-    assertThat(channel.revokeVoice(outsider)).isFalse();
-    channel.addMember(member("first"));
-    ClientSession target = member("target");
-    channel.addMember(target);
-    assertThat(channel.grantOperator(target)).isTrue();
-    assertThat(channel.grantVoice(target)).isTrue();
-    assertThat(channel.grantOperator(target)).isTrue();
-    assertThat(channel.grantVoice(target)).isTrue();
-    assertThat(channel.operators()).contains(target);
-    assertThat(channel.voiced()).containsExactly(target);
-    assertThat(channel.revokeOperator(target)).isTrue();
-    assertThat(channel.revokeVoice(target)).isTrue();
-    assertThat(channel.revokeOperator(target)).isFalse();
-    assertThat(channel.revokeVoice(target)).isFalse();
-    assertThat(channel.operators()).doesNotContain(target);
-    assertThat(channel.voiced()).isEmpty();
-  }
-
-  @Test
-  void secretAndPrivateModesExcludeEachOtherWithoutClearingOtherModes() {
-    Channel channel = new Channel("#c");
-    channel.setMode(CoreChannelModes.MODERATED);
-    channel.setMode(CoreChannelModes.PRIVATE);
-    channel.setMode(CoreChannelModes.SECRET);
-    assertThat(channel.activeModes())
-        .containsExactlyInAnyOrder(CoreChannelModes.MODERATED, CoreChannelModes.SECRET);
-    channel.setMode(CoreChannelModes.PRIVATE);
-    assertThat(channel.activeModes())
-        .containsExactlyInAnyOrder(CoreChannelModes.MODERATED, CoreChannelModes.PRIVATE);
-    channel.clearMode(CoreChannelModes.PRIVATE);
-    channel.clearMode(CoreChannelModes.SECRET);
-    assertThat(channel.activeModes()).containsExactly(CoreChannelModes.MODERATED);
-  }
-
-  @ParameterizedTest
-  @CsvSource(
-      delimiter = ' ',
-      value = {"Alice aLICE", "a[b A{B", "a]b A}B", "a\\b A|B", "a^b A~B"})
-  void invitationsFoldNicknamesAndAreConsumedOnce(String invited, String matching) {
-    Channel channel = new Channel("#c");
-    assertThat(channel.isInvited(matching)).isFalse();
-    channel.invite(invited);
-    channel.invite(matching);
-    assertThat(channel.isInvited(matching)).isTrue();
-    assertThat(channel.isInvited(invited)).isTrue();
-    assertThat(channel.consumeInvitation(matching)).isTrue();
-    assertThat(channel.isInvited(invited)).isFalse();
-    assertThat(channel.consumeInvitation(invited)).isFalse();
-  }
-
-  @Test
-  void modeExclusionUsesRecordValuesRatherThanObjectIdentity() {
-    Channel channel = new Channel("#c");
-    ChannelMode secret = CoreChannelModes.SECRET;
-    ChannelMode privateMode = CoreChannelModes.PRIVATE;
-    ChannelMode secretCopy =
-        new ChannelMode(
-            secret.id(), secret.flag(), secret.kind(), secret.gates(), secret.definedBy());
-    ChannelMode privateCopy =
-        new ChannelMode(
-            privateMode.id(),
-            privateMode.flag(),
-            privateMode.kind(),
-            privateMode.gates(),
-            privateMode.definedBy());
-    assertThat(secretCopy).isEqualTo(secret).isNotSameAs(secret);
-    assertThat(privateCopy).isEqualTo(privateMode).isNotSameAs(privateMode);
-    channel.setMode(secret);
-    channel.setMode(privateCopy);
-    assertThat(channel.activeModes()).containsExactly(privateMode);
-    channel.setMode(secretCopy);
-    assertThat(channel.activeModes()).containsExactly(secret);
-  }
-
-  @Test
-  void namedMutatorsUpdateUnmodifiableLiveViews() {
-    Channel channel = new Channel("#c");
-    ClientSession target = member("target");
-    var operators = channel.operators();
-    var voiced = channel.voiced();
-    var modes = channel.activeModes();
-    var bans = channel.bans();
-    channel.addMember(target);
-    channel.grantVoice(target);
-    channel.setMode(CoreChannelModes.MODERATED);
-    BanEntry ban = new BanEntry("*!*@host", "setter", Instant.EPOCH);
-    channel.addBan(ban);
-    assertThat(operators).containsExactly(target);
-    assertThat(voiced).containsExactly(target);
-    assertThat(modes).containsExactly(CoreChannelModes.MODERATED);
-    assertThat(bans).containsExactly(ban);
-    channel.revokeOperator(target);
-    channel.revokeVoice(target);
-    channel.clearMode(CoreChannelModes.MODERATED);
-    channel.removeBan(ban.mask());
-    assertThat(operators).isEmpty();
-    assertThat(voiced).isEmpty();
-    assertThat(modes).isEmpty();
-    assertThat(bans).isEmpty();
-  }
-
-  /** Pins the opposite serial order: grant operator status, then PART clears it. */
-  @Test
-  void operatorGrantBeforePartIsClearedByDeparture() throws Exception {
-    ChannelRegistry registry = new ChannelRegistry();
-    ClientSession target = member("target");
-    Channel channel = registry.join("#c", target, ignored -> true).orElseThrow().channel();
-    channel.revokeOperator(target);
-    CountDownLatch granted = new CountDownLatch(1);
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      var grant =
-          executor.submit(
-              () -> {
-                try {
-                  return channel.grantOperator(target);
-                } finally {
-                  granted.countDown();
-                }
-              });
-      var part =
-          executor.submit(
-              () -> {
-                await(granted);
-                return registry.part(channel, target);
-              });
-      assertThat(grant.get(5, TimeUnit.SECONDS)).isTrue();
-      assertThat(part.get(5, TimeUnit.SECONDS)).isPresent();
+    @Test
+    void emptyChannelHasEmptyMemberListing() {
+        assertThat(new Channel("#empty").memberListing()).isEmpty();
     }
-    assertThat(channel.members()).doesNotContain(target);
-    assertThat(channel.operators()).doesNotContain(target);
-  }
 
-  private static void await(CountDownLatch latch) {
-    try {
-      assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
-    } catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
-      throw new IllegalStateException(e);
+    @Test
+    void collectionsRejectExternalAdditions() {
+        Channel channel = new Channel("#c");
+        ClientSession outsider = member("outsider");
+        Set<ClientSession> members = channel.members();
+        Set<ClientSession> operators = channel.operators();
+        Set<ClientSession> voiced = channel.voiced();
+        Set<ChannelMode> activeModes = channel.activeModes();
+        List<BanEntry> bans = channel.bans();
+        BanEntry ban = new BanEntry("*!*@host", "setter", Instant.EPOCH);
+        assertThatThrownBy(() -> members.add(outsider))
+                .isInstanceOf(UnsupportedOperationException.class);
+        assertThatThrownBy(() -> operators.add(outsider))
+                .isInstanceOf(UnsupportedOperationException.class);
+        assertThatThrownBy(() -> voiced.add(outsider))
+                .isInstanceOf(UnsupportedOperationException.class);
+        assertThatThrownBy(() -> activeModes.add(CoreChannelModes.SECRET))
+                .isInstanceOf(UnsupportedOperationException.class);
+        assertThatThrownBy(() -> bans.add(ban)).isInstanceOf(UnsupportedOperationException.class);
     }
-  }
 
-  @Test
-  void underMonitorRunsHoldingTheChannelMonitorAndReturnsTheResult() {
-    Channel channel = new Channel("#c");
-
-    boolean held = channel.underMonitor(() -> Thread.holdsLock(channel));
-
-    assertThat(held).isTrue();
-    assertThat(Thread.holdsLock(channel)).isFalse();
-  }
-
-  @Test
-  void underMonitorReleasesTheMonitorWhenTheActionThrows() throws Exception {
-    Channel channel = new Channel("#c");
-
-    assertThatThrownBy(
-            () ->
-                channel.underMonitor(
-                    () -> {
-                      throw new IllegalStateException("boom");
-                    }))
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessage("boom");
-
-    assertThat(Thread.holdsLock(channel)).isFalse();
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      assertThat(
-              executor.submit(() -> channel.underMonitor(() -> "entered")).get(5, TimeUnit.SECONDS))
-          .isEqualTo("entered");
+    /** Pins the serial order: resolve the member, PART, then attempt the operator grant. */
+    @Test
+    void grantRacingPartCannotLeaveAGhostOperator() throws Exception {
+        ChannelRegistry registry = new ChannelRegistry();
+        ClientSession target = member("target");
+        Channel channel = registry.join("#c", target, ignored -> true).orElseThrow().channel();
+        channel.revokeOperator(target);
+        CountDownLatch resolved = new CountDownLatch(1);
+        CountDownLatch removed = new CountDownLatch(1);
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            var grant =
+                    executor.submit(
+                            () -> {
+                                ClientSession resolvedTarget =
+                                        channel.findMember("target").orElseThrow();
+                                resolved.countDown();
+                                await(removed);
+                                return channel.grantOperator(resolvedTarget);
+                            });
+            var part =
+                    executor.submit(
+                            () -> {
+                                await(resolved);
+                                try {
+                                    return registry.part(channel, target);
+                                } finally {
+                                    removed.countDown();
+                                }
+                            });
+            assertThat(part.get(5, TimeUnit.SECONDS)).isPresent();
+            assertThat(grant.get(5, TimeUnit.SECONDS)).isFalse();
+        }
+        assertThat(channel.members()).doesNotContain(target);
+        assertThat(channel.operators()).doesNotContain(target);
     }
-  }
 
-  @Test
-  void runUnderMonitorHoldsTheChannelMonitor() {
-    Channel channel = new Channel("#c");
-    boolean[] held = new boolean[1];
-
-    channel.runUnderMonitor(() -> held[0] = Thread.holdsLock(channel));
-
-    assertThat(held[0]).isTrue();
-    assertThat(Thread.holdsLock(channel)).isFalse();
-  }
-
-  @Test
-  void setMemberPrivilegeGrantsAndRevokesForAMember() {
-    Channel channel = new Channel("#c");
-    ClientSession target = member("target");
-    channel.addMember(target);
-    channel.revokeOperator(target);
-
-    assertThat(channel.setMemberPrivilege(target, Channel.MemberPrivilege.OPERATOR, true)).isTrue();
-    assertThat(channel.operators()).containsExactly(target);
-    assertThat(channel.setMemberPrivilege(target, Channel.MemberPrivilege.VOICE, true)).isTrue();
-    assertThat(channel.voiced()).containsExactly(target);
-    assertThat(channel.setMemberPrivilege(target, Channel.MemberPrivilege.OPERATOR, false))
-        .isTrue();
-    assertThat(channel.setMemberPrivilege(target, Channel.MemberPrivilege.VOICE, false)).isTrue();
-    assertThat(channel.operators()).isEmpty();
-    assertThat(channel.voiced()).isEmpty();
-  }
-
-  @Test
-  void setMemberPrivilegeRevokeOfAnUnsetPrivilegeIsStillValidForAMember() {
-    Channel channel = new Channel("#c");
-    ClientSession target = member("target");
-    channel.addMember(target);
-    channel.revokeOperator(target);
-
-    assertThat(channel.setMemberPrivilege(target, Channel.MemberPrivilege.OPERATOR, false))
-        .isTrue();
-    assertThat(channel.setMemberPrivilege(target, Channel.MemberPrivilege.VOICE, false)).isTrue();
-  }
-
-  @Test
-  void setMemberPrivilegeRefusesANonMemberAndChangesNothing() {
-    Channel channel = new Channel("#c");
-    ClientSession outsider = member("outsider");
-
-    for (Channel.MemberPrivilege privilege : Channel.MemberPrivilege.values()) {
-      assertThat(channel.setMemberPrivilege(outsider, privilege, true)).isFalse();
-      assertThat(channel.setMemberPrivilege(outsider, privilege, false)).isFalse();
+    @Test
+    void removingAnAbsentBanDoesNotChangeOtherBans() {
+        Channel channel = new Channel("#c");
+        BanEntry ban = new BanEntry("*!*@banned.example", "setter", Instant.EPOCH);
+        channel.addBan(ban);
+        channel.removeBan("*!*@absent.example");
+        assertThat(channel.bans()).containsExactly(ban);
+        channel.removeBan(ban.mask());
+        assertThat(channel.bans()).isEmpty();
+        channel.removeBan(ban.mask());
+        assertThat(channel.bans()).isEmpty();
     }
-    assertThat(channel.operators()).isEmpty();
-    assertThat(channel.voiced()).isEmpty();
-  }
 
-  @Test
-  void applyAsOperatorRefusesANonOperatorForEveryChangeKind() {
-    Channel channel = new Channel("#c");
-    ClientSession op = member("op");
-    ClientSession plain = member("plain");
-    channel.addMember(op);
-    channel.addMember(plain);
-    BanEntry seeded = new BanEntry("*!*@seeded", "op", Instant.now());
-    channel.addBan(seeded);
-    channel.grantVoice(op);
-
-    List<ChannelModeChange> changes =
-        List.of(
-            new ChannelModeChange.Flag(CoreChannelModes.MODERATED, true),
-            new ChannelModeChange.Limit(5),
-            new ChannelModeChange.Key("k"),
-            new ChannelModeChange.ListAdd(
-                CoreChannelModes.BAN_MASK, new BanEntry("*!*@bad", "op", Instant.now())),
-            new ChannelModeChange.Privilege(plain, Channel.MemberPrivilege.OPERATOR, true),
-            new ChannelModeChange.Privilege(plain, Channel.MemberPrivilege.VOICE, true));
-    for (ChannelModeChange change : changes) {
-      assertThat(channel.applyAsOperator(plain, change))
-          .isEqualTo(Channel.ModeChangeResult.NOT_OPERATOR);
+    @Test
+    void grantsRefuseNonMembersAndRevokesRemovePrivileges() {
+        Channel channel = new Channel("#c");
+        ClientSession outsider = member("outsider");
+        assertThat(channel.grantOperator(outsider)).isFalse();
+        assertThat(channel.grantVoice(outsider)).isFalse();
+        assertThat(channel.operators()).isEmpty();
+        assertThat(channel.voiced()).isEmpty();
+        assertThat(channel.revokeOperator(outsider)).isFalse();
+        assertThat(channel.revokeVoice(outsider)).isFalse();
+        channel.addMember(member("first"));
+        ClientSession target = member("target");
+        channel.addMember(target);
+        assertThat(channel.grantOperator(target)).isTrue();
+        assertThat(channel.grantVoice(target)).isTrue();
+        assertThat(channel.grantOperator(target)).isTrue();
+        assertThat(channel.grantVoice(target)).isTrue();
+        assertThat(channel.operators()).contains(target);
+        assertThat(channel.voiced()).containsExactly(target);
+        assertThat(channel.revokeOperator(target)).isTrue();
+        assertThat(channel.revokeVoice(target)).isTrue();
+        assertThat(channel.revokeOperator(target)).isFalse();
+        assertThat(channel.revokeVoice(target)).isFalse();
+        assertThat(channel.operators()).doesNotContain(target);
+        assertThat(channel.voiced()).isEmpty();
     }
-    assertThat(channel.activeModes()).isEmpty();
-    assertThat(channel.memberLimit()).isZero();
-    assertThat(channel.key()).isNull();
-    assertThat(channel.bans()).containsExactly(seeded);
-    assertThat(channel.operators()).containsExactly(op);
-    assertThat(channel.voiced()).containsExactly(op);
-  }
 
-  @Test
-  void applyAsOperatorRefusesARequesterWhoLeft() {
-    Channel channel = new Channel("#c");
-    ClientSession op = member("op");
-    channel.addMember(op);
-    channel.removeMember(op);
-
-    assertThat(channel.applyAsOperator(op, new ChannelModeChange.Key("k")))
-        .isEqualTo(Channel.ModeChangeResult.NOT_OPERATOR);
-    assertThat(channel.key()).isNull();
-  }
-
-  @Test
-  void applyAsOperatorAppliesEveryChangeKindForAnOperator() {
-    Channel channel = new Channel("#c");
-    ClientSession op = member("op");
-    ClientSession other = member("other");
-    channel.addMember(op);
-    channel.addMember(other);
-    BanEntry ban = new BanEntry("*!*@bad", "op", Instant.now());
-
-    applied(channel, op, new ChannelModeChange.Flag(CoreChannelModes.MODERATED, true));
-    assertThat(channel.activeModes()).contains(CoreChannelModes.MODERATED);
-    applied(channel, op, new ChannelModeChange.Flag(CoreChannelModes.MODERATED, false));
-    assertThat(channel.activeModes()).isEmpty();
-
-    applied(channel, op, new ChannelModeChange.Limit(5));
-    assertThat(channel.memberLimit()).isEqualTo(5);
-    applied(channel, op, new ChannelModeChange.Limit(0));
-    assertThat(channel.memberLimit()).isZero();
-
-    applied(channel, op, new ChannelModeChange.Key("k"));
-    assertThat(channel.key()).isEqualTo("k");
-    applied(channel, op, new ChannelModeChange.Key(null));
-    assertThat(channel.key()).isNull();
-
-    applied(channel, op, new ChannelModeChange.ListAdd(CoreChannelModes.BAN_MASK, ban));
-    assertThat(channel.bans()).containsExactly(ban);
-    applied(channel, op, new ChannelModeChange.ListRemove(CoreChannelModes.BAN_MASK, "*!*@bad"));
-    assertThat(channel.bans()).isEmpty();
-
-    applied(
-        channel,
-        op,
-        new ChannelModeChange.Privilege(other, Channel.MemberPrivilege.OPERATOR, true));
-    applied(
-        channel, op, new ChannelModeChange.Privilege(other, Channel.MemberPrivilege.VOICE, true));
-    assertThat(channel.operators()).contains(other);
-    assertThat(channel.voiced()).contains(other);
-    applied(
-        channel,
-        op,
-        new ChannelModeChange.Privilege(other, Channel.MemberPrivilege.OPERATOR, false));
-    applied(
-        channel, op, new ChannelModeChange.Privilege(other, Channel.MemberPrivilege.VOICE, false));
-    assertThat(channel.operators()).doesNotContain(other);
-    assertThat(channel.voiced()).doesNotContain(other);
-  }
-
-  @Test
-  void aFlagChangeRequiresABooleanMode() {
-    for (ChannelMode mode :
-        List.of(
-            CoreChannelModes.BAN_MASK,
-            CoreChannelModes.OPERATOR,
-            CoreChannelModes.USER_LIMIT,
-            CoreChannelModes.CHANNEL_KEY)) {
-      assertThatThrownBy(() -> new ChannelModeChange.Flag(mode, true))
-          .isInstanceOf(IllegalArgumentException.class);
+    @Test
+    void secretAndPrivateModesExcludeEachOtherWithoutClearingOtherModes() {
+        Channel channel = new Channel("#c");
+        channel.setMode(CoreChannelModes.MODERATED);
+        channel.setMode(CoreChannelModes.PRIVATE);
+        channel.setMode(CoreChannelModes.SECRET);
+        assertThat(channel.activeModes())
+                .containsExactlyInAnyOrder(CoreChannelModes.MODERATED, CoreChannelModes.SECRET);
+        channel.setMode(CoreChannelModes.PRIVATE);
+        assertThat(channel.activeModes())
+                .containsExactlyInAnyOrder(CoreChannelModes.MODERATED, CoreChannelModes.PRIVATE);
+        channel.clearMode(CoreChannelModes.PRIVATE);
+        channel.clearMode(CoreChannelModes.SECRET);
+        assertThat(channel.activeModes()).containsExactly(CoreChannelModes.MODERATED);
     }
-  }
 
-  @Test
-  void aLimitChangeRejectsNegativeValuesAndAllowsZeroToClear() {
-    assertThatThrownBy(() -> new ChannelModeChange.Limit(-1))
-        .isInstanceOf(IllegalArgumentException.class);
-    assertThat(new ChannelModeChange.Limit(0).limit()).isZero();
-  }
-
-  @Test
-  void applyAsOperatorReportsANonMemberTargetAndAFullBanList() {
-    Channel channel = new Channel("#c");
-    ClientSession op = member("op");
-    channel.addMember(op);
-
-    ClientSession outsider = member("outsider");
-    for (Channel.MemberPrivilege privilege : Channel.MemberPrivilege.values()) {
-      assertThat(
-              channel.applyAsOperator(
-                  op, new ChannelModeChange.Privilege(outsider, privilege, true)))
-          .isEqualTo(Channel.ModeChangeResult.NOT_A_MEMBER);
+    @ParameterizedTest
+    @CsvSource(
+            delimiter = ' ',
+            value = {"Alice aLICE", "a[b A{B", "a]b A}B", "a\\b A|B", "a^b A~B"})
+    void invitationsFoldNicknamesAndAreConsumedOnce(String invited, String matching) {
+        Channel channel = new Channel("#c");
+        assertThat(channel.isInvited(matching)).isFalse();
+        channel.invite(invited);
+        channel.invite(matching);
+        assertThat(channel.isInvited(matching)).isTrue();
+        assertThat(channel.isInvited(invited)).isTrue();
+        assertThat(channel.consumeInvitation(matching)).isTrue();
+        assertThat(channel.isInvited(invited)).isFalse();
+        assertThat(channel.consumeInvitation(invited)).isFalse();
     }
-    assertThat(channel.operators()).containsExactly(op);
-    assertThat(channel.voiced()).isEmpty();
 
-    for (int i = 0; i < Channel.MAX_BANS; i++) {
-      applied(
-          channel,
-          op,
-          new ChannelModeChange.ListAdd(
-              CoreChannelModes.BAN_MASK, new BanEntry("*!*@h" + i, "op", Instant.now())));
+    @Test
+    void modeExclusionUsesRecordValuesRatherThanObjectIdentity() {
+        Channel channel = new Channel("#c");
+        ChannelMode secret = CoreChannelModes.SECRET;
+        ChannelMode privateMode = CoreChannelModes.PRIVATE;
+        ChannelMode secretCopy =
+                new ChannelMode(
+                        secret.id(),
+                        secret.flag(),
+                        secret.kind(),
+                        secret.gates(),
+                        secret.definedBy());
+        ChannelMode privateCopy =
+                new ChannelMode(
+                        privateMode.id(),
+                        privateMode.flag(),
+                        privateMode.kind(),
+                        privateMode.gates(),
+                        privateMode.definedBy());
+        assertThat(secretCopy).isEqualTo(secret).isNotSameAs(secret);
+        assertThat(privateCopy).isEqualTo(privateMode).isNotSameAs(privateMode);
+        channel.setMode(secret);
+        channel.setMode(privateCopy);
+        assertThat(channel.activeModes()).containsExactly(privateMode);
+        channel.setMode(secretCopy);
+        assertThat(channel.activeModes()).containsExactly(secret);
     }
-    List<BanEntry> before = List.copyOf(channel.bans());
-    BanEntry extra = new BanEntry("*!*@one-more", "op", Instant.now());
-    assertThat(
-            channel.applyAsOperator(
-                op, new ChannelModeChange.ListAdd(CoreChannelModes.BAN_MASK, extra)))
-        .isEqualTo(Channel.ModeChangeResult.BAN_LIST_FULL);
-    assertThat(channel.bans()).containsExactlyElementsOf(before).doesNotContain(extra);
-  }
 
-  @ParameterizedTest
-  @CsvSource({"Nick!User@Host,nICK!uSER@hOST", "N[ck!u\\ser@h^st,n{ck!u|ser@h~st"})
-  void duplicateBanPreservesOriginalEntryAndDoesNotConsumeCapacity(
-      String original, String variant) {
-    Channel channel = new Channel("#c");
-    BanEntry first = new BanEntry(original, "first", Instant.EPOCH);
-    assertThat(channel.addBan(first)).isTrue();
-    assertThat(channel.addBan(new BanEntry(variant, "second", Instant.now()))).isTrue();
-    assertThat(channel.bans()).containsExactly(first);
-    for (int i = 1; i < Channel.MAX_BANS; i++) {
-      assertThat(channel.addBan(new BanEntry("*!*@host" + i, "op", Instant.EPOCH))).isTrue();
+    @Test
+    void namedMutatorsUpdateUnmodifiableLiveViews() {
+        Channel channel = new Channel("#c");
+        ClientSession target = member("target");
+        var operators = channel.operators();
+        var voiced = channel.voiced();
+        var modes = channel.activeModes();
+        var bans = channel.bans();
+        channel.addMember(target);
+        channel.grantVoice(target);
+        channel.setMode(CoreChannelModes.MODERATED);
+        BanEntry ban = new BanEntry("*!*@host", "setter", Instant.EPOCH);
+        channel.addBan(ban);
+        assertThat(operators).containsExactly(target);
+        assertThat(voiced).containsExactly(target);
+        assertThat(modes).containsExactly(CoreChannelModes.MODERATED);
+        assertThat(bans).containsExactly(ban);
+        channel.revokeOperator(target);
+        channel.revokeVoice(target);
+        channel.clearMode(CoreChannelModes.MODERATED);
+        channel.removeBan(ban.mask());
+        assertThat(operators).isEmpty();
+        assertThat(voiced).isEmpty();
+        assertThat(modes).isEmpty();
+        assertThat(bans).isEmpty();
     }
-    assertThat(channel.addBan(new BanEntry(variant, "third", Instant.now()))).isTrue();
-    assertThat(channel.addBan(new BanEntry("*!*@extra", "op", Instant.EPOCH))).isFalse();
-    assertThat(channel.bans()).hasSize(Channel.MAX_BANS).startsWith(first);
-  }
 
-  @ParameterizedTest
-  @CsvSource({"Nick!User@Host,nICK!uSER@hOST", "N[ck!u\\ser@h^st,n{ck!u|ser@h~st"})
-  void removeBanUsesIrcCaseMapping(String original, String variant) {
-    Channel channel = new Channel("#c");
-    BanEntry other = new BanEntry("other!*@*", "op", Instant.EPOCH);
-    channel.addBan(new BanEntry(original, "op", Instant.EPOCH));
-    channel.addBan(other);
-    channel.removeBan(variant);
-    assertThat(channel.bans()).containsExactly(other);
-  }
+    /** Pins the opposite serial order: grant operator status, then PART clears it. */
+    @Test
+    void operatorGrantBeforePartIsClearedByDeparture() throws Exception {
+        ChannelRegistry registry = new ChannelRegistry();
+        ClientSession target = member("target");
+        Channel channel = registry.join("#c", target, ignored -> true).orElseThrow().channel();
+        channel.revokeOperator(target);
+        CountDownLatch granted = new CountDownLatch(1);
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            var grant =
+                    executor.submit(
+                            () -> {
+                                try {
+                                    return channel.grantOperator(target);
+                                } finally {
+                                    granted.countDown();
+                                }
+                            });
+            var part =
+                    executor.submit(
+                            () -> {
+                                await(granted);
+                                return registry.part(channel, target);
+                            });
+            assertThat(grant.get(5, TimeUnit.SECONDS)).isTrue();
+            assertThat(part.get(5, TimeUnit.SECONDS)).isPresent();
+        }
+        assertThat(channel.members()).doesNotContain(target);
+        assertThat(channel.operators()).doesNotContain(target);
+    }
 
-  private static void applied(Channel channel, ClientSession requester, ChannelModeChange change) {
-    assertThat(channel.applyAsOperator(requester, change))
-        .isEqualTo(Channel.ModeChangeResult.APPLIED);
-  }
+    private static void await(CountDownLatch latch) {
+        try {
+            assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(e);
+        }
+    }
 
-  private static ClientSession member(String nick) {
-    ClientSession member = new ClientSession(nick, "host.example", RateLimitBucket.withDefaults());
-    member.setNickname(nick);
-    return member;
-  }
+    @Test
+    void underMonitorRunsHoldingTheChannelMonitorAndReturnsTheResult() {
+        Channel channel = new Channel("#c");
+
+        boolean held = channel.underMonitor(() -> Thread.holdsLock(channel));
+
+        assertThat(held).isTrue();
+        assertThat(Thread.holdsLock(channel)).isFalse();
+    }
+
+    @Test
+    void underMonitorReleasesTheMonitorWhenTheActionThrows() throws Exception {
+        Channel channel = new Channel("#c");
+
+        assertThatThrownBy(
+                        () ->
+                                channel.underMonitor(
+                                        () -> {
+                                            throw new IllegalStateException("boom");
+                                        }))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("boom");
+
+        assertThat(Thread.holdsLock(channel)).isFalse();
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            assertThat(
+                            executor.submit(() -> channel.underMonitor(() -> "entered"))
+                                    .get(5, TimeUnit.SECONDS))
+                    .isEqualTo("entered");
+        }
+    }
+
+    @Test
+    void runUnderMonitorHoldsTheChannelMonitor() {
+        Channel channel = new Channel("#c");
+        boolean[] held = new boolean[1];
+
+        channel.runUnderMonitor(() -> held[0] = Thread.holdsLock(channel));
+
+        assertThat(held[0]).isTrue();
+        assertThat(Thread.holdsLock(channel)).isFalse();
+    }
+
+    @Test
+    void setMemberPrivilegeGrantsAndRevokesForAMember() {
+        Channel channel = new Channel("#c");
+        ClientSession target = member("target");
+        channel.addMember(target);
+        channel.revokeOperator(target);
+
+        assertThat(channel.setMemberPrivilege(target, Channel.MemberPrivilege.OPERATOR, true))
+                .isTrue();
+        assertThat(channel.operators()).containsExactly(target);
+        assertThat(channel.setMemberPrivilege(target, Channel.MemberPrivilege.VOICE, true))
+                .isTrue();
+        assertThat(channel.voiced()).containsExactly(target);
+        assertThat(channel.setMemberPrivilege(target, Channel.MemberPrivilege.OPERATOR, false))
+                .isTrue();
+        assertThat(channel.setMemberPrivilege(target, Channel.MemberPrivilege.VOICE, false))
+                .isTrue();
+        assertThat(channel.operators()).isEmpty();
+        assertThat(channel.voiced()).isEmpty();
+    }
+
+    @Test
+    void setMemberPrivilegeRevokeOfAnUnsetPrivilegeIsStillValidForAMember() {
+        Channel channel = new Channel("#c");
+        ClientSession target = member("target");
+        channel.addMember(target);
+        channel.revokeOperator(target);
+
+        assertThat(channel.setMemberPrivilege(target, Channel.MemberPrivilege.OPERATOR, false))
+                .isTrue();
+        assertThat(channel.setMemberPrivilege(target, Channel.MemberPrivilege.VOICE, false))
+                .isTrue();
+    }
+
+    @Test
+    void setMemberPrivilegeRefusesANonMemberAndChangesNothing() {
+        Channel channel = new Channel("#c");
+        ClientSession outsider = member("outsider");
+
+        for (Channel.MemberPrivilege privilege : Channel.MemberPrivilege.values()) {
+            assertThat(channel.setMemberPrivilege(outsider, privilege, true)).isFalse();
+            assertThat(channel.setMemberPrivilege(outsider, privilege, false)).isFalse();
+        }
+        assertThat(channel.operators()).isEmpty();
+        assertThat(channel.voiced()).isEmpty();
+    }
+
+    @Test
+    void applyAsOperatorRefusesANonOperatorForEveryChangeKind() {
+        Channel channel = new Channel("#c");
+        ClientSession op = member("op");
+        ClientSession plain = member("plain");
+        channel.addMember(op);
+        channel.addMember(plain);
+        BanEntry seeded = new BanEntry("*!*@seeded", "op", Instant.now());
+        channel.addBan(seeded);
+        channel.grantVoice(op);
+
+        List<ChannelModeChange> changes =
+                List.of(
+                        new ChannelModeChange.Flag(CoreChannelModes.MODERATED, true),
+                        new ChannelModeChange.Limit(5),
+                        new ChannelModeChange.Key("k"),
+                        new ChannelModeChange.ListAdd(
+                                CoreChannelModes.BAN_MASK,
+                                new BanEntry("*!*@bad", "op", Instant.now())),
+                        new ChannelModeChange.Privilege(
+                                plain, Channel.MemberPrivilege.OPERATOR, true),
+                        new ChannelModeChange.Privilege(
+                                plain, Channel.MemberPrivilege.VOICE, true));
+        for (ChannelModeChange change : changes) {
+            assertThat(channel.applyAsOperator(plain, change))
+                    .isEqualTo(Channel.ModeChangeResult.NOT_OPERATOR);
+        }
+        assertThat(channel.activeModes()).isEmpty();
+        assertThat(channel.memberLimit()).isZero();
+        assertThat(channel.key()).isNull();
+        assertThat(channel.bans()).containsExactly(seeded);
+        assertThat(channel.operators()).containsExactly(op);
+        assertThat(channel.voiced()).containsExactly(op);
+    }
+
+    @Test
+    void applyAsOperatorRefusesARequesterWhoLeft() {
+        Channel channel = new Channel("#c");
+        ClientSession op = member("op");
+        channel.addMember(op);
+        channel.removeMember(op);
+
+        assertThat(channel.applyAsOperator(op, new ChannelModeChange.Key("k")))
+                .isEqualTo(Channel.ModeChangeResult.NOT_OPERATOR);
+        assertThat(channel.key()).isNull();
+    }
+
+    @Test
+    void applyAsOperatorAppliesEveryChangeKindForAnOperator() {
+        Channel channel = new Channel("#c");
+        ClientSession op = member("op");
+        ClientSession other = member("other");
+        channel.addMember(op);
+        channel.addMember(other);
+        BanEntry ban = new BanEntry("*!*@bad", "op", Instant.now());
+
+        applied(channel, op, new ChannelModeChange.Flag(CoreChannelModes.MODERATED, true));
+        assertThat(channel.activeModes()).contains(CoreChannelModes.MODERATED);
+        applied(channel, op, new ChannelModeChange.Flag(CoreChannelModes.MODERATED, false));
+        assertThat(channel.activeModes()).isEmpty();
+
+        applied(channel, op, new ChannelModeChange.Limit(5));
+        assertThat(channel.memberLimit()).isEqualTo(5);
+        applied(channel, op, new ChannelModeChange.Limit(0));
+        assertThat(channel.memberLimit()).isZero();
+
+        applied(channel, op, new ChannelModeChange.Key("k"));
+        assertThat(channel.key()).isEqualTo("k");
+        applied(channel, op, new ChannelModeChange.Key(null));
+        assertThat(channel.key()).isNull();
+
+        applied(channel, op, new ChannelModeChange.ListAdd(CoreChannelModes.BAN_MASK, ban));
+        assertThat(channel.bans()).containsExactly(ban);
+        applied(
+                channel,
+                op,
+                new ChannelModeChange.ListRemove(CoreChannelModes.BAN_MASK, "*!*@bad"));
+        assertThat(channel.bans()).isEmpty();
+
+        applied(
+                channel,
+                op,
+                new ChannelModeChange.Privilege(other, Channel.MemberPrivilege.OPERATOR, true));
+        applied(
+                channel,
+                op,
+                new ChannelModeChange.Privilege(other, Channel.MemberPrivilege.VOICE, true));
+        assertThat(channel.operators()).contains(other);
+        assertThat(channel.voiced()).contains(other);
+        applied(
+                channel,
+                op,
+                new ChannelModeChange.Privilege(other, Channel.MemberPrivilege.OPERATOR, false));
+        applied(
+                channel,
+                op,
+                new ChannelModeChange.Privilege(other, Channel.MemberPrivilege.VOICE, false));
+        assertThat(channel.operators()).doesNotContain(other);
+        assertThat(channel.voiced()).doesNotContain(other);
+    }
+
+    @Test
+    void aFlagChangeRequiresABooleanMode() {
+        for (ChannelMode mode :
+                List.of(
+                        CoreChannelModes.BAN_MASK,
+                        CoreChannelModes.OPERATOR,
+                        CoreChannelModes.USER_LIMIT,
+                        CoreChannelModes.CHANNEL_KEY)) {
+            assertThatThrownBy(() -> new ChannelModeChange.Flag(mode, true))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+    }
+
+    @Test
+    void aLimitChangeRejectsNegativeValuesAndAllowsZeroToClear() {
+        assertThatThrownBy(() -> new ChannelModeChange.Limit(-1))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThat(new ChannelModeChange.Limit(0).limit()).isZero();
+    }
+
+    @Test
+    void applyAsOperatorReportsANonMemberTargetAndAFullBanList() {
+        Channel channel = new Channel("#c");
+        ClientSession op = member("op");
+        channel.addMember(op);
+
+        ClientSession outsider = member("outsider");
+        for (Channel.MemberPrivilege privilege : Channel.MemberPrivilege.values()) {
+            assertThat(
+                            channel.applyAsOperator(
+                                    op, new ChannelModeChange.Privilege(outsider, privilege, true)))
+                    .isEqualTo(Channel.ModeChangeResult.NOT_A_MEMBER);
+        }
+        assertThat(channel.operators()).containsExactly(op);
+        assertThat(channel.voiced()).isEmpty();
+
+        for (int i = 0; i < Channel.MAX_BANS; i++) {
+            applied(
+                    channel,
+                    op,
+                    new ChannelModeChange.ListAdd(
+                            CoreChannelModes.BAN_MASK,
+                            new BanEntry("*!*@h" + i, "op", Instant.now())));
+        }
+        List<BanEntry> before = List.copyOf(channel.bans());
+        BanEntry extra = new BanEntry("*!*@one-more", "op", Instant.now());
+        assertThat(
+                        channel.applyAsOperator(
+                                op,
+                                new ChannelModeChange.ListAdd(CoreChannelModes.BAN_MASK, extra)))
+                .isEqualTo(Channel.ModeChangeResult.BAN_LIST_FULL);
+        assertThat(channel.bans()).containsExactlyElementsOf(before).doesNotContain(extra);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"Nick!User@Host,nICK!uSER@hOST", "N[ck!u\\ser@h^st,n{ck!u|ser@h~st"})
+    void duplicateBanPreservesOriginalEntryAndDoesNotConsumeCapacity(
+            String original, String variant) {
+        Channel channel = new Channel("#c");
+        BanEntry first = new BanEntry(original, "first", Instant.EPOCH);
+        assertThat(channel.addBan(first)).isTrue();
+        assertThat(channel.addBan(new BanEntry(variant, "second", Instant.now()))).isTrue();
+        assertThat(channel.bans()).containsExactly(first);
+        for (int i = 1; i < Channel.MAX_BANS; i++) {
+            assertThat(channel.addBan(new BanEntry("*!*@host" + i, "op", Instant.EPOCH))).isTrue();
+        }
+        assertThat(channel.addBan(new BanEntry(variant, "third", Instant.now()))).isTrue();
+        assertThat(channel.addBan(new BanEntry("*!*@extra", "op", Instant.EPOCH))).isFalse();
+        assertThat(channel.bans()).hasSize(Channel.MAX_BANS).startsWith(first);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"Nick!User@Host,nICK!uSER@hOST", "N[ck!u\\ser@h^st,n{ck!u|ser@h~st"})
+    void removeBanUsesIrcCaseMapping(String original, String variant) {
+        Channel channel = new Channel("#c");
+        BanEntry other = new BanEntry("other!*@*", "op", Instant.EPOCH);
+        channel.addBan(new BanEntry(original, "op", Instant.EPOCH));
+        channel.addBan(other);
+        channel.removeBan(variant);
+        assertThat(channel.bans()).containsExactly(other);
+    }
+
+    private static void applied(
+            Channel channel, ClientSession requester, ChannelModeChange change) {
+        assertThat(channel.applyAsOperator(requester, change))
+                .isEqualTo(Channel.ModeChangeResult.APPLIED);
+    }
+
+    private static ClientSession member(String nick) {
+        ClientSession member =
+                new ClientSession(nick, "host.example", RateLimitBucket.withDefaults());
+        member.setNickname(nick);
+        return member;
+    }
 }

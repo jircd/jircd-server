@@ -26,15 +26,15 @@ import net.jircd.core.session.ClientSession;
  * most once, and only if some listener asks for it.
  */
 public final class Audience {
-  private final Supplier<List<ClientSession>> source;
-  private List<ClientSession> peers;
+    private final Supplier<List<ClientSession>> source;
+    private List<ClientSession> peers;
 
-  public Audience(Supplier<List<ClientSession>> source) {
-    this.source = Objects.requireNonNull(source);
-  }
+    public Audience(Supplier<List<ClientSession>> source) {
+        this.source = Objects.requireNonNull(source);
+    }
 
-  public synchronized List<ClientSession> peers() {
-    if (peers == null) peers = List.copyOf(new LinkedHashSet<>(source.get()));
-    return peers;
-  }
+    public synchronized List<ClientSession> peers() {
+        if (peers == null) peers = List.copyOf(new LinkedHashSet<>(source.get()));
+        return peers;
+    }
 }

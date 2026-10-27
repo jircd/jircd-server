@@ -29,59 +29,69 @@ import net.jircd.protocol.MessageSerializer;
 import org.junit.jupiter.api.Test;
 
 class CapabilityTagRendererBudgetTest {
-  private static CapabilityTagRenderer renderer(Map<String, String> serverTags) {
-    ExtensionRegistry registry = new ExtensionRegistry();
-    registry.register(new TagProvider("test-tags", serverTags));
-    registry.enable("test-tags");
-    ClientTagForwarder.enableIn(registry);
-    return new CapabilityTagRenderer(registry);
-  }
-
-  private static ClientSession recipient() {
-    ClientSession recipient =
-        new ClientSession("recipient", "host", RateLimitBucket.withDefaults());
-    TestNegotiation.add(recipient, CapabilityName.MESSAGE_TAGS);
-    TestNegotiation.add(recipient, "test-tags");
-    return recipient;
-  }
-
-  @Test
-  void clientAndServerOriginsMayEachUse4094DataBytes() {
-    OutboundMessage message =
-        ForwardedTags.selectedBy(
-            "message-tags",
-            OutboundMessage.now(
-                "sender!ident@host", "PRIVMSG", "bob", "hello", Map.of("+c", "x".repeat(4091))));
-    Map<String, String> tags = renderer(Map.of("s", "y".repeat(4092))).render(recipient(), message);
-    assertThat(MessageSerializer.tagDataBytes(tags)).isEqualTo(8189);
-  }
-
-  @Test
-  void oversizedClientDataIsRejectedAfterEscaping() {
-    OutboundMessage message =
-        ForwardedTags.selectedBy(
-            "message-tags",
-            OutboundMessage.now(
-                "sender!ident@host", "PRIVMSG", "bob", "hello", Map.of("+c", " ".repeat(2046))));
-    assertThatThrownBy(() -> renderer(Map.of()).render(recipient(), message))
-        .isInstanceOf(MessageSerializer.MessageTooLongException.class);
-  }
-
-  @Test
-  void anOversizedServerContributionIsOmittedAtPreparationNotTheMessage() {
-    OutboundMessage message = OutboundMessage.now("sender!ident@host", "PRIVMSG", "bob", "hello");
-    assertThat(renderer(Map.of("s", "x".repeat(4093))).render(recipient(), message)).isEmpty();
-  }
-
-  @Test
-  void anOversizedContributionDoesNotDropTheMessageOrStopSubsequentWrites() {
-    ByteArrayOutputStream out = new ByteArrayOutputStream();
-    try (SessionWriter writer =
-        new SessionWriter(recipient(), out, renderer(Map.of("s", "x".repeat(4093))))) {
-      writer.enqueue(OutboundMessage.now("sender!ident@host", "PRIVMSG", "bob", "hello"));
-      writer.enqueueRaw(Message.of(Command.PING, "alive"));
+    private static CapabilityTagRenderer renderer(Map<String, String> serverTags) {
+        ExtensionRegistry registry = new ExtensionRegistry();
+        registry.register(new TagProvider("test-tags", serverTags));
+        registry.enable("test-tags");
+        ClientTagForwarder.enableIn(registry);
+        return new CapabilityTagRenderer(registry);
     }
-    assertThat(out.toString(StandardCharsets.UTF_8))
-        .isEqualTo(":sender!ident@host PRIVMSG bob hello\r\nPING alive\r\n");
-  }
+
+    private static ClientSession recipient() {
+        ClientSession recipient =
+                new ClientSession("recipient", "host", RateLimitBucket.withDefaults());
+        TestNegotiation.add(recipient, CapabilityName.MESSAGE_TAGS);
+        TestNegotiation.add(recipient, "test-tags");
+        return recipient;
+    }
+
+    @Test
+    void clientAndServerOriginsMayEachUse4094DataBytes() {
+        OutboundMessage message =
+                ForwardedTags.selectedBy(
+                        "message-tags",
+                        OutboundMessage.now(
+                                "sender!ident@host",
+                                "PRIVMSG",
+                                "bob",
+                                "hello",
+                                Map.of("+c", "x".repeat(4091))));
+        Map<String, String> tags =
+                renderer(Map.of("s", "y".repeat(4092))).render(recipient(), message);
+        assertThat(MessageSerializer.tagDataBytes(tags)).isEqualTo(8189);
+    }
+
+    @Test
+    void oversizedClientDataIsRejectedAfterEscaping() {
+        OutboundMessage message =
+                ForwardedTags.selectedBy(
+                        "message-tags",
+                        OutboundMessage.now(
+                                "sender!ident@host",
+                                "PRIVMSG",
+                                "bob",
+                                "hello",
+                                Map.of("+c", " ".repeat(2046))));
+        assertThatThrownBy(() -> renderer(Map.of()).render(recipient(), message))
+                .isInstanceOf(MessageSerializer.MessageTooLongException.class);
+    }
+
+    @Test
+    void anOversizedServerContributionIsOmittedAtPreparationNotTheMessage() {
+        OutboundMessage message =
+                OutboundMessage.now("sender!ident@host", "PRIVMSG", "bob", "hello");
+        assertThat(renderer(Map.of("s", "x".repeat(4093))).render(recipient(), message)).isEmpty();
+    }
+
+    @Test
+    void anOversizedContributionDoesNotDropTheMessageOrStopSubsequentWrites() {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        try (SessionWriter writer =
+                new SessionWriter(recipient(), out, renderer(Map.of("s", "x".repeat(4093))))) {
+            writer.enqueue(OutboundMessage.now("sender!ident@host", "PRIVMSG", "bob", "hello"));
+            writer.enqueueRaw(Message.of(Command.PING, "alive"));
+        }
+        assertThat(out.toString(StandardCharsets.UTF_8))
+                .isEqualTo(":sender!ident@host PRIVMSG bob hello\r\nPING alive\r\n");
+    }
 }

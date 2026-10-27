@@ -18,7 +18,7 @@ package net.jircd.protocol;
 /** Raised by {@link MessageParser} when a raw line cannot be parsed at all (FR-015). */
 public class MalformedMessageException extends Exception {
 
-  public MalformedMessageException(String message) {
-    super(message);
-  }
+    public MalformedMessageException(String message) {
+        super(message);
+    }
 }

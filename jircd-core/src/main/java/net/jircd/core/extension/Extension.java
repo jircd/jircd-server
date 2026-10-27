@@ -21,33 +21,33 @@ package net.jircd.core.extension;
  */
 public interface Extension {
 
-  enum State {
-    ENABLED,
-    DISABLED,
-    FAILED
-  }
+    enum State {
+        ENABLED,
+        DISABLED,
+        FAILED
+    }
 
-  String id();
+    String id();
 
-  /**
-   * Prepares resources. If this throws, {@link #stop()} is still called so whatever was acquired
-   * before the failure is released; {@code stop} must therefore tolerate a partial start.
-   *
-   * <p>Runs while the registry's lifecycle lock is held: do not call {@code
-   * ExtensionRegistry.enable/disable} or {@code ConfigurationReloader.reload} from here (directly
-   * or by waiting on another thread that does); they fail fast with {@link IllegalStateException}
-   * on the calling thread and would deadlock from another.
-   */
-  void start(ServerContext context);
+    /**
+     * Prepares resources. If this throws, {@link #stop()} is still called so whatever was acquired
+     * before the failure is released; {@code stop} must therefore tolerate a partial start.
+     *
+     * <p>Runs while the registry's lifecycle lock is held: do not call {@code
+     * ExtensionRegistry.enable/disable} or {@code ConfigurationReloader.reload} from here (directly
+     * or by waiting on another thread that does); they fail fast with {@link IllegalStateException}
+     * on the calling thread and would deadlock from another.
+     */
+    void start(ServerContext context);
 
-  /**
-   * Releases everything {@link #start} acquired. Must tolerate a partial start and being called
-   * again after a failure (a failed disable is retried). The same lifecycle-lock rule as {@link
-   * #start} applies.
-   *
-   * <p>For a {@link CapabilityExtension} this also runs after a hook fault withdrew it as {@code
-   * FAILED}, on a thread of the registry's, while callbacks captured earlier may still be running:
-   * guard anything they share with {@code stop}.
-   */
-  void stop();
+    /**
+     * Releases everything {@link #start} acquired. Must tolerate a partial start and being called
+     * again after a failure (a failed disable is retried). The same lifecycle-lock rule as {@link
+     * #start} applies.
+     *
+     * <p>For a {@link CapabilityExtension} this also runs after a hook fault withdrew it as {@code
+     * FAILED}, on a thread of the registry's, while callbacks captured earlier may still be
+     * running: guard anything they share with {@code stop}.
+     */
+    void stop();
 }

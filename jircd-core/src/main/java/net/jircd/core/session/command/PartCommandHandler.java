@@ -37,66 +37,67 @@ import net.jircd.protocol.NumericReply;
  */
 public final class PartCommandHandler implements CommandHandler {
 
-  private final ChannelRegistry channelRegistry;
-  private final ExtensionRegistry extensionRegistry;
-  private final Supplier<String> serverName;
+    private final ChannelRegistry channelRegistry;
+    private final ExtensionRegistry extensionRegistry;
+    private final Supplier<String> serverName;
 
-  public PartCommandHandler(
-      ChannelRegistry channelRegistry,
-      ExtensionRegistry extensionRegistry,
-      Supplier<String> serverName) {
-    this.channelRegistry = channelRegistry;
-    this.extensionRegistry = extensionRegistry;
-    this.serverName = serverName;
-  }
-
-  @Override
-  public void handle(ClientSession session, Message message) {
-    if (message.params().isEmpty()) {
-      Replies.sendFitted(
-          session,
-          serverName.get(),
-          NumericReply.ERR_NEEDMOREPARAMS,
-          List.of("PART"),
-          "Not enough parameters");
-      return;
+    public PartCommandHandler(
+            ChannelRegistry channelRegistry,
+            ExtensionRegistry extensionRegistry,
+            Supplier<String> serverName) {
+        this.channelRegistry = channelRegistry;
+        this.extensionRegistry = extensionRegistry;
+        this.serverName = serverName;
     }
-    String channelName = message.params().getFirst();
-    String reason = message.params().size() > 1 ? message.params().get(1) : null;
 
-    var found = channelRegistry.lookup(channelName);
-    // A non-member is answered as if its PART ran after the departure. Only a member resolves the
-    // notification prefix, which may run hostname-display extension code, before the membership
-    // transition and outside every monitor: a failure leaves membership unchanged. The registry
-    // still decides authoritatively whether this call removed the member.
-    String presentedForm = null;
-    Optional<Departure> departed = Optional.empty();
-    if (found.isPresent() && found.get().members().contains(session)) {
-      presentedForm = PresentedIdentity.presentedForm(session, extensionRegistry);
-      departed = channelRegistry.part(found.get(), session);
-    }
-    if (departed.isEmpty()) {
-      Replies.sendFitted(
-          session,
-          serverName.get(),
-          NumericReply.ERR_NOTONCHANNEL,
-          List.of(channelName),
-          "You're not on that channel");
-      return;
-    }
-    Channel channel = departed.get().channel();
+    @Override
+    public void handle(ClientSession session, Message message) {
+        if (message.params().isEmpty()) {
+            Replies.sendFitted(
+                    session,
+                    serverName.get(),
+                    NumericReply.ERR_NEEDMOREPARAMS,
+                    List.of("PART"),
+                    "Not enough parameters");
+            return;
+        }
+        String channelName = message.params().getFirst();
+        String reason = message.params().size() > 1 ? message.params().get(1) : null;
 
-    List<String> params =
-        reason != null ? List.of(channel.name(), reason) : List.of(channel.name());
-    Message partNotification = new Message(Map.of(), presentedForm, Command.PART, "PART", params);
-    Recipients.deliver(departed.get().recipients(), partNotification);
-    extensionRegistry
-        .committedEvents()
-        .parted(
-            session,
-            presentedForm,
-            channel.name(),
-            reason == null ? "" : reason,
-            departed.get().recipients());
-  }
+        var found = channelRegistry.lookup(channelName);
+        // A non-member is answered as if its PART ran after the departure. Only a member resolves
+        // the notification prefix, which may run hostname-display extension code, before the
+        // membership transition and outside every monitor: a failure leaves membership unchanged.
+        // The registry still decides authoritatively whether this call removed the member.
+        String presentedForm = null;
+        Optional<Departure> departed = Optional.empty();
+        if (found.isPresent() && found.get().members().contains(session)) {
+            presentedForm = PresentedIdentity.presentedForm(session, extensionRegistry);
+            departed = channelRegistry.part(found.get(), session);
+        }
+        if (departed.isEmpty()) {
+            Replies.sendFitted(
+                    session,
+                    serverName.get(),
+                    NumericReply.ERR_NOTONCHANNEL,
+                    List.of(channelName),
+                    "You're not on that channel");
+            return;
+        }
+        Channel channel = departed.get().channel();
+
+        List<String> params =
+                reason != null ? List.of(channel.name(), reason) : List.of(channel.name());
+        Message partNotification =
+                new Message(Map.of(), presentedForm, Command.PART, "PART", params);
+        Recipients.deliver(departed.get().recipients(), partNotification);
+        extensionRegistry
+                .committedEvents()
+                .parted(
+                        session,
+                        presentedForm,
+                        channel.name(),
+                        reason == null ? "" : reason,
+                        departed.get().recipients());
+    }
 }

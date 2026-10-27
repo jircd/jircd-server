@@ -24,89 +24,89 @@ import org.junit.jupiter.api.Test;
 
 final class IsonCommandHandlerTest {
 
-  private final HandlerHarness harness = new HandlerHarness();
-  private final IsonCommandHandler handler =
-      new IsonCommandHandler(harness.nicknames, () -> "server");
+    private final HandlerHarness harness = new HandlerHarness();
+    private final IsonCommandHandler handler =
+            new IsonCommandHandler(harness.nicknames, () -> "server");
 
-  @Test
-  void listsOnlineNicknamesInThePresentedFormAndCaseFoldedLookup() throws Exception {
-    ClientSession alice = harness.register("Alice");
-    harness.register("Bob");
+    @Test
+    void listsOnlineNicknamesInThePresentedFormAndCaseFoldedLookup() throws Exception {
+        ClientSession alice = harness.register("Alice");
+        harness.register("Bob");
 
-    List<Message> replies = HandlerHarness.run(handler, alice, "ISON alice BOB carol");
+        List<Message> replies = HandlerHarness.run(handler, alice, "ISON alice BOB carol");
 
-    assertThat(replies).hasSize(1);
-    assertThat(replies.getFirst().rawCommand()).isEqualTo("303");
-    assertThat(replies.getFirst().params()).containsExactly("Alice", "Alice Bob");
-  }
-
-  @Test
-  void acceptsTheNicknamesAsOneSpaceSeparatedTrailingParameter() throws Exception {
-    ClientSession alice = harness.register("alice");
-    harness.register("bob");
-
-    List<Message> replies = HandlerHarness.run(handler, alice, "ISON :bob nobody alice");
-
-    assertThat(replies.getFirst().params().getLast()).isEqualTo("bob alice");
-  }
-
-  @Test
-  void anEmptyResultIsStillAReply() throws Exception {
-    ClientSession alice = harness.register("alice");
-
-    List<Message> replies = HandlerHarness.run(handler, alice, "ISON ghost");
-
-    assertThat(replies.getFirst().params()).containsExactly("alice", "");
-  }
-
-  @Test
-  void nicknameHoldersThatHaveNotRegisteredAreNotOnline() throws Exception {
-    ClientSession alice = harness.register("alice");
-    ClientSession pending = HandlerHarness.unregistered("pending");
-    pending.setNickname("pending");
-    harness.nicknames.claim("pending", pending);
-
-    List<Message> replies = HandlerHarness.run(handler, alice, "ISON pending");
-
-    assertThat(replies.getFirst().params().getLast()).isEmpty();
-  }
-
-  @Test
-  void noParametersIsNeedMoreParams() throws Exception {
-    ClientSession alice = harness.register("alice");
-
-    List<Message> replies = HandlerHarness.run(handler, alice, "ISON");
-
-    assertThat(replies.getFirst().rawCommand()).isEqualTo("461");
-    assertThat(replies.getFirst().params()).contains("ISON");
-  }
-
-  @Test
-  void aLongListSplitsIntoLinesThatFit() throws Exception {
-    ClientSession alice = harness.register("alice");
-    StringBuilder line = new StringBuilder("ISON");
-    for (int i = 0; i < 200; i++) {
-      String nick = "user" + i;
-      harness.register(nick);
-      line.append(' ').append(nick);
+        assertThat(replies).hasSize(1);
+        assertThat(replies.getFirst().rawCommand()).isEqualTo("303");
+        assertThat(replies.getFirst().params()).containsExactly("Alice", "Alice Bob");
     }
 
-    List<Message> replies = HandlerHarness.run(handler, alice, line.toString());
+    @Test
+    void acceptsTheNicknamesAsOneSpaceSeparatedTrailingParameter() throws Exception {
+        ClientSession alice = harness.register("alice");
+        harness.register("bob");
 
-    assertThat(replies).hasSizeGreaterThan(1);
-    assertThat(HandlerHarness.codes(replies)).allMatch("303"::equals);
-    List<String> listed =
-        replies.stream()
-            .flatMap(m -> java.util.Arrays.stream(m.params().getLast().split(" ")))
-            .toList();
-    assertThat(listed).hasSize(200).contains("user0", "user99", "user199");
-  }
+        List<Message> replies = HandlerHarness.run(handler, alice, "ISON :bob nobody alice");
 
-  @Test
-  void anEmptyFirstParameterCountsAsMissing() throws Exception {
-    ClientSession alice = harness.register("alice");
+        assertThat(replies.getFirst().params().getLast()).isEqualTo("bob alice");
+    }
 
-    assertThat(HandlerHarness.codes(HandlerHarness.run(handler, alice, "ISON :")))
-        .containsExactly("461");
-  }
+    @Test
+    void anEmptyResultIsStillAReply() throws Exception {
+        ClientSession alice = harness.register("alice");
+
+        List<Message> replies = HandlerHarness.run(handler, alice, "ISON ghost");
+
+        assertThat(replies.getFirst().params()).containsExactly("alice", "");
+    }
+
+    @Test
+    void nicknameHoldersThatHaveNotRegisteredAreNotOnline() throws Exception {
+        ClientSession alice = harness.register("alice");
+        ClientSession pending = HandlerHarness.unregistered("pending");
+        pending.setNickname("pending");
+        harness.nicknames.claim("pending", pending);
+
+        List<Message> replies = HandlerHarness.run(handler, alice, "ISON pending");
+
+        assertThat(replies.getFirst().params().getLast()).isEmpty();
+    }
+
+    @Test
+    void noParametersIsNeedMoreParams() throws Exception {
+        ClientSession alice = harness.register("alice");
+
+        List<Message> replies = HandlerHarness.run(handler, alice, "ISON");
+
+        assertThat(replies.getFirst().rawCommand()).isEqualTo("461");
+        assertThat(replies.getFirst().params()).contains("ISON");
+    }
+
+    @Test
+    void aLongListSplitsIntoLinesThatFit() throws Exception {
+        ClientSession alice = harness.register("alice");
+        StringBuilder line = new StringBuilder("ISON");
+        for (int i = 0; i < 200; i++) {
+            String nick = "user" + i;
+            harness.register(nick);
+            line.append(' ').append(nick);
+        }
+
+        List<Message> replies = HandlerHarness.run(handler, alice, line.toString());
+
+        assertThat(replies).hasSizeGreaterThan(1);
+        assertThat(HandlerHarness.codes(replies)).allMatch("303"::equals);
+        List<String> listed =
+                replies.stream()
+                        .flatMap(m -> java.util.Arrays.stream(m.params().getLast().split(" ")))
+                        .toList();
+        assertThat(listed).hasSize(200).contains("user0", "user99", "user199");
+    }
+
+    @Test
+    void anEmptyFirstParameterCountsAsMissing() throws Exception {
+        ClientSession alice = harness.register("alice");
+
+        assertThat(HandlerHarness.codes(HandlerHarness.run(handler, alice, "ISON :")))
+                .containsExactly("461");
+    }
 }

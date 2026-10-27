@@ -23,68 +23,72 @@ import org.junit.jupiter.api.Test;
 
 class Story6RehashTest {
 
-  @Test
-  void rehashReloadsConfigurationAndReportsThePath() throws Exception {
-    try (TestServer server = TestServer.start(TestServer.adminEnabledYaml());
-        RawIrcClient root = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void rehashReloadsConfigurationAndReportsThePath() throws Exception {
+        try (TestServer server = TestServer.start(TestServer.adminEnabledYaml());
+                RawIrcClient root = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      root.registerAndAwaitWelcome("root", "root");
-      root.send("OPER " + TestServer.ADMIN_USERNAME + " :" + TestServer.ADMIN_PASSWORD);
-      root.readUntil("381", Duration.ofSeconds(5));
+            root.registerAndAwaitWelcome("root", "root");
+            root.send("OPER " + TestServer.ADMIN_USERNAME + " :" + TestServer.ADMIN_PASSWORD);
+            root.readUntil("381", Duration.ofSeconds(5));
 
-      root.send("REHASH");
-      assertThat(root.readUntil("382", Duration.ofSeconds(5)))
-          .contains(server.configPath.toString());
+            root.send("REHASH");
+            assertThat(root.readUntil("382", Duration.ofSeconds(5)))
+                    .contains(server.configPath.toString());
+        }
     }
-  }
 
-  @Test
-  void rehashWithInvalidConfigurationReportsFailureAndLeavesPreviousConfigurationActive()
-      throws Exception {
-    try (TestServer server = TestServer.start(TestServer.adminEnabledYaml());
-        RawIrcClient root = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void rehashWithInvalidConfigurationReportsFailureAndLeavesPreviousConfigurationActive()
+            throws Exception {
+        try (TestServer server = TestServer.start(TestServer.adminEnabledYaml());
+                RawIrcClient root = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      root.registerAndAwaitWelcome("root", "root");
-      root.send("OPER " + TestServer.ADMIN_USERNAME + " :" + TestServer.ADMIN_PASSWORD);
-      root.readUntil("381", Duration.ofSeconds(5));
+            root.registerAndAwaitWelcome("root", "root");
+            root.send("OPER " + TestServer.ADMIN_USERNAME + " :" + TestServer.ADMIN_PASSWORD);
+            root.readUntil("381", Duration.ofSeconds(5));
 
-      Files.writeString(
-          server.configPath,
-          TestServer.baseYaml() + TestServer.adminEnabledYaml() + "nicknameMaxLength: 0\n");
+            Files.writeString(
+                    server.configPath,
+                    TestServer.baseYaml()
+                            + TestServer.adminEnabledYaml()
+                            + "nicknameMaxLength: 0\n");
 
-      root.send("REHASH");
-      assertThat(root.readUntil("NOTICE", Duration.ofSeconds(5))).contains("Rehash failed");
+            root.send("REHASH");
+            assertThat(root.readUntil("NOTICE", Duration.ofSeconds(5))).contains("Rehash failed");
 
-      root.send("WHOHOST root");
-      assertThat(root.readUntil("NOTICE", Duration.ofSeconds(5)))
-          .contains("root is connecting from");
+            root.send("WHOHOST root");
+            assertThat(root.readUntil("NOTICE", Duration.ofSeconds(5)))
+                    .contains("root is connecting from");
+        }
     }
-  }
 
-  /**
-   * A rehashed length limit must take live effect on enforcement (NICK/JOIN/TOPIC/MODE), not just
-   * on the {@code 005 RPL_ISUPPORT} advertisement — the two are backed by separate mechanisms
-   * (data-model.md), and a prior implementation gap left enforcement silently reading the
-   * configuration snapshot taken at startup forever, never the reloaded value.
-   */
-  @Test
-  void rehashedNicknameMaxLengthTakesLiveEffectOnEnforcement() throws Exception {
-    try (TestServer server = TestServer.start(TestServer.adminEnabledYaml());
-        RawIrcClient root = RawIrcClient.connectPlaintext(server.plaintextPort());
-        RawIrcClient probe = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    /**
+     * A rehashed length limit must take live effect on enforcement (NICK/JOIN/TOPIC/MODE), not just
+     * on the {@code 005 RPL_ISUPPORT} advertisement — the two are backed by separate mechanisms
+     * (data-model.md), and a prior implementation gap left enforcement silently reading the
+     * configuration snapshot taken at startup forever, never the reloaded value.
+     */
+    @Test
+    void rehashedNicknameMaxLengthTakesLiveEffectOnEnforcement() throws Exception {
+        try (TestServer server = TestServer.start(TestServer.adminEnabledYaml());
+                RawIrcClient root = RawIrcClient.connectPlaintext(server.plaintextPort());
+                RawIrcClient probe = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      root.registerAndAwaitWelcome("root", "root");
-      root.send("OPER " + TestServer.ADMIN_USERNAME + " :" + TestServer.ADMIN_PASSWORD);
-      root.readUntil("381", Duration.ofSeconds(5));
+            root.registerAndAwaitWelcome("root", "root");
+            root.send("OPER " + TestServer.ADMIN_USERNAME + " :" + TestServer.ADMIN_PASSWORD);
+            root.readUntil("381", Duration.ofSeconds(5));
 
-      Files.writeString(
-          server.configPath,
-          TestServer.baseYaml() + TestServer.adminEnabledYaml() + "nicknameMaxLength: 4\n");
-      root.send("REHASH");
-      root.readUntil("382", Duration.ofSeconds(5));
+            Files.writeString(
+                    server.configPath,
+                    TestServer.baseYaml()
+                            + TestServer.adminEnabledYaml()
+                            + "nicknameMaxLength: 4\n");
+            root.send("REHASH");
+            root.readUntil("382", Duration.ofSeconds(5));
 
-      probe.send("NICK abcde");
-      assertThat(probe.readUntil("432", Duration.ofSeconds(5))).contains("432");
+            probe.send("NICK abcde");
+            assertThat(probe.readUntil("432", Duration.ofSeconds(5))).contains("432");
+        }
     }
-  }
 }

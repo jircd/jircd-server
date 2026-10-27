@@ -26,22 +26,22 @@ import java.util.Set;
  */
 public final class TestNegotiation {
 
-  private TestNegotiation() {}
+    private TestNegotiation() {}
 
-  /** Adds {@code names} to what {@code session} has negotiated. */
-  public static void add(ClientSession session, String... names) {
-    addAll(session, List.of(names));
-  }
+    /** Adds {@code names} to what {@code session} has negotiated. */
+    public static void add(ClientSession session, String... names) {
+        addAll(session, List.of(names));
+    }
 
-  /** Adds {@code names} to what {@code session} has negotiated. */
-  public static void addAll(ClientSession session, Collection<String> names) {
-    Set<String> grown = new HashSet<>(session.negotiatedCapabilities());
-    grown.addAll(names);
-    session.replaceNegotiatedCapabilities(grown);
-  }
+    /** Adds {@code names} to what {@code session} has negotiated. */
+    public static void addAll(ClientSession session, Collection<String> names) {
+        Set<String> grown = new HashSet<>(session.negotiatedCapabilities());
+        grown.addAll(names);
+        session.replaceNegotiatedCapabilities(grown);
+    }
 
-  /** Clears everything {@code session} has negotiated. */
-  public static void clear(ClientSession session) {
-    session.replaceNegotiatedCapabilities(List.of());
-  }
+    /** Clears everything {@code session} has negotiated. */
+    public static void clear(ClientSession session) {
+        session.replaceNegotiatedCapabilities(List.of());
+    }
 }

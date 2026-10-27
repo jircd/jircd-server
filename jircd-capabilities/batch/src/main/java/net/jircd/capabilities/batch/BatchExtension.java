@@ -45,43 +45,47 @@ import net.jircd.protocol.Message;
  */
 public final class BatchExtension extends AbstractCapabilityExtension {
 
-  public static final String ID = CapabilityName.BATCH;
+    public static final String ID = CapabilityName.BATCH;
 
-  private static final String BATCH = "BATCH";
-  private static final String BATCH_TAG_KEY = "batch";
+    private static final String BATCH = "BATCH";
+    private static final String BATCH_TAG_KEY = "batch";
 
-  public BatchExtension() {
-    super(ID);
-  }
-
-  @Override
-  public void register(CapabilityRegistrar registrar) {
-    registrar.onOutputGroup(Set.of(CapabilityName.MESSAGE_TAGS), BatchExtension::frame);
-  }
-
-  /**
-   * {@code ref} is a fresh {@link UUID} per recipient and group — a unique ASCII token, collision
-   * safe without any shared state (research.md Decision 3). Members keep their own tags and gain
-   * the {@code batch} tag unless they already carry one, which marks them as members of a nested
-   * group the caller built.
-   */
-  static FramingPlan frame(OutputGroup group, RequestContext context) {
-    String ref = UUID.randomUUID().toString();
-    List<String> openParams = new ArrayList<>();
-    openParams.add("+" + ref);
-    openParams.add(group.type());
-    openParams.addAll(group.typeParams());
-    List<Message> frames = new ArrayList<>(group.members().size() + 2);
-    frames.add(new Message(Map.of(), null, null, BATCH, List.copyOf(openParams)));
-    for (Message member : group.members()) {
-      Map<String, String> tags = new LinkedHashMap<>(member.tags());
-      // A member that already belongs to a nested group the caller built keeps that group.
-      tags.putIfAbsent(BATCH_TAG_KEY, ref);
-      frames.add(
-          new Message(
-              tags, member.prefix(), member.command(), member.rawCommand(), member.params()));
+    public BatchExtension() {
+        super(ID);
     }
-    frames.add(new Message(Map.of(), null, null, BATCH, List.of("-" + ref)));
-    return new FramingPlan(frames);
-  }
+
+    @Override
+    public void register(CapabilityRegistrar registrar) {
+        registrar.onOutputGroup(Set.of(CapabilityName.MESSAGE_TAGS), BatchExtension::frame);
+    }
+
+    /**
+     * {@code ref} is a fresh {@link UUID} per recipient and group — a unique ASCII token, collision
+     * safe without any shared state (research.md Decision 3). Members keep their own tags and gain
+     * the {@code batch} tag unless they already carry one, which marks them as members of a nested
+     * group the caller built.
+     */
+    static FramingPlan frame(OutputGroup group, RequestContext context) {
+        String ref = UUID.randomUUID().toString();
+        List<String> openParams = new ArrayList<>();
+        openParams.add("+" + ref);
+        openParams.add(group.type());
+        openParams.addAll(group.typeParams());
+        List<Message> frames = new ArrayList<>(group.members().size() + 2);
+        frames.add(new Message(Map.of(), null, null, BATCH, List.copyOf(openParams)));
+        for (Message member : group.members()) {
+            Map<String, String> tags = new LinkedHashMap<>(member.tags());
+            // A member that already belongs to a nested group the caller built keeps that group.
+            tags.putIfAbsent(BATCH_TAG_KEY, ref);
+            frames.add(
+                    new Message(
+                            tags,
+                            member.prefix(),
+                            member.command(),
+                            member.rawCommand(),
+                            member.params()));
+        }
+        frames.add(new Message(Map.of(), null, null, BATCH, List.of("-" + ref)));
+        return new FramingPlan(frames);
+    }
 }

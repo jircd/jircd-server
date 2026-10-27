@@ -29,69 +29,70 @@ import sun.misc.Signal;
 
 class Story4InvalidConfigTest {
 
-  @Test
-  void unknownCapabilityIdRejectedAtStartup() throws Exception {
-    Path configPath = Files.createTempFile("jircd-test-", ".yaml");
-    Files.writeString(
-        configPath,
-        TestServer.baseYaml()
-            + """
+    @Test
+    void unknownCapabilityIdRejectedAtStartup() throws Exception {
+        Path configPath = Files.createTempFile("jircd-test-", ".yaml");
+        Files.writeString(
+                configPath,
+                TestServer.baseYaml()
+                        + """
             capabilities:
               nonexistent: enabled
             """);
 
-    assertThatThrownBy(() -> new JircdServerApplication(configPath))
-        .isInstanceOf(ConfigurationException.class)
-        .hasMessageContaining("nonexistent")
-        .hasMessageContaining("capabilities");
-  }
+        assertThatThrownBy(() -> new JircdServerApplication(configPath))
+                .isInstanceOf(ConfigurationException.class)
+                .hasMessageContaining("nonexistent")
+                .hasMessageContaining("capabilities");
+    }
 
-  @Test
-  void sectionKindMismatchRejectedAtStartup() throws Exception {
-    Path configPath = Files.createTempFile("jircd-test-", ".yaml");
-    // cloak is a ServerExtension id — belongs under server-extensions, not capabilities.
-    Files.writeString(
-        configPath,
-        TestServer.baseYaml()
-            + """
+    @Test
+    void sectionKindMismatchRejectedAtStartup() throws Exception {
+        Path configPath = Files.createTempFile("jircd-test-", ".yaml");
+        // cloak is a ServerExtension id — belongs under server-extensions, not capabilities.
+        Files.writeString(
+                configPath,
+                TestServer.baseYaml()
+                        + """
             capabilities:
               cloak: enabled
             """);
 
-    assertThatThrownBy(() -> new JircdServerApplication(configPath))
-        .isInstanceOf(ConfigurationException.class)
-        .hasMessageContaining("cloak");
-  }
+        assertThatThrownBy(() -> new JircdServerApplication(configPath))
+                .isInstanceOf(ConfigurationException.class)
+                .hasMessageContaining("cloak");
+    }
 
-  @Test
-  void invalidSighupReloadLeavesServerRunningOnPreviousConfig() throws Exception {
-    try (TestServer server = TestServer.start(TestServer.ALL_CAPABILITIES_ENABLED_YAML)) {
-      SighupReloadHandler.install(server.application);
+    @Test
+    void invalidSighupReloadLeavesServerRunningOnPreviousConfig() throws Exception {
+        try (TestServer server = TestServer.start(TestServer.ALL_CAPABILITIES_ENABLED_YAML)) {
+            SighupReloadHandler.install(server.application);
 
-      Files.writeString(
-          server.configPath,
-          TestServer.baseYaml()
-              + """
+            Files.writeString(
+                    server.configPath,
+                    TestServer.baseYaml()
+                            + """
               capabilities:
                 moderation: enabled
               """);
-      Signal.raise(new Signal("HUP"));
+            Signal.raise(new Signal("HUP"));
 
-      // A failed reload logs and leaves prior state untouched — settle briefly, then confirm the
-      // previously-valid configuration (all three capabilities enabled) is still in effect.
-      Thread.sleep(300);
-      assertThat(server.application.extensionRegistry().stateOf("message-tags"))
-          .isEqualTo(Extension.State.ENABLED);
-      assertThat(server.application.extensionRegistry().stateOf("server-time"))
-          .isEqualTo(Extension.State.ENABLED);
-      assertThat(server.application.extensionRegistry().stateOf("echo-message"))
-          .isEqualTo(Extension.State.ENABLED);
+            // A failed reload logs and leaves prior state untouched — settle briefly, then confirm
+            // the previously-valid configuration (all three capabilities enabled) is still in
+            // effect.
+            Thread.sleep(300);
+            assertThat(server.application.extensionRegistry().stateOf("message-tags"))
+                    .isEqualTo(Extension.State.ENABLED);
+            assertThat(server.application.extensionRegistry().stateOf("server-time"))
+                    .isEqualTo(Extension.State.ENABLED);
+            assertThat(server.application.extensionRegistry().stateOf("echo-message"))
+                    .isEqualTo(Extension.State.ENABLED);
 
-      try (RawIrcClient client = RawIrcClient.connectPlaintext(server.plaintextPort())) {
-        client.send("CAP LS 302");
-        String capList = client.readUntil("CAP * LS", java.time.Duration.ofSeconds(5));
-        assertThat(capList).contains("message-tags");
-      }
+            try (RawIrcClient client = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+                client.send("CAP LS 302");
+                String capList = client.readUntil("CAP * LS", java.time.Duration.ofSeconds(5));
+                assertThat(capList).contains("message-tags");
+            }
+        }
     }
-  }
 }

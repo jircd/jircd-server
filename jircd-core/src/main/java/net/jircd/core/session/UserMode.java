@@ -25,12 +25,12 @@ import java.util.Set;
  */
 public record UserMode(String id, char flag, String definedBy, boolean clientSettable) {
 
-  public static final String CORE = "CORE";
+    public static final String CORE = "CORE";
 
-  public static final UserMode OPERATOR = new UserMode("operator", 'o', CORE, false);
-  public static final UserMode INVISIBLE = new UserMode("invisible", 'i', CORE, true);
-  public static final UserMode WALLOPS = new UserMode("wallops", 'w', CORE, true);
+    public static final UserMode OPERATOR = new UserMode("operator", 'o', CORE, false);
+    public static final UserMode INVISIBLE = new UserMode("invisible", 'i', CORE, true);
+    public static final UserMode WALLOPS = new UserMode("wallops", 'w', CORE, true);
 
-  /** This release's core catalog (FR-044) — extensions may contribute more later. */
-  public static final Set<UserMode> CORE_CATALOG = Set.of(OPERATOR, INVISIBLE, WALLOPS);
+    /** This release's core catalog (FR-044) — extensions may contribute more later. */
+    public static final Set<UserMode> CORE_CATALOG = Set.of(OPERATOR, INVISIBLE, WALLOPS);
 }

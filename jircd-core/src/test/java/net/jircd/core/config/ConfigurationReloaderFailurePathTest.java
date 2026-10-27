@@ -50,279 +50,283 @@ import org.junit.jupiter.api.io.TempDir;
  */
 class ConfigurationReloaderFailurePathTest {
 
-  private static final String HEADER = "serverName: test.jircd.local\n";
+    private static final String HEADER = "serverName: test.jircd.local\n";
 
-  @TempDir Path directory;
+    @TempDir Path directory;
 
-  private final List<String> events = Collections.synchronizedList(new ArrayList<>());
-  private final Map<Command, CommandHandler> handlers =
-      Collections.synchronizedMap(new EnumMap<>(Command.class));
-  private final ExtensionRegistry registry = new ExtensionRegistry();
+    private final List<String> events = Collections.synchronizedList(new ArrayList<>());
+    private final Map<Command, CommandHandler> handlers =
+            Collections.synchronizedMap(new EnumMap<>(Command.class));
+    private final ExtensionRegistry registry = new ExtensionRegistry();
 
-  /** An escape a provider's start can throw that no reload catches. */
-  private static final class StartError extends Error {
-    StartError() {
-      super("start escaped");
-    }
-  }
-
-  /** Records start and stop; its stop, staging and start can each be made to fail. */
-  private final class Probe extends AbstractCapabilityExtension {
-    private final String requires;
-    private final Command command;
-    volatile boolean stopFails;
-    volatile boolean stagingFails;
-    volatile boolean startEscapes;
-    volatile boolean startFails;
-
-    Probe(String id, String requires, Command command) {
-      super(id);
-      this.requires = requires;
-      this.command = command;
+    /** An escape a provider's start can throw that no reload catches. */
+    private static final class StartError extends Error {
+        StartError() {
+            super("start escaped");
+        }
     }
 
-    @Override
-    public void register(CapabilityRegistrar registrar) {
-      if (stagingFails) throw new IllegalStateException("cannot stage " + id());
-      if (requires != null) registrar.requiresProviders(requires);
-      if (command != null) registrar.command(command, (s, m) -> events.add("handled by " + id()));
+    /** Records start and stop; its stop, staging and start can each be made to fail. */
+    private final class Probe extends AbstractCapabilityExtension {
+        private final String requires;
+        private final Command command;
+        volatile boolean stopFails;
+        volatile boolean stagingFails;
+        volatile boolean startEscapes;
+        volatile boolean startFails;
+
+        Probe(String id, String requires, Command command) {
+            super(id);
+            this.requires = requires;
+            this.command = command;
+        }
+
+        @Override
+        public void register(CapabilityRegistrar registrar) {
+            if (stagingFails) throw new IllegalStateException("cannot stage " + id());
+            if (requires != null) registrar.requiresProviders(requires);
+            if (command != null)
+                registrar.command(command, (s, m) -> events.add("handled by " + id()));
+        }
+
+        @Override
+        public void start(ServerContext context) {
+            if (startEscapes) throw new StartError();
+            if (startFails) throw new IllegalStateException();
+            events.add("start " + id());
+        }
+
+        @Override
+        public void stop() {
+            events.add("stop " + id());
+            if (stopFails) throw new IllegalStateException("stuck " + id());
+        }
     }
 
-    @Override
-    public void start(ServerContext context) {
-      if (startEscapes) throw new StartError();
-      if (startFails) throw new IllegalStateException();
-      events.add("start " + id());
+    private void attachContext() {
+        CommandRegistrar commands =
+                new CommandRegistrar() {
+                    @Override
+                    public void register(Command command, CommandHandler handler) {
+                        handlers.put(command, handler);
+                    }
+
+                    @Override
+                    public boolean isRegistered(Command command) {
+                        return handlers.containsKey(command);
+                    }
+
+                    @Override
+                    public void unregister(Command command, CommandHandler installed) {
+                        handlers.remove(command, installed);
+                    }
+                };
+        registry.attachContext(
+                new ServerContext(
+                        null,
+                        null,
+                        registry,
+                        () -> "test.jircd.local",
+                        null,
+                        null,
+                        commands,
+                        registry.capabilityServices()));
     }
 
-    @Override
-    public void stop() {
-      events.add("stop " + id());
-      if (stopFails) throw new IllegalStateException("stuck " + id());
+    private Probe register(Probe probe) {
+        registry.register(probe);
+        return probe;
     }
-  }
 
-  private void attachContext() {
-    CommandRegistrar commands =
-        new CommandRegistrar() {
-          @Override
-          public void register(Command command, CommandHandler handler) {
-            handlers.put(command, handler);
-          }
+    private ConfigurationReloader reloader(String yaml) throws Exception {
+        ConfigurationLoader loader =
+                new ConfigurationLoader(Set.of("a", "b", "c", "fickle"), Set.of());
+        ServerConfiguration initial =
+                loader.load(new ByteArrayInputStream(HEADER.getBytes(StandardCharsets.UTF_8)));
+        Path file = directory.resolve("reload.yaml");
+        Files.writeString(file, HEADER + yaml);
+        return new ConfigurationReloader(file, loader, registry, initial);
+    }
 
-          @Override
-          public boolean isRegistered(Command command) {
-            return handlers.containsKey(command);
-          }
+    @Test
+    void aFailedReEnableKeepsTheCleanupAnEarlierFailedStopLeftForTheNextDisable() throws Exception {
+        Probe fickle = register(new Probe("fickle", null, null));
+        registry.enable("fickle");
+        fickle.stopFails = true;
+        assertThatThrownBy(() -> registry.disable("fickle")).hasMessage("stuck fickle");
+        fickle.stopFails = false;
+        fickle.stagingFails = true;
 
-          @Override
-          public void unregister(Command command, CommandHandler installed) {
-            handlers.remove(command, installed);
-          }
-        };
-    registry.attachContext(
-        new ServerContext(
-            null,
-            null,
-            registry,
-            () -> "test.jircd.local",
-            null,
-            null,
-            commands,
-            registry.capabilityServices()));
-  }
+        assertThat(reloader("capabilities: {fickle: enabled}\n").reloadWithOutcome().failures())
+                .containsOnlyKeys("fickle");
+        assertThat(registry.stateOf("fickle")).isEqualTo(Extension.State.FAILED);
 
-  private Probe register(Probe probe) {
-    registry.register(probe);
-    return probe;
-  }
+        // The cleanup the failed stop left is still owed: this disable must finish it.
+        events.clear();
+        registry.disable("fickle");
+        assertThat(events).containsExactly("stop fickle");
+        assertThat(registry.stateOf("fickle")).isEqualTo(Extension.State.DISABLED);
+    }
 
-  private ConfigurationReloader reloader(String yaml) throws Exception {
-    ConfigurationLoader loader = new ConfigurationLoader(Set.of("a", "b", "c", "fickle"), Set.of());
-    ServerConfiguration initial =
-        loader.load(new ByteArrayInputStream(HEADER.getBytes(StandardCharsets.UTF_8)));
-    Path file = directory.resolve("reload.yaml");
-    Files.writeString(file, HEADER + yaml);
-    return new ConfigurationReloader(file, loader, registry, initial);
-  }
+    @Test
+    void aReloadMovesACommandFromAWithdrawnOwnerToANewlyEnabledOne() throws Exception {
+        attachContext();
+        register(new Probe("a", null, Command.TAGMSG));
+        register(new Probe("b", null, Command.TAGMSG));
+        registry.enable("a");
 
-  @Test
-  void aFailedReEnableKeepsTheCleanupAnEarlierFailedStopLeftForTheNextDisable() throws Exception {
-    Probe fickle = register(new Probe("fickle", null, null));
-    registry.enable("fickle");
-    fickle.stopFails = true;
-    assertThatThrownBy(() -> registry.disable("fickle")).hasMessage("stuck fickle");
-    fickle.stopFails = false;
-    fickle.stagingFails = true;
+        ConfigurationReloader.ReloadOutcome outcome =
+                reloader("capabilities: {a: disabled, b: enabled}\n").reloadWithOutcome();
 
-    assertThat(reloader("capabilities: {fickle: enabled}\n").reloadWithOutcome().failures())
-        .containsOnlyKeys("fickle");
-    assertThat(registry.stateOf("fickle")).isEqualTo(Extension.State.FAILED);
+        assertThat(outcome.failures()).isEmpty();
+        assertThat(registry.stateOf("a")).isEqualTo(Extension.State.DISABLED);
+        assertThat(registry.stateOf("b")).isEqualTo(Extension.State.ENABLED);
+        assertThat(registry.capabilitySnapshot().providerIds()).containsExactly("b");
+        ClientSession session = new ClientSession("c1", "host", RateLimitBucket.withDefaults());
+        registry.capabilityCommand(Command.TAGMSG)
+                .orElseThrow()
+                .handle(session, Message.of(Command.TAGMSG, "#c"));
+        assertThat(events).contains("handled by b").doesNotContain("handled by a");
+    }
 
-    // The cleanup the failed stop left is still owed: this disable must finish it.
-    events.clear();
-    registry.disable("fickle");
-    assertThat(events).containsExactly("stop fickle");
-    assertThat(registry.stateOf("fickle")).isEqualTo(Extension.State.DISABLED);
-  }
+    @Test
+    void aStartThatEscapesRollsTheBatchBackDependentsFirst() throws Exception {
+        register(new Probe("a", null, null));
+        register(new Probe("b", "a", null));
+        register(new Probe("c", null, null)).startEscapes = true;
 
-  @Test
-  void aReloadMovesACommandFromAWithdrawnOwnerToANewlyEnabledOne() throws Exception {
-    attachContext();
-    register(new Probe("a", null, Command.TAGMSG));
-    register(new Probe("b", null, Command.TAGMSG));
-    registry.enable("a");
+        ConfigurationReloader reloader =
+                reloader("capabilities: {a: enabled, b: enabled, c: enabled}\n");
+        assertThatThrownBy(reloader::reload).isInstanceOf(StartError.class);
 
-    ConfigurationReloader.ReloadOutcome outcome =
-        reloader("capabilities: {a: disabled, b: enabled}\n").reloadWithOutcome();
+        assertThat(events).containsExactly("start a", "start b", "stop c", "stop b", "stop a");
+        assertThat(registry.capabilitySnapshot().providerIds()).isEmpty();
+        assertThat(registry.stateOf("a")).isEqualTo(Extension.State.FAILED);
+        assertThat(registry.stateOf("b")).isEqualTo(Extension.State.FAILED);
+    }
 
-    assertThat(outcome.failures()).isEmpty();
-    assertThat(registry.stateOf("a")).isEqualTo(Extension.State.DISABLED);
-    assertThat(registry.stateOf("b")).isEqualTo(Extension.State.ENABLED);
-    assertThat(registry.capabilitySnapshot().providerIds()).containsExactly("b");
-    ClientSession session = new ClientSession("c1", "host", RateLimitBucket.withDefaults());
-    registry
-        .capabilityCommand(Command.TAGMSG)
-        .orElseThrow()
-        .handle(session, Message.of(Command.TAGMSG, "#c"));
-    assertThat(events).contains("handled by b").doesNotContain("handled by a");
-  }
+    @Test
+    void aWithdrawnProviderWhoseStopFailsIsReportedAndStaysWithdrawn() throws Exception {
+        Probe a = register(new Probe("a", null, null));
+        registry.enable("a");
+        a.stopFails = true;
+        events.clear();
 
-  @Test
-  void aStartThatEscapesRollsTheBatchBackDependentsFirst() throws Exception {
-    register(new Probe("a", null, null));
-    register(new Probe("b", "a", null));
-    register(new Probe("c", null, null)).startEscapes = true;
+        assertThat(reloader("capabilities: {a: disabled}\n").reloadWithOutcome().failures())
+                .containsEntry("a", "stuck a");
+        // Stopped once: the failure is reported, and the retry waits for the next disable or
+        // reload.
+        assertThat(events).containsExactly("stop a");
+        assertThat(registry.stateOf("a")).isEqualTo(Extension.State.FAILED);
+        assertThat(registry.capabilitySnapshot().providerIds()).isEmpty();
+    }
 
-    ConfigurationReloader reloader =
-        reloader("capabilities: {a: enabled, b: enabled, c: enabled}\n");
-    assertThatThrownBy(reloader::reload).isInstanceOf(StartError.class);
+    @Test
+    void aRetriedCleanupThatFailsAgainIsReported() throws Exception {
+        Probe a = register(new Probe("a", null, null));
+        registry.enable("a");
+        a.stopFails = true;
+        assertThatThrownBy(() -> registry.disable("a")).hasMessage("stuck a");
 
-    assertThat(events).containsExactly("start a", "start b", "stop c", "stop b", "stop a");
-    assertThat(registry.capabilitySnapshot().providerIds()).isEmpty();
-    assertThat(registry.stateOf("a")).isEqualTo(Extension.State.FAILED);
-    assertThat(registry.stateOf("b")).isEqualTo(Extension.State.FAILED);
-  }
+        assertThat(reloader("capabilities: {a: disabled}\n").reloadWithOutcome().failures())
+                .containsEntry("a", "stuck a");
+        assertThat(registry.stateOf("a")).isEqualTo(Extension.State.FAILED);
+    }
 
-  @Test
-  void aWithdrawnProviderWhoseStopFailsIsReportedAndStaysWithdrawn() throws Exception {
-    Probe a = register(new Probe("a", null, null));
-    registry.enable("a");
-    a.stopFails = true;
-    events.clear();
+    @Test
+    void aReEnableWhoseLeftoverCleanupFailsAgainIsReportedAndNeverStarts() throws Exception {
+        Probe a = register(new Probe("a", null, null));
+        registry.enable("a");
+        a.stopFails = true;
+        assertThatThrownBy(() -> registry.disable("a")).hasMessage("stuck a");
+        events.clear();
 
-    assertThat(reloader("capabilities: {a: disabled}\n").reloadWithOutcome().failures())
-        .containsEntry("a", "stuck a");
-    // Stopped once: the failure is reported, and the retry waits for the next disable or reload.
-    assertThat(events).containsExactly("stop a");
-    assertThat(registry.stateOf("a")).isEqualTo(Extension.State.FAILED);
-    assertThat(registry.capabilitySnapshot().providerIds()).isEmpty();
-  }
+        assertThat(reloader("capabilities: {a: enabled}\n").reloadWithOutcome().failures())
+                .containsEntry("a", "stuck a");
+        assertThat(events).containsExactly("stop a");
+        assertThat(registry.stateOf("a")).isEqualTo(Extension.State.FAILED);
+        assertThat(registry.capabilitySnapshot().providerIds()).isEmpty();
+    }
 
-  @Test
-  void aRetriedCleanupThatFailsAgainIsReported() throws Exception {
-    Probe a = register(new Probe("a", null, null));
-    registry.enable("a");
-    a.stopFails = true;
-    assertThatThrownBy(() -> registry.disable("a")).hasMessage("stuck a");
+    @Test
+    void aStartFailureWithoutAMessageIsNamedByTypeAndAFailingStopKeepsTheCleanupOwed()
+            throws Exception {
+        Probe c = register(new Probe("c", null, null));
+        c.startFails = true;
+        c.stopFails = true;
 
-    assertThat(reloader("capabilities: {a: disabled}\n").reloadWithOutcome().failures())
-        .containsEntry("a", "stuck a");
-    assertThat(registry.stateOf("a")).isEqualTo(Extension.State.FAILED);
-  }
+        assertThat(reloader("capabilities: {c: enabled}\n").reloadWithOutcome().failures())
+                .containsEntry("c", "IllegalStateException");
+        assertThat(registry.stateOf("c")).isEqualTo(Extension.State.FAILED);
 
-  @Test
-  void aReEnableWhoseLeftoverCleanupFailsAgainIsReportedAndNeverStarts() throws Exception {
-    Probe a = register(new Probe("a", null, null));
-    registry.enable("a");
-    a.stopFails = true;
-    assertThatThrownBy(() -> registry.disable("a")).hasMessage("stuck a");
-    events.clear();
+        // The rollback's stop failed, so the next disable still owes and runs a stop.
+        c.stopFails = false;
+        events.clear();
+        registry.disable("c");
+        assertThat(events).containsExactly("stop c");
+        assertThat(registry.stateOf("c")).isEqualTo(Extension.State.DISABLED);
+    }
 
-    assertThat(reloader("capabilities: {a: enabled}\n").reloadWithOutcome().failures())
-        .containsEntry("a", "stuck a");
-    assertThat(events).containsExactly("stop a");
-    assertThat(registry.stateOf("a")).isEqualTo(Extension.State.FAILED);
-    assertThat(registry.capabilitySnapshot().providerIds()).isEmpty();
-  }
+    @Test
+    void aDependentWhoseStopFailsWhenItsPrerequisiteIsDisabledEndsFailedAndIsReported() {
+        register(new Probe("a", null, null));
+        Probe b = register(new Probe("b", "a", null));
+        registry.enable("a");
+        registry.enable("b");
+        b.stopFails = true;
 
-  @Test
-  void aStartFailureWithoutAMessageIsNamedByTypeAndAFailingStopKeepsTheCleanupOwed()
-      throws Exception {
-    Probe c = register(new Probe("c", null, null));
-    c.startFails = true;
-    c.stopFails = true;
+        // The prerequisite itself stops cleanly, but the dependent's failure is the disable's
+        // outcome.
+        assertThatThrownBy(() -> registry.disable("a"))
+                .hasMessageContaining("'b'")
+                .hasMessageContaining("stuck b");
 
-    assertThat(reloader("capabilities: {c: enabled}\n").reloadWithOutcome().failures())
-        .containsEntry("c", "IllegalStateException");
-    assertThat(registry.stateOf("c")).isEqualTo(Extension.State.FAILED);
+        assertThat(registry.stateOf("a")).isEqualTo(Extension.State.DISABLED);
+        assertThat(registry.stateOf("b")).isEqualTo(Extension.State.FAILED);
+        assertThat(registry.capabilitySnapshot().providerIds()).isEmpty();
+    }
 
-    // The rollback's stop failed, so the next disable still owes and runs a stop.
-    c.stopFails = false;
-    events.clear();
-    registry.disable("c");
-    assertThat(events).containsExactly("stop c");
-    assertThat(registry.stateOf("c")).isEqualTo(Extension.State.DISABLED);
-  }
+    @Test
+    void aProviderCommandThatCoreOwnsRejectsTheReloadBeforeAnythingStartsOrStops()
+            throws Exception {
+        attachContext();
+        handlers.put(Command.TAGMSG, (s, m) -> events.add("handled by core"));
+        register(new Probe("a", null, Command.TAGMSG));
 
-  @Test
-  void aDependentWhoseStopFailsWhenItsPrerequisiteIsDisabledEndsFailedAndIsReported() {
-    register(new Probe("a", null, null));
-    Probe b = register(new Probe("b", "a", null));
-    registry.enable("a");
-    registry.enable("b");
-    b.stopFails = true;
+        ConfigurationReloader reloader = reloader("capabilities: {a: enabled}\n");
+        assertThatThrownBy(reloader::reload)
+                .isInstanceOf(ConfigurationException.class)
+                .hasMessageContaining("TAGMSG");
 
-    // The prerequisite itself stops cleanly, but the dependent's failure is the disable's outcome.
-    assertThatThrownBy(() -> registry.disable("a"))
-        .hasMessageContaining("'b'")
-        .hasMessageContaining("stuck b");
+        assertThat(events).isEmpty();
+        assertThat(registry.stateOf("a")).isEqualTo(Extension.State.DISABLED);
+        assertThat(registry.capabilitySnapshot().providerIds()).isEmpty();
+    }
 
-    assertThat(registry.stateOf("a")).isEqualTo(Extension.State.DISABLED);
-    assertThat(registry.stateOf("b")).isEqualTo(Extension.State.FAILED);
-    assertThat(registry.capabilitySnapshot().providerIds()).isEmpty();
-  }
+    @Test
+    void aConfigurationPublicationThatThrowsPublishesNothingAndRollsTheStartsBack() {
+        register(new Probe("a", null, null));
+        SupportedFeatures features = registry.supportedFeatures();
+        int nicknameLength = features.nicknameMaxLength();
+        ExtensionRegistry.DesiredState desired =
+                new ExtensionRegistry.DesiredState(
+                        Map.of("a", true),
+                        Map.of(),
+                        nicknameLength + 1,
+                        features.channelNameMaxLength(),
+                        features.topicMaxLength(),
+                        features.maxModesPerCommand());
+        Runnable failing =
+                () -> {
+                    throw new IllegalStateException("configuration not published");
+                };
 
-  @Test
-  void aProviderCommandThatCoreOwnsRejectsTheReloadBeforeAnythingStartsOrStops() throws Exception {
-    attachContext();
-    handlers.put(Command.TAGMSG, (s, m) -> events.add("handled by core"));
-    register(new Probe("a", null, Command.TAGMSG));
+        assertThatThrownBy(() -> registry.applyDesiredState(desired, failing))
+                .hasMessage("configuration not published");
 
-    ConfigurationReloader reloader = reloader("capabilities: {a: enabled}\n");
-    assertThatThrownBy(reloader::reload)
-        .isInstanceOf(ConfigurationException.class)
-        .hasMessageContaining("TAGMSG");
-
-    assertThat(events).isEmpty();
-    assertThat(registry.stateOf("a")).isEqualTo(Extension.State.DISABLED);
-    assertThat(registry.capabilitySnapshot().providerIds()).isEmpty();
-  }
-
-  @Test
-  void aConfigurationPublicationThatThrowsPublishesNothingAndRollsTheStartsBack() {
-    register(new Probe("a", null, null));
-    SupportedFeatures features = registry.supportedFeatures();
-    int nicknameLength = features.nicknameMaxLength();
-    ExtensionRegistry.DesiredState desired =
-        new ExtensionRegistry.DesiredState(
-            Map.of("a", true),
-            Map.of(),
-            nicknameLength + 1,
-            features.channelNameMaxLength(),
-            features.topicMaxLength(),
-            features.maxModesPerCommand());
-    Runnable failing =
-        () -> {
-          throw new IllegalStateException("configuration not published");
-        };
-
-    assertThatThrownBy(() -> registry.applyDesiredState(desired, failing))
-        .hasMessage("configuration not published");
-
-    assertThat(events).containsExactly("start a", "stop a");
-    assertThat(registry.capabilitySnapshot().providerIds()).isEmpty();
-    assertThat(registry.stateOf("a")).isEqualTo(Extension.State.FAILED);
-    assertThat(registry.supportedFeatures().nicknameMaxLength()).isEqualTo(nicknameLength);
-  }
+        assertThat(events).containsExactly("start a", "stop a");
+        assertThat(registry.capabilitySnapshot().providerIds()).isEmpty();
+        assertThat(registry.stateOf("a")).isEqualTo(Extension.State.FAILED);
+        assertThat(registry.supportedFeatures().nicknameMaxLength()).isEqualTo(nicknameLength);
+    }
 }

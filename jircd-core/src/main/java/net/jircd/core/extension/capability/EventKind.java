@@ -25,11 +25,11 @@ package net.jircd.core.extension.capability;
  * global sequence, and a listener must not infer one.
  */
 public enum EventKind {
-  AWAY_CHANGED,
-  JOINED,
-  PARTED,
-  /** A channel operator removed {@code subject}; {@code actor} is the kicker. */
-  KICKED,
-  QUIT,
-  NICK_CHANGED
+    AWAY_CHANGED,
+    JOINED,
+    PARTED,
+    /** A channel operator removed {@code subject}; {@code actor} is the kicker. */
+    KICKED,
+    QUIT,
+    NICK_CHANGED
 }

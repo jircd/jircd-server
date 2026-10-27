@@ -22,62 +22,62 @@ import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class ClientSessionTest {
-  @Test
-  void collectionsRejectExternalAdditions() {
-    ClientSession session = session();
-    Set<UserMode> userModes = session.userModes();
-    Set<Channel> memberships = session.channelMemberships();
-    Channel channel = new Channel("#c");
-    assertThatThrownBy(() -> userModes.add(UserMode.INVISIBLE))
-        .isInstanceOf(UnsupportedOperationException.class);
-    assertThatThrownBy(() -> memberships.add(channel))
-        .isInstanceOf(UnsupportedOperationException.class);
-  }
+    @Test
+    void collectionsRejectExternalAdditions() {
+        ClientSession session = session();
+        Set<UserMode> userModes = session.userModes();
+        Set<Channel> memberships = session.channelMemberships();
+        Channel channel = new Channel("#c");
+        assertThatThrownBy(() -> userModes.add(UserMode.INVISIBLE))
+                .isInstanceOf(UnsupportedOperationException.class);
+        assertThatThrownBy(() -> memberships.add(channel))
+                .isInstanceOf(UnsupportedOperationException.class);
+    }
 
-  @Test
-  void administratorGrantAndRevokeStillToggleOperatorMode() {
-    ClientSession session = session();
-    session.grantAdministratorPrivilege();
-    assertThat(session.isAdministrator()).isTrue();
-    assertThat(session.userModes()).contains(UserMode.OPERATOR);
-    session.revokeAdministratorPrivilege();
-    assertThat(session.isAdministrator()).isFalse();
-    assertThat(session.userModes()).doesNotContain(UserMode.OPERATOR);
-  }
+    @Test
+    void administratorGrantAndRevokeStillToggleOperatorMode() {
+        ClientSession session = session();
+        session.grantAdministratorPrivilege();
+        assertThat(session.isAdministrator()).isTrue();
+        assertThat(session.userModes()).contains(UserMode.OPERATOR);
+        session.revokeAdministratorPrivilege();
+        assertThat(session.isAdministrator()).isFalse();
+        assertThat(session.userModes()).doesNotContain(UserMode.OPERATOR);
+    }
 
-  @Test
-  void namedUserModeMutatorsUpdateTheUnmodifiableLiveView() {
-    ClientSession session = session();
-    var modes = session.userModes();
-    session.setUserMode(UserMode.INVISIBLE);
-    session.setUserMode(UserMode.WALLOPS);
-    session.setUserMode(UserMode.INVISIBLE);
-    assertThat(modes).containsExactlyInAnyOrder(UserMode.INVISIBLE, UserMode.WALLOPS);
-    session.clearUserMode(UserMode.INVISIBLE);
-    session.clearUserMode(UserMode.INVISIBLE);
-    assertThat(modes).containsExactly(UserMode.WALLOPS);
-    session.clearUserMode(UserMode.WALLOPS);
-    assertThat(modes).isEmpty();
-  }
+    @Test
+    void namedUserModeMutatorsUpdateTheUnmodifiableLiveView() {
+        ClientSession session = session();
+        var modes = session.userModes();
+        session.setUserMode(UserMode.INVISIBLE);
+        session.setUserMode(UserMode.WALLOPS);
+        session.setUserMode(UserMode.INVISIBLE);
+        assertThat(modes).containsExactlyInAnyOrder(UserMode.INVISIBLE, UserMode.WALLOPS);
+        session.clearUserMode(UserMode.INVISIBLE);
+        session.clearUserMode(UserMode.INVISIBLE);
+        assertThat(modes).containsExactly(UserMode.WALLOPS);
+        session.clearUserMode(UserMode.WALLOPS);
+        assertThat(modes).isEmpty();
+    }
 
-  @Test
-  void genericMutatorsCannotSetOrClearOperatorMode() {
-    ClientSession session = session();
-    UserMode operatorCopy = new UserMode("operator", 'o', UserMode.CORE, false);
-    assertThatThrownBy(() -> session.setUserMode(operatorCopy))
-        .isInstanceOf(IllegalArgumentException.class);
-    assertThat(session.isAdministrator()).isFalse();
-    assertThat(session.userModes()).doesNotContain(UserMode.OPERATOR);
-    session.grantAdministratorPrivilege();
-    assertThatThrownBy(() -> session.clearUserMode(operatorCopy))
-        .isInstanceOf(IllegalArgumentException.class);
-    assertThat(session.isAdministrator()).isTrue();
-    assertThat(session.userModes()).contains(UserMode.OPERATOR);
-    session.revokeAdministratorPrivilege();
-    assertThat(session.userModes()).doesNotContain(UserMode.OPERATOR);
-  }
+    @Test
+    void genericMutatorsCannotSetOrClearOperatorMode() {
+        ClientSession session = session();
+        UserMode operatorCopy = new UserMode("operator", 'o', UserMode.CORE, false);
+        assertThatThrownBy(() -> session.setUserMode(operatorCopy))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThat(session.isAdministrator()).isFalse();
+        assertThat(session.userModes()).doesNotContain(UserMode.OPERATOR);
+        session.grantAdministratorPrivilege();
+        assertThatThrownBy(() -> session.clearUserMode(operatorCopy))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThat(session.isAdministrator()).isTrue();
+        assertThat(session.userModes()).contains(UserMode.OPERATOR);
+        session.revokeAdministratorPrivilege();
+        assertThat(session.userModes()).doesNotContain(UserMode.OPERATOR);
+    }
 
-  private static ClientSession session() {
-    return new ClientSession("session", "host.example", RateLimitBucket.withDefaults());
-  }
+    private static ClientSession session() {
+        return new ClientSession("session", "host.example", RateLimitBucket.withDefaults());
+    }
 }

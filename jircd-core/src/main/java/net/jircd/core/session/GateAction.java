@@ -21,7 +21,7 @@ package net.jircd.core.session;
  * JOIN}; {@code DISCOVER} = {@code TOPIC}-viewing/{@code NAMES}/{@code LIST}.
  */
 public enum GateAction {
-  SEND,
-  JOIN,
-  DISCOVER
+    SEND,
+    JOIN,
+    DISCOVER
 }

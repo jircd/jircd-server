@@ -38,41 +38,46 @@ import net.jircd.protocol.NumericReply;
  */
 public final class WallopsCommandHandler implements CommandHandler {
 
-  private final NicknameRegistry nicknameRegistry;
-  private final ExtensionRegistry extensionRegistry;
-  private final Supplier<String> serverName;
+    private final NicknameRegistry nicknameRegistry;
+    private final ExtensionRegistry extensionRegistry;
+    private final Supplier<String> serverName;
 
-  public WallopsCommandHandler(
-      NicknameRegistry nicknameRegistry,
-      ExtensionRegistry extensionRegistry,
-      Supplier<String> serverName) {
-    this.nicknameRegistry = nicknameRegistry;
-    this.extensionRegistry = extensionRegistry;
-    this.serverName = serverName;
-  }
-
-  @Override
-  public void handle(ClientSession session, Message message) {
-    if (AdminPrivilege.rejectUnlessAuthorized(session, extensionRegistry, serverName.get())) {
-      return;
-    }
-    if (AdminPrivilege.rejectIfTooFewParams(
-        session, serverName.get(), "WALLOPS", message.params(), 1)) {
-      return;
-    }
-    String text = message.params().getFirst();
-    if (text.isBlank()) {
-      Replies.sendFitted(
-          session, serverName.get(), NumericReply.ERR_NOTEXTTOSEND, List.of(), "No text to send");
-      return;
+    public WallopsCommandHandler(
+            NicknameRegistry nicknameRegistry,
+            ExtensionRegistry extensionRegistry,
+            Supplier<String> serverName) {
+        this.nicknameRegistry = nicknameRegistry;
+        this.extensionRegistry = extensionRegistry;
+        this.serverName = serverName;
     }
 
-    String prefix = Hostmask.format(session.nickname(), session.ident(), session.realHostname());
-    Message notice = new Message(Map.of(), prefix, Command.WALLOPS, "WALLOPS", List.of(text));
-    for (ClientSession recipient : nicknameRegistry.all()) {
-      if (recipient.userModes().contains(UserMode.WALLOPS) && recipient.writer() != null) {
-        recipient.writer().enqueueRaw(notice);
-      }
+    @Override
+    public void handle(ClientSession session, Message message) {
+        if (AdminPrivilege.rejectUnlessAuthorized(session, extensionRegistry, serverName.get())) {
+            return;
+        }
+        if (AdminPrivilege.rejectIfTooFewParams(
+                session, serverName.get(), "WALLOPS", message.params(), 1)) {
+            return;
+        }
+        String text = message.params().getFirst();
+        if (text.isBlank()) {
+            Replies.sendFitted(
+                    session,
+                    serverName.get(),
+                    NumericReply.ERR_NOTEXTTOSEND,
+                    List.of(),
+                    "No text to send");
+            return;
+        }
+
+        String prefix =
+                Hostmask.format(session.nickname(), session.ident(), session.realHostname());
+        Message notice = new Message(Map.of(), prefix, Command.WALLOPS, "WALLOPS", List.of(text));
+        for (ClientSession recipient : nicknameRegistry.all()) {
+            if (recipient.userModes().contains(UserMode.WALLOPS) && recipient.writer() != null) {
+                recipient.writer().enqueueRaw(notice);
+            }
+        }
     }
-  }
 }

@@ -37,65 +37,66 @@ import net.jircd.protocol.NumericReply;
  */
 public final class KillCommandHandler implements CommandHandler {
 
-  private static final String DEFAULT_REASON = "Killed";
+    private static final String DEFAULT_REASON = "Killed";
 
-  private final NicknameRegistry nicknameRegistry;
-  private final ExtensionRegistry extensionRegistry;
-  private final Supplier<String> serverName;
-  private final DisconnectCleanup disconnectCleanup;
+    private final NicknameRegistry nicknameRegistry;
+    private final ExtensionRegistry extensionRegistry;
+    private final Supplier<String> serverName;
+    private final DisconnectCleanup disconnectCleanup;
 
-  public KillCommandHandler(
-      NicknameRegistry nicknameRegistry,
-      ExtensionRegistry extensionRegistry,
-      Supplier<String> serverName,
-      DisconnectCleanup disconnectCleanup) {
-    this.nicknameRegistry = nicknameRegistry;
-    this.extensionRegistry = extensionRegistry;
-    this.serverName = serverName;
-    this.disconnectCleanup = disconnectCleanup;
-  }
+    public KillCommandHandler(
+            NicknameRegistry nicknameRegistry,
+            ExtensionRegistry extensionRegistry,
+            Supplier<String> serverName,
+            DisconnectCleanup disconnectCleanup) {
+        this.nicknameRegistry = nicknameRegistry;
+        this.extensionRegistry = extensionRegistry;
+        this.serverName = serverName;
+        this.disconnectCleanup = disconnectCleanup;
+    }
 
-  @Override
-  public void handle(ClientSession session, Message message) {
-    if (!AdminPrivilege.isAuthorized(session, extensionRegistry)) {
-      Replies.sendFitted(
-          session,
-          serverName.get(),
-          NumericReply.ERR_NOPRIVILEGES,
-          List.of(),
-          "Permission Denied- You're not an IRC operator");
-      return;
+    @Override
+    public void handle(ClientSession session, Message message) {
+        if (!AdminPrivilege.isAuthorized(session, extensionRegistry)) {
+            Replies.sendFitted(
+                    session,
+                    serverName.get(),
+                    NumericReply.ERR_NOPRIVILEGES,
+                    List.of(),
+                    "Permission Denied- You're not an IRC operator");
+            return;
+        }
+        if (message.params().isEmpty()) {
+            Replies.sendFitted(
+                    session,
+                    serverName.get(),
+                    NumericReply.ERR_NEEDMOREPARAMS,
+                    List.of("KILL"),
+                    "Not enough parameters");
+            return;
+        }
+        String targetNickname = message.params().getFirst();
+        var target = nicknameRegistry.lookup(targetNickname);
+        if (target.isEmpty()) {
+            Replies.sendFitted(
+                    session,
+                    serverName.get(),
+                    NumericReply.ERR_NOSUCHNICK,
+                    List.of(targetNickname),
+                    "No such nick/channel");
+            return;
+        }
+        String reason = message.params().size() > 1 ? message.params().get(1) : DEFAULT_REASON;
+        ClientSession killed = target.get();
+        // Borrowed reference to the target's own still-active writer — closed below via
+        // disconnectCleanup.cleanup(), not directly by this handler.
+        @SuppressWarnings("PMD.CloseResource")
+        var writer = killed.writer();
+        if (writer != null) {
+            writer.enqueueRaw(new Message(Map.of(), null, Command.ERROR, "ERROR", List.of(reason)));
+        }
+        disconnectCleanup.cleanup(killed, "Killed by " + session.nickname() + " (" + reason + ")");
+        AdminNotices.send(
+                session, serverName.get(), "Killed " + targetNickname + " (" + reason + ")");
     }
-    if (message.params().isEmpty()) {
-      Replies.sendFitted(
-          session,
-          serverName.get(),
-          NumericReply.ERR_NEEDMOREPARAMS,
-          List.of("KILL"),
-          "Not enough parameters");
-      return;
-    }
-    String targetNickname = message.params().getFirst();
-    var target = nicknameRegistry.lookup(targetNickname);
-    if (target.isEmpty()) {
-      Replies.sendFitted(
-          session,
-          serverName.get(),
-          NumericReply.ERR_NOSUCHNICK,
-          List.of(targetNickname),
-          "No such nick/channel");
-      return;
-    }
-    String reason = message.params().size() > 1 ? message.params().get(1) : DEFAULT_REASON;
-    ClientSession killed = target.get();
-    // Borrowed reference to the target's own still-active writer — closed below via
-    // disconnectCleanup.cleanup(), not directly by this handler.
-    @SuppressWarnings("PMD.CloseResource")
-    var writer = killed.writer();
-    if (writer != null) {
-      writer.enqueueRaw(new Message(Map.of(), null, Command.ERROR, "ERROR", List.of(reason)));
-    }
-    disconnectCleanup.cleanup(killed, "Killed by " + session.nickname() + " (" + reason + ")");
-    AdminNotices.send(session, serverName.get(), "Killed " + targetNickname + " (" + reason + ")");
-  }
 }

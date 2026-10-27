@@ -26,37 +26,37 @@ import org.junit.jupiter.api.Test;
  */
 class InviteNotYetExistingChannelTest {
 
-  @Test
-  void invitingToANotYetExistingChannelSucceeds() throws Exception {
-    try (TestServer server = TestServer.start();
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
-        RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void invitingToANotYetExistingChannelSucceeds() throws Exception {
+        try (TestServer server = TestServer.start();
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
+                RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      alice.registerAndAwaitWelcome("alice", "alice");
-      bob.registerAndAwaitWelcome("bob", "bob");
+            alice.registerAndAwaitWelcome("alice", "alice");
+            bob.registerAndAwaitWelcome("bob", "bob");
 
-      alice.send("INVITE bob #brandnew");
-      assertThat(alice.readUntil("341", Duration.ofSeconds(5))).contains("#brandnew");
-      assertThat(bob.readUntil("INVITE", Duration.ofSeconds(5))).contains("#brandnew");
+            alice.send("INVITE bob #brandnew");
+            assertThat(alice.readUntil("341", Duration.ofSeconds(5))).contains("#brandnew");
+            assertThat(bob.readUntil("INVITE", Duration.ofSeconds(5))).contains("#brandnew");
+        }
     }
-  }
 
-  @Test
-  void invitingToAnExistingChannelByANonMemberIsStillRejected() throws Exception {
-    try (TestServer server = TestServer.start();
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
-        RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort());
-        RawIrcClient carol = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void invitingToAnExistingChannelByANonMemberIsStillRejected() throws Exception {
+        try (TestServer server = TestServer.start();
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
+                RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort());
+                RawIrcClient carol = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      alice.registerAndAwaitWelcome("alice", "alice");
-      alice.send("JOIN #other");
-      alice.readUntil("353", Duration.ofSeconds(5));
+            alice.registerAndAwaitWelcome("alice", "alice");
+            alice.send("JOIN #other");
+            alice.readUntil("353", Duration.ofSeconds(5));
 
-      bob.registerAndAwaitWelcome("bob", "bob"); // not a member of #other
-      carol.registerAndAwaitWelcome("carol", "carol");
+            bob.registerAndAwaitWelcome("bob", "bob"); // not a member of #other
+            carol.registerAndAwaitWelcome("carol", "carol");
 
-      bob.send("INVITE carol #other");
-      assertThat(bob.readUntil("442", Duration.ofSeconds(5))).contains("442");
+            bob.send("INVITE carol #other");
+            assertThat(bob.readUntil("442", Duration.ofSeconds(5))).contains("442");
+        }
     }
-  }
 }

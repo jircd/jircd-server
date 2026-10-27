@@ -31,28 +31,28 @@ import net.jircd.protocol.CapabilityName;
  */
 public final class ServerTimeExtension extends AbstractCapabilityExtension {
 
-  public static final String ID = CapabilityName.SERVER_TIME;
+    public static final String ID = CapabilityName.SERVER_TIME;
 
-  private static final String TIME_TAG = "time";
+    private static final String TIME_TAG = "time";
 
-  /** IRCv3 server-time's required format: millisecond-precision, UTC, {@code Z}-suffixed. */
-  private static final DateTimeFormatter TIME_FORMAT =
-      DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'").withZone(ZoneOffset.UTC);
+    /** IRCv3 server-time's required format: millisecond-precision, UTC, {@code Z}-suffixed. */
+    private static final DateTimeFormatter TIME_FORMAT =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'").withZone(ZoneOffset.UTC);
 
-  public ServerTimeExtension() {
-    super(ID);
-  }
+    public ServerTimeExtension() {
+        super(ID);
+    }
 
-  /** {@code time=} plus the 24-byte timestamp; no character in it needs tag escaping. */
-  static final long MAX_TAG_BYTES = 29;
+    /** {@code time=} plus the 24-byte timestamp; no character in it needs tag escaping. */
+    static final long MAX_TAG_BYTES = 29;
 
-  @Override
-  public void register(CapabilityRegistrar registrar) {
-    registrar.onOutboundTags(Set.of(TIME_TAG), MAX_TAG_BYTES, ServerTimeExtension::timeTag);
-  }
+    @Override
+    public void register(CapabilityRegistrar registrar) {
+        registrar.onOutboundTags(Set.of(TIME_TAG), MAX_TAG_BYTES, ServerTimeExtension::timeTag);
+    }
 
-  /** Pure in the message's send time; shared by every recipient of the envelope. */
-  static Map<String, String> timeTag(OutboundMessage message) {
-    return Map.of(TIME_TAG, TIME_FORMAT.format(message.sentAt()));
-  }
+    /** Pure in the message's send time; shared by every recipient of the envelope. */
+    static Map<String, String> timeTag(OutboundMessage message) {
+        return Map.of(TIME_TAG, TIME_FORMAT.format(message.sentAt()));
+    }
 }

@@ -32,34 +32,38 @@ import org.junit.jupiter.api.Test;
 
 class ModeBanCaseMappingTest {
 
-  @Test
-  void caseVariantsKeepOriginalBanListSpellingAndExistingModeEchoes() throws Exception {
-    ChannelRegistry registry = new ChannelRegistry();
-    ClientSession op = new ClientSession("op", "host", RateLimitBucket.withDefaults());
-    op.setNickname("op");
-    op.setIdent("op");
-    Channel channel = registry.join("#c", op, ignored -> true).orElseThrow().channel();
-    ModeCommandHandler handler =
-        new ModeCommandHandler(
-            registry, new NicknameRegistry(), new ExtensionRegistry(), () -> "server", () -> 20);
-    ByteArrayOutputStream out = new ByteArrayOutputStream();
-    try (SessionWriter writer = new SessionWriter(op, out, TagRenderer.NONE)) {
-      op.attachWriter(writer);
-      handler.handle(op, MessageParser.parse("MODE #c +b Nick!User@Host"));
-      handler.handle(op, MessageParser.parse("MODE #c +b nICK!uSER@hOST"));
-      assertThat(channel.bans())
-          .singleElement()
-          .satisfies(ban -> assertThat(ban.mask()).isEqualTo("Nick!User@Host"));
-      handler.handle(op, MessageParser.parse("MODE #c +b"));
-      handler.handle(op, MessageParser.parse("MODE #c -b NICK!USER@HOST"));
-      assertThat(channel.bans()).isEmpty();
-      handler.handle(op, MessageParser.parse("MODE #c -b NICK!USER@HOST"));
+    @Test
+    void caseVariantsKeepOriginalBanListSpellingAndExistingModeEchoes() throws Exception {
+        ChannelRegistry registry = new ChannelRegistry();
+        ClientSession op = new ClientSession("op", "host", RateLimitBucket.withDefaults());
+        op.setNickname("op");
+        op.setIdent("op");
+        Channel channel = registry.join("#c", op, ignored -> true).orElseThrow().channel();
+        ModeCommandHandler handler =
+                new ModeCommandHandler(
+                        registry,
+                        new NicknameRegistry(),
+                        new ExtensionRegistry(),
+                        () -> "server",
+                        () -> 20);
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        try (SessionWriter writer = new SessionWriter(op, out, TagRenderer.NONE)) {
+            op.attachWriter(writer);
+            handler.handle(op, MessageParser.parse("MODE #c +b Nick!User@Host"));
+            handler.handle(op, MessageParser.parse("MODE #c +b nICK!uSER@hOST"));
+            assertThat(channel.bans())
+                    .singleElement()
+                    .satisfies(ban -> assertThat(ban.mask()).isEqualTo("Nick!User@Host"));
+            handler.handle(op, MessageParser.parse("MODE #c +b"));
+            handler.handle(op, MessageParser.parse("MODE #c -b NICK!USER@HOST"));
+            assertThat(channel.bans()).isEmpty();
+            handler.handle(op, MessageParser.parse("MODE #c -b NICK!USER@HOST"));
+        }
+        String output = out.toString(StandardCharsets.UTF_8);
+        assertThat(output)
+                .contains(" MODE #c +b Nick!User@Host", " MODE #c +b nICK!uSER@hOST")
+                .contains(" 367 op #c Nick!User@Host op ")
+                .doesNotContain(" 367 op #c nICK!uSER@hOST", " 478 ");
+        assertThat(output.split(" MODE #c -b NICK!USER@HOST", -1)).hasSize(3);
     }
-    String output = out.toString(StandardCharsets.UTF_8);
-    assertThat(output)
-        .contains(" MODE #c +b Nick!User@Host", " MODE #c +b nICK!uSER@hOST")
-        .contains(" 367 op #c Nick!User@Host op ")
-        .doesNotContain(" 367 op #c nICK!uSER@hOST", " 478 ");
-    assertThat(output.split(" MODE #c -b NICK!USER@HOST", -1)).hasSize(3);
-  }
 }

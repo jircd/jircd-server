@@ -23,19 +23,20 @@ import org.junit.jupiter.api.Test;
 
 class Story2CapabilityListTest {
 
-  @Test
-  void capLsReturnsExactlyTheThreeStory2CapabilitiesAndCoreCapNotify() throws Exception {
-    try (TestServer server = TestServer.start(TestServer.ALL_CAPABILITIES_ENABLED_YAML);
-        RawIrcClient client = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void capLsReturnsExactlyTheThreeStory2CapabilitiesAndCoreCapNotify() throws Exception {
+        try (TestServer server = TestServer.start(TestServer.ALL_CAPABILITIES_ENABLED_YAML);
+                RawIrcClient client = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      client.send("CAP LS 302");
-      String response = client.readUntil("CAP * LS", Duration.ofSeconds(5));
+            client.send("CAP LS 302");
+            String response = client.readUntil("CAP * LS", Duration.ofSeconds(5));
 
-      String capsSection = response.substring(response.indexOf("LS :") + "LS :".length());
-      List<String> offered = List.of(capsSection.trim().split(" "));
+            String capsSection = response.substring(response.indexOf("LS :") + "LS :".length());
+            List<String> offered = List.of(capsSection.trim().split(" "));
 
-      assertThat(offered)
-          .containsExactlyInAnyOrder("message-tags", "server-time", "echo-message", "cap-notify");
+            assertThat(offered)
+                    .containsExactlyInAnyOrder(
+                            "message-tags", "server-time", "echo-message", "cap-notify");
+        }
     }
-  }
 }

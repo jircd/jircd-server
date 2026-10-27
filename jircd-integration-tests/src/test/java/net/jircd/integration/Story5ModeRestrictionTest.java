@@ -22,26 +22,26 @@ import org.junit.jupiter.api.Test;
 
 class Story5ModeRestrictionTest {
 
-  @Test
-  void moderatedChannelBlocksNonPermittedMemberFromSending() throws Exception {
-    try (TestServer server = TestServer.start();
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
-        RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void moderatedChannelBlocksNonPermittedMemberFromSending() throws Exception {
+        try (TestServer server = TestServer.start();
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
+                RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      alice.registerAndAwaitWelcome("alice", "alice"); // operator
-      bob.registerAndAwaitWelcome("bob", "bob");
+            alice.registerAndAwaitWelcome("alice", "alice"); // operator
+            bob.registerAndAwaitWelcome("bob", "bob");
 
-      alice.send("JOIN #lobby");
-      alice.readUntil("353", Duration.ofSeconds(5));
-      bob.send("JOIN #lobby");
-      bob.readUntil("353", Duration.ofSeconds(5));
+            alice.send("JOIN #lobby");
+            alice.readUntil("353", Duration.ofSeconds(5));
+            bob.send("JOIN #lobby");
+            bob.readUntil("353", Duration.ofSeconds(5));
 
-      alice.send("MODE #lobby +m");
-      alice.readUntil("MODE #lobby +m", Duration.ofSeconds(5));
+            alice.send("MODE #lobby +m");
+            alice.readUntil("MODE #lobby +m", Duration.ofSeconds(5));
 
-      bob.send("PRIVMSG #lobby :can anyone hear me");
-      String rejection = bob.readUntil("404", Duration.ofSeconds(5));
-      assertThat(rejection).contains("404");
+            bob.send("PRIVMSG #lobby :can anyone hear me");
+            String rejection = bob.readUntil("404", Duration.ofSeconds(5));
+            assertThat(rejection).contains("404");
+        }
     }
-  }
 }

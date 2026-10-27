@@ -17,18 +17,18 @@ package net.jircd.core.extension.capability;
 
 /** Why a hook result was dropped; deliberately carries no exception text or client content. */
 public enum FaultCategory {
-  EXCEPTION,
-  NULL_RESULT,
-  INVALID_RESULT,
+    EXCEPTION,
+    NULL_RESULT,
+    INVALID_RESULT,
 
-  /**
-   * Valid, individually bounded contributions that together exceed a documented protocol limit. The
-   * latecomer is dropped for its default, but no single provider is at fault, so none fails.
-   */
-  COMPOSITION_LIMIT;
+    /**
+     * Valid, individually bounded contributions that together exceed a documented protocol limit.
+     * The latecomer is dropped for its default, but no single provider is at fault, so none fails.
+     */
+    COMPOSITION_LIMIT;
 
-  /** Whether the provider that produced the result is at fault, and is withdrawn as FAILED. */
-  public boolean providerFault() {
-    return this != COMPOSITION_LIMIT;
-  }
+    /** Whether the provider that produced the result is at fault, and is withdrawn as FAILED. */
+    public boolean providerFault() {
+        return this != COMPOSITION_LIMIT;
+    }
 }

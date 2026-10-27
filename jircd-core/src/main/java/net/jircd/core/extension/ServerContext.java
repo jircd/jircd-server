@@ -30,11 +30,11 @@ import net.jircd.core.session.NicknameRegistry;
  * configurationReloader}'s live state) can change across a reload.
  */
 public record ServerContext(
-    NicknameRegistry nicknameRegistry,
-    ChannelRegistry channelRegistry,
-    ExtensionRegistry extensionRegistry,
-    Supplier<String> serverName,
-    ConfigurationReloader configurationReloader,
-    DisconnectCleanup disconnectCleanup,
-    CommandRegistrar commandRegistrar,
-    CapabilityServices capabilityServices) {}
+        NicknameRegistry nicknameRegistry,
+        ChannelRegistry channelRegistry,
+        ExtensionRegistry extensionRegistry,
+        Supplier<String> serverName,
+        ConfigurationReloader configurationReloader,
+        DisconnectCleanup disconnectCleanup,
+        CommandRegistrar commandRegistrar,
+        CapabilityServices capabilityServices) {}

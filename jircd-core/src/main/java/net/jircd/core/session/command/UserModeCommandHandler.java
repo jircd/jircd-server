@@ -35,106 +35,106 @@ import net.jircd.protocol.NumericReply;
  */
 public final class UserModeCommandHandler implements CommandHandler {
 
-  private final Supplier<String> serverName;
+    private final Supplier<String> serverName;
 
-  public UserModeCommandHandler(Supplier<String> serverName) {
-    this.serverName = serverName;
-  }
-
-  @Override
-  public void handle(ClientSession session, Message message) {
-    if (message.params().isEmpty()) {
-      Replies.sendFitted(
-          session,
-          serverName.get(),
-          NumericReply.ERR_NEEDMOREPARAMS,
-          List.of("MODE"),
-          "Not enough parameters");
-      return;
-    }
-    String target = message.params().getFirst();
-    if (session.nickname() == null
-        || !CaseMapping.fold(session.nickname()).equals(CaseMapping.fold(target))) {
-      Replies.sendFitted(
-          session,
-          serverName.get(),
-          NumericReply.ERR_USERSDONTMATCH,
-          List.of(),
-          "Cannot change mode for other users");
-      return;
+    public UserModeCommandHandler(Supplier<String> serverName) {
+        this.serverName = serverName;
     }
 
-    if (message.params().size() < 2) {
-      Replies.send(session, serverName.get(), NumericReply.RPL_UMODEIS, formatModes(session));
-      return;
-    }
-
-    String[] modeArgs = message.params().subList(1, message.params().size()).toArray(new String[0]);
-    List<ModeChange> changes = ModeStringParser.parse(modeArgs);
-    List<ModeChange> applied = new ArrayList<>();
-
-    for (ModeChange change : changes) {
-      UserMode mode = findByFlag(change.flag());
-      if (mode == null) {
-        Replies.sendFitted(
-            session,
-            serverName.get(),
-            NumericReply.ERR_UMODEUNKNOWNFLAG,
-            List.of(),
-            "Unknown MODE flag");
-        break;
-      }
-      if (change.sign() == '+') {
-        if (session.userModes().contains(mode)) {
-          applied.add(change); // already set — harmless no-op
-          continue;
+    @Override
+    public void handle(ClientSession session, Message message) {
+        if (message.params().isEmpty()) {
+            Replies.sendFitted(
+                    session,
+                    serverName.get(),
+                    NumericReply.ERR_NEEDMOREPARAMS,
+                    List.of("MODE"),
+                    "Not enough parameters");
+            return;
         }
-        if (!mode.clientSettable()) {
-          Replies.sendFitted(
-              session,
-              serverName.get(),
-              NumericReply.ERR_NOPRIVILEGES,
-              List.of(),
-              "Permission Denied- You're not an IRC operator");
-          break;
+        String target = message.params().getFirst();
+        if (session.nickname() == null
+                || !CaseMapping.fold(session.nickname()).equals(CaseMapping.fold(target))) {
+            Replies.sendFitted(
+                    session,
+                    serverName.get(),
+                    NumericReply.ERR_USERSDONTMATCH,
+                    List.of(),
+                    "Cannot change mode for other users");
+            return;
         }
-        session.setUserMode(mode);
-        applied.add(change);
-      } else {
-        if (mode == UserMode.OPERATOR) {
-          session.revokeAdministratorPrivilege();
-        } else {
-          session.clearUserMode(mode);
+
+        if (message.params().size() < 2) {
+            Replies.send(session, serverName.get(), NumericReply.RPL_UMODEIS, formatModes(session));
+            return;
         }
-        applied.add(change);
-      }
+
+        String[] modeArgs =
+                message.params().subList(1, message.params().size()).toArray(new String[0]);
+        List<ModeChange> changes = ModeStringParser.parse(modeArgs);
+        List<ModeChange> applied = new ArrayList<>();
+
+        for (ModeChange change : changes) {
+            UserMode mode = findByFlag(change.flag());
+            if (mode == null) {
+                Replies.sendFitted(
+                        session,
+                        serverName.get(),
+                        NumericReply.ERR_UMODEUNKNOWNFLAG,
+                        List.of(),
+                        "Unknown MODE flag");
+                break;
+            }
+            if (change.sign() == '+') {
+                if (session.userModes().contains(mode)) {
+                    applied.add(change); // already set — harmless no-op
+                    continue;
+                }
+                if (!mode.clientSettable()) {
+                    Replies.sendFitted(
+                            session,
+                            serverName.get(),
+                            NumericReply.ERR_NOPRIVILEGES,
+                            List.of(),
+                            "Permission Denied- You're not an IRC operator");
+                    break;
+                }
+                session.setUserMode(mode);
+                applied.add(change);
+            } else {
+                if (mode == UserMode.OPERATOR) {
+                    session.revokeAdministratorPrivilege();
+                } else {
+                    session.clearUserMode(mode);
+                }
+                applied.add(change);
+            }
+        }
+
+        if (!applied.isEmpty() && session.writer() != null) {
+            session.writer()
+                    .enqueueRaw(
+                            new Message(
+                                    Map.of(),
+                                    serverName.get(),
+                                    Command.MODE,
+                                    "MODE",
+                                    List.of(session.nickname(), ModeEcho.format(applied))));
+        }
     }
 
-    if (!applied.isEmpty() && session.writer() != null) {
-      session
-          .writer()
-          .enqueueRaw(
-              new Message(
-                  Map.of(),
-                  serverName.get(),
-                  Command.MODE,
-                  "MODE",
-                  List.of(session.nickname(), ModeEcho.format(applied))));
+    private static UserMode findByFlag(char flag) {
+        for (UserMode mode : UserMode.CORE_CATALOG) {
+            if (mode.flag() == flag) {
+                return mode;
+            }
+        }
+        return null;
     }
-  }
 
-  private static UserMode findByFlag(char flag) {
-    for (UserMode mode : UserMode.CORE_CATALOG) {
-      if (mode.flag() == flag) {
-        return mode;
-      }
+    private static String formatModes(ClientSession session) {
+        StringBuilder sb = new StringBuilder("+");
+        session.userModes().stream().map(UserMode::flag).sorted().forEach(sb::append);
+        return sb.toString();
     }
-    return null;
-  }
-
-  private static String formatModes(ClientSession session) {
-    StringBuilder sb = new StringBuilder("+");
-    session.userModes().stream().map(UserMode::flag).sorted().forEach(sb::append);
-    return sb.toString();
-  }
 }

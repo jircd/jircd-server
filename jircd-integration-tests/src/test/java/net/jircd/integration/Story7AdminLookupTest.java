@@ -22,26 +22,26 @@ import org.junit.jupiter.api.Test;
 
 class Story7AdminLookupTest {
 
-  @Test
-  void administratorLookupOfAnotherClientReturnsRealHostnameConsistentWithWhohost()
-      throws Exception {
-    try (TestServer server = TestServer.start(TestServer.adminAndCloakEnabledYaml());
-        RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort());
-        RawIrcClient root = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void administratorLookupOfAnotherClientReturnsRealHostnameConsistentWithWhohost()
+            throws Exception {
+        try (TestServer server = TestServer.start(TestServer.adminAndCloakEnabledYaml());
+                RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort());
+                RawIrcClient root = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      bob.registerAndAwaitWelcome("bob", "bob");
-      root.registerAndAwaitWelcome("root", "root");
-      root.send("OPER " + TestServer.ADMIN_USERNAME + " :" + TestServer.ADMIN_PASSWORD);
-      root.readUntil("381", Duration.ofSeconds(5));
+            bob.registerAndAwaitWelcome("bob", "bob");
+            root.registerAndAwaitWelcome("root", "root");
+            root.send("OPER " + TestServer.ADMIN_USERNAME + " :" + TestServer.ADMIN_PASSWORD);
+            root.readUntil("381", Duration.ofSeconds(5));
 
-      root.send("WHOHOST bob");
-      String whohostNotice = root.readUntil("NOTICE", Duration.ofSeconds(5));
-      String realHost =
-          whohostNotice.substring(whohostNotice.indexOf("connecting from ") + 16).trim();
+            root.send("WHOHOST bob");
+            String whohostNotice = root.readUntil("NOTICE", Duration.ofSeconds(5));
+            String realHost =
+                    whohostNotice.substring(whohostNotice.indexOf("connecting from ") + 16).trim();
 
-      root.send("WHOIS bob");
-      String whoisUser = root.readUntil("311", Duration.ofSeconds(5));
-      assertThat(whoisUser).contains(realHost).doesNotContain("user-");
+            root.send("WHOIS bob");
+            String whoisUser = root.readUntil("311", Duration.ofSeconds(5));
+            assertThat(whoisUser).contains(realHost).doesNotContain("user-");
+        }
     }
-  }
 }

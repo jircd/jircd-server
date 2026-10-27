@@ -22,17 +22,17 @@ import org.junit.jupiter.api.Test;
 
 class Story1ListTest {
 
-  @Test
-  void listReturnsEveryActiveChannel() throws Exception {
-    try (TestServer server = TestServer.start();
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
-      alice.registerAndAwaitWelcome("alice", "alice");
-      alice.send("JOIN #lobby");
-      alice.readUntil("353", Duration.ofSeconds(5));
+    @Test
+    void listReturnsEveryActiveChannel() throws Exception {
+        try (TestServer server = TestServer.start();
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+            alice.registerAndAwaitWelcome("alice", "alice");
+            alice.send("JOIN #lobby");
+            alice.readUntil("353", Duration.ofSeconds(5));
 
-      alice.send("LIST");
-      String listEntry = alice.readUntil("322", Duration.ofSeconds(5));
-      assertThat(listEntry).contains("#lobby");
+            alice.send("LIST");
+            String listEntry = alice.readUntil("322", Duration.ofSeconds(5));
+            assertThat(listEntry).contains("#lobby");
+        }
     }
-  }
 }

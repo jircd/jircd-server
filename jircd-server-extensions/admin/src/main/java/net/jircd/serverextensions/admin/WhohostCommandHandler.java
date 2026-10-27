@@ -32,42 +32,42 @@ import net.jircd.protocol.NumericReply;
  */
 public final class WhohostCommandHandler implements CommandHandler {
 
-  private final NicknameRegistry nicknameRegistry;
-  private final ExtensionRegistry extensionRegistry;
-  private final Supplier<String> serverName;
+    private final NicknameRegistry nicknameRegistry;
+    private final ExtensionRegistry extensionRegistry;
+    private final Supplier<String> serverName;
 
-  public WhohostCommandHandler(
-      NicknameRegistry nicknameRegistry,
-      ExtensionRegistry extensionRegistry,
-      Supplier<String> serverName) {
-    this.nicknameRegistry = nicknameRegistry;
-    this.extensionRegistry = extensionRegistry;
-    this.serverName = serverName;
-  }
+    public WhohostCommandHandler(
+            NicknameRegistry nicknameRegistry,
+            ExtensionRegistry extensionRegistry,
+            Supplier<String> serverName) {
+        this.nicknameRegistry = nicknameRegistry;
+        this.extensionRegistry = extensionRegistry;
+        this.serverName = serverName;
+    }
 
-  @Override
-  public void handle(ClientSession session, Message message) {
-    if (AdminPrivilege.rejectUnlessAuthorized(session, extensionRegistry, serverName.get())) {
-      return;
+    @Override
+    public void handle(ClientSession session, Message message) {
+        if (AdminPrivilege.rejectUnlessAuthorized(session, extensionRegistry, serverName.get())) {
+            return;
+        }
+        if (AdminPrivilege.rejectIfTooFewParams(
+                session, serverName.get(), "WHOHOST", message.params(), 1)) {
+            return;
+        }
+        String targetNickname = message.params().getFirst();
+        var target = nicknameRegistry.lookup(targetNickname);
+        if (target.isEmpty()) {
+            Replies.sendFitted(
+                    session,
+                    serverName.get(),
+                    NumericReply.ERR_NOSUCHNICK,
+                    List.of(targetNickname),
+                    "No such nick/channel");
+            return;
+        }
+        AdminNotices.send(
+                session,
+                serverName.get(),
+                target.get().nickname() + " is connecting from " + target.get().realHostname());
     }
-    if (AdminPrivilege.rejectIfTooFewParams(
-        session, serverName.get(), "WHOHOST", message.params(), 1)) {
-      return;
-    }
-    String targetNickname = message.params().getFirst();
-    var target = nicknameRegistry.lookup(targetNickname);
-    if (target.isEmpty()) {
-      Replies.sendFitted(
-          session,
-          serverName.get(),
-          NumericReply.ERR_NOSUCHNICK,
-          List.of(targetNickname),
-          "No such nick/channel");
-      return;
-    }
-    AdminNotices.send(
-        session,
-        serverName.get(),
-        target.get().nickname() + " is connecting from " + target.get().realHostname());
-  }
 }

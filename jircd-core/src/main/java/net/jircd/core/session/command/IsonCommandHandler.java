@@ -31,39 +31,39 @@ import net.jircd.protocol.NumericReply;
  */
 public final class IsonCommandHandler implements CommandHandler {
 
-  private final NicknameRegistry nicknameRegistry;
-  private final Supplier<String> serverName;
+    private final NicknameRegistry nicknameRegistry;
+    private final Supplier<String> serverName;
 
-  public IsonCommandHandler(NicknameRegistry nicknameRegistry, Supplier<String> serverName) {
-    this.nicknameRegistry = nicknameRegistry;
-    this.serverName = serverName;
-  }
-
-  @Override
-  public void handle(ClientSession session, Message message) {
-    if (message.params().isEmpty() || message.params().getFirst().isEmpty()) {
-      Replies.sendFitted(
-          session,
-          serverName.get(),
-          NumericReply.ERR_NEEDMOREPARAMS,
-          List.of("ISON"),
-          "Not enough parameters");
-      return;
+    public IsonCommandHandler(NicknameRegistry nicknameRegistry, Supplier<String> serverName) {
+        this.nicknameRegistry = nicknameRegistry;
+        this.serverName = serverName;
     }
-    List<String> online = new ArrayList<>();
-    for (String param : message.params()) {
-      for (String nickname : param.split(" ")) {
-        if (nickname.isEmpty()) {
-          continue;
+
+    @Override
+    public void handle(ClientSession session, Message message) {
+        if (message.params().isEmpty() || message.params().getFirst().isEmpty()) {
+            Replies.sendFitted(
+                    session,
+                    serverName.get(),
+                    NumericReply.ERR_NEEDMOREPARAMS,
+                    List.of("ISON"),
+                    "Not enough parameters");
+            return;
         }
-        nicknameRegistry
-            .lookup(nickname)
-            .filter(target -> target.lifecycle().isRegistered())
-            .map(ClientSession::nickname)
-            .filter(presented -> !online.contains(presented))
-            .ifPresent(online::add);
-      }
+        List<String> online = new ArrayList<>();
+        for (String param : message.params()) {
+            for (String nickname : param.split(" ")) {
+                if (nickname.isEmpty()) {
+                    continue;
+                }
+                nicknameRegistry
+                        .lookup(nickname)
+                        .filter(target -> target.lifecycle().isRegistered())
+                        .map(ClientSession::nickname)
+                        .filter(presented -> !online.contains(presented))
+                        .ifPresent(online::add);
+            }
+        }
+        Replies.sendListed(session, serverName.get(), NumericReply.RPL_ISON, List.of(), online);
     }
-    Replies.sendListed(session, serverName.get(), NumericReply.RPL_ISON, List.of(), online);
-  }
 }

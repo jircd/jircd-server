@@ -31,67 +31,69 @@ import net.jircd.core.extension.capability.RequestContext;
 @FunctionalInterface
 public interface TagRenderer {
 
-  PreparedTags NO_TAGS = new PreparedTags(0, Map::of);
+    PreparedTags NO_TAGS = new PreparedTags(0, Map::of);
 
-  TagRenderer NONE =
-      new TagRenderer() {
-        @Override
-        public Map<String, String> render(ClientSession recipient, OutboundMessage message) {
-          return Map.of();
-        }
+    TagRenderer NONE =
+            new TagRenderer() {
+                @Override
+                public Map<String, String> render(
+                        ClientSession recipient, OutboundMessage message) {
+                    return Map.of();
+                }
 
-        @Override
-        public PreparedTags prepare(ClientSession recipient, OutboundMessage message) {
-          return NO_TAGS;
-        }
-      };
+                @Override
+                public PreparedTags prepare(ClientSession recipient, OutboundMessage message) {
+                    return NO_TAGS;
+                }
+            };
 
-  /**
-   * Deferred tag rendering with a conservative bound on its complete tag section, including
-   * framing.
-   */
-  record PreparedTags(long wireBytes, java.util.function.Supplier<Map<String, String>> tags) {}
+    /**
+     * Deferred tag rendering with a conservative bound on its complete tag section, including
+     * framing.
+     */
+    record PreparedTags(long wireBytes, java.util.function.Supplier<Map<String, String>> tags) {}
 
-  /**
-   * Prepares a reservation without rendering the recipient's wire line. Custom renderers without
-   * contribution metadata reserve the protocol's full legal tag section; capability renderers
-   * override this with the selected message contributions.
-   */
-  default PreparedTags prepare(ClientSession recipient, OutboundMessage message) {
-    return new PreparedTags(
-        net.jircd.protocol.MessageSerializer.MAX_TAG_SECTION_BYTES,
-        () -> render(recipient, message));
-  }
+    /**
+     * Prepares a reservation without rendering the recipient's wire line. Custom renderers without
+     * contribution metadata reserve the protocol's full legal tag section; capability renderers
+     * override this with the selected message contributions.
+     */
+    default PreparedTags prepare(ClientSession recipient, OutboundMessage message) {
+        return new PreparedTags(
+                net.jircd.protocol.MessageSerializer.MAX_TAG_SECTION_BYTES,
+                () -> render(recipient, message));
+    }
 
-  Map<String, String> render(ClientSession recipient, OutboundMessage message);
+    Map<String, String> render(ClientSession recipient, OutboundMessage message);
 
-  /**
-   * How {@code group} is framed for {@code recipient}: the complete ordered messages, including any
-   * opener and closer. The default sends the members plain; capability renderers ask the provider
-   * that owns group framing. A plan returned here is complete: it is queued whole or not at all.
-   */
-  default FramingPlan frame(ClientSession recipient, OutputGroup group, RequestContext context) {
-    return FramingPlan.plain(group);
-  }
+    /**
+     * How {@code group} is framed for {@code recipient}: the complete ordered messages, including
+     * any opener and closer. The default sends the members plain; capability renderers ask the
+     * provider that owns group framing. A plan returned here is complete: it is queued whole or not
+     * at all.
+     */
+    default FramingPlan frame(ClientSession recipient, OutputGroup group, RequestContext context) {
+        return FramingPlan.plain(group);
+    }
 
-  /**
-   * Both complete alternatives for {@code group}: the framing {@link #frame} would choose now, and
-   * the plain members. Prepared outside every core lock; the default frames nothing.
-   */
-  default PreparedGroup prepareGroup(
-      ClientSession recipient, OutputGroup group, RequestContext context) {
-    FramingPlan framed = frame(recipient, group, context);
-    return new PreparedGroup(framed, FramingPlan.plain(group), null);
-  }
+    /**
+     * Both complete alternatives for {@code group}: the framing {@link #frame} would choose now,
+     * and the plain members. Prepared outside every core lock; the default frames nothing.
+     */
+    default PreparedGroup prepareGroup(
+            ClientSession recipient, OutputGroup group, RequestContext context) {
+        FramingPlan framed = frame(recipient, group, context);
+        return new PreparedGroup(framed, FramingPlan.plain(group), null);
+    }
 
-  /**
-   * Chooses one of {@code group}'s alternatives against the current state and hands it to {@code
-   * append}, which queues it whole. Capability renderers choose under the administrative mutex,
-   * framed only while its owner and declared prerequisites are still effective for {@code
-   * recipient}; no provider runs then. The default keeps the framing as prepared.
-   */
-  default void admitGroup(
-      ClientSession recipient, PreparedGroup group, Consumer<FramingPlan> append) {
-    append.accept(group.framed());
-  }
+    /**
+     * Chooses one of {@code group}'s alternatives against the current state and hands it to {@code
+     * append}, which queues it whole. Capability renderers choose under the administrative mutex,
+     * framed only while its owner and declared prerequisites are still effective for {@code
+     * recipient}; no provider runs then. The default keeps the framing as prepared.
+     */
+    default void admitGroup(
+            ClientSession recipient, PreparedGroup group, Consumer<FramingPlan> append) {
+        append.accept(group.framed());
+    }
 }

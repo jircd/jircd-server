@@ -21,13 +21,13 @@ import net.jircd.protocol.Message;
 
 /** A finite logical group of messages with a conservative byte bound for the recipient. */
 public record OutputGroup(
-    String id, String type, List<String> typeParams, List<Message> members, long byteBound) {
+        String id, String type, List<String> typeParams, List<Message> members, long byteBound) {
 
-  public OutputGroup {
-    Objects.requireNonNull(id);
-    Objects.requireNonNull(type);
-    typeParams = List.copyOf(typeParams);
-    members = List.copyOf(members);
-    if (byteBound < 0) throw new IllegalArgumentException("byteBound must not be negative");
-  }
+    public OutputGroup {
+        Objects.requireNonNull(id);
+        Objects.requireNonNull(type);
+        typeParams = List.copyOf(typeParams);
+        members = List.copyOf(members);
+        if (byteBound < 0) throw new IllegalArgumentException("byteBound must not be negative");
+    }
 }

@@ -42,66 +42,70 @@ import net.jircd.protocol.Command;
  */
 public final class MessageTagsExtension extends AbstractCapabilityExtension {
 
-  public static final String ID = CapabilityName.MESSAGE_TAGS;
+    public static final String ID = CapabilityName.MESSAGE_TAGS;
 
-  private static final String MSGID_TAG = "msgid";
+    private static final String MSGID_TAG = "msgid";
 
-  /** {@code msgid=} plus the 36-character UUID; no character in it needs tag escaping. */
-  static final long MAX_MSGID_TAG_BYTES = 42;
+    /** {@code msgid=} plus the 36-character UUID; no character in it needs tag escaping. */
+    static final long MAX_MSGID_TAG_BYTES = 42;
 
-  private final AtomicReference<ServerContext> context = new AtomicReference<>();
+    private final AtomicReference<ServerContext> context = new AtomicReference<>();
 
-  public MessageTagsExtension() {
-    super(ID);
-  }
+    public MessageTagsExtension() {
+        super(ID);
+    }
 
-  @Override
-  public void start(ServerContext serverContext) {
-    context.set(serverContext);
-  }
+    @Override
+    public void start(ServerContext serverContext) {
+        context.set(serverContext);
+    }
 
-  @Override
-  public void stop() {
-    context.set(null);
-  }
+    @Override
+    public void stop() {
+        context.set(null);
+    }
 
-  @Override
-  public void register(CapabilityRegistrar registrar) {
-    registrar.onInboundTags(MessageTagsExtension::forwardClientOnlyTags);
-    registrar.onOutboundTags(Set.of(MSGID_TAG), MAX_MSGID_TAG_BYTES, MessageTagsExtension::msgid);
-    registrar.command(
-        Command.TAGMSG,
-        new TagmsgCommandHandler(this::currentDelivery, () -> started().serverName().get()));
-  }
+    @Override
+    public void register(CapabilityRegistrar registrar) {
+        registrar.onInboundTags(MessageTagsExtension::forwardClientOnlyTags);
+        registrar.onOutboundTags(
+                Set.of(MSGID_TAG), MAX_MSGID_TAG_BYTES, MessageTagsExtension::msgid);
+        registrar.command(
+                Command.TAGMSG,
+                new TagmsgCommandHandler(
+                        this::currentDelivery, () -> started().serverName().get()));
+    }
 
-  private MessageDelivery currentDelivery() {
-    ServerContext started = started();
-    return new MessageDelivery(
-        started.channelRegistry(),
-        started.nicknameRegistry(),
-        started.extensionRegistry(),
-        started.serverName());
-  }
+    private MessageDelivery currentDelivery() {
+        ServerContext started = started();
+        return new MessageDelivery(
+                started.channelRegistry(),
+                started.nicknameRegistry(),
+                started.extensionRegistry(),
+                started.serverName());
+    }
 
-  private ServerContext started() {
-    ServerContext current = context.get();
-    if (current == null) throw new IllegalStateException("message-tags is not started");
-    return current;
-  }
+    private ServerContext started() {
+        ServerContext current = context.get();
+        if (current == null) throw new IllegalStateException("message-tags is not started");
+        return current;
+    }
 
-  /** Only client-only tags are forwarded; a client's attempt to set a server tag is dropped. */
-  static InboundTagResult forwardClientOnlyTags(InboundTags tags, RequestContext context) {
-    Map<String, String> forwarded = new LinkedHashMap<>();
-    tags.tags()
-        .forEach(
-            (key, value) -> {
-              if (key.startsWith("+")) forwarded.put(key, value);
-            });
-    return forwarded.isEmpty() ? InboundTagResult.NONE : new InboundTagResult(forwarded, Map.of());
-  }
+    /** Only client-only tags are forwarded; a client's attempt to set a server tag is dropped. */
+    static InboundTagResult forwardClientOnlyTags(InboundTags tags, RequestContext context) {
+        Map<String, String> forwarded = new LinkedHashMap<>();
+        tags.tags()
+                .forEach(
+                        (key, value) -> {
+                            if (key.startsWith("+")) forwarded.put(key, value);
+                        });
+        return forwarded.isEmpty()
+                ? InboundTagResult.NONE
+                : new InboundTagResult(forwarded, Map.of());
+    }
 
-  /** Pure in the envelope: every recipient of one message sees the same identifier. */
-  static Map<String, String> msgid(OutboundMessage message) {
-    return Map.of(MSGID_TAG, message.messageId().toString());
-  }
+    /** Pure in the envelope: every recipient of one message sees the same identifier. */
+    static Map<String, String> msgid(OutboundMessage message) {
+        return Map.of(MSGID_TAG, message.messageId().toString());
+    }
 }

@@ -33,22 +33,22 @@ import net.jircd.core.config.TlsCertificateLoader;
  */
 public final class TlsSupport {
 
-  private TlsSupport() {}
+    private TlsSupport() {}
 
-  public static SSLContext buildServerContext(ServerConfiguration.Listener listener)
-      throws GeneralSecurityException, IOException {
-    KeyStore keyStore = TlsCertificateLoader.load(listener);
-    char[] keyPassword =
-        listener.keystorePath() != null
-            ? TlsCertificateLoader.keystorePassword(listener)
-            : TlsCertificateLoader.PEM_KEY_PASSWORD;
+    public static SSLContext buildServerContext(ServerConfiguration.Listener listener)
+            throws GeneralSecurityException, IOException {
+        KeyStore keyStore = TlsCertificateLoader.load(listener);
+        char[] keyPassword =
+                listener.keystorePath() != null
+                        ? TlsCertificateLoader.keystorePassword(listener)
+                        : TlsCertificateLoader.PEM_KEY_PASSWORD;
 
-    KeyManagerFactory keyManagerFactory =
-        KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
-    keyManagerFactory.init(keyStore, keyPassword);
+        KeyManagerFactory keyManagerFactory =
+                KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
+        keyManagerFactory.init(keyStore, keyPassword);
 
-    SSLContext context = SSLContext.getInstance("TLS");
-    context.init(keyManagerFactory.getKeyManagers(), null, null);
-    return context;
-  }
+        SSLContext context = SSLContext.getInstance("TLS");
+        context.init(keyManagerFactory.getKeyManagers(), null, null);
+        return context;
+    }
 }

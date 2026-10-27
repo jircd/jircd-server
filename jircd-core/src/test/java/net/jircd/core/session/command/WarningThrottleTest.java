@@ -23,50 +23,50 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 class WarningThrottleTest {
-  private final AtomicLong clock = new AtomicLong();
-  private WarningThrottle throttle;
+    private final AtomicLong clock = new AtomicLong();
+    private WarningThrottle throttle;
 
-  @BeforeEach
-  void createThrottle() {
-    throttle = new WarningThrottle(100, 2, clock::get);
-  }
+    @BeforeEach
+    void createThrottle() {
+        throttle = new WarningThrottle(100, 2, clock::get);
+    }
 
-  @Test
-  void admitsTheFirstOccurrenceThenSuppressesWithinTheInterval() {
-    assertThat(throttle.admit("a")).isZero();
-    assertThat(throttle.admit("a")).isEqualTo(-1);
-    clock.set(99);
-    assertThat(throttle.admit("a")).isEqualTo(-1);
-  }
+    @Test
+    void admitsTheFirstOccurrenceThenSuppressesWithinTheInterval() {
+        assertThat(throttle.admit("a")).isZero();
+        assertThat(throttle.admit("a")).isEqualTo(-1);
+        clock.set(99);
+        assertThat(throttle.admit("a")).isEqualTo(-1);
+    }
 
-  @Test
-  void reportsSuppressedCountWhenTheIntervalElapses() {
-    throttle.admit("a");
-    throttle.admit("a");
-    throttle.admit("a");
-    clock.set(100);
-    assertThat(throttle.admit("a")).isEqualTo(2);
-    assertThat(throttle.admit("a")).isEqualTo(-1);
-  }
+    @Test
+    void reportsSuppressedCountWhenTheIntervalElapses() {
+        throttle.admit("a");
+        throttle.admit("a");
+        throttle.admit("a");
+        clock.set(100);
+        assertThat(throttle.admit("a")).isEqualTo(2);
+        assertThat(throttle.admit("a")).isEqualTo(-1);
+    }
 
-  @Test
-  void keysAreIndependent() {
-    throttle.admit("a");
-    assertThat(throttle.admit("b")).isZero();
-  }
+    @Test
+    void keysAreIndependent() {
+        throttle.admit("a");
+        assertThat(throttle.admit("b")).isZero();
+    }
 
-  @Test
-  void remembersAtMostMaxKeys() {
-    throttle.admit("a");
-    throttle.admit("b");
-    throttle.admit("c");
-    assertThat(throttle.admit("a")).as("evicted, so logged as a first occurrence").isZero();
-  }
+    @Test
+    void remembersAtMostMaxKeys() {
+        throttle.admit("a");
+        throttle.admit("b");
+        throttle.admit("c");
+        assertThat(throttle.admit("a")).as("evicted, so logged as a first occurrence").isZero();
+    }
 
-  @Test
-  void resetForgetsEveryKey() {
-    throttle.admit("a");
-    throttle.reset();
-    assertThat(throttle.admit("a")).isZero();
-  }
+    @Test
+    void resetForgetsEveryKey() {
+        throttle.admit("a");
+        throttle.reset();
+        assertThat(throttle.admit("a")).isZero();
+    }
 }

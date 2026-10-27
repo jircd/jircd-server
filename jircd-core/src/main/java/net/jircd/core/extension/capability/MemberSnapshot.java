@@ -23,17 +23,17 @@ import java.util.Objects;
  * holds no capability flag: providers choose how to render it.
  */
 public record MemberSnapshot(
-    String nickname, String ident, String displayHost, List<String> heldStatuses) {
+        String nickname, String ident, String displayHost, List<String> heldStatuses) {
 
-  public MemberSnapshot {
-    Objects.requireNonNull(nickname);
-    Objects.requireNonNull(ident);
-    Objects.requireNonNull(displayHost);
-    heldStatuses = List.copyOf(heldStatuses);
-  }
+    public MemberSnapshot {
+        Objects.requireNonNull(nickname);
+        Objects.requireNonNull(ident);
+        Objects.requireNonNull(displayHost);
+        heldStatuses = List.copyOf(heldStatuses);
+    }
 
-  /** Core's default status: the highest held symbol, or none. */
-  public String highestStatus() {
-    return heldStatuses.isEmpty() ? "" : heldStatuses.getFirst();
-  }
+    /** Core's default status: the highest held symbol, or none. */
+    public String highestStatus() {
+        return heldStatuses.isEmpty() ? "" : heldStatuses.getFirst();
+    }
 }

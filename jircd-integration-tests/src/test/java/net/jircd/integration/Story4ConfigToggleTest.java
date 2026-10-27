@@ -27,65 +27,66 @@ import sun.misc.Signal;
 
 class Story4ConfigToggleTest {
 
-  @Test
-  void disablingViaConfigAndSighupStopsTaggingWithoutRestart() throws Exception {
-    try (TestServer server = TestServer.start(TestServer.ALL_CAPABILITIES_ENABLED_YAML);
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void disablingViaConfigAndSighupStopsTaggingWithoutRestart() throws Exception {
+        try (TestServer server = TestServer.start(TestServer.ALL_CAPABILITIES_ENABLED_YAML);
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      alice.send("CAP REQ :message-tags echo-message");
-      alice.readUntil("CAP * ACK", Duration.ofSeconds(5));
-      alice.send("CAP END");
-      alice.registerAndAwaitWelcome("alice", "alice");
-      alice.send("JOIN #lobby");
-      alice.readUntil("353", Duration.ofSeconds(5));
+            alice.send("CAP REQ :message-tags echo-message");
+            alice.readUntil("CAP * ACK", Duration.ofSeconds(5));
+            alice.send("CAP END");
+            alice.registerAndAwaitWelcome("alice", "alice");
+            alice.send("JOIN #lobby");
+            alice.readUntil("353", Duration.ofSeconds(5));
 
-      alice.send("PRIVMSG #lobby :before disable");
-      String beforeDisable = alice.readUntil("PRIVMSG #lobby", Duration.ofSeconds(5));
-      assertThat(beforeDisable).startsWith("@");
+            alice.send("PRIVMSG #lobby :before disable");
+            String beforeDisable = alice.readUntil("PRIVMSG #lobby", Duration.ofSeconds(5));
+            assertThat(beforeDisable).startsWith("@");
 
-      SighupReloadHandler.install(server.application);
-      Files.writeString(
-          server.configPath,
-          TestServer.baseYaml()
-              + """
+            SighupReloadHandler.install(server.application);
+            Files.writeString(
+                    server.configPath,
+                    TestServer.baseYaml()
+                            + """
               capabilities:
                 message-tags: disabled
                 server-time: enabled
                 echo-message: enabled
               """);
-      Signal.raise(new Signal("HUP"));
-      awaitState(server, "message-tags", Extension.State.DISABLED);
+            Signal.raise(new Signal("HUP"));
+            awaitState(server, "message-tags", Extension.State.DISABLED);
 
-      try (RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort())) {
-        bob.send("CAP LS 302");
-        String capList = bob.readUntil("CAP * LS", Duration.ofSeconds(5));
-        assertThat(capList).doesNotContain("message-tags");
-      }
+            try (RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+                bob.send("CAP LS 302");
+                String capList = bob.readUntil("CAP * LS", Duration.ofSeconds(5));
+                assertThat(capList).doesNotContain("message-tags");
+            }
 
-      alice.send("PRIVMSG #lobby :after disable");
-      String afterDisable = alice.readUntil("PRIVMSG #lobby :after disable", Duration.ofSeconds(5));
-      assertThat(afterDisable).doesNotStartWith("@");
+            alice.send("PRIVMSG #lobby :after disable");
+            String afterDisable =
+                    alice.readUntil("PRIVMSG #lobby :after disable", Duration.ofSeconds(5));
+            assertThat(afterDisable).doesNotStartWith("@");
+        }
     }
-  }
 
-  /**
-   * Polls {@code extensionRegistry().stateOf(id)} until it equals {@code expected} or times out.
-   */
-  private static void awaitState(TestServer server, String id, Extension.State expected)
-      throws InterruptedException {
-    Instant deadline = Instant.now().plusSeconds(5);
-    while (Instant.now().isBefore(deadline)) {
-      if (server.application.extensionRegistry().stateOf(id) == expected) {
-        return;
-      }
-      Thread.sleep(20);
+    /**
+     * Polls {@code extensionRegistry().stateOf(id)} until it equals {@code expected} or times out.
+     */
+    private static void awaitState(TestServer server, String id, Extension.State expected)
+            throws InterruptedException {
+        Instant deadline = Instant.now().plusSeconds(5);
+        while (Instant.now().isBefore(deadline)) {
+            if (server.application.extensionRegistry().stateOf(id) == expected) {
+                return;
+            }
+            Thread.sleep(20);
+        }
+        throw new AssertionError(
+                "Timed out waiting for extension '"
+                        + id
+                        + "' to reach state "
+                        + expected
+                        + "; was "
+                        + server.application.extensionRegistry().stateOf(id));
     }
-    throw new AssertionError(
-        "Timed out waiting for extension '"
-            + id
-            + "' to reach state "
-            + expected
-            + "; was "
-            + server.application.extensionRegistry().stateOf(id));
-  }
 }

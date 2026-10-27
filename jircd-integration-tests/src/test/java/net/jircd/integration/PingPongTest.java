@@ -29,39 +29,39 @@ import org.junit.jupiter.api.Test;
  */
 class PingPongTest {
 
-  @Test
-  void pingBeforeRegistrationReceivesImmediatePong() throws Exception {
-    try (TestServer server = TestServer.start();
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void pingBeforeRegistrationReceivesImmediatePong() throws Exception {
+        try (TestServer server = TestServer.start();
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      alice.send("PING sometoken");
-      String pong = alice.readUntil("PONG", Duration.ofSeconds(5));
-      assertThat(pong).contains("PONG").contains("test.jircd.local").contains("sometoken");
+            alice.send("PING sometoken");
+            String pong = alice.readUntil("PONG", Duration.ofSeconds(5));
+            assertThat(pong).contains("PONG").contains("test.jircd.local").contains("sometoken");
+        }
     }
-  }
 
-  @Test
-  void pingAfterRegistrationReceivesImmediatePong() throws Exception {
-    try (TestServer server = TestServer.start();
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void pingAfterRegistrationReceivesImmediatePong() throws Exception {
+        try (TestServer server = TestServer.start();
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      alice.registerAndAwaitWelcome("alice", "alice");
+            alice.registerAndAwaitWelcome("alice", "alice");
 
-      alice.send("PING anothertoken");
-      String pong = alice.readUntil("PONG", Duration.ofSeconds(5));
-      assertThat(pong).contains("PONG").contains("test.jircd.local").contains("anothertoken");
+            alice.send("PING anothertoken");
+            String pong = alice.readUntil("PONG", Duration.ofSeconds(5));
+            assertThat(pong).contains("PONG").contains("test.jircd.local").contains("anothertoken");
+        }
     }
-  }
 
-  @Test
-  void pingWithNoTokenIsRejectedNotFabricated() throws Exception {
-    try (TestServer server = TestServer.start();
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void pingWithNoTokenIsRejectedNotFabricated() throws Exception {
+        try (TestServer server = TestServer.start();
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      alice.registerAndAwaitWelcome("alice", "alice");
+            alice.registerAndAwaitWelcome("alice", "alice");
 
-      alice.send("PING");
-      assertThat(alice.readUntil("409", Duration.ofSeconds(5))).contains("409");
+            alice.send("PING");
+            assertThat(alice.readUntil("409", Duration.ofSeconds(5))).contains("409");
+        }
     }
-  }
 }

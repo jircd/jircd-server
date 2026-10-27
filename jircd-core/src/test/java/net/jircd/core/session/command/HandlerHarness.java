@@ -32,39 +32,40 @@ import net.jircd.protocol.MessageParser;
 /** Runs one command through a handler against an in-memory session and parses the wire output. */
 final class HandlerHarness {
 
-  final NicknameRegistry nicknames = new NicknameRegistry();
+    final NicknameRegistry nicknames = new NicknameRegistry();
 
-  ClientSession register(String nick) {
-    ClientSession session = unregistered(nick);
-    session.setNickname(nick);
-    nicknames.claim(nick, session);
-    session.setIdent(nick);
-    assertThat(session.lifecycle().completeRegistration()).isTrue();
-    return session;
-  }
-
-  static ClientSession unregistered(String id) {
-    return new ClientSession(id, "host.example", RateLimitBucket.withDefaults());
-  }
-
-  static List<Message> run(CommandHandler handler, ClientSession session, String line)
-      throws Exception {
-    ByteArrayOutputStream out = new ByteArrayOutputStream();
-    try (SessionWriter writer = new SessionWriter(session, out, TagRenderer.NONE)) {
-      session.attachWriter(writer);
-      handler.handle(session, MessageParser.parse(line));
+    ClientSession register(String nick) {
+        ClientSession session = unregistered(nick);
+        session.setNickname(nick);
+        nicknames.claim(nick, session);
+        session.setIdent(nick);
+        assertThat(session.lifecycle().completeRegistration()).isTrue();
+        return session;
     }
-    List<Message> replies = new ArrayList<>();
-    for (String raw : out.toString(StandardCharsets.UTF_8).split("\r\n")) {
-      if (!raw.isEmpty()) {
-        assertThat(raw.getBytes(StandardCharsets.UTF_8).length + 2).isLessThanOrEqualTo(512);
-        replies.add(MessageParser.parse(raw));
-      }
-    }
-    return replies;
-  }
 
-  static List<String> codes(List<Message> replies) {
-    return replies.stream().map(Message::rawCommand).toList();
-  }
+    static ClientSession unregistered(String id) {
+        return new ClientSession(id, "host.example", RateLimitBucket.withDefaults());
+    }
+
+    static List<Message> run(CommandHandler handler, ClientSession session, String line)
+            throws Exception {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        try (SessionWriter writer = new SessionWriter(session, out, TagRenderer.NONE)) {
+            session.attachWriter(writer);
+            handler.handle(session, MessageParser.parse(line));
+        }
+        List<Message> replies = new ArrayList<>();
+        for (String raw : out.toString(StandardCharsets.UTF_8).split("\r\n")) {
+            if (!raw.isEmpty()) {
+                assertThat(raw.getBytes(StandardCharsets.UTF_8).length + 2)
+                        .isLessThanOrEqualTo(512);
+                replies.add(MessageParser.parse(raw));
+            }
+        }
+        return replies;
+    }
+
+    static List<String> codes(List<Message> replies) {
+        return replies.stream().map(Message::rawCommand).toList();
+    }
 }

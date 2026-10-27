@@ -25,15 +25,15 @@ import java.util.Set;
  * CapabilityRegistrar#build()}.
  */
 public record CapabilityDescriptor(
-    String providerId,
-    String capabilityName,
-    Set<String> requiresProviders,
-    List<HookRegistration> registrations) {
+        String providerId,
+        String capabilityName,
+        Set<String> requiresProviders,
+        List<HookRegistration> registrations) {
 
-  public CapabilityDescriptor {
-    Tokens.require(providerId, "provider id");
-    Tokens.require(capabilityName, "capability name");
-    requiresProviders = Set.copyOf(Objects.requireNonNull(requiresProviders));
-    registrations = List.copyOf(Objects.requireNonNull(registrations));
-  }
+    public CapabilityDescriptor {
+        Tokens.require(providerId, "provider id");
+        Tokens.require(capabilityName, "capability name");
+        requiresProviders = Set.copyOf(Objects.requireNonNull(requiresProviders));
+        registrations = List.copyOf(Objects.requireNonNull(registrations));
+    }
 }

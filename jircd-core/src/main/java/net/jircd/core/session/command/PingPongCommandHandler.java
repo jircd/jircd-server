@@ -32,33 +32,40 @@ import net.jircd.protocol.NumericReply;
  */
 public final class PingPongCommandHandler {
 
-  private PingPongCommandHandler() {}
+    private PingPongCommandHandler() {}
 
-  public static CommandHandler ping(Supplier<String> serverName) {
-    return (session, message) -> {
-      if (message.params().isEmpty()) {
-        Replies.sendFitted(
-            session, serverName.get(), NumericReply.ERR_NOORIGIN, List.of(), "No origin specified");
-        return;
-      }
-      String token = message.params().getFirst();
-      if (session.writer() != null) {
-        session
-            .writer()
-            .enqueueRaw(
-                new Message(
-                    Map.of(), null, Command.PONG, "PONG", List.of(serverName.get(), token)));
-      }
-    };
-  }
+    public static CommandHandler ping(Supplier<String> serverName) {
+        return (session, message) -> {
+            if (message.params().isEmpty()) {
+                Replies.sendFitted(
+                        session,
+                        serverName.get(),
+                        NumericReply.ERR_NOORIGIN,
+                        List.of(),
+                        "No origin specified");
+                return;
+            }
+            String token = message.params().getFirst();
+            if (session.writer() != null) {
+                session.writer()
+                        .enqueueRaw(
+                                new Message(
+                                        Map.of(),
+                                        null,
+                                        Command.PONG,
+                                        "PONG",
+                                        List.of(serverName.get(), token)));
+            }
+        };
+    }
 
-  public static CommandHandler pong() {
-    return (session, message) -> {
-      session.markAlive();
-      LivenessMonitor monitor = session.livenessMonitor();
-      if (monitor != null) {
-        monitor.onPongReceived();
-      }
-    };
-  }
+    public static CommandHandler pong() {
+        return (session, message) -> {
+            session.markAlive();
+            LivenessMonitor monitor = session.livenessMonitor();
+            if (monitor != null) {
+                monitor.onPongReceived();
+            }
+        };
+    }
 }

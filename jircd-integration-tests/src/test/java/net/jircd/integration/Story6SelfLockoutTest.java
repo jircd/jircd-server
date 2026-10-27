@@ -29,23 +29,24 @@ import org.junit.jupiter.api.Test;
  */
 class Story6SelfLockoutTest {
 
-  @Test
-  void disablingAdminLocksOutAlreadyOperedSessionFromEveryOtherAdminCommand() throws Exception {
-    try (TestServer server = TestServer.start(TestServer.adminEnabledYaml());
-        RawIrcClient root = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void disablingAdminLocksOutAlreadyOperedSessionFromEveryOtherAdminCommand() throws Exception {
+        try (TestServer server = TestServer.start(TestServer.adminEnabledYaml());
+                RawIrcClient root = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      root.registerAndAwaitWelcome("root", "root");
-      root.send("OPER " + TestServer.ADMIN_USERNAME + " :" + TestServer.ADMIN_PASSWORD);
-      root.readUntil("381", Duration.ofSeconds(5));
+            root.registerAndAwaitWelcome("root", "root");
+            root.send("OPER " + TestServer.ADMIN_USERNAME + " :" + TestServer.ADMIN_PASSWORD);
+            root.readUntil("381", Duration.ofSeconds(5));
 
-      root.send("EXTENSION DISABLE admin");
-      assertThat(root.readUntil("NOTICE", Duration.ofSeconds(5))).contains("admin is now disabled");
+            root.send("EXTENSION DISABLE admin");
+            assertThat(root.readUntil("NOTICE", Duration.ofSeconds(5)))
+                    .contains("admin is now disabled");
 
-      root.send("WHOHOST root");
-      assertThat(root.readUntil("481", Duration.ofSeconds(5))).contains("481");
+            root.send("WHOHOST root");
+            assertThat(root.readUntil("481", Duration.ofSeconds(5))).contains("481");
 
-      root.send("EXTENSION ENABLE admin");
-      assertThat(root.readUntil("481", Duration.ofSeconds(5))).contains("481");
+            root.send("EXTENSION ENABLE admin");
+            assertThat(root.readUntil("481", Duration.ofSeconds(5))).contains("481");
+        }
     }
-  }
 }

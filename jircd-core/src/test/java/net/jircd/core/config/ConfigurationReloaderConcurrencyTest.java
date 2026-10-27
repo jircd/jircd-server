@@ -32,78 +32,79 @@ import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 
 class ConfigurationReloaderConcurrencyTest {
-  @TempDir Path directory;
+    @TempDir Path directory;
 
-  /** An extension whose start blocks, holding the first reload mid-way through reconciliation. */
-  private static final class BlockingExtension implements ServerExtension {
-    final CountDownLatch entered = new CountDownLatch(1);
-    final CountDownLatch release = new CountDownLatch(1);
+    /** An extension whose start blocks, holding the first reload mid-way through reconciliation. */
+    private static final class BlockingExtension implements ServerExtension {
+        final CountDownLatch entered = new CountDownLatch(1);
+        final CountDownLatch release = new CountDownLatch(1);
 
-    @Override
-    public String id() {
-      return "blocker";
+        @Override
+        public String id() {
+            return "blocker";
+        }
+
+        @Override
+        public void start(ServerContext context) {
+            entered.countDown();
+            try {
+                release.await();
+            } catch (InterruptedException _) {
+                Thread.currentThread().interrupt();
+            }
+        }
+
+        @Override
+        public void stop() {
+            // Nothing to release: start() only parks the reload under test.
+        }
     }
 
-    @Override
-    public void start(ServerContext context) {
-      entered.countDown();
-      try {
-        release.await();
-      } catch (InterruptedException _) {
-        Thread.currentThread().interrupt();
-      }
+    @Test
+    @Timeout(30)
+    void aSecondReloadWaitsForTheFirstToFinishPublishingSoLimitsNeverSplit() throws Exception {
+        ConfigurationLoader loader = new ConfigurationLoader(Set.of(), Set.of("blocker"));
+        ServerConfiguration initial =
+                loader.load(
+                        new ByteArrayInputStream(
+                                "serverName: test.jircd.local\n".getBytes(StandardCharsets.UTF_8)));
+        BlockingExtension blocker = new BlockingExtension();
+        ExtensionRegistry extensions = new ExtensionRegistry();
+        extensions.register(blocker);
+        Path yaml = directory.resolve("reload.yaml");
+        ConfigurationReloader reloader =
+                new ConfigurationReloader(yaml, loader, extensions, initial);
+
+        Files.writeString(
+                yaml,
+                "serverName: test.jircd.local\nnicknameMaxLength: 9\nserver-extensions: {blocker: enabled}\n");
+        Thread first = new Thread(() -> reloadQuietly(reloader), "first-reload");
+        first.start();
+        assertThat(blocker.entered.await(10, TimeUnit.SECONDS)).isTrue();
+
+        Files.writeString(yaml, "serverName: test.jircd.local\nnicknameMaxLength: 20\n");
+        Thread second = new Thread(() -> reloadQuietly(reloader), "second-reload");
+        second.start();
+        while (second.getState() != Thread.State.BLOCKED
+                && second.getState() != Thread.State.TERMINATED) {
+            Thread.onSpinWait();
+        }
+        assertThat(second.getState())
+                .as("the second reload must wait for the first to publish")
+                .isEqualTo(Thread.State.BLOCKED);
+
+        blocker.release.countDown();
+        first.join();
+        second.join();
+        assertThat(reloader.current().nicknameMaxLength()).isEqualTo(20);
+        assertThat(extensions.supportedFeatures().nicknameMaxLength()).isEqualTo(20);
     }
 
-    @Override
-    public void stop() {
-      // Nothing to release: start() only parks the reload under test.
+    private static void reloadQuietly(ConfigurationReloader reloader) {
+        try {
+            reloader.reload();
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
     }
-  }
-
-  @Test
-  @Timeout(30)
-  void aSecondReloadWaitsForTheFirstToFinishPublishingSoLimitsNeverSplit() throws Exception {
-    ConfigurationLoader loader = new ConfigurationLoader(Set.of(), Set.of("blocker"));
-    ServerConfiguration initial =
-        loader.load(
-            new ByteArrayInputStream(
-                "serverName: test.jircd.local\n".getBytes(StandardCharsets.UTF_8)));
-    BlockingExtension blocker = new BlockingExtension();
-    ExtensionRegistry extensions = new ExtensionRegistry();
-    extensions.register(blocker);
-    Path yaml = directory.resolve("reload.yaml");
-    ConfigurationReloader reloader = new ConfigurationReloader(yaml, loader, extensions, initial);
-
-    Files.writeString(
-        yaml,
-        "serverName: test.jircd.local\nnicknameMaxLength: 9\nserver-extensions: {blocker: enabled}\n");
-    Thread first = new Thread(() -> reloadQuietly(reloader), "first-reload");
-    first.start();
-    assertThat(blocker.entered.await(10, TimeUnit.SECONDS)).isTrue();
-
-    Files.writeString(yaml, "serverName: test.jircd.local\nnicknameMaxLength: 20\n");
-    Thread second = new Thread(() -> reloadQuietly(reloader), "second-reload");
-    second.start();
-    while (second.getState() != Thread.State.BLOCKED
-        && second.getState() != Thread.State.TERMINATED) {
-      Thread.onSpinWait();
-    }
-    assertThat(second.getState())
-        .as("the second reload must wait for the first to publish")
-        .isEqualTo(Thread.State.BLOCKED);
-
-    blocker.release.countDown();
-    first.join();
-    second.join();
-    assertThat(reloader.current().nicknameMaxLength()).isEqualTo(20);
-    assertThat(extensions.supportedFeatures().nicknameMaxLength()).isEqualTo(20);
-  }
-
-  private static void reloadQuietly(ConfigurationReloader reloader) {
-    try {
-      reloader.reload();
-    } catch (Exception e) {
-      throw new IllegalStateException(e);
-    }
-  }
 }

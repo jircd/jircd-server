@@ -36,57 +36,61 @@ import org.junit.jupiter.api.io.TempDir;
 /** A SIGHUP reload reports what it could not apply, as REHASH does, instead of claiming success. */
 class SighupReloadOutcomeTest {
 
-  private static final String HEADER = "serverName: test.jircd.local\n";
+    private static final String HEADER = "serverName: test.jircd.local\n";
 
-  @TempDir Path directory;
+    @TempDir Path directory;
 
-  /** A provider whose start always fails. */
-  private static final class Broken extends AbstractCapabilityExtension {
-    Broken() {
-      super("broken");
+    /** A provider whose start always fails. */
+    private static final class Broken extends AbstractCapabilityExtension {
+        Broken() {
+            super("broken");
+        }
+
+        @Override
+        public void start(ServerContext context) {
+            throw new IllegalStateException("cannot start broken");
+        }
     }
 
-    @Override
-    public void start(ServerContext context) {
-      throw new IllegalStateException("cannot start broken");
+    private ConfigurationReloader reloader(ExtensionRegistry registry, String yaml)
+            throws Exception {
+        ConfigurationLoader loader = new ConfigurationLoader(Set.of("broken"), Set.of());
+        ServerConfiguration initial =
+                loader.load(new ByteArrayInputStream(HEADER.getBytes(StandardCharsets.UTF_8)));
+        Path file = directory.resolve("reload.yaml");
+        Files.writeString(file, HEADER + yaml);
+        return new ConfigurationReloader(file, loader, registry, initial);
     }
-  }
 
-  private ConfigurationReloader reloader(ExtensionRegistry registry, String yaml) throws Exception {
-    ConfigurationLoader loader = new ConfigurationLoader(Set.of("broken"), Set.of());
-    ServerConfiguration initial =
-        loader.load(new ByteArrayInputStream(HEADER.getBytes(StandardCharsets.UTF_8)));
-    Path file = directory.resolve("reload.yaml");
-    Files.writeString(file, HEADER + yaml);
-    return new ConfigurationReloader(file, loader, registry, initial);
-  }
+    @Test
+    void aProviderThatEndsFailedIsLoggedAndTheReloadIsNotReportedAsClean() throws Exception {
+        ExtensionRegistry registry = new ExtensionRegistry();
+        registry.register(new Broken());
+        ConfigurationReloader reloader = reloader(registry, "capabilities: {broken: enabled}\n");
 
-  @Test
-  void aProviderThatEndsFailedIsLoggedAndTheReloadIsNotReportedAsClean() throws Exception {
-    ExtensionRegistry registry = new ExtensionRegistry();
-    registry.register(new Broken());
-    ConfigurationReloader reloader = reloader(registry, "capabilities: {broken: enabled}\n");
+        try (LogCapture logs = new LogCapture(SighupReloadHandler.class)) {
+            SighupReloadHandler.reload(reloader);
 
-    try (LogCapture logs = new LogCapture(SighupReloadHandler.class)) {
-      SighupReloadHandler.reload(reloader);
-
-      assertThat(registry.stateOf("broken")).isEqualTo(Extension.State.FAILED);
-      assertThat(logs.messages())
-          .anySatisfy(
-              message -> assertThat(message).contains("broken").contains("cannot start broken"))
-          .noneMatch("Configuration reloaded via SIGHUP"::equals);
+            assertThat(registry.stateOf("broken")).isEqualTo(Extension.State.FAILED);
+            assertThat(logs.messages())
+                    .anySatisfy(
+                            message ->
+                                    assertThat(message)
+                                            .contains("broken")
+                                            .contains("cannot start broken"))
+                    .noneMatch("Configuration reloaded via SIGHUP"::equals);
+        }
     }
-  }
 
-  @Test
-  void aCleanReloadIsReportedAsSuch() throws Exception {
-    ExtensionRegistry registry = new ExtensionRegistry();
-    ConfigurationReloader reloader = reloader(registry, "");
+    @Test
+    void aCleanReloadIsReportedAsSuch() throws Exception {
+        ExtensionRegistry registry = new ExtensionRegistry();
+        ConfigurationReloader reloader = reloader(registry, "");
 
-    try (LogCapture logs = new LogCapture(SighupReloadHandler.class)) {
-      SighupReloadHandler.reload(reloader);
+        try (LogCapture logs = new LogCapture(SighupReloadHandler.class)) {
+            SighupReloadHandler.reload(reloader);
 
-      assertThat(logs.messages()).containsExactly("Configuration reloaded via SIGHUP");
+            assertThat(logs.messages()).containsExactly("Configuration reloaded via SIGHUP");
+        }
     }
-  }
 }

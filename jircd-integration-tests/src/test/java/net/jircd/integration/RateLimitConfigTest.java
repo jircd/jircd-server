@@ -31,59 +31,62 @@ import org.junit.jupiter.api.Test;
  */
 class RateLimitConfigTest {
 
-  private static final String TINY_RATE_LIMIT_YAML =
-      "rateLimit:\n  bucketSize: 3\n  refillRatePerSecond: 1\n";
+    private static final String TINY_RATE_LIMIT_YAML =
+            "rateLimit:\n  bucketSize: 3\n  refillRatePerSecond: 1\n";
 
-  @Test
-  void configuredRateLimitIsHonoredAtStartup() throws Exception {
-    try (TestServer server = TestServer.start(TINY_RATE_LIMIT_YAML);
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void configuredRateLimitIsHonoredAtStartup() throws Exception {
+        try (TestServer server = TestServer.start(TINY_RATE_LIMIT_YAML);
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      // NICK + USER spend 2 of the configured 3-token bucket, leaving exactly 1.
-      alice.registerAndAwaitWelcome("alice", "alice");
+            // NICK + USER spend 2 of the configured 3-token bucket, leaving exactly 1.
+            alice.registerAndAwaitWelcome("alice", "alice");
 
-      alice.send("JOIN #a");
-      alice.send("JOIN #b");
-      alice.send("JOIN #c");
-      alice.send("JOIN #d");
+            alice.send("JOIN #a");
+            alice.send("JOIN #b");
+            alice.send("JOIN #c");
+            alice.send("JOIN #d");
 
-      // A short window, before any meaningful refill at 1/sec — the default 20-token bucket
-      // would trivially absorb all four; only the configured 3-token bucket drops most of them.
-      List<String> lines = alice.readLinesFor(Duration.ofMillis(300));
-      long joinConfirmations = lines.stream().filter(line -> line.contains("JOIN #")).count();
-      assertThat(joinConfirmations).isLessThanOrEqualTo(1);
+            // A short window, before any meaningful refill at 1/sec — the default 20-token bucket
+            // would trivially absorb all four; only the configured 3-token bucket drops most of
+            // them.
+            List<String> lines = alice.readLinesFor(Duration.ofMillis(300));
+            long joinConfirmations = lines.stream().filter(line -> line.contains("JOIN #")).count();
+            assertThat(joinConfirmations).isLessThanOrEqualTo(1);
+        }
     }
-  }
 
-  @Test
-  void configuredRateLimitTakesLiveEffectAfterRehash() throws Exception {
-    try (TestServer server = TestServer.start(TestServer.adminEnabledYaml());
-        RawIrcClient root = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void configuredRateLimitTakesLiveEffectAfterRehash() throws Exception {
+        try (TestServer server = TestServer.start(TestServer.adminEnabledYaml());
+                RawIrcClient root = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      root.registerAndAwaitWelcome("root", "root");
-      root.send("OPER " + TestServer.ADMIN_USERNAME + " :" + TestServer.ADMIN_PASSWORD);
-      root.readUntil("381", Duration.ofSeconds(5));
+            root.registerAndAwaitWelcome("root", "root");
+            root.send("OPER " + TestServer.ADMIN_USERNAME + " :" + TestServer.ADMIN_PASSWORD);
+            root.readUntil("381", Duration.ofSeconds(5));
 
-      Files.writeString(
-          server.configPath,
-          TestServer.baseYaml() + TestServer.adminEnabledYaml() + TINY_RATE_LIMIT_YAML);
-      root.send("REHASH");
-      root.readUntil("382", Duration.ofSeconds(5));
+            Files.writeString(
+                    server.configPath,
+                    TestServer.baseYaml() + TestServer.adminEnabledYaml() + TINY_RATE_LIMIT_YAML);
+            root.send("REHASH");
+            root.readUntil("382", Duration.ofSeconds(5));
 
-      // Opened only after the rehash completes — the rate-limit bucket is built once, at TCP
-      // accept time, so a connection opened earlier would still capture the old configuration.
-      try (RawIrcClient probe = RawIrcClient.connectPlaintext(server.plaintextPort())) {
-        probe.registerAndAwaitWelcome("probe", "probe");
+            // Opened only after the rehash completes — the rate-limit bucket is built once, at TCP
+            // accept time, so a connection opened earlier would still capture the old
+            // configuration.
+            try (RawIrcClient probe = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+                probe.registerAndAwaitWelcome("probe", "probe");
 
-        probe.send("JOIN #a");
-        probe.send("JOIN #b");
-        probe.send("JOIN #c");
-        probe.send("JOIN #d");
+                probe.send("JOIN #a");
+                probe.send("JOIN #b");
+                probe.send("JOIN #c");
+                probe.send("JOIN #d");
 
-        List<String> lines = probe.readLinesFor(Duration.ofMillis(300));
-        long joinConfirmations = lines.stream().filter(line -> line.contains("JOIN #")).count();
-        assertThat(joinConfirmations).isLessThanOrEqualTo(1);
-      }
+                List<String> lines = probe.readLinesFor(Duration.ofMillis(300));
+                long joinConfirmations =
+                        lines.stream().filter(line -> line.contains("JOIN #")).count();
+                assertThat(joinConfirmations).isLessThanOrEqualTo(1);
+            }
+        }
     }
-  }
 }

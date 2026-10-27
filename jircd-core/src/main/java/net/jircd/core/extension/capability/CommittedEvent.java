@@ -26,31 +26,31 @@ import java.util.Objects;
  * {@link EventKind}.
  */
 public record CommittedEvent(
-    EventKind kind,
-    long operationId,
-    String subject,
-    String before,
-    String after,
-    Audience audience,
-    String actor) {
+        EventKind kind,
+        long operationId,
+        String subject,
+        String before,
+        String after,
+        Audience audience,
+        String actor) {
 
-  public CommittedEvent {
-    Objects.requireNonNull(kind);
-    Objects.requireNonNull(subject);
-    Objects.requireNonNull(before);
-    Objects.requireNonNull(after);
-    Objects.requireNonNull(audience);
-    Objects.requireNonNull(actor);
-  }
+    public CommittedEvent {
+        Objects.requireNonNull(kind);
+        Objects.requireNonNull(subject);
+        Objects.requireNonNull(before);
+        Objects.requireNonNull(after);
+        Objects.requireNonNull(audience);
+        Objects.requireNonNull(actor);
+    }
 
-  /** An event the subject caused itself. */
-  public CommittedEvent(
-      EventKind kind,
-      long operationId,
-      String subject,
-      String before,
-      String after,
-      Audience audience) {
-    this(kind, operationId, subject, before, after, audience, "");
-  }
+    /** An event the subject caused itself. */
+    public CommittedEvent(
+            EventKind kind,
+            long operationId,
+            String subject,
+            String before,
+            String after,
+            Audience audience) {
+        this(kind, operationId, subject, before, after, audience, "");
+    }
 }

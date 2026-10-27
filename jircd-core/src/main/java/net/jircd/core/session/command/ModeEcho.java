@@ -26,18 +26,18 @@ import net.jircd.protocol.ModeChange;
  */
 final class ModeEcho {
 
-  private ModeEcho() {}
+    private ModeEcho() {}
 
-  static String format(List<ModeChange> changes) {
-    StringBuilder sb = new StringBuilder();
-    char currentSign = 0;
-    for (ModeChange change : changes) {
-      if (change.sign() != currentSign) {
-        sb.append(change.sign());
-        currentSign = change.sign();
-      }
-      sb.append(change.flag());
+    static String format(List<ModeChange> changes) {
+        StringBuilder sb = new StringBuilder();
+        char currentSign = 0;
+        for (ModeChange change : changes) {
+            if (change.sign() != currentSign) {
+                sb.append(change.sign());
+                currentSign = change.sign();
+            }
+            sb.append(change.flag());
+        }
+        return sb.toString();
     }
-    return sb.toString();
-  }
 }

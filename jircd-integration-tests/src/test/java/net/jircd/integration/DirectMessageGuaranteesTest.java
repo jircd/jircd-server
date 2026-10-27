@@ -25,35 +25,35 @@ import org.junit.jupiter.api.Test;
  */
 class DirectMessageGuaranteesTest {
 
-  @Test
-  void echoMessageNegotiatedClientSeesItsOwnDirectMessageEchoed() throws Exception {
-    try (TestServer server = TestServer.start(TestServer.ALL_CAPABILITIES_ENABLED_YAML);
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
-        RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void echoMessageNegotiatedClientSeesItsOwnDirectMessageEchoed() throws Exception {
+        try (TestServer server = TestServer.start(TestServer.ALL_CAPABILITIES_ENABLED_YAML);
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
+                RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      alice.send("CAP REQ :echo-message");
-      alice.readUntil("CAP * ACK", Duration.ofSeconds(5));
-      alice.send("CAP END");
-      alice.registerAndAwaitWelcome("alice", "alice");
-      bob.registerAndAwaitWelcome("bob", "bob");
+            alice.send("CAP REQ :echo-message");
+            alice.readUntil("CAP * ACK", Duration.ofSeconds(5));
+            alice.send("CAP END");
+            alice.registerAndAwaitWelcome("alice", "alice");
+            bob.registerAndAwaitWelcome("bob", "bob");
 
-      alice.send("PRIVMSG bob :hi there");
-      assertThat(alice.readUntil("PRIVMSG bob", Duration.ofSeconds(5))).contains("hi there");
-      assertThat(bob.readUntil("PRIVMSG bob", Duration.ofSeconds(5))).contains("hi there");
+            alice.send("PRIVMSG bob :hi there");
+            assertThat(alice.readUntil("PRIVMSG bob", Duration.ofSeconds(5))).contains("hi there");
+            assertThat(bob.readUntil("PRIVMSG bob", Duration.ofSeconds(5))).contains("hi there");
+        }
     }
-  }
 
-  @Test
-  void emptyBodyDirectMessageIsRejected() throws Exception {
-    try (TestServer server = TestServer.start();
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
-        RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void emptyBodyDirectMessageIsRejected() throws Exception {
+        try (TestServer server = TestServer.start();
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
+                RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      alice.registerAndAwaitWelcome("alice", "alice");
-      bob.registerAndAwaitWelcome("bob", "bob");
+            alice.registerAndAwaitWelcome("alice", "alice");
+            bob.registerAndAwaitWelcome("bob", "bob");
 
-      alice.send("PRIVMSG bob :");
-      assertThat(alice.readUntil("412", Duration.ofSeconds(5))).contains("412");
+            alice.send("PRIVMSG bob :");
+            assertThat(alice.readUntil("412", Duration.ofSeconds(5))).contains("412");
+        }
     }
-  }
 }

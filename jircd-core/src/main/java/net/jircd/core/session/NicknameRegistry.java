@@ -29,35 +29,35 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class NicknameRegistry {
 
-  private final Map<String, ClientSession> byFoldedNickname = new ConcurrentHashMap<>();
+    private final Map<String, ClientSession> byFoldedNickname = new ConcurrentHashMap<>();
 
-  /**
-   * Returns {@code true} if this session now holds {@code nickname}; {@code false} if already
-   * claimed by another.
-   */
-  public boolean claim(String nickname, ClientSession session) {
-    String folded = CaseMapping.fold(nickname);
-    ClientSession previousOwner = byFoldedNickname.get(folded);
-    if (previousOwner == session) {
-      return true; // re-registering the same nickname it already holds is a no-op success
+    /**
+     * Returns {@code true} if this session now holds {@code nickname}; {@code false} if already
+     * claimed by another.
+     */
+    public boolean claim(String nickname, ClientSession session) {
+        String folded = CaseMapping.fold(nickname);
+        ClientSession previousOwner = byFoldedNickname.get(folded);
+        if (previousOwner == session) {
+            return true; // re-registering the same nickname it already holds is a no-op success
+        }
+        ClientSession winner = byFoldedNickname.putIfAbsent(folded, session);
+        return winner == null;
     }
-    ClientSession winner = byFoldedNickname.putIfAbsent(folded, session);
-    return winner == null;
-  }
 
-  public void release(String nickname, ClientSession session) {
-    if (nickname == null) {
-      return;
+    public void release(String nickname, ClientSession session) {
+        if (nickname == null) {
+            return;
+        }
+        byFoldedNickname.remove(CaseMapping.fold(nickname), session);
     }
-    byFoldedNickname.remove(CaseMapping.fold(nickname), session);
-  }
 
-  public Optional<ClientSession> lookup(String nickname) {
-    return Optional.ofNullable(byFoldedNickname.get(CaseMapping.fold(nickname)));
-  }
+    public Optional<ClientSession> lookup(String nickname) {
+        return Optional.ofNullable(byFoldedNickname.get(CaseMapping.fold(nickname)));
+    }
 
-  /** Every currently-registered session (FR-061's bare/mask {@code WHO} forms). */
-  public Collection<ClientSession> all() {
-    return byFoldedNickname.values();
-  }
+    /** Every currently-registered session (FR-061's bare/mask {@code WHO} forms). */
+    public Collection<ClientSession> all() {
+        return byFoldedNickname.values();
+    }
 }

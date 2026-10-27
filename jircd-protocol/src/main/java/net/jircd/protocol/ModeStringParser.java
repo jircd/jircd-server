@@ -26,24 +26,24 @@ import java.util.List;
  */
 public final class ModeStringParser {
 
-  private ModeStringParser() {}
+    private ModeStringParser() {}
 
-  public static List<ModeChange> parse(String... modeArgs) {
-    List<ModeChange> changes = new ArrayList<>();
-    char sign = '+';
-    for (String arg : modeArgs) {
-      if (arg == null || arg.isEmpty()) {
-        continue;
-      }
-      for (int i = 0; i < arg.length(); i++) {
-        char c = arg.charAt(i);
-        if (c == '+' || c == '-') {
-          sign = c;
-        } else {
-          changes.add(new ModeChange(sign, c));
+    public static List<ModeChange> parse(String... modeArgs) {
+        List<ModeChange> changes = new ArrayList<>();
+        char sign = '+';
+        for (String arg : modeArgs) {
+            if (arg == null || arg.isEmpty()) {
+                continue;
+            }
+            for (int i = 0; i < arg.length(); i++) {
+                char c = arg.charAt(i);
+                if (c == '+' || c == '-') {
+                    sign = c;
+                } else {
+                    changes.add(new ModeChange(sign, c));
+                }
+            }
         }
-      }
+        return List.copyOf(changes);
     }
-    return List.copyOf(changes);
-  }
 }

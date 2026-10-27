@@ -21,8 +21,8 @@ import java.util.Objects;
 /** The parsed, size-validated client tags of one inbound command. */
 public record InboundTags(String command, Map<String, String> tags) {
 
-  public InboundTags {
-    Objects.requireNonNull(command);
-    tags = Map.copyOf(tags);
-  }
+    public InboundTags {
+        Objects.requireNonNull(command);
+        tags = Map.copyOf(tags);
+    }
 }

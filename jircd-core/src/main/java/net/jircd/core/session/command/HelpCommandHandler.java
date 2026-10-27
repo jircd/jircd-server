@@ -30,90 +30,97 @@ import net.jircd.protocol.NumericReply;
  */
 public final class HelpCommandHandler implements CommandHandler {
 
-  private static final String INDEX = "index";
+    private static final String INDEX = "index";
 
-  private static final Map<String, List<String>> TOPICS = topics();
+    private static final Map<String, List<String>> TOPICS = topics();
 
-  private final Supplier<String> serverName;
+    private final Supplier<String> serverName;
 
-  public HelpCommandHandler(Supplier<String> serverName) {
-    this.serverName = serverName;
-  }
-
-  private static Map<String, List<String>> topics() {
-    Map<String, List<String>> topics = new java.util.LinkedHashMap<>();
-    topics.put(
-        "JOIN",
-        List.of(
-            "JOIN <channel>[,<channel>...] [<key>[,<key>...]]",
-            "Joins the channels, creating one that does not exist yet."));
-    topics.put(
-        "PART", List.of("PART <channel>[,<channel>...] [<message>]", "Leaves the channels."));
-    topics.put("NICK", List.of("NICK <nickname>", "Changes your nickname, if no one else has it."));
-    topics.put(
-        "PRIVMSG",
-        List.of(
-            "PRIVMSG <target>[,<target>...] :<text>",
-            "Sends text to a nickname or channel. NOTICE is the same without automatic replies."));
-    topics.put(
-        "TOPIC",
-        List.of("TOPIC <channel> [:<topic>]", "Shows a channel's topic, or sets it if allowed."));
-    topics.put(
-        "MODE",
-        List.of(
-            "MODE <nickname> [<modes>] | MODE <channel> [<modes> [<parameters>]]",
-            "Shows or changes user modes, or channel modes if you are a channel operator."));
-    topics.put(
-        "WHOIS", List.of("WHOIS <nickname>", "Shows who a nickname is and what it has joined."));
-    topics.put(
-        "ISON",
-        List.of(
-            "ISON <nickname> [<nickname>...]",
-            "Replies with those of the nicknames that are online."));
-    topics.put("MOTD", List.of("MOTD", "Shows the server's message of the day, if it has one."));
-    topics.put("ADMIN", List.of("ADMIN", "Shows who to contact about this server."));
-    topics.put(
-        "STATS",
-        List.of(
-            "STATS <letter>",
-            "STATS u shows how long the server has been up. Other letters report nothing."));
-    topics.put("HELP", List.of("HELP [<topic>]", "Shows this help; HELPOP is the same."));
-    return Map.copyOf(topics);
-  }
-
-  @Override
-  public void handle(ClientSession session, Message message) {
-    String server = serverName.get();
-    String requested = message.params().isEmpty() ? "" : message.params().getFirst().strip();
-    if (requested.startsWith("/")) {
-      requested = requested.substring(1);
+    public HelpCommandHandler(Supplier<String> serverName) {
+        this.serverName = serverName;
     }
-    if (requested.isEmpty() || requested.equals("?") || requested.equalsIgnoreCase(INDEX)) {
-      send(session, server, INDEX, indexLines());
-      return;
-    }
-    List<String> lines = TOPICS.get(requested.toUpperCase(Locale.ROOT));
-    if (lines == null) {
-      Replies.sendEchoing(
-          session, server, NumericReply.ERR_HELPNOTFOUND, requested, "Help not found");
-      return;
-    }
-    send(session, server, requested.toUpperCase(Locale.ROOT), lines);
-  }
 
-  private static List<String> indexLines() {
-    String names = String.join(" ", TOPICS.keySet().stream().sorted().toList());
-    return List.of("Help topics (use HELP <topic>):", names);
-  }
-
-  private static void send(
-      ClientSession session, String server, String subject, List<String> lines) {
-    Replies.sendFitted(
-        session, server, NumericReply.RPL_HELPSTART, List.of(subject), lines.getFirst());
-    for (String line : lines.subList(1, lines.size())) {
-      Replies.sendFitted(session, server, NumericReply.RPL_HELPTXT, List.of(subject), line);
+    private static Map<String, List<String>> topics() {
+        Map<String, List<String>> topics = new java.util.LinkedHashMap<>();
+        topics.put(
+                "JOIN",
+                List.of(
+                        "JOIN <channel>[,<channel>...] [<key>[,<key>...]]",
+                        "Joins the channels, creating one that does not exist yet."));
+        topics.put(
+                "PART",
+                List.of("PART <channel>[,<channel>...] [<message>]", "Leaves the channels."));
+        topics.put(
+                "NICK",
+                List.of("NICK <nickname>", "Changes your nickname, if no one else has it."));
+        topics.put(
+                "PRIVMSG",
+                List.of(
+                        "PRIVMSG <target>[,<target>...] :<text>",
+                        "Sends text to a nickname or channel. NOTICE is the same without automatic replies."));
+        topics.put(
+                "TOPIC",
+                List.of(
+                        "TOPIC <channel> [:<topic>]",
+                        "Shows a channel's topic, or sets it if allowed."));
+        topics.put(
+                "MODE",
+                List.of(
+                        "MODE <nickname> [<modes>] | MODE <channel> [<modes> [<parameters>]]",
+                        "Shows or changes user modes, or channel modes if you are a channel operator."));
+        topics.put(
+                "WHOIS",
+                List.of("WHOIS <nickname>", "Shows who a nickname is and what it has joined."));
+        topics.put(
+                "ISON",
+                List.of(
+                        "ISON <nickname> [<nickname>...]",
+                        "Replies with those of the nicknames that are online."));
+        topics.put(
+                "MOTD", List.of("MOTD", "Shows the server's message of the day, if it has one."));
+        topics.put("ADMIN", List.of("ADMIN", "Shows who to contact about this server."));
+        topics.put(
+                "STATS",
+                List.of(
+                        "STATS <letter>",
+                        "STATS u shows how long the server has been up. Other letters report nothing."));
+        topics.put("HELP", List.of("HELP [<topic>]", "Shows this help; HELPOP is the same."));
+        return Map.copyOf(topics);
     }
-    Replies.sendFitted(
-        session, server, NumericReply.RPL_ENDOFHELP, List.of(subject), "End of /HELP");
-  }
+
+    @Override
+    public void handle(ClientSession session, Message message) {
+        String server = serverName.get();
+        String requested = message.params().isEmpty() ? "" : message.params().getFirst().strip();
+        if (requested.startsWith("/")) {
+            requested = requested.substring(1);
+        }
+        if (requested.isEmpty() || requested.equals("?") || requested.equalsIgnoreCase(INDEX)) {
+            send(session, server, INDEX, indexLines());
+            return;
+        }
+        List<String> lines = TOPICS.get(requested.toUpperCase(Locale.ROOT));
+        if (lines == null) {
+            Replies.sendEchoing(
+                    session, server, NumericReply.ERR_HELPNOTFOUND, requested, "Help not found");
+            return;
+        }
+        send(session, server, requested.toUpperCase(Locale.ROOT), lines);
+    }
+
+    private static List<String> indexLines() {
+        String names = String.join(" ", TOPICS.keySet().stream().sorted().toList());
+        return List.of("Help topics (use HELP <topic>):", names);
+    }
+
+    private static void send(
+            ClientSession session, String server, String subject, List<String> lines) {
+        Replies.sendFitted(
+                session, server, NumericReply.RPL_HELPSTART, List.of(subject), lines.getFirst());
+        for (String line : lines.subList(1, lines.size())) {
+            Replies.sendFitted(session, server, NumericReply.RPL_HELPTXT, List.of(subject), line);
+        }
+        Replies.sendFitted(
+                session, server, NumericReply.RPL_ENDOFHELP, List.of(subject), "End of /HELP");
+    }
 }

@@ -28,76 +28,83 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.Test;
 
 class JoinStormSupportTest {
-  @Test
-  void namesNicknameDoesNotCountAsEndOfNames() throws Exception {
-    try (ServerSocket listener =
-            new ServerSocket(0, 1, java.net.InetAddress.getByName(TestServer.LOOPBACK));
-        RawIrcClient client = RawIrcClient.connectPlaintext(listener.getLocalPort());
-        var peer = listener.accept()) {
-      peer.getOutputStream()
-          .write(":server 353 storm366 = #storm :storm366\r\n".getBytes(StandardCharsets.UTF_8));
-      peer.shutdownOutput();
-      assertThatThrownBy(() -> JoinStormLoadTest.awaitEndOfNames(client))
-          .isInstanceOf(IOException.class);
-    }
-  }
-
-  @Test
-  void acceptsTaggedEndOfNamesCommand() throws Exception {
-    try (ServerSocket listener =
-            new ServerSocket(0, 1, java.net.InetAddress.getByName(TestServer.LOOPBACK));
-        RawIrcClient client = RawIrcClient.connectPlaintext(listener.getLocalPort());
-        var peer = listener.accept()) {
-      peer.getOutputStream()
-          .write(
-              "@time=now :server 366 storm366 #storm :End of NAMES\r\n"
-                  .getBytes(StandardCharsets.UTF_8));
-      assertThatCode(() -> JoinStormLoadTest.awaitEndOfNames(client)).doesNotThrowAnyException();
-    }
-  }
-
-  @Test
-  void unexpectedDisconnectFailsDrain() throws Exception {
-    try (ServerSocket listener =
-            new ServerSocket(0, 1, java.net.InetAddress.getByName(TestServer.LOOPBACK));
-        RawIrcClient client = RawIrcClient.connectPlaintext(listener.getLocalPort());
-        var peer = listener.accept()) {
-      peer.shutdownOutput();
-      assertThatThrownBy(() -> JoinStormLoadTest.drainUntil(client, new AtomicBoolean()))
-          .isInstanceOf(IOException.class)
-          .hasMessageContaining("disconnected");
-    }
-  }
-
-  // The pool owns this borrowed client; closing the pool is the behavior under test.
-  @SuppressWarnings("PMD.CloseResource")
-  @Test
-  void teardownUnblocksIdleDrainAndRejectsLateConnections() throws Exception {
-    try (var threads = Executors.newVirtualThreadPerTaskExecutor();
-        ServerSocket listener =
-            new ServerSocket(0, 2, java.net.InetAddress.getByName(TestServer.LOOPBACK));
-        var clients = new JoinStormLoadTest.ClientPool()) {
-      RawIrcClient client = clients.connect(listener.getLocalPort());
-      try (var peer = listener.accept()) {
-        AtomicBoolean stormOver = new AtomicBoolean();
-        var draining =
-            threads.submit(
-                () -> {
-                  JoinStormLoadTest.drainUntil(client, stormOver);
-                  return null;
-                });
-        stormOver.set(true);
-        clients.close();
-        draining.get(1, TimeUnit.SECONDS);
-        assertThat(peer.getInputStream().read()).isEqualTo(-1);
-        assertThatThrownBy(() -> clients.connect(listener.getLocalPort()))
-            .isInstanceOf(IOException.class)
-            .hasMessageContaining("already closed");
-        try (var latePeer = listener.accept()) {
-          latePeer.setSoTimeout(1000);
-          assertThat(latePeer.getInputStream().read()).isEqualTo(-1);
+    @Test
+    void namesNicknameDoesNotCountAsEndOfNames() throws Exception {
+        try (ServerSocket listener =
+                        new ServerSocket(
+                                0, 1, java.net.InetAddress.getByName(TestServer.LOOPBACK));
+                RawIrcClient client = RawIrcClient.connectPlaintext(listener.getLocalPort());
+                var peer = listener.accept()) {
+            peer.getOutputStream()
+                    .write(
+                            ":server 353 storm366 = #storm :storm366\r\n"
+                                    .getBytes(StandardCharsets.UTF_8));
+            peer.shutdownOutput();
+            assertThatThrownBy(() -> JoinStormLoadTest.awaitEndOfNames(client))
+                    .isInstanceOf(IOException.class);
         }
-      }
     }
-  }
+
+    @Test
+    void acceptsTaggedEndOfNamesCommand() throws Exception {
+        try (ServerSocket listener =
+                        new ServerSocket(
+                                0, 1, java.net.InetAddress.getByName(TestServer.LOOPBACK));
+                RawIrcClient client = RawIrcClient.connectPlaintext(listener.getLocalPort());
+                var peer = listener.accept()) {
+            peer.getOutputStream()
+                    .write(
+                            "@time=now :server 366 storm366 #storm :End of NAMES\r\n"
+                                    .getBytes(StandardCharsets.UTF_8));
+            assertThatCode(() -> JoinStormLoadTest.awaitEndOfNames(client))
+                    .doesNotThrowAnyException();
+        }
+    }
+
+    @Test
+    void unexpectedDisconnectFailsDrain() throws Exception {
+        try (ServerSocket listener =
+                        new ServerSocket(
+                                0, 1, java.net.InetAddress.getByName(TestServer.LOOPBACK));
+                RawIrcClient client = RawIrcClient.connectPlaintext(listener.getLocalPort());
+                var peer = listener.accept()) {
+            peer.shutdownOutput();
+            assertThatThrownBy(() -> JoinStormLoadTest.drainUntil(client, new AtomicBoolean()))
+                    .isInstanceOf(IOException.class)
+                    .hasMessageContaining("disconnected");
+        }
+    }
+
+    // The pool owns this borrowed client; closing the pool is the behavior under test.
+    @SuppressWarnings("PMD.CloseResource")
+    @Test
+    void teardownUnblocksIdleDrainAndRejectsLateConnections() throws Exception {
+        try (var threads = Executors.newVirtualThreadPerTaskExecutor();
+                ServerSocket listener =
+                        new ServerSocket(
+                                0, 2, java.net.InetAddress.getByName(TestServer.LOOPBACK));
+                var clients = new JoinStormLoadTest.ClientPool()) {
+            RawIrcClient client = clients.connect(listener.getLocalPort());
+            try (var peer = listener.accept()) {
+                AtomicBoolean stormOver = new AtomicBoolean();
+                var draining =
+                        threads.submit(
+                                () -> {
+                                    JoinStormLoadTest.drainUntil(client, stormOver);
+                                    return null;
+                                });
+                stormOver.set(true);
+                clients.close();
+                draining.get(1, TimeUnit.SECONDS);
+                assertThat(peer.getInputStream().read()).isEqualTo(-1);
+                assertThatThrownBy(() -> clients.connect(listener.getLocalPort()))
+                        .isInstanceOf(IOException.class)
+                        .hasMessageContaining("already closed");
+                try (var latePeer = listener.accept()) {
+                    latePeer.setSoTimeout(1000);
+                    assertThat(latePeer.getInputStream().read()).isEqualTo(-1);
+                }
+            }
+        }
+    }
 }

@@ -23,8 +23,8 @@ import net.jircd.protocol.Message;
 /** A request to deliver one message to peers of an event; core validates and admits it. */
 public record EventIntent(Message message, List<ClientSession> recipients) {
 
-  public EventIntent {
-    Objects.requireNonNull(message);
-    recipients = List.copyOf(recipients);
-  }
+    public EventIntent {
+        Objects.requireNonNull(message);
+        recipients = List.copyOf(recipients);
+    }
 }

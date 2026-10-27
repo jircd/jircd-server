@@ -22,33 +22,33 @@ import org.junit.jupiter.api.Test;
 
 class Story7RegularLookupTest {
 
-  @Test
-  void nonAdministratorSeesCloakedPresentedHostnameNeverReal() throws Exception {
-    try (TestServer server = TestServer.start(TestServer.CLOAK_ENABLED_YAML);
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
-        RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void nonAdministratorSeesCloakedPresentedHostnameNeverReal() throws Exception {
+        try (TestServer server = TestServer.start(TestServer.CLOAK_ENABLED_YAML);
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
+                RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      alice.registerAndAwaitWelcome("alice", "alice");
-      bob.registerAndAwaitWelcome("bob", "bob");
+            alice.registerAndAwaitWelcome("alice", "alice");
+            bob.registerAndAwaitWelcome("bob", "bob");
 
-      alice.send("WHOIS bob");
-      String whoisUser = alice.readUntil("311", Duration.ofSeconds(5));
-      assertThat(whoisUser).contains("user-");
+            alice.send("WHOIS bob");
+            String whoisUser = alice.readUntil("311", Duration.ofSeconds(5));
+            assertThat(whoisUser).contains("user-");
+        }
     }
-  }
 
-  @Test
-  void withoutCloakThePresentedValueIsSimplyTheRealValue() throws Exception {
-    try (TestServer server = TestServer.start();
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
-        RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void withoutCloakThePresentedValueIsSimplyTheRealValue() throws Exception {
+        try (TestServer server = TestServer.start();
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
+                RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      alice.registerAndAwaitWelcome("alice", "alice");
-      bob.registerAndAwaitWelcome("bob", "bob");
+            alice.registerAndAwaitWelcome("alice", "alice");
+            bob.registerAndAwaitWelcome("bob", "bob");
 
-      alice.send("WHOIS bob");
-      String whoisUser = alice.readUntil("311", Duration.ofSeconds(5));
-      assertThat(whoisUser).doesNotContain("user-");
+            alice.send("WHOIS bob");
+            String whoisUser = alice.readUntil("311", Duration.ofSeconds(5));
+            assertThat(whoisUser).doesNotContain("user-");
+        }
     }
-  }
 }

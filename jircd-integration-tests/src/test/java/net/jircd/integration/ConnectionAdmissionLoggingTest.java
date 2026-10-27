@@ -36,94 +36,98 @@ import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 
 class ConnectionAdmissionLoggingTest {
-  // Socket aliases are borrowed from pending, whose try-with-resources scope owns them all.
-  @SuppressWarnings("PMD.CloseResource")
-  @Test
-  void slowRejectionLoggingDoesNotBlockAdmissionAndOverflowIsSummarized() throws Exception {
-    AtomicReference<Thread> owner = new AtomicReference<>();
-    try (TestServer server =
-            TestServer.start("maxConnections: 1\n", socket -> owner.set(Thread.currentThread()));
-        BlockingSecurityLog logs = new BlockingSecurityLog();
-        RawIrcClient first = RawIrcClient.connectTls(server.tlsPort());
-        Sockets pending = new Sockets()) {
-      first.registerAndAwaitWelcome("first", "first");
-      Thread firstOwner = owner.get();
-      for (int i = 0; i < 64; i++) pending.open(server.tlsPort());
-      assertThat(logs.allWorkersLogging.await(5, TimeUnit.SECONDS)).isTrue();
-      // All rejection workers are blocked inside the appender. The next drops must only count.
-      for (int i = 0; i < 20; i++) {
-        Socket dropped = pending.open(server.tlsPort());
-        dropped.setSoTimeout(5000);
-        assertThat(dropped.getInputStream().read()).isEqualTo(-1);
-      }
-      first.close();
-      assertThat(firstOwner.join(Duration.ofSeconds(10))).isTrue();
-      try (RawIrcClient valid = RawIrcClient.connectTls(server.tlsPort())) {
-        valid.registerAndAwaitWelcome("valid", "valid");
-        // Registration completed before any blocked rejection log was allowed to return.
-        assertThat(logs.release.getCount()).isEqualTo(1);
-        assertThat(logs.allWorkersLogging.getCount()).isZero();
-        assertThat(logs.individualEvents.get()).isEqualTo(64);
-      }
-      assertThat(logs.summaries.poll(3, TimeUnit.SECONDS))
-          .isEqualTo("security-event=connection-limit-suppressed count=20");
-      assertThat(logs.individualEvents.get()).isEqualTo(64);
-    }
-  }
-
-  private static final class BlockingSecurityLog extends UnsynchronizedAppenderBase<ILoggingEvent>
-      implements AutoCloseable {
-    private final Logger logger = (Logger) LoggerFactory.getLogger(SecurityEventLog.class);
-    private final CountDownLatch allWorkersLogging = new CountDownLatch(64);
-    private final CountDownLatch release = new CountDownLatch(1);
-    private final AtomicInteger individualEvents = new AtomicInteger();
-    private final BlockingQueue<String> summaries = new LinkedBlockingQueue<>();
-
-    BlockingSecurityLog() {
-      start();
-      logger.addAppender(this);
-    }
-
-    @Override
-    protected void append(ILoggingEvent event) {
-      String message = event.getFormattedMessage();
-      if (message.startsWith("security-event=connection-limit-suppressed")) {
-        summaries.add(message);
-      } else if (message.startsWith("security-event=connection-limit ")) {
-        individualEvents.incrementAndGet();
-        allWorkersLogging.countDown();
-        try {
-          release.await();
-        } catch (InterruptedException _) {
-          Thread.currentThread().interrupt();
+    // Socket aliases are borrowed from pending, whose try-with-resources scope owns them all.
+    @SuppressWarnings("PMD.CloseResource")
+    @Test
+    void slowRejectionLoggingDoesNotBlockAdmissionAndOverflowIsSummarized() throws Exception {
+        AtomicReference<Thread> owner = new AtomicReference<>();
+        try (TestServer server =
+                        TestServer.start(
+                                "maxConnections: 1\n",
+                                socket -> owner.set(Thread.currentThread()));
+                BlockingSecurityLog logs = new BlockingSecurityLog();
+                RawIrcClient first = RawIrcClient.connectTls(server.tlsPort());
+                Sockets pending = new Sockets()) {
+            first.registerAndAwaitWelcome("first", "first");
+            Thread firstOwner = owner.get();
+            for (int i = 0; i < 64; i++) pending.open(server.tlsPort());
+            assertThat(logs.allWorkersLogging.await(5, TimeUnit.SECONDS)).isTrue();
+            // All rejection workers are blocked inside the appender. The next drops must only
+            // count.
+            for (int i = 0; i < 20; i++) {
+                Socket dropped = pending.open(server.tlsPort());
+                dropped.setSoTimeout(5000);
+                assertThat(dropped.getInputStream().read()).isEqualTo(-1);
+            }
+            first.close();
+            assertThat(firstOwner.join(Duration.ofSeconds(10))).isTrue();
+            try (RawIrcClient valid = RawIrcClient.connectTls(server.tlsPort())) {
+                valid.registerAndAwaitWelcome("valid", "valid");
+                // Registration completed before any blocked rejection log was allowed to return.
+                assertThat(logs.release.getCount()).isEqualTo(1);
+                assertThat(logs.allWorkersLogging.getCount()).isZero();
+                assertThat(logs.individualEvents.get()).isEqualTo(64);
+            }
+            assertThat(logs.summaries.poll(3, TimeUnit.SECONDS))
+                    .isEqualTo("security-event=connection-limit-suppressed count=20");
+            assertThat(logs.individualEvents.get()).isEqualTo(64);
         }
-      }
     }
 
-    @Override
-    public void close() {
-      release.countDown();
-      logger.detachAppender(this);
-      stop();
-    }
-  }
+    private static final class BlockingSecurityLog extends UnsynchronizedAppenderBase<ILoggingEvent>
+            implements AutoCloseable {
+        private final Logger logger = (Logger) LoggerFactory.getLogger(SecurityEventLog.class);
+        private final CountDownLatch allWorkersLogging = new CountDownLatch(64);
+        private final CountDownLatch release = new CountDownLatch(1);
+        private final AtomicInteger individualEvents = new AtomicInteger();
+        private final BlockingQueue<String> summaries = new LinkedBlockingQueue<>();
 
-  private static final class Sockets implements AutoCloseable {
-    private final List<Socket> sockets = new ArrayList<>();
+        BlockingSecurityLog() {
+            start();
+            logger.addAppender(this);
+        }
 
-    // This owner retains each socket and closes the whole collection in close().
-    @SuppressWarnings("PMD.CloseResource")
-    Socket open(int port) throws IOException {
-      Socket socket = new Socket(TestServer.LOOPBACK, port);
-      sockets.add(socket);
-      return socket;
+        @Override
+        protected void append(ILoggingEvent event) {
+            String message = event.getFormattedMessage();
+            if (message.startsWith("security-event=connection-limit-suppressed")) {
+                summaries.add(message);
+            } else if (message.startsWith("security-event=connection-limit ")) {
+                individualEvents.incrementAndGet();
+                allWorkersLogging.countDown();
+                try {
+                    release.await();
+                } catch (InterruptedException _) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        }
+
+        @Override
+        public void close() {
+            release.countDown();
+            logger.detachAppender(this);
+            stop();
+        }
     }
 
-    // The loop closes every retained socket; PMD does not recognize aliases from the collection.
-    @SuppressWarnings("PMD.CloseResource")
-    @Override
-    public void close() throws IOException {
-      for (Socket socket : sockets) socket.close();
+    private static final class Sockets implements AutoCloseable {
+        private final List<Socket> sockets = new ArrayList<>();
+
+        // This owner retains each socket and closes the whole collection in close().
+        @SuppressWarnings("PMD.CloseResource")
+        Socket open(int port) throws IOException {
+            Socket socket = new Socket(TestServer.LOOPBACK, port);
+            sockets.add(socket);
+            return socket;
+        }
+
+        // The loop closes every retained socket; PMD does not recognize aliases from the
+        // collection.
+        @SuppressWarnings("PMD.CloseResource")
+        @Override
+        public void close() throws IOException {
+            for (Socket socket : sockets) socket.close();
+        }
     }
-  }
 }

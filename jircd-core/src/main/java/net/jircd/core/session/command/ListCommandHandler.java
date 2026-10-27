@@ -30,35 +30,39 @@ import net.jircd.protocol.NumericReply;
  */
 public final class ListCommandHandler implements CommandHandler {
 
-  private final ChannelRegistry channelRegistry;
-  private final ExtensionRegistry extensionRegistry;
-  private final Supplier<String> serverName;
+    private final ChannelRegistry channelRegistry;
+    private final ExtensionRegistry extensionRegistry;
+    private final Supplier<String> serverName;
 
-  public ListCommandHandler(
-      ChannelRegistry channelRegistry,
-      ExtensionRegistry extensionRegistry,
-      Supplier<String> serverName) {
-    this.channelRegistry = channelRegistry;
-    this.extensionRegistry = extensionRegistry;
-    this.serverName = serverName;
-  }
-
-  @Override
-  public void handle(ClientSession session, Message message) {
-    Replies.sendFitted(
-        session, serverName.get(), NumericReply.RPL_LISTSTART, List.of("Channel"), "Users Name");
-    for (var channel : channelRegistry.all()) {
-      if (ChannelVisibility.isHiddenFrom(channel, session, extensionRegistry)) {
-        continue;
-      }
-      Replies.sendFitted(
-          session,
-          serverName.get(),
-          NumericReply.RPL_LIST,
-          List.of(channel.name(), String.valueOf(channel.members().size())),
-          channel.topic() != null ? channel.topic() : "");
+    public ListCommandHandler(
+            ChannelRegistry channelRegistry,
+            ExtensionRegistry extensionRegistry,
+            Supplier<String> serverName) {
+        this.channelRegistry = channelRegistry;
+        this.extensionRegistry = extensionRegistry;
+        this.serverName = serverName;
     }
-    Replies.sendFitted(
-        session, serverName.get(), NumericReply.RPL_LISTEND, List.of(), "End of /LIST");
-  }
+
+    @Override
+    public void handle(ClientSession session, Message message) {
+        Replies.sendFitted(
+                session,
+                serverName.get(),
+                NumericReply.RPL_LISTSTART,
+                List.of("Channel"),
+                "Users Name");
+        for (var channel : channelRegistry.all()) {
+            if (ChannelVisibility.isHiddenFrom(channel, session, extensionRegistry)) {
+                continue;
+            }
+            Replies.sendFitted(
+                    session,
+                    serverName.get(),
+                    NumericReply.RPL_LIST,
+                    List.of(channel.name(), String.valueOf(channel.members().size())),
+                    channel.topic() != null ? channel.topic() : "");
+        }
+        Replies.sendFitted(
+                session, serverName.get(), NumericReply.RPL_LISTEND, List.of(), "End of /LIST");
+    }
 }

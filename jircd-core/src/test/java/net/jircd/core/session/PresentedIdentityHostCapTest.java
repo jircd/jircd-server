@@ -32,102 +32,103 @@ import org.slf4j.LoggerFactory;
 
 class PresentedIdentityHostCapTest {
 
-  private static final int CAP = ServerConfiguration.PRESENTED_HOST_MAX_BYTES;
+    private static final int CAP = ServerConfiguration.PRESENTED_HOST_MAX_BYTES;
 
-  private static final class Cloak implements ServerExtension, HostnameDisplayExtension {
-    private final String shown;
+    private static final class Cloak implements ServerExtension, HostnameDisplayExtension {
+        private final String shown;
 
-    Cloak(String shown) {
-      this.shown = shown;
+        Cloak(String shown) {
+            this.shown = shown;
+        }
+
+        @Override
+        public String id() {
+            return "cap-cloak";
+        }
+
+        @Override
+        public String extensionPoint() {
+            return "hostname-display";
+        }
+
+        @Override
+        public void start(ServerContext context) {
+            // Stateless test extension.
+        }
+
+        @Override
+        public void stop() {
+            // Stateless test extension.
+        }
+
+        @Override
+        public String display(String hostname) {
+            return shown;
+        }
     }
 
-    @Override
-    public String id() {
-      return "cap-cloak";
+    private static String displayed(String shown) {
+        ExtensionRegistry extensions = new ExtensionRegistry();
+        extensions.register(new Cloak(shown));
+        extensions.enable("cap-cloak");
+        ClientSession session =
+                new ClientSession("c1", "203.0.113.9", RateLimitBucket.withDefaults());
+        return PresentedIdentity.displayHostname(session, extensions);
     }
 
-    @Override
-    public String extensionPoint() {
-      return "hostname-display";
+    @Test
+    void aHostAtTheCapPassesThroughUnchanged() {
+        String host = "h".repeat(CAP);
+        assertThat(displayed(host)).isEqualTo(host);
     }
 
-    @Override
-    public void start(ServerContext context) {
-      // Stateless test extension.
+    @Test
+    void anOverlongHostIsTruncatedNotReplacedByTheRealAddress() {
+        String host = "h".repeat(300);
+        assertThat(displayed(host)).isEqualTo("h".repeat(CAP)).doesNotContain("203.0.113.9");
     }
 
-    @Override
-    public void stop() {
-      // Stateless test extension.
+    @Test
+    void truncationKeepsWholeCodePoints() {
+        String shown = displayed("界".repeat(40));
+        assertThat(shown).isEqualTo("界".repeat(CAP / 3));
+        assertThat(shown.getBytes(StandardCharsets.UTF_8)).hasSizeLessThanOrEqualTo(CAP);
     }
 
-    @Override
-    public String display(String hostname) {
-      return shown;
+    @Test
+    void repeatedOverlongHostsWarnOncePerThrottleWindow() {
+        AtomicLong now = new AtomicLong(1_000_000_000L);
+        PresentedIdentity.useClockForTest(now::get);
+        Logger logger = (Logger) LoggerFactory.getLogger(PresentedIdentity.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            for (int i = 0; i < 5; i++) {
+                assertThat(displayed("x".repeat(500))).hasSize(CAP);
+            }
+            assertThat(appender.list).as("five calls in one window").hasSize(1);
+            assertThat(appender.list.getFirst().getFormattedMessage())
+                    .contains("cap-cloak")
+                    .contains("63 bytes");
+
+            now.addAndGet(59_000_000_000L);
+            displayed("x".repeat(500));
+            assertThat(appender.list).as("still inside the minute").hasSize(1);
+
+            now.addAndGet(2_000_000_000L);
+            displayed("x".repeat(500));
+            displayed("x".repeat(500));
+            assertThat(appender.list).as("one more after the window").hasSize(2);
+        } finally {
+            logger.detachAppender(appender);
+            PresentedIdentity.useClockForTest(System::nanoTime);
+        }
     }
-  }
 
-  private static String displayed(String shown) {
-    ExtensionRegistry extensions = new ExtensionRegistry();
-    extensions.register(new Cloak(shown));
-    extensions.enable("cap-cloak");
-    ClientSession session = new ClientSession("c1", "203.0.113.9", RateLimitBucket.withDefaults());
-    return PresentedIdentity.displayHostname(session, extensions);
-  }
-
-  @Test
-  void aHostAtTheCapPassesThroughUnchanged() {
-    String host = "h".repeat(CAP);
-    assertThat(displayed(host)).isEqualTo(host);
-  }
-
-  @Test
-  void anOverlongHostIsTruncatedNotReplacedByTheRealAddress() {
-    String host = "h".repeat(300);
-    assertThat(displayed(host)).isEqualTo("h".repeat(CAP)).doesNotContain("203.0.113.9");
-  }
-
-  @Test
-  void truncationKeepsWholeCodePoints() {
-    String shown = displayed("界".repeat(40));
-    assertThat(shown).isEqualTo("界".repeat(CAP / 3));
-    assertThat(shown.getBytes(StandardCharsets.UTF_8)).hasSizeLessThanOrEqualTo(CAP);
-  }
-
-  @Test
-  void repeatedOverlongHostsWarnOncePerThrottleWindow() {
-    AtomicLong now = new AtomicLong(1_000_000_000L);
-    PresentedIdentity.useClockForTest(now::get);
-    Logger logger = (Logger) LoggerFactory.getLogger(PresentedIdentity.class);
-    ListAppender<ILoggingEvent> appender = new ListAppender<>();
-    appender.start();
-    logger.addAppender(appender);
-    try {
-      for (int i = 0; i < 5; i++) {
-        assertThat(displayed("x".repeat(500))).hasSize(CAP);
-      }
-      assertThat(appender.list).as("five calls in one window").hasSize(1);
-      assertThat(appender.list.getFirst().getFormattedMessage())
-          .contains("cap-cloak")
-          .contains("63 bytes");
-
-      now.addAndGet(59_000_000_000L);
-      displayed("x".repeat(500));
-      assertThat(appender.list).as("still inside the minute").hasSize(1);
-
-      now.addAndGet(2_000_000_000L);
-      displayed("x".repeat(500));
-      displayed("x".repeat(500));
-      assertThat(appender.list).as("one more after the window").hasSize(2);
-    } finally {
-      logger.detachAppender(appender);
-      PresentedIdentity.useClockForTest(System::nanoTime);
+    @Test
+    void aHugeHostCostsOnlyTheCapAndKeepsTheLeadingCodePoints() {
+        String huge = "😀".repeat(5_000_000);
+        assertThat(displayed(huge)).isEqualTo("😀".repeat(CAP / 4));
     }
-  }
-
-  @Test
-  void aHugeHostCostsOnlyTheCapAndKeepsTheLeadingCodePoints() {
-    String huge = "😀".repeat(5_000_000);
-    assertThat(displayed(huge)).isEqualTo("😀".repeat(CAP / 4));
-  }
 }

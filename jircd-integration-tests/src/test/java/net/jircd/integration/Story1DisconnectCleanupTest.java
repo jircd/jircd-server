@@ -24,86 +24,86 @@ import org.junit.jupiter.params.provider.CsvSource;
 
 class Story1DisconnectCleanupTest {
 
-  @ParameterizedTest(name = "cloak={0}, voluntaryQuit={1}")
-  @CsvSource({"true,true", "true,false", "false,true", "false,false"})
-  void quitPrefixMatchesPresentedJoinIdentity(boolean cloak, boolean voluntaryQuit)
-      throws Exception {
-    try (TestServer server = TestServer.start(cloak ? TestServer.CLOAK_ENABLED_YAML : "");
-        RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort());
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
-      bob.registerAndAwaitWelcome("bob", "bob");
-      alice.registerAndAwaitWelcome("alice", "alice");
-      bob.send("JOIN #lobby");
-      bob.readUntil("366", Duration.ofSeconds(5));
-      alice.send("JOIN #lobby");
-      alice.readUntil("366", Duration.ofSeconds(5));
-      String joinPrefix = bob.readUntil("JOIN", Duration.ofSeconds(5)).split(" ")[0];
+    @ParameterizedTest(name = "cloak={0}, voluntaryQuit={1}")
+    @CsvSource({"true,true", "true,false", "false,true", "false,false"})
+    void quitPrefixMatchesPresentedJoinIdentity(boolean cloak, boolean voluntaryQuit)
+            throws Exception {
+        try (TestServer server = TestServer.start(cloak ? TestServer.CLOAK_ENABLED_YAML : "");
+                RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort());
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+            bob.registerAndAwaitWelcome("bob", "bob");
+            alice.registerAndAwaitWelcome("alice", "alice");
+            bob.send("JOIN #lobby");
+            bob.readUntil("366", Duration.ofSeconds(5));
+            alice.send("JOIN #lobby");
+            alice.readUntil("366", Duration.ofSeconds(5));
+            String joinPrefix = bob.readUntil("JOIN", Duration.ofSeconds(5)).split(" ")[0];
 
-      if (voluntaryQuit) {
-        alice.send("QUIT :goodbye");
-      } else {
-        alice.close(); // Close without QUIT to exercise externally triggered cleanup.
-      }
+            if (voluntaryQuit) {
+                alice.send("QUIT :goodbye");
+            } else {
+                alice.close(); // Close without QUIT to exercise externally triggered cleanup.
+            }
 
-      String quitLine = bob.readUntil("QUIT", Duration.ofSeconds(5));
-      assertThat(quitLine.split(" ")[0]).isEqualTo(joinPrefix);
+            String quitLine = bob.readUntil("QUIT", Duration.ofSeconds(5));
+            assertThat(quitLine.split(" ")[0]).isEqualTo(joinPrefix);
+        }
     }
-  }
 
-  @Test
-  void quitWithReasonNotifiesRemainingMembers() throws Exception {
-    try (TestServer server = TestServer.start();
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
-        RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort())) {
-      alice.registerAndAwaitWelcome("alice", "alice");
-      bob.registerAndAwaitWelcome("bob", "bob");
-      alice.send("JOIN #lobby");
-      alice.readUntil("353", Duration.ofSeconds(5));
-      bob.send("JOIN #lobby");
-      bob.readUntil("353", Duration.ofSeconds(5));
+    @Test
+    void quitWithReasonNotifiesRemainingMembers() throws Exception {
+        try (TestServer server = TestServer.start();
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
+                RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+            alice.registerAndAwaitWelcome("alice", "alice");
+            bob.registerAndAwaitWelcome("bob", "bob");
+            alice.send("JOIN #lobby");
+            alice.readUntil("353", Duration.ofSeconds(5));
+            bob.send("JOIN #lobby");
+            bob.readUntil("353", Duration.ofSeconds(5));
 
-      alice.send("QUIT :goodbye");
-      String quitLine = bob.readUntil("QUIT", Duration.ofSeconds(5));
-      assertThat(quitLine).contains("goodbye");
+            alice.send("QUIT :goodbye");
+            String quitLine = bob.readUntil("QUIT", Duration.ofSeconds(5));
+            assertThat(quitLine).contains("goodbye");
+        }
     }
-  }
 
-  @Test
-  void bareQuitGetsANonBlankDefaultReason() throws Exception {
-    try (TestServer server = TestServer.start();
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
-        RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort())) {
-      alice.registerAndAwaitWelcome("alice", "alice");
-      bob.registerAndAwaitWelcome("bob", "bob");
-      alice.send("JOIN #lobby");
-      alice.readUntil("353", Duration.ofSeconds(5));
-      bob.send("JOIN #lobby");
-      bob.readUntil("353", Duration.ofSeconds(5));
+    @Test
+    void bareQuitGetsANonBlankDefaultReason() throws Exception {
+        try (TestServer server = TestServer.start();
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
+                RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+            alice.registerAndAwaitWelcome("alice", "alice");
+            bob.registerAndAwaitWelcome("bob", "bob");
+            alice.send("JOIN #lobby");
+            alice.readUntil("353", Duration.ofSeconds(5));
+            bob.send("JOIN #lobby");
+            bob.readUntil("353", Duration.ofSeconds(5));
 
-      alice.send("QUIT");
-      String quitLine = bob.readUntil("QUIT", Duration.ofSeconds(5));
-      assertThat(quitLine).contains("QUIT :");
-      assertThat(quitLine.endsWith("QUIT :")).isFalse(); // reason is present, not blank
+            alice.send("QUIT");
+            String quitLine = bob.readUntil("QUIT", Duration.ofSeconds(5));
+            assertThat(quitLine).contains("QUIT :");
+            assertThat(quitLine.endsWith("QUIT :")).isFalse(); // reason is present, not blank
+        }
     }
-  }
 
-  @Test
-  void abruptSocketCloseStillNotifiesRemainingMembers() throws Exception {
-    try (TestServer server = TestServer.start();
-        RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort())) {
-      bob.registerAndAwaitWelcome("bob", "bob");
-      bob.send("JOIN #lobby");
-      bob.readUntil("353", Duration.ofSeconds(5));
+    @Test
+    void abruptSocketCloseStillNotifiesRemainingMembers() throws Exception {
+        try (TestServer server = TestServer.start();
+                RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+            bob.registerAndAwaitWelcome("bob", "bob");
+            bob.send("JOIN #lobby");
+            bob.readUntil("353", Duration.ofSeconds(5));
 
-      try (RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
-        alice.registerAndAwaitWelcome("alice", "alice");
-        alice.send("JOIN #lobby");
-        alice.readUntil("353", Duration.ofSeconds(5));
-        alice.close(); // abrupt: no QUIT sent — closed early, deliberately, to simulate it
-      }
+            try (RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+                alice.registerAndAwaitWelcome("alice", "alice");
+                alice.send("JOIN #lobby");
+                alice.readUntil("353", Duration.ofSeconds(5));
+                alice.close(); // abrupt: no QUIT sent — closed early, deliberately, to simulate it
+            }
 
-      String quitLine = bob.readUntil("QUIT", Duration.ofSeconds(10));
-      assertThat(quitLine).contains("alice");
+            String quitLine = bob.readUntil("QUIT", Duration.ofSeconds(10));
+            assertThat(quitLine).contains("alice");
+        }
     }
-  }
 }

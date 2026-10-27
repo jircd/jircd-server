@@ -23,59 +23,59 @@ package net.jircd.protocol;
  */
 public final class CaseMapping {
 
-  private CaseMapping() {}
+    private CaseMapping() {}
 
-  public static String fold(String value) {
-    StringBuilder result = new StringBuilder(value.length());
-    for (int i = 0; i < value.length(); i++) {
-      result.append(foldChar(value.charAt(i)));
+    public static String fold(String value) {
+        StringBuilder result = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            result.append(foldChar(value.charAt(i)));
+        }
+        return result.toString();
     }
-    return result.toString();
-  }
 
-  private static char foldChar(char c) {
-    if (c >= 'A' && c <= 'Z') {
-      return (char) (c + 'a' - 'A');
+    private static char foldChar(char c) {
+        if (c >= 'A' && c <= 'Z') {
+            return (char) (c + 'a' - 'A');
+        }
+        return switch (c) {
+            case '[' -> '{';
+            case ']' -> '}';
+            case '\\' -> '|';
+            case '^' -> '~';
+            default -> c;
+        };
     }
-    return switch (c) {
-      case '[' -> '{';
-      case ']' -> '}';
-      case '\\' -> '|';
-      case '^' -> '~';
-      default -> c;
-    };
-  }
 
-  /** Case-insensitive (rfc1459-folded) {@code *}/{@code ?} wildcard match (FR-052/FR-061). */
-  public static boolean matches(String value, String mask) {
-    return wildcardMatch(fold(value), fold(mask));
-  }
+    /** Case-insensitive (rfc1459-folded) {@code *}/{@code ?} wildcard match (FR-052/FR-061). */
+    public static boolean matches(String value, String mask) {
+        return wildcardMatch(fold(value), fold(mask));
+    }
 
-  /** Uses constant matching space and O(text.length() * pattern.length()) worst-case time. */
-  private static boolean wildcardMatch(String text, String pattern) {
-    int ti = 0;
-    int pi = 0;
-    int lastStar = -1;
-    int starText = 0;
-    while (ti < text.length()) {
-      if (pi < pattern.length() && pattern.charAt(pi) == '*') {
-        lastStar = pi++;
-        starText = ti;
-      } else if (pi < pattern.length()
-          && (pattern.charAt(pi) == '?' || pattern.charAt(pi) == text.charAt(ti))) {
-        ti++;
-        pi++;
-      } else if (lastStar >= 0) {
-        // Let the most recent star consume one more character and retry its suffix.
-        ti = ++starText;
-        pi = lastStar + 1;
-      } else {
-        return false;
-      }
+    /** Uses constant matching space and O(text.length() * pattern.length()) worst-case time. */
+    private static boolean wildcardMatch(String text, String pattern) {
+        int ti = 0;
+        int pi = 0;
+        int lastStar = -1;
+        int starText = 0;
+        while (ti < text.length()) {
+            if (pi < pattern.length() && pattern.charAt(pi) == '*') {
+                lastStar = pi++;
+                starText = ti;
+            } else if (pi < pattern.length()
+                    && (pattern.charAt(pi) == '?' || pattern.charAt(pi) == text.charAt(ti))) {
+                ti++;
+                pi++;
+            } else if (lastStar >= 0) {
+                // Let the most recent star consume one more character and retry its suffix.
+                ti = ++starText;
+                pi = lastStar + 1;
+            } else {
+                return false;
+            }
+        }
+        while (pi < pattern.length() && pattern.charAt(pi) == '*') {
+            pi++;
+        }
+        return pi == pattern.length();
     }
-    while (pi < pattern.length() && pattern.charAt(pi) == '*') {
-      pi++;
-    }
-    return pi == pattern.length();
-  }
 }

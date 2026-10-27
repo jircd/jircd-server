@@ -40,125 +40,136 @@ import org.slf4j.LoggerFactory;
  */
 public final class MotdService {
 
-  private static final Logger LOG = LoggerFactory.getLogger(MotdService.class);
+    private static final Logger LOG = LoggerFactory.getLogger(MotdService.class);
 
-  /** Largest MOTD file served; a bigger one is treated as unusable rather than read per login. */
-  public static final int MAX_FILE_BYTES = 64 * 1024;
+    /** Largest MOTD file served; a bigger one is treated as unusable rather than read per login. */
+    public static final int MAX_FILE_BYTES = 64 * 1024;
 
-  private static final WarningThrottle WARNINGS =
-      new WarningThrottle(java.util.concurrent.TimeUnit.MINUTES.toNanos(1), 64, System::nanoTime);
+    private static final WarningThrottle WARNINGS =
+            new WarningThrottle(
+                    java.util.concurrent.TimeUnit.MINUTES.toNanos(1), 64, System::nanoTime);
 
-  /** Most lines served, so a registration burst of 512-byte lines stays far under the SendQ. */
-  public static final int MAX_LINES = 200;
+    /** Most lines served, so a registration burst of 512-byte lines stays far under the SendQ. */
+    public static final int MAX_LINES = 200;
 
-  /** What a cached read was made from; a different path, mtime, size or file identity rereads. */
-  private record Snapshot(
-      String path, FileTime modified, long size, Object fileKey, List<String> lines) {
-    Snapshot(String path, BasicFileAttributes attributes, List<String> lines) {
-      this(path, attributes.lastModifiedTime(), attributes.size(), attributes.fileKey(), lines);
+    /** What a cached read was made from; a different path, mtime, size or file identity rereads. */
+    private record Snapshot(
+            String path, FileTime modified, long size, Object fileKey, List<String> lines) {
+        Snapshot(String path, BasicFileAttributes attributes, List<String> lines) {
+            this(
+                    path,
+                    attributes.lastModifiedTime(),
+                    attributes.size(),
+                    attributes.fileKey(),
+                    lines);
+        }
+
+        boolean matches(String currentPath, BasicFileAttributes attributes) {
+            return path.equals(currentPath)
+                    && modified.equals(attributes.lastModifiedTime())
+                    && size == attributes.size()
+                    && java.util.Objects.equals(fileKey, attributes.fileKey());
+        }
     }
 
-    boolean matches(String currentPath, BasicFileAttributes attributes) {
-      return path.equals(currentPath)
-          && modified.equals(attributes.lastModifiedTime())
-          && size == attributes.size()
-          && java.util.Objects.equals(fileKey, attributes.fileKey());
-    }
-  }
+    private final Supplier<String> serverName;
+    private final Supplier<String> motdPath;
+    private final AtomicReference<Snapshot> cached = new AtomicReference<>();
 
-  private final Supplier<String> serverName;
-  private final Supplier<String> motdPath;
-  private final AtomicReference<Snapshot> cached = new AtomicReference<>();
+    public MotdService(Supplier<String> serverName, Supplier<String> motdPath) {
+        this.serverName = serverName;
+        this.motdPath = motdPath;
+    }
 
-  public MotdService(Supplier<String> serverName, Supplier<String> motdPath) {
-    this.serverName = serverName;
-    this.motdPath = motdPath;
-  }
+    /** A service with no MOTD file, always answering {@code 422}. */
+    public static MotdService none(Supplier<String> serverName) {
+        return new MotdService(serverName, () -> null);
+    }
 
-  /** A service with no MOTD file, always answering {@code 422}. */
-  public static MotdService none(Supplier<String> serverName) {
-    return new MotdService(serverName, () -> null);
-  }
+    public void send(ClientSession session) {
+        String server = serverName.get();
+        List<String> lines = lines();
+        if (lines.isEmpty()) {
+            Replies.sendFitted(
+                    session, server, NumericReply.ERR_NOMOTD, List.of(), "MOTD File is missing");
+            return;
+        }
+        Replies.sendFitted(
+                session,
+                server,
+                NumericReply.RPL_MOTDSTART,
+                List.of(),
+                "- " + server + " Message of the day - ");
+        for (String line : lines) {
+            Replies.sendFitted(session, server, NumericReply.RPL_MOTD, List.of(), "- " + line);
+        }
+        Replies.sendFitted(
+                session, server, NumericReply.RPL_ENDOFMOTD, List.of(), "End of /MOTD command");
+    }
 
-  public void send(ClientSession session) {
-    String server = serverName.get();
-    List<String> lines = lines();
-    if (lines.isEmpty()) {
-      Replies.sendFitted(
-          session, server, NumericReply.ERR_NOMOTD, List.of(), "MOTD File is missing");
-      return;
+    /** The current MOTD lines, empty when there is none. */
+    private List<String> lines() {
+        String configured = motdPath.get();
+        if (configured == null) {
+            return List.of();
+        }
+        try {
+            Path path = Path.of(configured);
+            BasicFileAttributes attributes = Files.readAttributes(path, BasicFileAttributes.class);
+            if (!attributes.isRegularFile()) {
+                return unusable(configured, "is not a regular file");
+            }
+            Snapshot snapshot = cached.get();
+            if (snapshot != null && snapshot.matches(configured, attributes)) {
+                return snapshot.lines();
+            }
+            // The size seen above can be stale by now, so never read more than the limit allows.
+            byte[] content;
+            try (InputStream in = Files.newInputStream(path)) {
+                content = in.readNBytes(MAX_FILE_BYTES + 1);
+            }
+            if (content.length > MAX_FILE_BYTES) {
+                return unusable(configured, "is larger than " + MAX_FILE_BYTES + " bytes");
+            }
+            List<String> lines = split(content);
+            if (lines.size() > MAX_LINES) {
+                unusable(
+                        configured,
+                        "has more than " + MAX_LINES + " lines; only the first are served");
+                lines = List.copyOf(lines.subList(0, MAX_LINES));
+            }
+            cached.set(new Snapshot(configured, attributes, lines));
+            if (lines.isEmpty()) {
+                return unusable(configured, "is empty");
+            }
+            return lines;
+        } catch (IOException | RuntimeException failure) {
+            return unusable(configured, "cannot be read: " + failure);
+        }
     }
-    Replies.sendFitted(
-        session,
-        server,
-        NumericReply.RPL_MOTDSTART,
-        List.of(),
-        "- " + server + " Message of the day - ");
-    for (String line : lines) {
-      Replies.sendFitted(session, server, NumericReply.RPL_MOTD, List.of(), "- " + line);
-    }
-    Replies.sendFitted(
-        session, server, NumericReply.RPL_ENDOFMOTD, List.of(), "End of /MOTD command");
-  }
 
-  /** The current MOTD lines, empty when there is none. */
-  private List<String> lines() {
-    String configured = motdPath.get();
-    if (configured == null) {
-      return List.of();
+    /** Only the final line terminator(s) are dropped; whitespace on the last line is kept. */
+    private static List<String> split(byte[] content) {
+        String text = new String(content, StandardCharsets.UTF_8);
+        if (text.isBlank()) {
+            return List.of();
+        }
+        int end = text.length();
+        while (end > 0 && (text.charAt(end - 1) == '\n' || text.charAt(end - 1) == '\r')) {
+            end--;
+        }
+        return text.substring(0, end).lines().toList();
     }
-    try {
-      Path path = Path.of(configured);
-      BasicFileAttributes attributes = Files.readAttributes(path, BasicFileAttributes.class);
-      if (!attributes.isRegularFile()) {
-        return unusable(configured, "is not a regular file");
-      }
-      Snapshot snapshot = cached.get();
-      if (snapshot != null && snapshot.matches(configured, attributes)) {
-        return snapshot.lines();
-      }
-      // The size seen above can be stale by now, so never read more than the limit allows.
-      byte[] content;
-      try (InputStream in = Files.newInputStream(path)) {
-        content = in.readNBytes(MAX_FILE_BYTES + 1);
-      }
-      if (content.length > MAX_FILE_BYTES) {
-        return unusable(configured, "is larger than " + MAX_FILE_BYTES + " bytes");
-      }
-      List<String> lines = split(content);
-      if (lines.size() > MAX_LINES) {
-        unusable(configured, "has more than " + MAX_LINES + " lines; only the first are served");
-        lines = List.copyOf(lines.subList(0, MAX_LINES));
-      }
-      cached.set(new Snapshot(configured, attributes, lines));
-      if (lines.isEmpty()) {
-        return unusable(configured, "is empty");
-      }
-      return lines;
-    } catch (IOException | RuntimeException failure) {
-      return unusable(configured, "cannot be read: " + failure);
-    }
-  }
 
-  /** Only the final line terminator(s) are dropped; whitespace on the last line is kept. */
-  private static List<String> split(byte[] content) {
-    String text = new String(content, StandardCharsets.UTF_8);
-    if (text.isBlank()) {
-      return List.of();
+    private static List<String> unusable(String path, String reason) {
+        long suppressed = WARNINGS.admit(path + ' ' + reason);
+        if (suppressed >= 0) {
+            LOG.warn(
+                    "MOTD file {} {}; clients get 422 (suppressed {} similar)",
+                    path,
+                    reason,
+                    suppressed);
+        }
+        return List.of();
     }
-    int end = text.length();
-    while (end > 0 && (text.charAt(end - 1) == '\n' || text.charAt(end - 1) == '\r')) {
-      end--;
-    }
-    return text.substring(0, end).lines().toList();
-  }
-
-  private static List<String> unusable(String path, String reason) {
-    long suppressed = WARNINGS.admit(path + ' ' + reason);
-    if (suppressed >= 0) {
-      LOG.warn(
-          "MOTD file {} {}; clients get 422 (suppressed {} similar)", path, reason, suppressed);
-    }
-    return List.of();
-  }
 }

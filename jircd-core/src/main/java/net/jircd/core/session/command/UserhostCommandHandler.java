@@ -36,44 +36,48 @@ import net.jircd.protocol.NumericReply;
  */
 public final class UserhostCommandHandler implements CommandHandler {
 
-  private static final int MAX_NICKNAMES = 5;
+    private static final int MAX_NICKNAMES = 5;
 
-  private final NicknameRegistry nicknameRegistry;
-  private final ExtensionRegistry extensionRegistry;
-  private final Supplier<String> serverName;
+    private final NicknameRegistry nicknameRegistry;
+    private final ExtensionRegistry extensionRegistry;
+    private final Supplier<String> serverName;
 
-  public UserhostCommandHandler(
-      NicknameRegistry nicknameRegistry,
-      ExtensionRegistry extensionRegistry,
-      Supplier<String> serverName) {
-    this.nicknameRegistry = nicknameRegistry;
-    this.extensionRegistry = extensionRegistry;
-    this.serverName = serverName;
-  }
-
-  @Override
-  public void handle(ClientSession session, Message message) {
-    List<String> entries = new ArrayList<>();
-    int count = Math.min(message.params().size(), MAX_NICKNAMES);
-    for (int i = 0; i < count; i++) {
-      nicknameRegistry
-          .lookup(message.params().get(i))
-          .ifPresent(
-              target -> {
-                String hostname =
-                    target == session || session.isAdministrator()
-                        ? target.realHostname()
-                        : PresentedIdentity.displayHostname(target, extensionRegistry);
-                entries.add(
-                    target.nickname()
-                        + (target.userModes().contains(UserMode.OPERATOR) ? "*" : "")
-                        + '='
-                        + (target.isAway() ? '-' : '+')
-                        + target.ident()
-                        + '@'
-                        + hostname);
-              });
+    public UserhostCommandHandler(
+            NicknameRegistry nicknameRegistry,
+            ExtensionRegistry extensionRegistry,
+            Supplier<String> serverName) {
+        this.nicknameRegistry = nicknameRegistry;
+        this.extensionRegistry = extensionRegistry;
+        this.serverName = serverName;
     }
-    Replies.sendListed(session, serverName.get(), NumericReply.RPL_USERHOST, List.of(), entries);
-  }
+
+    @Override
+    public void handle(ClientSession session, Message message) {
+        List<String> entries = new ArrayList<>();
+        int count = Math.min(message.params().size(), MAX_NICKNAMES);
+        for (int i = 0; i < count; i++) {
+            nicknameRegistry
+                    .lookup(message.params().get(i))
+                    .ifPresent(
+                            target -> {
+                                String hostname =
+                                        target == session || session.isAdministrator()
+                                                ? target.realHostname()
+                                                : PresentedIdentity.displayHostname(
+                                                        target, extensionRegistry);
+                                entries.add(
+                                        target.nickname()
+                                                + (target.userModes().contains(UserMode.OPERATOR)
+                                                        ? "*"
+                                                        : "")
+                                                + '='
+                                                + (target.isAway() ? '-' : '+')
+                                                + target.ident()
+                                                + '@'
+                                                + hostname);
+                            });
+        }
+        Replies.sendListed(
+                session, serverName.get(), NumericReply.RPL_USERHOST, List.of(), entries);
+    }
 }

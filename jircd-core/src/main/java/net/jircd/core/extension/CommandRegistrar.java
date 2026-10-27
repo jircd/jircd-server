@@ -27,16 +27,16 @@ import net.jircd.protocol.Command;
  */
 public interface CommandRegistrar {
 
-  void register(Command command, CommandHandler handler);
+    void register(Command command, CommandHandler handler);
 
-  /** Whether {@code command} already has a handler (core's, or another extension's). */
-  boolean isRegistered(Command command);
+    /** Whether {@code command} already has a handler (core's, or another extension's). */
+    boolean isRegistered(Command command);
 
-  /**
-   * Removes {@code installed} for {@code command}, but only if it is still the handler in place: a
-   * handler another extension has since installed over it stays. The command is answered as unknown
-   * once nothing handles it. There is deliberately no default, so a registrar cannot claim to
-   * support installing handlers it can never take back.
-   */
-  void unregister(Command command, CommandHandler installed);
+    /**
+     * Removes {@code installed} for {@code command}, but only if it is still the handler in place:
+     * a handler another extension has since installed over it stays. The command is answered as
+     * unknown once nothing handles it. There is deliberately no default, so a registrar cannot
+     * claim to support installing handlers it can never take back.
+     */
+    void unregister(Command command, CommandHandler installed);
 }

@@ -26,52 +26,52 @@ import java.util.function.LongSupplier;
  */
 public final class WarningThrottle {
 
-  private static final class State {
-    boolean admittedOnce;
-    long lastAdmittedNanos;
-    long suppressed;
-  }
-
-  private final long intervalNanos;
-  private final LongSupplier nanoClock;
-  private final Map<String, State> states;
-
-  public WarningThrottle(long intervalNanos, int maxKeys, LongSupplier nanoClock) {
-    this.intervalNanos = intervalNanos;
-    this.nanoClock = nanoClock;
-    this.states =
-        new LinkedHashMap<>(16, 0.75f, true) {
-          @Override
-          protected boolean removeEldestEntry(Map.Entry<String, State> eldest) {
-            return size() > maxKeys;
-          }
-        };
-  }
-
-  /**
-   * Returns {@code -1} when the entry for {@code key} must be suppressed, otherwise the number of
-   * entries suppressed for it since the last admitted one (0 for a first occurrence).
-   */
-  public synchronized long admit(String key) {
-    long now = nanoClock.getAsLong();
-    State state = states.computeIfAbsent(key, _ -> new State());
-    if (!state.admittedOnce) {
-      state.admittedOnce = true;
-      state.lastAdmittedNanos = now;
-      return 0;
+    private static final class State {
+        boolean admittedOnce;
+        long lastAdmittedNanos;
+        long suppressed;
     }
-    if (now - state.lastAdmittedNanos < intervalNanos) {
-      state.suppressed++;
-      return -1;
-    }
-    long suppressed = state.suppressed;
-    state.suppressed = 0;
-    state.lastAdmittedNanos = now;
-    return suppressed;
-  }
 
-  /** Forgets every key, so the next occurrence of each is logged again. */
-  public synchronized void reset() {
-    states.clear();
-  }
+    private final long intervalNanos;
+    private final LongSupplier nanoClock;
+    private final Map<String, State> states;
+
+    public WarningThrottle(long intervalNanos, int maxKeys, LongSupplier nanoClock) {
+        this.intervalNanos = intervalNanos;
+        this.nanoClock = nanoClock;
+        this.states =
+                new LinkedHashMap<>(16, 0.75f, true) {
+                    @Override
+                    protected boolean removeEldestEntry(Map.Entry<String, State> eldest) {
+                        return size() > maxKeys;
+                    }
+                };
+    }
+
+    /**
+     * Returns {@code -1} when the entry for {@code key} must be suppressed, otherwise the number of
+     * entries suppressed for it since the last admitted one (0 for a first occurrence).
+     */
+    public synchronized long admit(String key) {
+        long now = nanoClock.getAsLong();
+        State state = states.computeIfAbsent(key, _ -> new State());
+        if (!state.admittedOnce) {
+            state.admittedOnce = true;
+            state.lastAdmittedNanos = now;
+            return 0;
+        }
+        if (now - state.lastAdmittedNanos < intervalNanos) {
+            state.suppressed++;
+            return -1;
+        }
+        long suppressed = state.suppressed;
+        state.suppressed = 0;
+        state.lastAdmittedNanos = now;
+        return suppressed;
+    }
+
+    /** Forgets every key, so the next occurrence of each is logged again. */
+    public synchronized void reset() {
+        states.clear();
+    }
 }

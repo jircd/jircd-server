@@ -22,15 +22,15 @@ import org.junit.jupiter.api.Test;
 
 class Story6PrivilegeGateTest {
 
-  @Test
-  void nonPrivilegedSessionsExtensionCommandIsRejected() throws Exception {
-    try (TestServer server = TestServer.start(TestServer.adminEnabledYaml());
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void nonPrivilegedSessionsExtensionCommandIsRejected() throws Exception {
+        try (TestServer server = TestServer.start(TestServer.adminEnabledYaml());
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      alice.registerAndAwaitWelcome("alice", "alice");
+            alice.registerAndAwaitWelcome("alice", "alice");
 
-      alice.send("EXTENSION DISABLE message-tags");
-      assertThat(alice.readUntil("481", Duration.ofSeconds(5))).contains("481");
+            alice.send("EXTENSION DISABLE message-tags");
+            assertThat(alice.readUntil("481", Duration.ofSeconds(5))).contains("481");
+        }
     }
-  }
 }

@@ -29,43 +29,46 @@ import org.junit.jupiter.api.Test;
  */
 class ConnectionTokenOpacityTest {
 
-  private static final java.util.regex.Pattern UUID_FORMAT =
-      java.util.regex.Pattern.compile(
-          "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$");
+    private static final java.util.regex.Pattern UUID_FORMAT =
+            java.util.regex.Pattern.compile(
+                    "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$");
 
-  @Test
-  void tokensAreOpaqueUuidsNotSequentialCounters() throws Exception {
-    try (LogCapture capture = new LogCapture(ConnectionMonitorLog.class);
-        TestServer server = TestServer.start()) {
+    @Test
+    void tokensAreOpaqueUuidsNotSequentialCounters() throws Exception {
+        try (LogCapture capture = new LogCapture(ConnectionMonitorLog.class);
+                TestServer server = TestServer.start()) {
 
-      List<String> tokens = new ArrayList<>();
-      int previousConnectedCount = 0;
-      for (int i = 0; i < 3; i++) {
-        int expectedCount = previousConnectedCount + 1;
-        try (RawIrcClient client = RawIrcClient.connectPlaintext(server.plaintextPort())) {
-          client.registerAndAwaitWelcome("nick" + i, "user" + i);
-          capture.awaitMessage(
-              m ->
-                  capture.messages().stream()
-                          .filter(x -> x.startsWith("connection-event=connected"))
-                          .count()
-                      >= expectedCount,
-              Duration.ofSeconds(5));
-          List<String> connectedMessages =
-              capture.messages().stream()
-                  .filter(m -> m.startsWith("connection-event=connected"))
-                  .toList();
-          tokens.add(ConnectionMonitorLogTest.extractToken(connectedMessages.get(i)));
-          previousConnectedCount = connectedMessages.size();
+            List<String> tokens = new ArrayList<>();
+            int previousConnectedCount = 0;
+            for (int i = 0; i < 3; i++) {
+                int expectedCount = previousConnectedCount + 1;
+                try (RawIrcClient client = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+                    client.registerAndAwaitWelcome("nick" + i, "user" + i);
+                    capture.awaitMessage(
+                            m ->
+                                    capture.messages().stream()
+                                                    .filter(
+                                                            x ->
+                                                                    x.startsWith(
+                                                                            "connection-event=connected"))
+                                                    .count()
+                                            >= expectedCount,
+                            Duration.ofSeconds(5));
+                    List<String> connectedMessages =
+                            capture.messages().stream()
+                                    .filter(m -> m.startsWith("connection-event=connected"))
+                                    .toList();
+                    tokens.add(ConnectionMonitorLogTest.extractToken(connectedMessages.get(i)));
+                    previousConnectedCount = connectedMessages.size();
+                }
+            }
+
+            assertThat(tokens).hasSize(3);
+            assertThat(tokens).doesNotHaveDuplicates();
+            for (String token : tokens) {
+                assertThat(token).matches(UUID_FORMAT.pattern());
+                assertThat(token).doesNotMatch("^c\\d+$");
+            }
         }
-      }
-
-      assertThat(tokens).hasSize(3);
-      assertThat(tokens).doesNotHaveDuplicates();
-      for (String token : tokens) {
-        assertThat(token).matches(UUID_FORMAT.pattern());
-        assertThat(token).doesNotMatch("^c\\d+$");
-      }
     }
-  }
 }

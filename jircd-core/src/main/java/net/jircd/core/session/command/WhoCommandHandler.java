@@ -47,131 +47,133 @@ import net.jircd.protocol.NumericReply;
  */
 public final class WhoCommandHandler implements CommandHandler {
 
-  private final ChannelRegistry channelRegistry;
-  private final NicknameRegistry nicknameRegistry;
-  private final ExtensionRegistry extensionRegistry;
-  private final Supplier<String> serverName;
-  private final BooleanSupplier whoMaskEnabled;
-  private final MemberReplies memberReplies;
+    private final ChannelRegistry channelRegistry;
+    private final NicknameRegistry nicknameRegistry;
+    private final ExtensionRegistry extensionRegistry;
+    private final Supplier<String> serverName;
+    private final BooleanSupplier whoMaskEnabled;
+    private final MemberReplies memberReplies;
 
-  public WhoCommandHandler(
-      ChannelRegistry channelRegistry,
-      NicknameRegistry nicknameRegistry,
-      ExtensionRegistry extensionRegistry,
-      Supplier<String> serverName,
-      BooleanSupplier whoMaskEnabled) {
-    this.channelRegistry = channelRegistry;
-    this.nicknameRegistry = nicknameRegistry;
-    this.extensionRegistry = extensionRegistry;
-    this.serverName = serverName;
-    this.whoMaskEnabled = whoMaskEnabled;
-    this.memberReplies = new MemberReplies(extensionRegistry);
-  }
-
-  @Override
-  public void handle(ClientSession session, Message message) {
-    String arg = message.params().isEmpty() ? null : message.params().getFirst();
-
-    if (arg != null && arg.charAt(0) == '#') {
-      handleChannelForm(session, arg);
-      return;
+    public WhoCommandHandler(
+            ChannelRegistry channelRegistry,
+            NicknameRegistry nicknameRegistry,
+            ExtensionRegistry extensionRegistry,
+            Supplier<String> serverName,
+            BooleanSupplier whoMaskEnabled) {
+        this.channelRegistry = channelRegistry;
+        this.nicknameRegistry = nicknameRegistry;
+        this.extensionRegistry = extensionRegistry;
+        this.serverName = serverName;
+        this.whoMaskEnabled = whoMaskEnabled;
+        this.memberReplies = new MemberReplies(extensionRegistry);
     }
 
-    boolean isMask = arg != null && (arg.indexOf('*') >= 0 || arg.indexOf('?') >= 0);
-    boolean maskGatedForm = isMask || arg == null;
+    @Override
+    public void handle(ClientSession session, Message message) {
+        String arg = message.params().isEmpty() ? null : message.params().getFirst();
 
-    if (maskGatedForm && !session.isAdministrator() && !whoMaskEnabled.getAsBoolean()) {
-      sendEndOfWho(session, arg);
-      return;
+        if (arg != null && arg.charAt(0) == '#') {
+            handleChannelForm(session, arg);
+            return;
+        }
+
+        boolean isMask = arg != null && (arg.indexOf('*') >= 0 || arg.indexOf('?') >= 0);
+        boolean maskGatedForm = isMask || arg == null;
+
+        if (maskGatedForm && !session.isAdministrator() && !whoMaskEnabled.getAsBoolean()) {
+            sendEndOfWho(session, arg);
+            return;
+        }
+
+        if (arg != null && !isMask) {
+            // 005-fix-batch-conformance FR-021 — an exact-nickname lookup bypasses invisibility
+            // entirely; only the mask and no-argument forms respect +i (unchanged below).
+            nicknameRegistry
+                    .lookup(arg)
+                    .ifPresent(target -> sendWhoReply(session, target, "*", null));
+            sendEndOfWho(session, arg);
+            return;
+        }
+
+        Collection<ClientSession> candidates =
+                arg == null
+                        ? nicknameRegistry.all()
+                        : nicknameRegistry.all().stream()
+                                .filter(s -> CaseMapping.matches(s.nickname(), arg))
+                                .toList();
+
+        for (ClientSession target : candidates) {
+            if (isVisibleTo(session, target)) {
+                sendWhoReply(session, target, "*", null);
+            }
+        }
+        sendEndOfWho(session, arg);
     }
 
-    if (arg != null && !isMask) {
-      // 005-fix-batch-conformance FR-021 — an exact-nickname lookup bypasses invisibility
-      // entirely; only the mask and no-argument forms respect +i (unchanged below).
-      nicknameRegistry.lookup(arg).ifPresent(target -> sendWhoReply(session, target, "*", null));
-      sendEndOfWho(session, arg);
-      return;
+    private void handleChannelForm(ClientSession session, String channelName) {
+        var found = channelRegistry.lookup(channelName);
+        if (found.isEmpty()
+                || ChannelVisibility.isHiddenFrom(found.get(), session, extensionRegistry)) {
+            Replies.sendFitted(
+                    session,
+                    serverName.get(),
+                    NumericReply.ERR_NOSUCHCHANNEL,
+                    List.of(channelName),
+                    "No such channel");
+            return;
+        }
+        Channel channel = found.get();
+        for (ClientSession member : channel.members()) {
+            sendWhoReply(session, member, channel.name(), channel);
+        }
+        sendEndOfWho(session, channel.name());
     }
 
-    Collection<ClientSession> candidates =
-        arg == null
-            ? nicknameRegistry.all()
-            : nicknameRegistry.all().stream()
-                .filter(s -> CaseMapping.matches(s.nickname(), arg))
-                .toList();
-
-    for (ClientSession target : candidates) {
-      if (isVisibleTo(session, target)) {
-        sendWhoReply(session, target, "*", null);
-      }
-    }
-    sendEndOfWho(session, arg);
-  }
-
-  private void handleChannelForm(ClientSession session, String channelName) {
-    var found = channelRegistry.lookup(channelName);
-    if (found.isEmpty()
-        || ChannelVisibility.isHiddenFrom(found.get(), session, extensionRegistry)) {
-      Replies.sendFitted(
-          session,
-          serverName.get(),
-          NumericReply.ERR_NOSUCHCHANNEL,
-          List.of(channelName),
-          "No such channel");
-      return;
-    }
-    Channel channel = found.get();
-    for (ClientSession member : channel.members()) {
-      sendWhoReply(session, member, channel.name(), channel);
-    }
-    sendEndOfWho(session, channel.name());
-  }
-
-  private static boolean isVisibleTo(ClientSession requester, ClientSession target) {
-    if (!target.userModes().contains(UserMode.INVISIBLE)) {
-      return true;
-    }
-    if (requester.isAdministrator()) {
-      return true;
-    }
-    return !Collections.disjoint(requester.channelMemberships(), target.channelMemberships());
-  }
-
-  private void sendWhoReply(
-      ClientSession requester, ClientSession target, String channelOrStar, Channel channel) {
-    String hostname =
-        target == requester || requester.isAdministrator()
-            ? target.realHostname()
-            : PresentedIdentity.displayHostname(target, extensionRegistry);
-
-    StringBuilder flags = new StringBuilder(target.isAway() ? "G" : "H");
-    if (target.userModes().contains(UserMode.OPERATOR)) {
-      flags.append('*');
-    }
-    if (channel != null) {
-      flags.append(memberReplies.whoStatus(requester, channel.memberFacts(target)));
+    private static boolean isVisibleTo(ClientSession requester, ClientSession target) {
+        if (!target.userModes().contains(UserMode.INVISIBLE)) {
+            return true;
+        }
+        if (requester.isAdministrator()) {
+            return true;
+        }
+        return !Collections.disjoint(requester.channelMemberships(), target.channelMemberships());
     }
 
-    Replies.sendFitted(
-        requester,
-        serverName.get(),
-        NumericReply.RPL_WHOREPLY,
-        List.of(
-            channelOrStar,
-            target.ident(),
-            hostname,
-            serverName.get(),
-            target.nickname(),
-            flags.toString()),
-        "0 " + target.realname());
-  }
+    private void sendWhoReply(
+            ClientSession requester, ClientSession target, String channelOrStar, Channel channel) {
+        String hostname =
+                target == requester || requester.isAdministrator()
+                        ? target.realHostname()
+                        : PresentedIdentity.displayHostname(target, extensionRegistry);
 
-  private void sendEndOfWho(ClientSession session, String arg) {
-    Replies.sendFitted(
-        session,
-        serverName.get(),
-        NumericReply.RPL_ENDOFWHO,
-        List.of(arg != null ? arg : "*"),
-        "End of /WHO list");
-  }
+        StringBuilder flags = new StringBuilder(target.isAway() ? "G" : "H");
+        if (target.userModes().contains(UserMode.OPERATOR)) {
+            flags.append('*');
+        }
+        if (channel != null) {
+            flags.append(memberReplies.whoStatus(requester, channel.memberFacts(target)));
+        }
+
+        Replies.sendFitted(
+                requester,
+                serverName.get(),
+                NumericReply.RPL_WHOREPLY,
+                List.of(
+                        channelOrStar,
+                        target.ident(),
+                        hostname,
+                        serverName.get(),
+                        target.nickname(),
+                        flags.toString()),
+                "0 " + target.realname());
+    }
+
+    private void sendEndOfWho(ClientSession session, String arg) {
+        Replies.sendFitted(
+                session,
+                serverName.get(),
+                NumericReply.RPL_ENDOFWHO,
+                List.of(arg != null ? arg : "*"),
+                "End of /WHO list");
+    }
 }

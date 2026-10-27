@@ -22,38 +22,38 @@ import org.junit.jupiter.api.Test;
 
 class Story5KickTest {
 
-  @Test
-  void operatorKicksMemberAndBothTargetAndRemainingAreNotified() throws Exception {
-    try (TestServer server = TestServer.start();
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
-        RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort());
-        RawIrcClient carol = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void operatorKicksMemberAndBothTargetAndRemainingAreNotified() throws Exception {
+        try (TestServer server = TestServer.start();
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
+                RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort());
+                RawIrcClient carol = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      alice.registerAndAwaitWelcome("alice", "alice"); // first joiner -> operator
-      bob.registerAndAwaitWelcome("bob", "bob");
-      carol.registerAndAwaitWelcome("carol", "carol");
+            alice.registerAndAwaitWelcome("alice", "alice"); // first joiner -> operator
+            bob.registerAndAwaitWelcome("bob", "bob");
+            carol.registerAndAwaitWelcome("carol", "carol");
 
-      alice.send("JOIN #lobby");
-      alice.readUntil("353", Duration.ofSeconds(5));
-      bob.send("JOIN #lobby");
-      bob.readUntil("353", Duration.ofSeconds(5));
-      carol.send("JOIN #lobby");
-      carol.readUntil("353", Duration.ofSeconds(5));
-      alice.readUntil("JOIN #lobby", Duration.ofSeconds(5)); // carol's join notice
+            alice.send("JOIN #lobby");
+            alice.readUntil("353", Duration.ofSeconds(5));
+            bob.send("JOIN #lobby");
+            bob.readUntil("353", Duration.ofSeconds(5));
+            carol.send("JOIN #lobby");
+            carol.readUntil("353", Duration.ofSeconds(5));
+            alice.readUntil("JOIN #lobby", Duration.ofSeconds(5)); // carol's join notice
 
-      alice.send("KICK #lobby bob :be gone");
+            alice.send("KICK #lobby bob :be gone");
 
-      String bobKicked = bob.readUntil("KICK #lobby bob", Duration.ofSeconds(5));
-      assertThat(bobKicked).startsWith(":alice!alice@");
-      assertThat(bobKicked).contains("be gone");
+            String bobKicked = bob.readUntil("KICK #lobby bob", Duration.ofSeconds(5));
+            assertThat(bobKicked).startsWith(":alice!alice@");
+            assertThat(bobKicked).contains("be gone");
 
-      String carolSawIt = carol.readUntil("KICK #lobby bob", Duration.ofSeconds(5));
-      assertThat(carolSawIt).contains("be gone");
+            String carolSawIt = carol.readUntil("KICK #lobby bob", Duration.ofSeconds(5));
+            assertThat(carolSawIt).contains("be gone");
 
-      carol.send("NAMES #lobby");
-      String names = carol.readUntil("353", Duration.ofSeconds(5));
-      assertThat(names).doesNotContain("bob");
-      assertThat(names).contains("carol");
+            carol.send("NAMES #lobby");
+            String names = carol.readUntil("353", Duration.ofSeconds(5));
+            assertThat(names).doesNotContain("bob");
+            assertThat(names).contains("carol");
+        }
     }
-  }
 }

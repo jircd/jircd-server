@@ -22,21 +22,21 @@ import net.jircd.protocol.MessageSerializer;
 
 /** A capability that contributes a fixed set of server tags, declared at their exact size. */
 final class TagProvider extends AbstractCapabilityExtension {
-  private final Map<String, String> tags;
+    private final Map<String, String> tags;
 
-  TagProvider(String id, Map<String, String> tags) {
-    super(id);
-    this.tags = Map.copyOf(tags);
-  }
+    TagProvider(String id, Map<String, String> tags) {
+        super(id);
+        this.tags = Map.copyOf(tags);
+    }
 
-  @Override
-  public void register(CapabilityRegistrar registrar) {
-    if (tags.isEmpty()) return; // a provider with nothing to contribute registers nothing
-    registrar.onOutboundTags(
-        tags.keySet(),
-        Math.min(
-            MessageSerializer.MAX_TAG_DATA_BYTES_PER_ORIGIN,
-            Math.max(1, MessageSerializer.tagDataBytes(tags))),
-        message -> tags);
-  }
+    @Override
+    public void register(CapabilityRegistrar registrar) {
+        if (tags.isEmpty()) return; // a provider with nothing to contribute registers nothing
+        registrar.onOutboundTags(
+                tags.keySet(),
+                Math.min(
+                        MessageSerializer.MAX_TAG_DATA_BYTES_PER_ORIGIN,
+                        Math.max(1, MessageSerializer.tagDataBytes(tags))),
+                message -> tags);
+    }
 }

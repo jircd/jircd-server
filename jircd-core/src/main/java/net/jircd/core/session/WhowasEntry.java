@@ -31,9 +31,9 @@ import java.time.Instant;
  *     non-administrator requester
  */
 public record WhowasEntry(
-    String nickname,
-    String ident,
-    String realHostname,
-    String presentedHostname,
-    String realname,
-    Instant disconnectedAt) {}
+        String nickname,
+        String ident,
+        String realHostname,
+        String presentedHostname,
+        String realname,
+        Instant disconnectedAt) {}

@@ -23,27 +23,27 @@ package net.jircd.protocol;
  */
 public final class ChannelName {
 
-  private ChannelName() {}
+    private ChannelName() {}
 
-  public static boolean isValid(String name, int maxLength) {
-    if (name == null || name.isEmpty() || name.length() > maxLength) {
-      return false;
+    public static boolean isValid(String name, int maxLength) {
+        if (name == null || name.isEmpty() || name.length() > maxLength) {
+            return false;
+        }
+        if (MessageSerializer.utf8Bytes(name) > maxLength) {
+            return false;
+        }
+        if (name.charAt(0) != '#') {
+            return false;
+        }
+        if (name.length() == 1) {
+            return false;
+        }
+        for (int i = 1; i < name.length(); i++) {
+            char c = name.charAt(i);
+            if (c == ' ' || c == ',' || Character.isISOControl(c)) {
+                return false;
+            }
+        }
+        return true;
     }
-    if (MessageSerializer.utf8Bytes(name) > maxLength) {
-      return false;
-    }
-    if (name.charAt(0) != '#') {
-      return false;
-    }
-    if (name.length() == 1) {
-      return false;
-    }
-    for (int i = 1; i < name.length(); i++) {
-      char c = name.charAt(i);
-      if (c == ' ' || c == ',' || Character.isISOControl(c)) {
-        return false;
-      }
-    }
-    return true;
-  }
 }

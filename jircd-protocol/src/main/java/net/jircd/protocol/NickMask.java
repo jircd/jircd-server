@@ -22,44 +22,44 @@ package net.jircd.protocol;
  */
 public final class NickMask {
 
-  private NickMask() {}
+    private NickMask() {}
 
-  /** Fills a partial mask's missing {@code user}/{@code host} segment(s) with {@code *}. */
-  public static String normalize(String mask) {
-    String nick;
-    String user;
-    String host;
+    /** Fills a partial mask's missing {@code user}/{@code host} segment(s) with {@code *}. */
+    public static String normalize(String mask) {
+        String nick;
+        String user;
+        String host;
 
-    int at = mask.indexOf('@');
-    String beforeAt = at < 0 ? mask : mask.substring(0, at);
-    host = at < 0 ? "*" : mask.substring(at + 1);
+        int at = mask.indexOf('@');
+        String beforeAt = at < 0 ? mask : mask.substring(0, at);
+        host = at < 0 ? "*" : mask.substring(at + 1);
 
-    int bang = beforeAt.indexOf('!');
-    if (bang < 0) {
-      nick = beforeAt;
-      user = "*";
-    } else {
-      nick = beforeAt.substring(0, bang);
-      user = beforeAt.substring(bang + 1);
+        int bang = beforeAt.indexOf('!');
+        if (bang < 0) {
+            nick = beforeAt;
+            user = "*";
+        } else {
+            nick = beforeAt.substring(0, bang);
+            user = beforeAt.substring(bang + 1);
+        }
+
+        if (nick.isEmpty()) {
+            nick = "*";
+        }
+        if (user.isEmpty()) {
+            user = "*";
+        }
+        if (host.isEmpty()) {
+            host = "*";
+        }
+        return nick + "!" + user + "@" + host;
     }
 
-    if (nick.isEmpty()) {
-      nick = "*";
+    /**
+     * Case-insensitive (rfc1459-folded) {@code *}/{@code ?} wildcard match of a full {@code
+     * nickname!ident@hostname} identity string against a normalized mask.
+     */
+    public static boolean matches(String identity, String mask) {
+        return CaseMapping.matches(identity, mask);
     }
-    if (user.isEmpty()) {
-      user = "*";
-    }
-    if (host.isEmpty()) {
-      host = "*";
-    }
-    return nick + "!" + user + "@" + host;
-  }
-
-  /**
-   * Case-insensitive (rfc1459-folded) {@code *}/{@code ?} wildcard match of a full {@code
-   * nickname!ident@hostname} identity string against a normalized mask.
-   */
-  public static boolean matches(String identity, String mask) {
-    return CaseMapping.matches(identity, mask);
-  }
 }

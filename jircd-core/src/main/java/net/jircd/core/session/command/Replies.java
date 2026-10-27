@@ -34,207 +34,213 @@ import org.slf4j.LoggerFactory;
  */
 public final class Replies {
 
-  private static final Logger LOG = LoggerFactory.getLogger(Replies.class);
+    private static final Logger LOG = LoggerFactory.getLogger(Replies.class);
 
-  private static final long WARN_INTERVAL_NANOS = TimeUnit.MINUTES.toNanos(1);
-  private static final int WARN_MAX_KEYS = 256;
-  private static final WarningThrottle OVERSIZED_WARNINGS =
-      new WarningThrottle(WARN_INTERVAL_NANOS, WARN_MAX_KEYS, System::nanoTime);
+    private static final long WARN_INTERVAL_NANOS = TimeUnit.MINUTES.toNanos(1);
+    private static final int WARN_MAX_KEYS = 256;
+    private static final WarningThrottle OVERSIZED_WARNINGS =
+            new WarningThrottle(WARN_INTERVAL_NANOS, WARN_MAX_KEYS, System::nanoTime);
 
-  private Replies() {}
+    private Replies() {}
 
-  /** Makes the next oversized-list warning for every key log again; for tests. */
-  public static void resetOversizedWarnings() {
-    OVERSIZED_WARNINGS.reset();
-  }
-
-  public static void send(
-      ClientSession session, String serverName, NumericReply numeric, String... trailingParams) {
-    List<String> params = new ArrayList<>();
-    params.add(target(session));
-    params.addAll(List.of(trailingParams));
-    Message message = new Message(Map.of(), serverName, null, numeric.wireCode(), params);
-    sendChecked(session, message);
-  }
-
-  /** Sends an indivisible reply only if its command section fits, logging a throttled skip. */
-  public static void sendChecked(ClientSession session, Message message) {
-    if (OutboundSizeGuard.isRepresentable(message) && session.writer() != null) {
-      session.writer().enqueueRaw(message);
+    /** Makes the next oversized-list warning for every key log again; for tests. */
+    public static void resetOversizedWarnings() {
+        OVERSIZED_WARNINGS.reset();
     }
-  }
 
-  /**
-   * Sends a numeric whose last parameter is free text of unknown length (an administrator's MOTD
-   * line, say), cut on a code-point boundary so the command section fits 512 bytes including CRLF,
-   * excluding tags. Line breaks and NUL in the text become spaces, since they would end or corrupt
-   * the wire line. If the fixed fields alone exceed the budget, the reply is logged and skipped
-   * without truncating identities.
-   */
-  public static void sendFitted(
-      ClientSession session,
-      String serverName,
-      NumericReply numeric,
-      List<String> fixedParams,
-      String text) {
-    List<String> params = new ArrayList<>();
-    params.add(target(session));
-    params.addAll(fixedParams);
-    params.add("");
-    int budget =
-        MessageSerializer.MAX_COMMAND_BYTES
-            - MessageSerializer.commandBytes(
-                new Message(Map.of(), serverName, null, numeric.wireCode(), params));
-    params.set(params.size() - 1, truncate(text, budget, false));
-    sendChecked(session, new Message(Map.of(), serverName, null, numeric.wireCode(), params));
-  }
-
-  /**
-   * Sends {@code numeric} with a client-supplied value echoed as the middle parameter before the
-   * fixed trailing text, cutting the echoed value so the command section fits 512 bytes including
-   * CRLF, excluding tags. Whitespace and control characters in it, and a leading colon, become
-   * {@code _}, since a middle parameter cannot hold them; an empty result is echoed as {@code *}.
-   */
-  public static void sendEchoing(
-      ClientSession session,
-      String serverName,
-      NumericReply numeric,
-      String echoed,
-      String trailing) {
-    List<String> params = new ArrayList<>();
-    params.add(target(session));
-    params.add("");
-    params.add(trailing);
-    int budget =
-        MessageSerializer.MAX_COMMAND_BYTES
-            - MessageSerializer.commandBytes(
-                new Message(Map.of(), serverName, null, numeric.wireCode(), params));
-    String fitted = truncate(echoed, budget, true);
-    if (fitted.startsWith(":")) {
-      fitted = "_" + fitted.substring(1);
+    public static void send(
+            ClientSession session,
+            String serverName,
+            NumericReply numeric,
+            String... trailingParams) {
+        List<String> params = new ArrayList<>();
+        params.add(target(session));
+        params.addAll(List.of(trailingParams));
+        Message message = new Message(Map.of(), serverName, null, numeric.wireCode(), params);
+        sendChecked(session, message);
     }
-    params.set(1, fitted.isEmpty() ? "*" : fitted);
-    sendChecked(session, new Message(Map.of(), serverName, null, numeric.wireCode(), params));
-  }
 
-  /** Cuts {@code text} to {@code budget} UTF-8 bytes on a code-point boundary. */
-  private static String truncate(String text, int budget, boolean noWhitespace) {
-    StringBuilder fitted = new StringBuilder();
-    int used = 0;
-    for (int cp : text.codePoints().toArray()) {
-      boolean blank = cp <= ' ' || cp == 0x7f;
-      String ch = Character.toString(cp);
-      if (blank) {
-        ch = noWhitespace ? "_" : " ";
-      }
-      int bytes = MessageSerializer.utf8Bytes(ch);
-      if (used + bytes > budget) {
-        break;
-      }
-      fitted.append(ch);
-      used += bytes;
-    }
-    return fitted.toString();
-  }
-
-  /**
-   * Sends a space-separated list across byte-budgeted numeric replies, including an empty list.
-   * Unrepresentable headers and indivisible items are logged and skipped; later items still send.
-   */
-  public static void sendListed(
-      ClientSession session,
-      String serverName,
-      NumericReply numeric,
-      List<String> fixedParams,
-      List<String> items) {
-    List<String> params = new ArrayList<>();
-    params.add(target(session));
-    params.addAll(fixedParams);
-    params.add("");
-    Message empty = new Message(Map.of(), serverName, null, numeric.wireCode(), params);
-    // Reserve the trailing colon even for a singleton reply, which may serialize without it.
-    int headerBytes = MessageSerializer.commandBytes(empty);
-    int budget = MessageSerializer.MAX_COMMAND_BYTES - headerBytes;
-    String channel = fixedParams.isEmpty() ? "*" : fixedParams.getLast();
-    if (budget < 0) {
-      warnOversizedHeader(numeric, channel, headerBytes);
-      return;
-    }
-    StringBuilder listed = new StringBuilder();
-    int used = 0;
-    for (String item : items) {
-      int bytes = MessageSerializer.utf8Bytes(item);
-      if (!listed.isEmpty() && used + 1 + bytes > budget) {
-        sendLine(session, serverName, numeric, params, listed.toString());
-        listed.setLength(0);
-        used = 0;
-      }
-      if (bytes > budget) {
-        params.set(params.size() - 1, item);
-        Message singleton = new Message(Map.of(), serverName, null, numeric.wireCode(), params);
-        int singletonBytes = MessageSerializer.commandBytes(singleton);
-        if (singletonBytes > MessageSerializer.MAX_COMMAND_BYTES) {
-          warnOversizedItem(numeric, channel, bytes, singletonBytes);
-          continue;
+    /** Sends an indivisible reply only if its command section fits, logging a throttled skip. */
+    public static void sendChecked(ClientSession session, Message message) {
+        if (OutboundSizeGuard.isRepresentable(message) && session.writer() != null) {
+            session.writer().enqueueRaw(message);
         }
-      }
-      if (!listed.isEmpty()) {
-        listed.append(' ');
-        used++;
-      }
-      listed.append(item);
-      used += bytes;
     }
-    if (!listed.isEmpty() || items.isEmpty()) {
-      sendLine(session, serverName, numeric, params, listed.toString());
-    }
-  }
 
-  private static void sendLine(
-      ClientSession session,
-      String serverName,
-      NumericReply numeric,
-      List<String> params,
-      String listed) {
-    params.set(params.size() - 1, listed);
-    send(session, serverName, numeric, params.subList(1, params.size()).toArray(String[]::new));
-  }
+    /**
+     * Sends a numeric whose last parameter is free text of unknown length (an administrator's MOTD
+     * line, say), cut on a code-point boundary so the command section fits 512 bytes including
+     * CRLF, excluding tags. Line breaks and NUL in the text become spaces, since they would end or
+     * corrupt the wire line. If the fixed fields alone exceed the budget, the reply is logged and
+     * skipped without truncating identities.
+     */
+    public static void sendFitted(
+            ClientSession session,
+            String serverName,
+            NumericReply numeric,
+            List<String> fixedParams,
+            String text) {
+        List<String> params = new ArrayList<>();
+        params.add(target(session));
+        params.addAll(fixedParams);
+        params.add("");
+        int budget =
+                MessageSerializer.MAX_COMMAND_BYTES
+                        - MessageSerializer.commandBytes(
+                                new Message(
+                                        Map.of(), serverName, null, numeric.wireCode(), params));
+        params.set(params.size() - 1, truncate(text, budget, false));
+        sendChecked(session, new Message(Map.of(), serverName, null, numeric.wireCode(), params));
+    }
 
-  private static void warnOversizedHeader(NumericReply numeric, String channel, int headerBytes) {
-    if (!LOG.isWarnEnabled()) {
-      return;
+    /**
+     * Sends {@code numeric} with a client-supplied value echoed as the middle parameter before the
+     * fixed trailing text, cutting the echoed value so the command section fits 512 bytes including
+     * CRLF, excluding tags. Whitespace and control characters in it, and a leading colon, become
+     * {@code _}, since a middle parameter cannot hold them; an empty result is echoed as {@code *}.
+     */
+    public static void sendEchoing(
+            ClientSession session,
+            String serverName,
+            NumericReply numeric,
+            String echoed,
+            String trailing) {
+        List<String> params = new ArrayList<>();
+        params.add(target(session));
+        params.add("");
+        params.add(trailing);
+        int budget =
+                MessageSerializer.MAX_COMMAND_BYTES
+                        - MessageSerializer.commandBytes(
+                                new Message(
+                                        Map.of(), serverName, null, numeric.wireCode(), params));
+        String fitted = truncate(echoed, budget, true);
+        if (fitted.startsWith(":")) {
+            fitted = "_" + fitted.substring(1);
+        }
+        params.set(1, fitted.isEmpty() ? "*" : fitted);
+        sendChecked(session, new Message(Map.of(), serverName, null, numeric.wireCode(), params));
     }
-    long suppressed = OVERSIZED_WARNINGS.admit("header|" + numeric.wireCode() + "|" + channel);
-    if (suppressed >= 0) {
-      LOG.warn(
-          "Dropping oversized listed reply header: numeric={}, channel={}, headerBytes={}, limit={}, suppressedSinceLast={}",
-          numeric.wireCode(),
-          channel,
-          headerBytes,
-          MessageSerializer.MAX_COMMAND_BYTES,
-          suppressed);
-    }
-  }
 
-  private static void warnOversizedItem(
-      NumericReply numeric, String channel, int itemBytes, int singletonBytes) {
-    if (!LOG.isWarnEnabled()) {
-      return;
+    /** Cuts {@code text} to {@code budget} UTF-8 bytes on a code-point boundary. */
+    private static String truncate(String text, int budget, boolean noWhitespace) {
+        StringBuilder fitted = new StringBuilder();
+        int used = 0;
+        for (int cp : text.codePoints().toArray()) {
+            boolean blank = cp <= ' ' || cp == 0x7f;
+            String ch = Character.toString(cp);
+            if (blank) {
+                ch = noWhitespace ? "_" : " ";
+            }
+            int bytes = MessageSerializer.utf8Bytes(ch);
+            if (used + bytes > budget) {
+                break;
+            }
+            fitted.append(ch);
+            used += bytes;
+        }
+        return fitted.toString();
     }
-    long suppressed = OVERSIZED_WARNINGS.admit("item|" + numeric.wireCode() + "|" + channel);
-    if (suppressed >= 0) {
-      int budget = MessageSerializer.MAX_COMMAND_BYTES - (singletonBytes - itemBytes);
-      LOG.warn(
-          "Dropping oversized listed item: numeric={}, channel={}, itemBytes={}, budget={}, suppressedSinceLast={}",
-          numeric.wireCode(),
-          channel,
-          itemBytes,
-          budget,
-          suppressed);
-    }
-  }
 
-  public static String target(ClientSession session) {
-    return session.nickname() != null ? session.nickname() : "*";
-  }
+    /**
+     * Sends a space-separated list across byte-budgeted numeric replies, including an empty list.
+     * Unrepresentable headers and indivisible items are logged and skipped; later items still send.
+     */
+    public static void sendListed(
+            ClientSession session,
+            String serverName,
+            NumericReply numeric,
+            List<String> fixedParams,
+            List<String> items) {
+        List<String> params = new ArrayList<>();
+        params.add(target(session));
+        params.addAll(fixedParams);
+        params.add("");
+        Message empty = new Message(Map.of(), serverName, null, numeric.wireCode(), params);
+        // Reserve the trailing colon even for a singleton reply, which may serialize without it.
+        int headerBytes = MessageSerializer.commandBytes(empty);
+        int budget = MessageSerializer.MAX_COMMAND_BYTES - headerBytes;
+        String channel = fixedParams.isEmpty() ? "*" : fixedParams.getLast();
+        if (budget < 0) {
+            warnOversizedHeader(numeric, channel, headerBytes);
+            return;
+        }
+        StringBuilder listed = new StringBuilder();
+        int used = 0;
+        for (String item : items) {
+            int bytes = MessageSerializer.utf8Bytes(item);
+            if (!listed.isEmpty() && used + 1 + bytes > budget) {
+                sendLine(session, serverName, numeric, params, listed.toString());
+                listed.setLength(0);
+                used = 0;
+            }
+            if (bytes > budget) {
+                params.set(params.size() - 1, item);
+                Message singleton =
+                        new Message(Map.of(), serverName, null, numeric.wireCode(), params);
+                int singletonBytes = MessageSerializer.commandBytes(singleton);
+                if (singletonBytes > MessageSerializer.MAX_COMMAND_BYTES) {
+                    warnOversizedItem(numeric, channel, bytes, singletonBytes);
+                    continue;
+                }
+            }
+            if (!listed.isEmpty()) {
+                listed.append(' ');
+                used++;
+            }
+            listed.append(item);
+            used += bytes;
+        }
+        if (!listed.isEmpty() || items.isEmpty()) {
+            sendLine(session, serverName, numeric, params, listed.toString());
+        }
+    }
+
+    private static void sendLine(
+            ClientSession session,
+            String serverName,
+            NumericReply numeric,
+            List<String> params,
+            String listed) {
+        params.set(params.size() - 1, listed);
+        send(session, serverName, numeric, params.subList(1, params.size()).toArray(String[]::new));
+    }
+
+    private static void warnOversizedHeader(NumericReply numeric, String channel, int headerBytes) {
+        if (!LOG.isWarnEnabled()) {
+            return;
+        }
+        long suppressed = OVERSIZED_WARNINGS.admit("header|" + numeric.wireCode() + "|" + channel);
+        if (suppressed >= 0) {
+            LOG.warn(
+                    "Dropping oversized listed reply header: numeric={}, channel={}, headerBytes={}, limit={}, suppressedSinceLast={}",
+                    numeric.wireCode(),
+                    channel,
+                    headerBytes,
+                    MessageSerializer.MAX_COMMAND_BYTES,
+                    suppressed);
+        }
+    }
+
+    private static void warnOversizedItem(
+            NumericReply numeric, String channel, int itemBytes, int singletonBytes) {
+        if (!LOG.isWarnEnabled()) {
+            return;
+        }
+        long suppressed = OVERSIZED_WARNINGS.admit("item|" + numeric.wireCode() + "|" + channel);
+        if (suppressed >= 0) {
+            int budget = MessageSerializer.MAX_COMMAND_BYTES - (singletonBytes - itemBytes);
+            LOG.warn(
+                    "Dropping oversized listed item: numeric={}, channel={}, itemBytes={}, budget={}, suppressedSinceLast={}",
+                    numeric.wireCode(),
+                    channel,
+                    itemBytes,
+                    budget,
+                    suppressed);
+        }
+    }
+
+    public static String target(ClientSession session) {
+        return session.nickname() != null ? session.nickname() : "*";
+    }
 }

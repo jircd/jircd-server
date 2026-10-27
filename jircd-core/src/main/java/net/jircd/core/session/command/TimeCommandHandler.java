@@ -30,23 +30,23 @@ import net.jircd.protocol.NumericReply;
  */
 public final class TimeCommandHandler implements CommandHandler {
 
-  private static final DateTimeFormatter FORMAT =
-      DateTimeFormatter.ofPattern("EEE MMM dd yyyy HH:mm:ss zzz", Locale.ROOT);
+    private static final DateTimeFormatter FORMAT =
+            DateTimeFormatter.ofPattern("EEE MMM dd yyyy HH:mm:ss zzz", Locale.ROOT);
 
-  private final Supplier<String> serverName;
+    private final Supplier<String> serverName;
 
-  public TimeCommandHandler(Supplier<String> serverName) {
-    this.serverName = serverName;
-  }
+    public TimeCommandHandler(Supplier<String> serverName) {
+        this.serverName = serverName;
+    }
 
-  @Override
-  public void handle(ClientSession session, Message message) {
-    String server = serverName.get();
-    Replies.sendFitted(
-        session,
-        server,
-        NumericReply.RPL_TIME,
-        List.of(server),
-        FORMAT.format(ZonedDateTime.now(ZoneId.systemDefault())));
-  }
+    @Override
+    public void handle(ClientSession session, Message message) {
+        String server = serverName.get();
+        Replies.sendFitted(
+                session,
+                server,
+                NumericReply.RPL_TIME,
+                List.of(server),
+                FORMAT.format(ZonedDateTime.now(ZoneId.systemDefault())));
+    }
 }

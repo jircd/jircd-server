@@ -30,26 +30,26 @@ import net.jircd.protocol.Message;
  */
 public final class QuitCommandHandler implements CommandHandler {
 
-  private static final String DEFAULT_REASON = "Client Quit";
+    private static final String DEFAULT_REASON = "Client Quit";
 
-  private final DisconnectCleanup disconnectCleanup;
+    private final DisconnectCleanup disconnectCleanup;
 
-  public QuitCommandHandler(DisconnectCleanup disconnectCleanup) {
-    this.disconnectCleanup = disconnectCleanup;
-  }
-
-  @Override
-  public void handle(ClientSession session, Message message) {
-    String reason = message.params().isEmpty() ? null : message.params().getFirst();
-    String effectiveReason = reason != null ? reason : DEFAULT_REASON;
-    // Borrowed reference to this session's own still-active writer — closed below via
-    // disconnectCleanup.cleanup(), not directly by this handler.
-    @SuppressWarnings("PMD.CloseResource")
-    var writer = session.writer();
-    if (writer != null) {
-      writer.enqueueRaw(
-          new Message(Map.of(), null, Command.ERROR, "ERROR", List.of(effectiveReason)));
+    public QuitCommandHandler(DisconnectCleanup disconnectCleanup) {
+        this.disconnectCleanup = disconnectCleanup;
     }
-    disconnectCleanup.cleanup(session, effectiveReason);
-  }
+
+    @Override
+    public void handle(ClientSession session, Message message) {
+        String reason = message.params().isEmpty() ? null : message.params().getFirst();
+        String effectiveReason = reason != null ? reason : DEFAULT_REASON;
+        // Borrowed reference to this session's own still-active writer — closed below via
+        // disconnectCleanup.cleanup(), not directly by this handler.
+        @SuppressWarnings("PMD.CloseResource")
+        var writer = session.writer();
+        if (writer != null) {
+            writer.enqueueRaw(
+                    new Message(Map.of(), null, Command.ERROR, "ERROR", List.of(effectiveReason)));
+        }
+        disconnectCleanup.cleanup(session, effectiveReason);
+    }
 }

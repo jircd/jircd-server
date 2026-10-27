@@ -32,52 +32,53 @@ import org.junit.jupiter.params.provider.CsvSource;
 /** Issue #18: a direct message to one's own nick is delivered exactly once, echo-message or not. */
 class SelfDirectMessageTest {
 
-  /** Stand-in for echo-message, which lives in a module core cannot depend on. */
-  private static final class EchoStub extends AbstractCapabilityExtension {
-    EchoStub() {
-      super("echo-message");
+    /** Stand-in for echo-message, which lives in a module core cannot depend on. */
+    private static final class EchoStub extends AbstractCapabilityExtension {
+        EchoStub() {
+            super("echo-message");
+        }
+
+        @Override
+        public void register(CapabilityRegistrar registrar) {
+            registrar.onRecipients((intent, context) -> Set.of(DeliveryRole.SENDER_COPY));
+        }
     }
 
-    @Override
-    public void register(CapabilityRegistrar registrar) {
-      registrar.onRecipients((intent, context) -> Set.of(DeliveryRole.SENDER_COPY));
-    }
-  }
+    @ParameterizedTest
+    @CsvSource({
+        "PRIVMSG, false",
+        "PRIVMSG, true",
+        "NOTICE, false",
+        "NOTICE, true",
+    })
+    void selfTargetedMessageIsDeliveredExactlyOnce(String command, boolean echoNegotiated)
+            throws Exception {
+        ClientSession alice =
+                new ClientSession("a", "host.example", RateLimitBucket.withDefaults());
+        alice.setNickname("alice");
+        alice.setIdent("ident");
+        if (echoNegotiated) {
+            TestNegotiation.add(alice, "echo-message");
+        }
+        NicknameRegistry nicknames = new NicknameRegistry();
+        assertThat(nicknames.claim("alice", alice)).isTrue();
+        ExtensionRegistry extensions = new ExtensionRegistry();
+        extensions.register(new EchoStub());
+        extensions.enable("echo-message");
 
-  @ParameterizedTest
-  @CsvSource({
-    "PRIVMSG, false",
-    "PRIVMSG, true",
-    "NOTICE, false",
-    "NOTICE, true",
-  })
-  void selfTargetedMessageIsDeliveredExactlyOnce(String command, boolean echoNegotiated)
-      throws Exception {
-    ClientSession alice = new ClientSession("a", "host.example", RateLimitBucket.withDefaults());
-    alice.setNickname("alice");
-    alice.setIdent("ident");
-    if (echoNegotiated) {
-      TestNegotiation.add(alice, "echo-message");
-    }
-    NicknameRegistry nicknames = new NicknameRegistry();
-    assertThat(nicknames.claim("alice", alice)).isTrue();
-    ExtensionRegistry extensions = new ExtensionRegistry();
-    extensions.register(new EchoStub());
-    extensions.enable("echo-message");
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        try (SessionWriter writer = new SessionWriter(alice, out, TagRenderer.NONE)) {
+            alice.attachWriter(writer);
+            new MessageCommandHandler(
+                            new ChannelRegistry(),
+                            nicknames,
+                            extensions,
+                            () -> "test.jircd.local",
+                            command.equals("NOTICE"))
+                    .handle(alice, MessageParser.parse(command + " alice :hello"));
+        }
 
-    ByteArrayOutputStream out = new ByteArrayOutputStream();
-    try (SessionWriter writer = new SessionWriter(alice, out, TagRenderer.NONE)) {
-      alice.attachWriter(writer);
-      new MessageCommandHandler(
-              new ChannelRegistry(),
-              nicknames,
-              extensions,
-              () -> "test.jircd.local",
-              command.equals("NOTICE"))
-          .handle(alice, MessageParser.parse(command + " alice :hello"));
+        assertThat(out.toString(StandardCharsets.UTF_8))
+                .isEqualTo(":alice!ident@host.example " + command + " alice hello\r\n");
     }
-
-    assertThat(out.toString(StandardCharsets.UTF_8))
-        .isEqualTo(":alice!ident@host.example " + command + " alice hello\r\n");
-  }
 }

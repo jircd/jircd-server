@@ -23,46 +23,46 @@ import org.junit.jupiter.api.Test;
 
 /** Channel mode and topic changes echo once per member, preserving private/secret exclusion. */
 class ModeFanoutTest {
-  // Loop variables borrow clients owned and closed by the enclosing try-with-resources block.
-  @SuppressWarnings("PMD.CloseResource")
-  @Test
-  void modeAndTopicChangesReachEachMemberExactlyOnce() throws Exception {
-    try (TestServer server = TestServer.start();
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
-        RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort());
-        RawIrcClient carol = RawIrcClient.connectPlaintext(server.plaintextPort())) {
-      List<RawIrcClient> clients = List.of(alice, bob, carol);
-      List<String> nicks = List.of("alice", "bob", "carol");
-      for (int i = 0; i < clients.size(); i++) {
-        clients.get(i).registerAndAwaitWelcome(nicks.get(i), nicks.get(i));
-        clients.get(i).send("JOIN #c");
-        clients.get(i).readUntil("366", Duration.ofSeconds(5));
-        for (int j = 0; j < i; j++) {
-          clients.get(j).readUntil("JOIN #c", Duration.ofSeconds(5));
+    // Loop variables borrow clients owned and closed by the enclosing try-with-resources block.
+    @SuppressWarnings("PMD.CloseResource")
+    @Test
+    void modeAndTopicChangesReachEachMemberExactlyOnce() throws Exception {
+        try (TestServer server = TestServer.start();
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
+                RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort());
+                RawIrcClient carol = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+            List<RawIrcClient> clients = List.of(alice, bob, carol);
+            List<String> nicks = List.of("alice", "bob", "carol");
+            for (int i = 0; i < clients.size(); i++) {
+                clients.get(i).registerAndAwaitWelcome(nicks.get(i), nicks.get(i));
+                clients.get(i).send("JOIN #c");
+                clients.get(i).readUntil("366", Duration.ofSeconds(5));
+                for (int j = 0; j < i; j++) {
+                    clients.get(j).readUntil("JOIN #c", Duration.ofSeconds(5));
+                }
+            }
+            for (String command :
+                    List.of(
+                            "MODE #c +o bob",
+                            "MODE #c +v carol",
+                            "MODE #c +s",
+                            "MODE #c +p",
+                            "TOPIC #c :new topic")) {
+                alice.send(command);
+                // Source barrier ensures fan-out is enqueued before each peer's barrier.
+                List<String> sourceLines = alice.readThroughPong(Duration.ofSeconds(5));
+                String verb = command.startsWith("MODE") ? " MODE #c " : " TOPIC #c ";
+                assertThat(sourceLines.stream().filter(l -> l.contains(verb))).hasSize(1);
+                for (RawIrcClient peer : List.of(bob, carol)) {
+                    assertThat(
+                                    peer.readThroughPong(Duration.ofSeconds(5)).stream()
+                                            .filter(l -> l.contains(verb)))
+                            .hasSize(1);
+                }
+            }
+            alice.send("MODE #c");
+            String modes = alice.readUntil("324", Duration.ofSeconds(5)).split(" ")[4];
+            assertThat(modes).contains("p").doesNotContain("s");
         }
-      }
-      for (String command :
-          List.of(
-              "MODE #c +o bob",
-              "MODE #c +v carol",
-              "MODE #c +s",
-              "MODE #c +p",
-              "TOPIC #c :new topic")) {
-        alice.send(command);
-        // Source barrier ensures fan-out is enqueued before each peer's barrier.
-        List<String> sourceLines = alice.readThroughPong(Duration.ofSeconds(5));
-        String verb = command.startsWith("MODE") ? " MODE #c " : " TOPIC #c ";
-        assertThat(sourceLines.stream().filter(l -> l.contains(verb))).hasSize(1);
-        for (RawIrcClient peer : List.of(bob, carol)) {
-          assertThat(
-                  peer.readThroughPong(Duration.ofSeconds(5)).stream()
-                      .filter(l -> l.contains(verb)))
-              .hasSize(1);
-        }
-      }
-      alice.send("MODE #c");
-      String modes = alice.readUntil("324", Duration.ofSeconds(5)).split(" ")[4];
-      assertThat(modes).contains("p").doesNotContain("s");
     }
-  }
 }

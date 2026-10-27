@@ -21,13 +21,13 @@ import java.util.Set;
 
 /** Test helper: records {@code owner} as the selector of every client-only tag of an envelope. */
 final class ForwardedTags {
-  private ForwardedTags() {}
+    private ForwardedTags() {}
 
-  static OutboundMessage selectedBy(String owner, OutboundMessage message) {
-    Map<String, Set<String>> owners = new LinkedHashMap<>();
-    message.clientTags().keySet().stream()
-        .filter(key -> key.startsWith("+"))
-        .forEach(key -> owners.put(key, Set.of(owner)));
-    return message.forwardedBy(owners);
-  }
+    static OutboundMessage selectedBy(String owner, OutboundMessage message) {
+        Map<String, Set<String>> owners = new LinkedHashMap<>();
+        message.clientTags().keySet().stream()
+                .filter(key -> key.startsWith("+"))
+                .forEach(key -> owners.put(key, Set.of(owner)));
+        return message.forwardedBy(owners);
+    }
 }

@@ -35,44 +35,44 @@ import java.util.function.IntSupplier;
  */
 public final class WhowasHistory {
 
-  private final Deque<WhowasEntry> entries = new ArrayDeque<>();
-  private final IntSupplier capacity;
+    private final Deque<WhowasEntry> entries = new ArrayDeque<>();
+    private final IntSupplier capacity;
 
-  public WhowasHistory(IntSupplier capacity) {
-    this.capacity = capacity;
-  }
-
-  public synchronized void record(WhowasEntry entry) {
-    int max = capacity.getAsInt();
-    while (entries.size() >= max) {
-      entries.removeFirst();
+    public WhowasHistory(IntSupplier capacity) {
+        this.capacity = capacity;
     }
-    entries.addLast(entry);
-  }
 
-  /** The most recent entry for {@code nickname} (rfc1459-casemapped), if any. */
-  public synchronized Optional<WhowasEntry> mostRecentFor(String nickname) {
-    return mostRecentNFor(nickname, 1).stream().findFirst();
-  }
+    public synchronized void record(WhowasEntry entry) {
+        int max = capacity.getAsInt();
+        while (entries.size() >= max) {
+            entries.removeFirst();
+        }
+        entries.addLast(entry);
+    }
 
-  /**
-   * Up to {@code count} of the most recently retained entries for {@code nickname}
-   * (rfc1459-casemapped), most recent first (006-complete-core-protocol FR-014/FR-015). A
-   * non-positive {@code count} returns every retained match instead — RFC1459 §4.5.3/RFC2812
-   * §3.6.3's own "if a non-positive number is passed... a full search is done" rule.
-   */
-  public synchronized List<WhowasEntry> mostRecentNFor(String nickname, int count) {
-    String folded = CaseMapping.fold(nickname);
-    List<WhowasEntry> matches = new ArrayList<>();
-    for (WhowasEntry candidate : entries) {
-      if (CaseMapping.fold(candidate.nickname()).equals(folded)) {
-        matches.add(candidate);
-      }
+    /** The most recent entry for {@code nickname} (rfc1459-casemapped), if any. */
+    public synchronized Optional<WhowasEntry> mostRecentFor(String nickname) {
+        return mostRecentNFor(nickname, 1).stream().findFirst();
     }
-    matches.sort(Comparator.comparing(WhowasEntry::disconnectedAt).reversed());
-    if (count > 0 && matches.size() > count) {
-      return matches.subList(0, count);
+
+    /**
+     * Up to {@code count} of the most recently retained entries for {@code nickname}
+     * (rfc1459-casemapped), most recent first (006-complete-core-protocol FR-014/FR-015). A
+     * non-positive {@code count} returns every retained match instead — RFC1459 §4.5.3/RFC2812
+     * §3.6.3's own "if a non-positive number is passed... a full search is done" rule.
+     */
+    public synchronized List<WhowasEntry> mostRecentNFor(String nickname, int count) {
+        String folded = CaseMapping.fold(nickname);
+        List<WhowasEntry> matches = new ArrayList<>();
+        for (WhowasEntry candidate : entries) {
+            if (CaseMapping.fold(candidate.nickname()).equals(folded)) {
+                matches.add(candidate);
+            }
+        }
+        matches.sort(Comparator.comparing(WhowasEntry::disconnectedAt).reversed());
+        if (count > 0 && matches.size() > count) {
+            return matches.subList(0, count);
+        }
+        return matches;
     }
-    return matches;
-  }
 }

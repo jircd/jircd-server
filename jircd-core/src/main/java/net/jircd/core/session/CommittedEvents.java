@@ -48,160 +48,164 @@ import org.slf4j.LoggerFactory;
  * global sequence is kept for it.
  */
 public final class CommittedEvents {
-  private static final Logger LOG = LoggerFactory.getLogger(CommittedEvents.class);
+    private static final Logger LOG = LoggerFactory.getLogger(CommittedEvents.class);
 
-  private static final AtomicLong OPERATION_IDS = new AtomicLong();
+    private static final AtomicLong OPERATION_IDS = new AtomicLong();
 
-  private final ExtensionRegistry extensionRegistry;
+    private final ExtensionRegistry extensionRegistry;
 
-  public CommittedEvents(ExtensionRegistry extensionRegistry) {
-    this.extensionRegistry = Objects.requireNonNull(extensionRegistry);
-  }
-
-  /**
-   * Publishes one event. {@code subject} is resolved, and {@code audience} collected, only if some
-   * provider listens for {@code kind}. Empty strings stand for a missing {@code before}/{@code
-   * after} value.
-   */
-  public void publish(
-      EventKind kind,
-      Supplier<String> subject,
-      String before,
-      String after,
-      Supplier<? extends Collection<ClientSession>> audience) {
-    publish(kind, subject, () -> "", before, after, audience);
-  }
-
-  private void publish(
-      EventKind kind,
-      Supplier<String> subject,
-      Supplier<String> actor,
-      String before,
-      String after,
-      Supplier<? extends Collection<ClientSession>> audience) {
-    RuntimeSnapshot snapshot = extensionRegistry.capabilitySnapshot();
-    if (!listened(snapshot, kind)) return;
-    try {
-      CommittedEvent event =
-          new CommittedEvent(
-              kind,
-              OPERATION_IDS.incrementAndGet(),
-              subject.get(),
-              before,
-              after,
-              new Audience(() -> List.copyOf(audience.get())),
-              actor.get());
-      for (EventIntent intent : extensionRegistry.hookDispatcher().event(snapshot, event)) {
-        Recipients.deliver(intent.recipients(), intent.message());
-      }
-    } catch (RuntimeException e) {
-      // The transition has committed and the caller still owes its client the remaining replies:
-      // a failure resolving the presented identity (hostname-display extension code) must not
-      // cost it those. Only the type is logged; the message may carry extension or client data.
-      LOG.warn("Committed {} event not published: {}", kind, e.getClass().getSimpleName());
+    public CommittedEvents(ExtensionRegistry extensionRegistry) {
+        this.extensionRegistry = Objects.requireNonNull(extensionRegistry);
     }
-  }
 
-  /** Whether some enabled provider listens for {@code kind}. */
-  public boolean listensTo(EventKind kind) {
-    return listened(extensionRegistry.capabilitySnapshot(), kind);
-  }
-
-  private static boolean listened(RuntimeSnapshot snapshot, EventKind kind) {
-    for (HookRegistration registration : snapshot.hooks(HookKind.EVENT)) {
-      if (registration.eventKind() == kind) return true;
+    /**
+     * Publishes one event. {@code subject} is resolved, and {@code audience} collected, only if
+     * some provider listens for {@code kind}. Empty strings stand for a missing {@code
+     * before}/{@code after} value.
+     */
+    public void publish(
+            EventKind kind,
+            Supplier<String> subject,
+            String before,
+            String after,
+            Supplier<? extends Collection<ClientSession>> audience) {
+        publish(kind, subject, () -> "", before, after, audience);
     }
-    return false;
-  }
 
-  /** {@code session} set, changed or cleared its away reason; empty strings mean not away. */
-  public void awayChanged(ClientSession session, String before, String after) {
-    publish(
-        EventKind.AWAY_CHANGED,
-        () -> PresentedIdentity.presentedForm(session, extensionRegistry),
-        before,
-        after,
-        () -> Recipients.sharedChannelNeighbors(session, false, member -> true));
-  }
+    private void publish(
+            EventKind kind,
+            Supplier<String> subject,
+            Supplier<String> actor,
+            String before,
+            String after,
+            Supplier<? extends Collection<ClientSession>> audience) {
+        RuntimeSnapshot snapshot = extensionRegistry.capabilitySnapshot();
+        if (!listened(snapshot, kind)) return;
+        try {
+            CommittedEvent event =
+                    new CommittedEvent(
+                            kind,
+                            OPERATION_IDS.incrementAndGet(),
+                            subject.get(),
+                            before,
+                            after,
+                            new Audience(() -> List.copyOf(audience.get())),
+                            actor.get());
+            for (EventIntent intent : extensionRegistry.hookDispatcher().event(snapshot, event)) {
+                Recipients.deliver(intent.recipients(), intent.message());
+            }
+        } catch (RuntimeException e) {
+            // The transition has committed and the caller still owes its client the remaining
+            // replies: a failure resolving the presented identity (hostname-display extension code)
+            // must not cost it those. Only the type is logged; the message may carry extension or
+            // client data.
+            LOG.warn("Committed {} event not published: {}", kind, e.getClass().getSimpleName());
+        }
+    }
 
-  /** {@code session} joined {@code channel}; {@code recipients} are its members afterwards. */
-  public void joined(
-      ClientSession session,
-      String presentedForm,
-      String channel,
-      Collection<ClientSession> recipients) {
-    publish(
-        EventKind.JOINED,
-        () -> presentedForm,
-        "",
-        channel,
-        () -> recipients.stream().filter(member -> member != session).toList());
-  }
+    /** Whether some enabled provider listens for {@code kind}. */
+    public boolean listensTo(EventKind kind) {
+        return listened(extensionRegistry.capabilitySnapshot(), kind);
+    }
 
-  /** {@code session} left {@code channel}; {@code recipients} were captured before it left. */
-  public void parted(
-      ClientSession session,
-      String presentedForm,
-      String channel,
-      String reason,
-      Collection<ClientSession> recipients) {
-    publish(
-        EventKind.PARTED,
-        () -> presentedForm,
-        channel,
-        reason,
-        () -> recipients.stream().filter(member -> member != session).toList());
-  }
+    private static boolean listened(RuntimeSnapshot snapshot, EventKind kind) {
+        for (HookRegistration registration : snapshot.hooks(HookKind.EVENT)) {
+            if (registration.eventKind() == kind) return true;
+        }
+        return false;
+    }
 
-  /**
-   * {@code kicked} was removed from {@code channel} by the session presented as {@code
-   * kickerPresentedForm}; {@code recipients} were captured before it left. The kicked member is the
-   * subject and is not in the audience. {@code kickedPresentedForm} is the identity captured when
-   * the kick was prepared; it is never resolved again here, because the session may have changed
-   * nickname since, so a caller without one publishes nothing.
-   */
-  public void kicked(
-      String kickerPresentedForm,
-      ClientSession kicked,
-      String kickedPresentedForm,
-      String channel,
-      String reason,
-      Collection<ClientSession> recipients) {
-    Objects.requireNonNull(kickedPresentedForm);
-    publish(
-        EventKind.KICKED,
-        () -> kickedPresentedForm,
-        () -> kickerPresentedForm,
-        channel,
-        reason,
-        () -> recipients.stream().filter(member -> member != kicked).toList());
-  }
+    /** {@code session} set, changed or cleared its away reason; empty strings mean not away. */
+    public void awayChanged(ClientSession session, String before, String after) {
+        publish(
+                EventKind.AWAY_CHANGED,
+                () -> PresentedIdentity.presentedForm(session, extensionRegistry),
+                before,
+                after,
+                () -> Recipients.sharedChannelNeighbors(session, false, member -> true));
+    }
 
-  /** {@code session} disconnected; {@code neighbors} were captured as its memberships went. */
-  public void quit(
-      ClientSession session,
-      String presentedForm,
-      String reason,
-      Collection<ClientSession> neighbors) {
-    publish(
-        EventKind.QUIT,
-        () -> presentedForm,
-        "",
-        reason,
-        () -> neighbors.stream().filter(member -> member != session).toList());
-  }
+    /** {@code session} joined {@code channel}; {@code recipients} are its members afterwards. */
+    public void joined(
+            ClientSession session,
+            String presentedForm,
+            String channel,
+            Collection<ClientSession> recipients) {
+        publish(
+                EventKind.JOINED,
+                () -> presentedForm,
+                "",
+                channel,
+                () -> recipients.stream().filter(member -> member != session).toList());
+    }
 
-  /**
-   * {@code session} changed nickname. The subject is the identity peers knew it by before, and
-   * peers are the shared-channel neighbors, which a nickname change does not alter.
-   */
-  public void nickChanged(
-      ClientSession session, String oldPresentedForm, String oldNickname, String newNickname) {
-    publish(
-        EventKind.NICK_CHANGED,
-        () -> oldPresentedForm,
-        oldNickname,
-        newNickname,
-        () -> Recipients.sharedChannelNeighbors(session, false, member -> true));
-  }
+    /** {@code session} left {@code channel}; {@code recipients} were captured before it left. */
+    public void parted(
+            ClientSession session,
+            String presentedForm,
+            String channel,
+            String reason,
+            Collection<ClientSession> recipients) {
+        publish(
+                EventKind.PARTED,
+                () -> presentedForm,
+                channel,
+                reason,
+                () -> recipients.stream().filter(member -> member != session).toList());
+    }
+
+    /**
+     * {@code kicked} was removed from {@code channel} by the session presented as {@code
+     * kickerPresentedForm}; {@code recipients} were captured before it left. The kicked member is
+     * the subject and is not in the audience. {@code kickedPresentedForm} is the identity captured
+     * when the kick was prepared; it is never resolved again here, because the session may have
+     * changed nickname since, so a caller without one publishes nothing.
+     */
+    public void kicked(
+            String kickerPresentedForm,
+            ClientSession kicked,
+            String kickedPresentedForm,
+            String channel,
+            String reason,
+            Collection<ClientSession> recipients) {
+        Objects.requireNonNull(kickedPresentedForm);
+        publish(
+                EventKind.KICKED,
+                () -> kickedPresentedForm,
+                () -> kickerPresentedForm,
+                channel,
+                reason,
+                () -> recipients.stream().filter(member -> member != kicked).toList());
+    }
+
+    /** {@code session} disconnected; {@code neighbors} were captured as its memberships went. */
+    public void quit(
+            ClientSession session,
+            String presentedForm,
+            String reason,
+            Collection<ClientSession> neighbors) {
+        publish(
+                EventKind.QUIT,
+                () -> presentedForm,
+                "",
+                reason,
+                () -> neighbors.stream().filter(member -> member != session).toList());
+    }
+
+    /**
+     * {@code session} changed nickname. The subject is the identity peers knew it by before, and
+     * peers are the shared-channel neighbors, which a nickname change does not alter.
+     */
+    public void nickChanged(
+            ClientSession session,
+            String oldPresentedForm,
+            String oldNickname,
+            String newNickname) {
+        publish(
+                EventKind.NICK_CHANGED,
+                () -> oldPresentedForm,
+                oldNickname,
+                newNickname,
+                () -> Recipients.sharedChannelNeighbors(session, false, member -> true));
+    }
 }

@@ -39,61 +39,66 @@ import net.jircd.core.extension.capability.RuntimeSnapshot;
  * hostname-display extension code, which a plain NAMES must not pay for on every member.
  */
 public final class MemberReplies {
-  private final ExtensionRegistry extensionRegistry;
+    private final ExtensionRegistry extensionRegistry;
 
-  public MemberReplies(ExtensionRegistry extensionRegistry) {
-    this.extensionRegistry = Objects.requireNonNull(extensionRegistry);
-  }
-
-  /** One NAMES token per member, in the order given. */
-  public List<String> namesTokens(ClientSession requester, List<MemberFacts> facts) {
-    CapabilityRuntime.CapturedView view = extensionRegistry.capabilityControl().capture(requester);
-    RuntimeSnapshot snapshot = view.snapshot();
-    Set<String> negotiated = view.negotiated();
-    boolean customStatus = !snapshot.hooksFor(HookKind.MEMBER_STATUS, negotiated).isEmpty();
-    boolean customIdentity = !snapshot.hooksFor(HookKind.NAMES_IDENTITY, negotiated).isEmpty();
-    List<String> tokens = new ArrayList<>(facts.size());
-    if (!customStatus && !customIdentity) {
-      for (MemberFacts fact : facts) {
-        tokens.add(highest(fact) + fact.member().nickname());
-      }
-      return tokens;
+    public MemberReplies(ExtensionRegistry extensionRegistry) {
+        this.extensionRegistry = Objects.requireNonNull(extensionRegistry);
     }
-    HookDispatcher dispatcher = extensionRegistry.hookDispatcher();
-    for (MemberFacts fact : facts) {
-      MemberSnapshot member = snapshot(fact, customIdentity);
-      tokens.add(
-          dispatcher.memberStatus(snapshot, negotiated, member)
-              + dispatcher.namesIdentity(snapshot, negotiated, member));
+
+    /** One NAMES token per member, in the order given. */
+    public List<String> namesTokens(ClientSession requester, List<MemberFacts> facts) {
+        CapabilityRuntime.CapturedView view =
+                extensionRegistry.capabilityControl().capture(requester);
+        RuntimeSnapshot snapshot = view.snapshot();
+        Set<String> negotiated = view.negotiated();
+        boolean customStatus = !snapshot.hooksFor(HookKind.MEMBER_STATUS, negotiated).isEmpty();
+        boolean customIdentity = !snapshot.hooksFor(HookKind.NAMES_IDENTITY, negotiated).isEmpty();
+        List<String> tokens = new ArrayList<>(facts.size());
+        if (!customStatus && !customIdentity) {
+            for (MemberFacts fact : facts) {
+                tokens.add(highest(fact) + fact.member().nickname());
+            }
+            return tokens;
+        }
+        HookDispatcher dispatcher = extensionRegistry.hookDispatcher();
+        for (MemberFacts fact : facts) {
+            MemberSnapshot member = snapshot(fact, customIdentity);
+            tokens.add(
+                    dispatcher.memberStatus(snapshot, negotiated, member)
+                            + dispatcher.namesIdentity(snapshot, negotiated, member));
+        }
+        return tokens;
     }
-    return tokens;
-  }
 
-  /** The status symbols to append to a channel WHO entry's {@code H}/{@code G}/{@code *} flags. */
-  public String whoStatus(ClientSession requester, MemberFacts fact) {
-    CapabilityRuntime.CapturedView view = extensionRegistry.capabilityControl().capture(requester);
-    RuntimeSnapshot snapshot = view.snapshot();
-    Set<String> negotiated = view.negotiated();
-    if (snapshot.hooksFor(HookKind.MEMBER_STATUS, negotiated).isEmpty()) {
-      return highest(fact);
+    /**
+     * The status symbols to append to a channel WHO entry's {@code H}/{@code G}/{@code *} flags.
+     */
+    public String whoStatus(ClientSession requester, MemberFacts fact) {
+        CapabilityRuntime.CapturedView view =
+                extensionRegistry.capabilityControl().capture(requester);
+        RuntimeSnapshot snapshot = view.snapshot();
+        Set<String> negotiated = view.negotiated();
+        if (snapshot.hooksFor(HookKind.MEMBER_STATUS, negotiated).isEmpty()) {
+            return highest(fact);
+        }
+        return extensionRegistry
+                .hookDispatcher()
+                .memberStatus(snapshot, negotiated, snapshot(fact, false));
     }
-    return extensionRegistry
-        .hookDispatcher()
-        .memberStatus(snapshot, negotiated, snapshot(fact, false));
-  }
 
-  private MemberSnapshot snapshot(MemberFacts fact, boolean withIdentity) {
-    ClientSession member = fact.member();
-    return new MemberSnapshot(
-        Objects.toString(member.nickname(), ""),
-        withIdentity ? Objects.toString(member.ident(), "") : "",
-        withIdentity
-            ? Objects.toString(PresentedIdentity.displayHostname(member, extensionRegistry), "")
-            : "",
-        fact.heldStatuses());
-  }
+    private MemberSnapshot snapshot(MemberFacts fact, boolean withIdentity) {
+        ClientSession member = fact.member();
+        return new MemberSnapshot(
+                Objects.toString(member.nickname(), ""),
+                withIdentity ? Objects.toString(member.ident(), "") : "",
+                withIdentity
+                        ? Objects.toString(
+                                PresentedIdentity.displayHostname(member, extensionRegistry), "")
+                        : "",
+                fact.heldStatuses());
+    }
 
-  private static String highest(MemberFacts fact) {
-    return fact.heldStatuses().isEmpty() ? "" : fact.heldStatuses().getFirst();
-  }
+    private static String highest(MemberFacts fact) {
+        return fact.heldStatuses().isEmpty() ? "" : fact.heldStatuses().getFirst();
+    }
 }

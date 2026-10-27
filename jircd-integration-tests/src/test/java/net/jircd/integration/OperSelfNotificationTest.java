@@ -23,16 +23,16 @@ import org.junit.jupiter.api.Test;
 /** 005-fix-batch-conformance Story 6: a successful OPER also sends an unsolicited MODE +o. */
 class OperSelfNotificationTest {
 
-  @Test
-  void successfulOperSendsUnsolicitedModePlusO() throws Exception {
-    try (TestServer server = TestServer.start(TestServer.adminEnabledYaml());
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void successfulOperSendsUnsolicitedModePlusO() throws Exception {
+        try (TestServer server = TestServer.start(TestServer.adminEnabledYaml());
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      alice.registerAndAwaitWelcome("alice", "alice");
+            alice.registerAndAwaitWelcome("alice", "alice");
 
-      alice.send("OPER " + TestServer.ADMIN_USERNAME + " :" + TestServer.ADMIN_PASSWORD);
-      assertThat(alice.readUntil("381", Duration.ofSeconds(5))).contains("381");
-      assertThat(alice.readUntil("MODE alice", Duration.ofSeconds(5))).contains("+o");
+            alice.send("OPER " + TestServer.ADMIN_USERNAME + " :" + TestServer.ADMIN_PASSWORD);
+            assertThat(alice.readUntil("381", Duration.ofSeconds(5))).contains("381");
+            assertThat(alice.readUntil("MODE alice", Duration.ofSeconds(5))).contains("+o");
+        }
     }
-  }
 }

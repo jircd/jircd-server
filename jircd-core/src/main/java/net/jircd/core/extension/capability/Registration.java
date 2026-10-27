@@ -18,7 +18,7 @@ package net.jircd.core.extension.capability;
 /** A staged hook owned by its provider; closing it before publication removes it. */
 public interface Registration extends AutoCloseable {
 
-  /** Idempotent. */
-  @Override
-  void close();
+    /** Idempotent. */
+    @Override
+    void close();
 }

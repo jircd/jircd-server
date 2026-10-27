@@ -17,12 +17,12 @@ package net.jircd.core.session;
 
 /** The serial outcome of a channel-operator check and attempted member removal. */
 public sealed interface KickOutcome {
-  /** The requester was not an operator when the operation acquired the membership locks. */
-  record NotOperator() implements KickOutcome {}
+    /** The requester was not an operator when the operation acquired the membership locks. */
+    record NotOperator() implements KickOutcome {}
 
-  /** No member matched the target's case-folded nickname. */
-  record NoSuchMember() implements KickOutcome {}
+    /** No member matched the target's case-folded nickname. */
+    record NoSuchMember() implements KickOutcome {}
 
-  /** The target was removed; only this outcome should produce a KICK notification. */
-  record Kicked(Departure departure) implements KickOutcome {}
+    /** The target was removed; only this outcome should produce a KICK notification. */
+    record Kicked(Departure departure) implements KickOutcome {}
 }

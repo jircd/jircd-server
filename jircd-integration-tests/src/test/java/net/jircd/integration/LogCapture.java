@@ -32,37 +32,39 @@ import org.slf4j.LoggerFactory;
  */
 final class LogCapture implements AutoCloseable {
 
-  private final List<Logger> loggers;
-  private final ListAppender<ILoggingEvent> appender = new ListAppender<>();
+    private final List<Logger> loggers;
+    private final ListAppender<ILoggingEvent> appender = new ListAppender<>();
 
-  LogCapture(Class<?>... loggerClasses) {
-    loggers =
-        Arrays.stream(loggerClasses).map(type -> (Logger) LoggerFactory.getLogger(type)).toList();
-    appender.start();
-    loggers.forEach(logger -> logger.addAppender(appender));
-  }
-
-  List<String> messages() {
-    return appender.list.stream().map(ILoggingEvent::getFormattedMessage).toList();
-  }
-
-  /** Polls for a captured message matching {@code predicate}, up to {@code timeout}. */
-  String awaitMessage(Predicate<String> predicate, Duration timeout) throws InterruptedException {
-    Instant deadline = Instant.now().plus(timeout);
-    while (Instant.now().isBefore(deadline)) {
-      for (String message : messages()) {
-        if (predicate.test(message)) {
-          return message;
-        }
-      }
-      Thread.sleep(50);
+    LogCapture(Class<?>... loggerClasses) {
+        loggers =
+                Arrays.stream(loggerClasses)
+                        .map(type -> (Logger) LoggerFactory.getLogger(type))
+                        .toList();
+        appender.start();
+        loggers.forEach(logger -> logger.addAppender(appender));
     }
-    throw new AssertionError(
-        "No captured log message matched within " + timeout + "; captured: " + messages());
-  }
 
-  @Override
-  public void close() {
-    loggers.forEach(logger -> logger.detachAppender(appender));
-  }
+    List<String> messages() {
+        return appender.list.stream().map(ILoggingEvent::getFormattedMessage).toList();
+    }
+
+    /** Polls for a captured message matching {@code predicate}, up to {@code timeout}. */
+    String awaitMessage(Predicate<String> predicate, Duration timeout) throws InterruptedException {
+        Instant deadline = Instant.now().plus(timeout);
+        while (Instant.now().isBefore(deadline)) {
+            for (String message : messages()) {
+                if (predicate.test(message)) {
+                    return message;
+                }
+            }
+            Thread.sleep(50);
+        }
+        throw new AssertionError(
+                "No captured log message matched within " + timeout + "; captured: " + messages());
+    }
+
+    @Override
+    public void close() {
+        loggers.forEach(logger -> logger.detachAppender(appender));
+    }
 }

@@ -38,100 +38,106 @@ import net.jircd.protocol.NumericReply;
  */
 public final class NickCommandHandler implements CommandHandler {
 
-  private final NicknameRegistry nicknameRegistry;
-  private final java.util.function.Supplier<String> serverName;
-  private final java.util.function.IntSupplier nicknameMaxLength;
-  private final RegistrationCompletion registrationCompletion;
-  private final ExtensionRegistry extensionRegistry;
+    private final NicknameRegistry nicknameRegistry;
+    private final java.util.function.Supplier<String> serverName;
+    private final java.util.function.IntSupplier nicknameMaxLength;
+    private final RegistrationCompletion registrationCompletion;
+    private final ExtensionRegistry extensionRegistry;
 
-  public NickCommandHandler(
-      NicknameRegistry nicknameRegistry,
-      java.util.function.Supplier<String> serverName,
-      java.util.function.IntSupplier nicknameMaxLength,
-      RegistrationCompletion registrationCompletion,
-      ExtensionRegistry extensionRegistry) {
-    this.nicknameRegistry = nicknameRegistry;
-    this.serverName = serverName;
-    this.nicknameMaxLength = nicknameMaxLength;
-    this.registrationCompletion = registrationCompletion;
-    this.extensionRegistry = extensionRegistry;
-  }
-
-  @Override
-  public void handle(ClientSession session, Message message) {
-    if (message.params().isEmpty() || message.params().getFirst().isEmpty()) {
-      Replies.sendFitted(
-          session,
-          serverName.get(),
-          NumericReply.ERR_NONICKNAMEGIVEN,
-          List.of(),
-          "No nickname given");
-      return;
-    }
-    String requested = message.params().getFirst();
-
-    if (!Hostmask.isValidNickname(requested, nicknameMaxLength.getAsInt())) {
-      Replies.sendFitted(
-          session,
-          serverName.get(),
-          NumericReply.ERR_ERRONEUSNICKNAME,
-          List.of(requested),
-          "Erroneous nickname");
-      return;
+    public NickCommandHandler(
+            NicknameRegistry nicknameRegistry,
+            java.util.function.Supplier<String> serverName,
+            java.util.function.IntSupplier nicknameMaxLength,
+            RegistrationCompletion registrationCompletion,
+            ExtensionRegistry extensionRegistry) {
+        this.nicknameRegistry = nicknameRegistry;
+        this.serverName = serverName;
+        this.nicknameMaxLength = nicknameMaxLength;
+        this.registrationCompletion = registrationCompletion;
+        this.extensionRegistry = extensionRegistry;
     }
 
-    if (!nicknameRegistry.claim(requested, session)) {
-      Replies.sendFitted(
-          session,
-          serverName.get(),
-          NumericReply.ERR_NICKNAMEINUSE,
-          List.of(requested),
-          "Nickname is already in use");
-      return;
-    }
+    @Override
+    public void handle(ClientSession session, Message message) {
+        if (message.params().isEmpty() || message.params().getFirst().isEmpty()) {
+            Replies.sendFitted(
+                    session,
+                    serverName.get(),
+                    NumericReply.ERR_NONICKNAMEGIVEN,
+                    List.of(),
+                    "No nickname given");
+            return;
+        }
+        String requested = message.params().getFirst();
 
-    String previous = session.nickname();
-    // A case-only (or otherwise RFC1459-equivalent) change keeps the same registry key. Releasing
-    // the previous spelling in that case would remove this session's newly-confirmed claim.
-    if (previous != null && !CaseMapping.fold(previous).equals(CaseMapping.fold(requested))) {
-      nicknameRegistry.release(previous, session);
-    }
-    // The prefix on a NICK change notification is the identity recipients already know the
-    // sender by — captured before setNickname mutates it below.
-    boolean isChange =
-        session.lifecycle().isRegistered() && previous != null && !previous.equals(requested);
-    String oldHostmask =
-        isChange ? PresentedIdentity.presentedForm(session, extensionRegistry) : null;
+        if (!Hostmask.isValidNickname(requested, nicknameMaxLength.getAsInt())) {
+            Replies.sendFitted(
+                    session,
+                    serverName.get(),
+                    NumericReply.ERR_ERRONEUSNICKNAME,
+                    List.of(requested),
+                    "Erroneous nickname");
+            return;
+        }
 
-    Message notification =
-        isChange
-            ? new Message(Map.of(), oldHostmask, Command.NICK, "NICK", List.of(requested))
-            : null;
-    // The change and the client's own NICK line are one step under the administrative mutex, the
-    // one a capability publication holds while it addresses CAP DEL/NEW. Its target is therefore
-    // the nickname the client knows at that point in its stream: the old one before this line,
-    // the new one after. Peers are told outside the mutex.
-    extensionRegistry
-        .capabilityControl()
-        .runUnderControl(
-            () -> {
-              session.setNickname(requested);
-              if (notification != null && !session.lifecycle().isClosing()) {
-                Recipients.deliver(List.of(session), notification);
-              }
-            });
-    // Disconnect cleanup reads the nickname after claiming CLOSING. If it ran before the change
-    // above it saw nothing to release, and CLOSING is then visible here: roll the claim back.
-    if (session.lifecycle().isClosing()) {
-      nicknameRegistry.release(requested, session);
-      return;
-    }
-    registrationCompletion.tryComplete(session);
+        if (!nicknameRegistry.claim(requested, session)) {
+            Replies.sendFitted(
+                    session,
+                    serverName.get(),
+                    NumericReply.ERR_NICKNAMEINUSE,
+                    List.of(requested),
+                    "Nickname is already in use");
+            return;
+        }
 
-    if (notification != null) {
-      Recipients.deliver(
-          Recipients.sharedChannelNeighbors(session, false, s -> true), notification);
-      extensionRegistry.committedEvents().nickChanged(session, oldHostmask, previous, requested);
+        String previous = session.nickname();
+        // A case-only (or otherwise RFC1459-equivalent) change keeps the same registry key.
+        // Releasing the previous spelling in that case would remove this session's newly-confirmed
+        // claim.
+        if (previous != null && !CaseMapping.fold(previous).equals(CaseMapping.fold(requested))) {
+            nicknameRegistry.release(previous, session);
+        }
+        // The prefix on a NICK change notification is the identity recipients already know the
+        // sender by — captured before setNickname mutates it below.
+        boolean isChange =
+                session.lifecycle().isRegistered()
+                        && previous != null
+                        && !previous.equals(requested);
+        String oldHostmask =
+                isChange ? PresentedIdentity.presentedForm(session, extensionRegistry) : null;
+
+        Message notification =
+                isChange
+                        ? new Message(
+                                Map.of(), oldHostmask, Command.NICK, "NICK", List.of(requested))
+                        : null;
+        // The change and the client's own NICK line are one step under the administrative mutex,
+        // the one a capability publication holds while it addresses CAP DEL/NEW. Its target is
+        // therefore the nickname the client knows at that point in its stream: the old one before
+        // this line, the new one after. Peers are told outside the mutex.
+        extensionRegistry
+                .capabilityControl()
+                .runUnderControl(
+                        () -> {
+                            session.setNickname(requested);
+                            if (notification != null && !session.lifecycle().isClosing()) {
+                                Recipients.deliver(List.of(session), notification);
+                            }
+                        });
+        // Disconnect cleanup reads the nickname after claiming CLOSING. If it ran before the change
+        // above it saw nothing to release, and CLOSING is then visible here: roll the claim back.
+        if (session.lifecycle().isClosing()) {
+            nicknameRegistry.release(requested, session);
+            return;
+        }
+        registrationCompletion.tryComplete(session);
+
+        if (notification != null) {
+            Recipients.deliver(
+                    Recipients.sharedChannelNeighbors(session, false, s -> true), notification);
+            extensionRegistry
+                    .committedEvents()
+                    .nickChanged(session, oldHostmask, previous, requested);
+        }
     }
-  }
 }

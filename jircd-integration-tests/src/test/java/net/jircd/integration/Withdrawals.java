@@ -29,35 +29,35 @@ import net.jircd.core.extension.ExtensionRegistry;
 /** Waits, without polling, for a hook fault's FAILED withdrawal of a provider to finish. */
 final class Withdrawals {
 
-  private Withdrawals() {}
+    private Withdrawals() {}
 
-  /**
-   * Returns once {@code id}'s withdrawal is complete. {@code stopped} is counted down by the
-   * provider's {@code stop}, which the withdrawal calls while holding the registry's lifecycle
-   * lock; the withdrawal records the provider FAILED before it releases that lock. A disable takes
-   * the same lock and, for a FAILED provider with no cleanup owed, changes nothing, so once it
-   * returns the outcome is final.
-   */
-  static void awaitFailed(ExtensionRegistry registry, String id, CountDownLatch stopped)
-      throws InterruptedException {
-    assertThat(stopped.await(5, TimeUnit.SECONDS)).as("%s stopped", id).isTrue();
-    registry.disable(id);
-    assertThat(registry.stateOf(id)).isEqualTo(Extension.State.FAILED);
-  }
+    /**
+     * Returns once {@code id}'s withdrawal is complete. {@code stopped} is counted down by the
+     * provider's {@code stop}, which the withdrawal calls while holding the registry's lifecycle
+     * lock; the withdrawal records the provider FAILED before it releases that lock. A disable
+     * takes the same lock and, for a FAILED provider with no cleanup owed, changes nothing, so once
+     * it returns the outcome is final.
+     */
+    static void awaitFailed(ExtensionRegistry registry, String id, CountDownLatch stopped)
+            throws InterruptedException {
+        assertThat(stopped.await(5, TimeUnit.SECONDS)).as("%s stopped", id).isTrue();
+        registry.disable(id);
+        assertThat(registry.stateOf(id)).isEqualTo(Extension.State.FAILED);
+    }
 
-  /**
-   * Every line {@code client} reads up to and including the first one containing {@code marker}. A
-   * fault's withdrawal runs on its own thread, so its {@code DEL} may reach a client before the
-   * output whose preparation faulted; callers keep both lines instead of reading past the {@code
-   * DEL}.
-   */
-  static List<String> linesThrough(RawIrcClient client, String marker) throws IOException {
-    List<String> lines = new ArrayList<>();
-    String line;
-    do {
-      line = client.readUntil(" ", Duration.ofSeconds(5)); // every IRC line has a space
-      lines.add(line);
-    } while (!line.contains(marker));
-    return lines;
-  }
+    /**
+     * Every line {@code client} reads up to and including the first one containing {@code marker}.
+     * A fault's withdrawal runs on its own thread, so its {@code DEL} may reach a client before the
+     * output whose preparation faulted; callers keep both lines instead of reading past the {@code
+     * DEL}.
+     */
+    static List<String> linesThrough(RawIrcClient client, String marker) throws IOException {
+        List<String> lines = new ArrayList<>();
+        String line;
+        do {
+            line = client.readUntil(" ", Duration.ofSeconds(5)); // every IRC line has a space
+            lines.add(line);
+        } while (!line.contains(marker));
+        return lines;
+    }
 }

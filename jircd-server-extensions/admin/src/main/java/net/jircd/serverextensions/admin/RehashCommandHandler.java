@@ -35,50 +35,52 @@ import net.jircd.protocol.NumericReply;
  */
 public final class RehashCommandHandler implements CommandHandler {
 
-  private final ConfigurationReloader configurationReloader;
-  private final ExtensionRegistry extensionRegistry;
-  private final Supplier<String> serverName;
+    private final ConfigurationReloader configurationReloader;
+    private final ExtensionRegistry extensionRegistry;
+    private final Supplier<String> serverName;
 
-  public RehashCommandHandler(
-      ConfigurationReloader configurationReloader,
-      ExtensionRegistry extensionRegistry,
-      Supplier<String> serverName) {
-    this.configurationReloader = configurationReloader;
-    this.extensionRegistry = extensionRegistry;
-    this.serverName = serverName;
-  }
+    public RehashCommandHandler(
+            ConfigurationReloader configurationReloader,
+            ExtensionRegistry extensionRegistry,
+            Supplier<String> serverName) {
+        this.configurationReloader = configurationReloader;
+        this.extensionRegistry = extensionRegistry;
+        this.serverName = serverName;
+    }
 
-  @Override
-  public void handle(ClientSession session, Message message) {
-    if (!AdminPrivilege.isAuthorized(session, extensionRegistry)) {
-      Replies.sendFitted(
-          session,
-          serverName.get(),
-          NumericReply.ERR_NOPRIVILEGES,
-          List.of(),
-          "Permission Denied- You're not an IRC operator");
-      return;
+    @Override
+    public void handle(ClientSession session, Message message) {
+        if (!AdminPrivilege.isAuthorized(session, extensionRegistry)) {
+            Replies.sendFitted(
+                    session,
+                    serverName.get(),
+                    NumericReply.ERR_NOPRIVILEGES,
+                    List.of(),
+                    "Permission Denied- You're not an IRC operator");
+            return;
+        }
+        try {
+            ConfigurationReloader.ReloadOutcome outcome = configurationReloader.reloadWithOutcome();
+            Replies.sendFitted(
+                    session,
+                    serverName.get(),
+                    NumericReply.RPL_REHASHING,
+                    List.of(configurationReloader.configPath().toString()),
+                    "Rehashing");
+            // A valid reload still applies; a provider that failed to change is reported, not
+            // hidden.
+            outcome.failures()
+                    .forEach(
+                            (id, reason) ->
+                                    AdminNotices.send(
+                                            session,
+                                            serverName.get(),
+                                            "Rehash could not apply " + id + ": " + reason));
+        } catch (ConfigurationException e) {
+            AdminNotices.send(session, serverName.get(), "Rehash failed: " + e.getMessage());
+        } catch (IOException e) {
+            AdminNotices.send(
+                    session, serverName.get(), "Rehash failed: could not read configuration file");
+        }
     }
-    try {
-      ConfigurationReloader.ReloadOutcome outcome = configurationReloader.reloadWithOutcome();
-      Replies.sendFitted(
-          session,
-          serverName.get(),
-          NumericReply.RPL_REHASHING,
-          List.of(configurationReloader.configPath().toString()),
-          "Rehashing");
-      // A valid reload still applies; a provider that failed to change is reported, not hidden.
-      outcome
-          .failures()
-          .forEach(
-              (id, reason) ->
-                  AdminNotices.send(
-                      session, serverName.get(), "Rehash could not apply " + id + ": " + reason));
-    } catch (ConfigurationException e) {
-      AdminNotices.send(session, serverName.get(), "Rehash failed: " + e.getMessage());
-    } catch (IOException e) {
-      AdminNotices.send(
-          session, serverName.get(), "Rehash failed: could not read configuration file");
-    }
-  }
 }

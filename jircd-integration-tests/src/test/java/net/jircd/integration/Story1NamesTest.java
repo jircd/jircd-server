@@ -22,19 +22,19 @@ import org.junit.jupiter.api.Test;
 
 class Story1NamesTest {
 
-  @Test
-  void namesReturnsMembershipOfAChannelNotJoined() throws Exception {
-    try (TestServer server = TestServer.start();
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
-        RawIrcClient observer = RawIrcClient.connectPlaintext(server.plaintextPort())) {
-      alice.registerAndAwaitWelcome("alice", "alice");
-      observer.registerAndAwaitWelcome("observer", "observer");
-      alice.send("JOIN #lobby");
-      alice.readUntil("353", Duration.ofSeconds(5));
+    @Test
+    void namesReturnsMembershipOfAChannelNotJoined() throws Exception {
+        try (TestServer server = TestServer.start();
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
+                RawIrcClient observer = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+            alice.registerAndAwaitWelcome("alice", "alice");
+            observer.registerAndAwaitWelcome("observer", "observer");
+            alice.send("JOIN #lobby");
+            alice.readUntil("353", Duration.ofSeconds(5));
 
-      observer.send("NAMES #lobby");
-      String names = observer.readUntil("353", Duration.ofSeconds(5));
-      assertThat(names).contains("@alice"); // first joiner is operator
+            observer.send("NAMES #lobby");
+            String names = observer.readUntil("353", Duration.ofSeconds(5));
+            assertThat(names).contains("@alice"); // first joiner is operator
+        }
     }
-  }
 }

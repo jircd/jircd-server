@@ -24,21 +24,21 @@ import net.jircd.core.extension.capability.CapabilityRegistrar;
  */
 public interface CapabilityExtension extends Extension {
 
-  Capability providedCapability();
+    Capability providedCapability();
 
-  /**
-   * Stages this provider's typed hooks. Called once per enable after {@link #start}, and also
-   * before any enable to discover the reply decorations the provider could apply, so it must have
-   * no side effects and acquire no resources; those belong in {@code start}. Nothing staged is
-   * visible until the descriptor is published, and an exception here fails the provider with
-   * nothing published.
-   *
-   * <p>A provider that stages nothing still offers its capability; core simply has no behavior to
-   * run for it.
-   *
-   * <p>Runs while the registry's lifecycle lock is held, so it must not call {@code
-   * ExtensionRegistry.enable/disable} or {@code ConfigurationReloader.reload} (they throw {@link
-   * IllegalStateException}).
-   */
-  default void register(CapabilityRegistrar registrar) {}
+    /**
+     * Stages this provider's typed hooks. Called once per enable after {@link #start}, and also
+     * before any enable to discover the reply decorations the provider could apply, so it must have
+     * no side effects and acquire no resources; those belong in {@code start}. Nothing staged is
+     * visible until the descriptor is published, and an exception here fails the provider with
+     * nothing published.
+     *
+     * <p>A provider that stages nothing still offers its capability; core simply has no behavior to
+     * run for it.
+     *
+     * <p>Runs while the registry's lifecycle lock is held, so it must not call {@code
+     * ExtensionRegistry.enable/disable} or {@code ConfigurationReloader.reload} (they throw {@link
+     * IllegalStateException}).
+     */
+    default void register(CapabilityRegistrar registrar) {}
 }

@@ -28,96 +28,97 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
 class SuppressedConnectionLogTest {
-  @Test
-  void dropsAreAggregatedAndOnlyOneSummaryIsScheduledPerSecond() {
-    List<Long> counts = new ArrayList<>();
-    try (ManualScheduler scheduler = new ManualScheduler()) {
-      SuppressedConnectionLog log = new SuppressedConnectionLog(scheduler, counts::add);
-      for (int i = 0; i < 20; i++) log.recordDrop();
-      assertThat(counts).isEmpty();
-      assertThat(scheduler.pending).hasSize(1);
-      assertThat(scheduler.pending.getFirst().getDelay(TimeUnit.SECONDS)).isEqualTo(1);
-      scheduler.runNext();
-      assertThat(counts).containsExactly(20L);
-      assertThat(scheduler.pending).isEmpty();
-      log.recordDrop();
-      log.recordDrop();
-      assertThat(counts).containsExactly(20L);
-      assertThat(scheduler.pending).hasSize(1);
-      assertThat(scheduler.pending.getFirst().getDelay(TimeUnit.SECONDS)).isEqualTo(1);
-      scheduler.runNext();
-      assertThat(counts).containsExactly(20L, 2L);
-    }
-  }
-
-  @Test
-  void dropsDuringLoggingAreReportedInTheNextInterval() {
-    List<Long> counts = new ArrayList<>();
-    AtomicReference<SuppressedConnectionLog> reference = new AtomicReference<>();
-    try (ManualScheduler scheduler = new ManualScheduler()) {
-      SuppressedConnectionLog log =
-          new SuppressedConnectionLog(
-              scheduler,
-              count -> {
-                counts.add(count);
-                if (counts.size() == 1) reference.get().recordDrop();
-              });
-      reference.set(log);
-      log.recordDrop();
-      scheduler.runNext();
-      assertThat(counts).containsExactly(1L);
-      assertThat(scheduler.pending).hasSize(1);
-      assertThat(scheduler.pending.getFirst().getDelay(TimeUnit.SECONDS)).isEqualTo(1);
-      scheduler.runNext();
-      assertThat(counts).containsExactly(1L, 1L);
-    }
-  }
-
-  private static final class ManualScheduler extends ScheduledThreadPoolExecutor {
-    private final List<ManualTask> pending = new ArrayList<>();
-
-    ManualScheduler() {
-      super(1);
+    @Test
+    void dropsAreAggregatedAndOnlyOneSummaryIsScheduledPerSecond() {
+        List<Long> counts = new ArrayList<>();
+        try (ManualScheduler scheduler = new ManualScheduler()) {
+            SuppressedConnectionLog log = new SuppressedConnectionLog(scheduler, counts::add);
+            for (int i = 0; i < 20; i++) log.recordDrop();
+            assertThat(counts).isEmpty();
+            assertThat(scheduler.pending).hasSize(1);
+            assertThat(scheduler.pending.getFirst().getDelay(TimeUnit.SECONDS)).isEqualTo(1);
+            scheduler.runNext();
+            assertThat(counts).containsExactly(20L);
+            assertThat(scheduler.pending).isEmpty();
+            log.recordDrop();
+            log.recordDrop();
+            assertThat(counts).containsExactly(20L);
+            assertThat(scheduler.pending).hasSize(1);
+            assertThat(scheduler.pending.getFirst().getDelay(TimeUnit.SECONDS)).isEqualTo(1);
+            scheduler.runNext();
+            assertThat(counts).containsExactly(20L, 2L);
+        }
     }
 
-    @Override
-    public ScheduledFuture<?> schedule(Runnable command, long delay, TimeUnit unit) {
-      ManualTask task = new ManualTask(command, unit.toNanos(delay));
-      pending.add(task);
-      return task;
+    @Test
+    void dropsDuringLoggingAreReportedInTheNextInterval() {
+        List<Long> counts = new ArrayList<>();
+        AtomicReference<SuppressedConnectionLog> reference = new AtomicReference<>();
+        try (ManualScheduler scheduler = new ManualScheduler()) {
+            SuppressedConnectionLog log =
+                    new SuppressedConnectionLog(
+                            scheduler,
+                            count -> {
+                                counts.add(count);
+                                if (counts.size() == 1) reference.get().recordDrop();
+                            });
+            reference.set(log);
+            log.recordDrop();
+            scheduler.runNext();
+            assertThat(counts).containsExactly(1L);
+            assertThat(scheduler.pending).hasSize(1);
+            assertThat(scheduler.pending.getFirst().getDelay(TimeUnit.SECONDS)).isEqualTo(1);
+            scheduler.runNext();
+            assertThat(counts).containsExactly(1L, 1L);
+        }
     }
 
-    void runNext() {
-      pending.removeFirst().run();
-    }
-  }
+    private static final class ManualScheduler extends ScheduledThreadPoolExecutor {
+        private final List<ManualTask> pending = new ArrayList<>();
 
-  private static final class ManualTask extends FutureTask<Void> implements ScheduledFuture<Void> {
-    private final long delayNanos;
+        ManualScheduler() {
+            super(1);
+        }
 
-    ManualTask(Runnable command, long delayNanos) {
-      super(command, null);
-      this.delayNanos = delayNanos;
-    }
+        @Override
+        public ScheduledFuture<?> schedule(Runnable command, long delay, TimeUnit unit) {
+            ManualTask task = new ManualTask(command, unit.toNanos(delay));
+            pending.add(task);
+            return task;
+        }
 
-    @Override
-    public long getDelay(TimeUnit unit) {
-      return unit.convert(delayNanos, TimeUnit.NANOSECONDS);
-    }
-
-    @Override
-    public boolean equals(Object other) {
-      return other instanceof ManualTask task && delayNanos == task.delayNanos;
+        void runNext() {
+            pending.removeFirst().run();
+        }
     }
 
-    @Override
-    public int hashCode() {
-      return Long.hashCode(delayNanos);
-    }
+    private static final class ManualTask extends FutureTask<Void>
+            implements ScheduledFuture<Void> {
+        private final long delayNanos;
 
-    @Override
-    public int compareTo(Delayed other) {
-      return Long.compare(delayNanos, other.getDelay(TimeUnit.NANOSECONDS));
+        ManualTask(Runnable command, long delayNanos) {
+            super(command, null);
+            this.delayNanos = delayNanos;
+        }
+
+        @Override
+        public long getDelay(TimeUnit unit) {
+            return unit.convert(delayNanos, TimeUnit.NANOSECONDS);
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            return other instanceof ManualTask task && delayNanos == task.delayNanos;
+        }
+
+        @Override
+        public int hashCode() {
+            return Long.hashCode(delayNanos);
+        }
+
+        @Override
+        public int compareTo(Delayed other) {
+            return Long.compare(delayNanos, other.getDelay(TimeUnit.NANOSECONDS));
+        }
     }
-  }
 }

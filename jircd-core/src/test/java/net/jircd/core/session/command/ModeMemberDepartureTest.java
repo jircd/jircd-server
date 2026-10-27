@@ -35,89 +35,96 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class ModeMemberDepartureTest {
-  @ParameterizedTest
-  @ValueSource(strings = {"+o", "+v", "-o", "-v"})
-  void departedResolvedTargetGets441WithoutAnEcho(String change) throws Exception {
-    ChannelRegistry registry = new ChannelRegistry();
-    ClientSession operator = session("operator");
-    ClientSession target = session("target");
-    Channel channel = registry.join("#c", operator, ignored -> true).orElseThrow().channel();
-    registry.join("#c", target, ignored -> true);
-    NicknameRegistry nicknames = new NicknameRegistry();
-    nicknames.claim("target", target);
-    CountDownLatch resolved = new CountDownLatch(1);
-    CountDownLatch resume = new CountDownLatch(1);
-    ModeCommandHandler handler =
-        new ModeCommandHandler(
-            registry,
-            nicknames,
-            new ExtensionRegistry(),
-            () -> "server",
-            () -> 20,
-            () -> {
-              resolved.countDown();
-              await(resume);
-            });
-    ByteArrayOutputStream out = new ByteArrayOutputStream();
-    try (SessionWriter writer = new SessionWriter(operator, out, TagRenderer.NONE);
-        var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      operator.attachWriter(writer);
-      var pending =
-          executor.submit(
-              () -> {
-                handler.handle(operator, MessageParser.parse("MODE #c " + change + " target"));
-                return null;
-              });
-      try {
-        await(resolved);
-        registry.part(channel, target).orElseThrow();
-      } finally {
-        resume.countDown();
-      }
-      pending.get(5, TimeUnit.SECONDS);
+    @ParameterizedTest
+    @ValueSource(strings = {"+o", "+v", "-o", "-v"})
+    void departedResolvedTargetGets441WithoutAnEcho(String change) throws Exception {
+        ChannelRegistry registry = new ChannelRegistry();
+        ClientSession operator = session("operator");
+        ClientSession target = session("target");
+        Channel channel = registry.join("#c", operator, ignored -> true).orElseThrow().channel();
+        registry.join("#c", target, ignored -> true);
+        NicknameRegistry nicknames = new NicknameRegistry();
+        nicknames.claim("target", target);
+        CountDownLatch resolved = new CountDownLatch(1);
+        CountDownLatch resume = new CountDownLatch(1);
+        ModeCommandHandler handler =
+                new ModeCommandHandler(
+                        registry,
+                        nicknames,
+                        new ExtensionRegistry(),
+                        () -> "server",
+                        () -> 20,
+                        () -> {
+                            resolved.countDown();
+                            await(resume);
+                        });
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        try (SessionWriter writer = new SessionWriter(operator, out, TagRenderer.NONE);
+                var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            operator.attachWriter(writer);
+            var pending =
+                    executor.submit(
+                            () -> {
+                                handler.handle(
+                                        operator,
+                                        MessageParser.parse("MODE #c " + change + " target"));
+                                return null;
+                            });
+            try {
+                await(resolved);
+                registry.part(channel, target).orElseThrow();
+            } finally {
+                resume.countDown();
+            }
+            pending.get(5, TimeUnit.SECONDS);
+        }
+        assertThat(out.toString(StandardCharsets.UTF_8))
+                .contains(" 441 operator target :They aren't on that channel")
+                .doesNotContain(" MODE #c ");
     }
-    assertThat(out.toString(StandardCharsets.UTF_8))
-        .contains(" 441 operator target :They aren't on that channel")
-        .doesNotContain(" MODE #c ");
-  }
 
-  @ParameterizedTest
-  @ValueSource(strings = {"+o", "+v", "-o", "-v"})
-  void validMemberStillGetsAnEchoForAnIdempotentChange(String change) throws Exception {
-    ChannelRegistry registry = new ChannelRegistry();
-    ClientSession operator = session("operator");
-    ClientSession target = session("target");
-    Channel channel = registry.join("#c", operator, ignored -> true).orElseThrow().channel();
-    registry.join("#c", target, ignored -> true);
-    if (change.startsWith("+")) {
-      channel.grantOperator(target);
-      channel.grantVoice(target);
+    @ParameterizedTest
+    @ValueSource(strings = {"+o", "+v", "-o", "-v"})
+    void validMemberStillGetsAnEchoForAnIdempotentChange(String change) throws Exception {
+        ChannelRegistry registry = new ChannelRegistry();
+        ClientSession operator = session("operator");
+        ClientSession target = session("target");
+        Channel channel = registry.join("#c", operator, ignored -> true).orElseThrow().channel();
+        registry.join("#c", target, ignored -> true);
+        if (change.startsWith("+")) {
+            channel.grantOperator(target);
+            channel.grantVoice(target);
+        }
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        try (SessionWriter writer = new SessionWriter(operator, out, TagRenderer.NONE)) {
+            operator.attachWriter(writer);
+            new ModeCommandHandler(
+                            registry,
+                            new NicknameRegistry(),
+                            new ExtensionRegistry(),
+                            () -> "server",
+                            () -> 20)
+                    .handle(operator, MessageParser.parse("MODE #c " + change + " target"));
+        }
+        assertThat(out.toString(StandardCharsets.UTF_8))
+                .contains(" MODE #c " + change + " target")
+                .doesNotContain(" 441 ");
     }
-    ByteArrayOutputStream out = new ByteArrayOutputStream();
-    try (SessionWriter writer = new SessionWriter(operator, out, TagRenderer.NONE)) {
-      operator.attachWriter(writer);
-      new ModeCommandHandler(
-              registry, new NicknameRegistry(), new ExtensionRegistry(), () -> "server", () -> 20)
-          .handle(operator, MessageParser.parse("MODE #c " + change + " target"));
-    }
-    assertThat(out.toString(StandardCharsets.UTF_8))
-        .contains(" MODE #c " + change + " target")
-        .doesNotContain(" 441 ");
-  }
 
-  private static ClientSession session(String nick) {
-    ClientSession session = new ClientSession(nick, "host.example", RateLimitBucket.withDefaults());
-    session.setNickname(nick);
-    session.setIdent(nick);
-    return session;
-  }
-
-  private static void await(CountDownLatch latch) {
-    try {
-      assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
-    } catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
-      throw new IllegalStateException(e);
+    private static ClientSession session(String nick) {
+        ClientSession session =
+                new ClientSession(nick, "host.example", RateLimitBucket.withDefaults());
+        session.setNickname(nick);
+        session.setIdent(nick);
+        return session;
     }
-  }
+
+    private static void await(CountDownLatch latch) {
+        try {
+            assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(e);
+        }
+    }
 }

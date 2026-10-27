@@ -24,9 +24,9 @@ package net.jircd.core.extension.capability;
  */
 public record PreparedGroup(FramingPlan framed, FramingPlan plain, HookRegistration owner) {
 
-  /** The members with no framing, whatever the current state. */
-  public static PreparedGroup plain(OutputGroup group) {
-    FramingPlan plain = FramingPlan.plain(group);
-    return new PreparedGroup(plain, plain, null);
-  }
+    /** The members with no framing, whatever the current state. */
+    public static PreparedGroup plain(OutputGroup group) {
+        FramingPlan plain = FramingPlan.plain(group);
+        return new PreparedGroup(plain, plain, null);
+    }
 }

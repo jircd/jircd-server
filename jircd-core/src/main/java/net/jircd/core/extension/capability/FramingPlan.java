@@ -21,12 +21,12 @@ import net.jircd.protocol.Message;
 /** The complete ordered messages for a group, including any opener and closer. */
 public record FramingPlan(List<Message> frames) {
 
-  public FramingPlan {
-    frames = List.copyOf(frames);
-  }
+    public FramingPlan {
+        frames = List.copyOf(frames);
+    }
 
-  /** The default: the group's members with no framing. */
-  public static FramingPlan plain(OutputGroup group) {
-    return new FramingPlan(group.members());
-  }
+    /** The default: the group's members with no framing. */
+    public static FramingPlan plain(OutputGroup group) {
+        return new FramingPlan(group.members());
+    }
 }

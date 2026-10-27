@@ -37,25 +37,25 @@ import net.jircd.protocol.Message;
  */
 public final class AwayNotifyExtension extends AbstractCapabilityExtension {
 
-  public static final String ID = CapabilityName.AWAY_NOTIFY;
+    public static final String ID = CapabilityName.AWAY_NOTIFY;
 
-  public AwayNotifyExtension() {
-    super(ID);
-  }
-
-  @Override
-  public void register(CapabilityRegistrar registrar) {
-    registrar.onEvent(EventKind.AWAY_CHANGED, AwayNotifyExtension::awayNotice);
-  }
-
-  /** {@code :<presented identity> AWAY [:<reason>]}; no parameter means the user is back. */
-  static List<EventIntent> awayNotice(CommittedEvent event) {
-    List<ClientSession> peers = event.audience().peers();
-    if (peers.isEmpty()) {
-      return List.of();
+    public AwayNotifyExtension() {
+        super(ID);
     }
-    List<String> params = event.after().isEmpty() ? List.of() : List.of(event.after());
-    Message notice = new Message(Map.of(), event.subject(), Command.AWAY, "AWAY", params);
-    return List.of(new EventIntent(notice, peers));
-  }
+
+    @Override
+    public void register(CapabilityRegistrar registrar) {
+        registrar.onEvent(EventKind.AWAY_CHANGED, AwayNotifyExtension::awayNotice);
+    }
+
+    /** {@code :<presented identity> AWAY [:<reason>]}; no parameter means the user is back. */
+    static List<EventIntent> awayNotice(CommittedEvent event) {
+        List<ClientSession> peers = event.audience().peers();
+        if (peers.isEmpty()) {
+            return List.of();
+        }
+        List<String> params = event.after().isEmpty() ? List.of() : List.of(event.after());
+        Message notice = new Message(Map.of(), event.subject(), Command.AWAY, "AWAY", params);
+        return List.of(new EventIntent(notice, peers));
+    }
 }

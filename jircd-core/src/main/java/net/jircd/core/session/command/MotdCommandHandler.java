@@ -25,20 +25,20 @@ import net.jircd.protocol.Message;
  */
 public final class MotdCommandHandler implements CommandHandler {
 
-  private final MotdService motd;
-  private final Supplier<String> serverName;
+    private final MotdService motd;
+    private final Supplier<String> serverName;
 
-  public MotdCommandHandler(MotdService motd, Supplier<String> serverName) {
-    this.motd = motd;
-    this.serverName = serverName;
-  }
-
-  @Override
-  public void handle(ClientSession session, Message message) {
-    if (!message.params().isEmpty()
-        && !LocalServerTarget.accepts(session, serverName, message.params().getFirst())) {
-      return;
+    public MotdCommandHandler(MotdService motd, Supplier<String> serverName) {
+        this.motd = motd;
+        this.serverName = serverName;
     }
-    motd.send(session);
-  }
+
+    @Override
+    public void handle(ClientSession session, Message message) {
+        if (!message.params().isEmpty()
+                && !LocalServerTarget.accepts(session, serverName, message.params().getFirst())) {
+            return;
+        }
+        motd.send(session);
+    }
 }

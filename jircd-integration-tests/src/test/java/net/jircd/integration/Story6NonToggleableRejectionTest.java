@@ -27,20 +27,20 @@ import org.junit.jupiter.api.Test;
  */
 class Story6NonToggleableRejectionTest {
 
-  @Test
-  void neverToggleableCoreMechanismsAreRejectedAsUnknown() throws Exception {
-    try (TestServer server = TestServer.start(TestServer.adminEnabledYaml());
-        RawIrcClient root = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void neverToggleableCoreMechanismsAreRejectedAsUnknown() throws Exception {
+        try (TestServer server = TestServer.start(TestServer.adminEnabledYaml());
+                RawIrcClient root = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      root.registerAndAwaitWelcome("root", "root");
-      root.send("OPER " + TestServer.ADMIN_USERNAME + " :" + TestServer.ADMIN_PASSWORD);
-      root.readUntil("381", Duration.ofSeconds(5));
+            root.registerAndAwaitWelcome("root", "root");
+            root.send("OPER " + TestServer.ADMIN_USERNAME + " :" + TestServer.ADMIN_PASSWORD);
+            root.readUntil("381", Duration.ofSeconds(5));
 
-      root.send("EXTENSION DISABLE moderation");
-      assertThat(root.readUntil("421", Duration.ofSeconds(5))).contains("421");
+            root.send("EXTENSION DISABLE moderation");
+            assertThat(root.readUntil("421", Duration.ofSeconds(5))).contains("421");
 
-      root.send("EXTENSION DISABLE capability-negotiation");
-      assertThat(root.readUntil("421", Duration.ofSeconds(5))).contains("421");
+            root.send("EXTENSION DISABLE capability-negotiation");
+            assertThat(root.readUntil("421", Duration.ofSeconds(5))).contains("421");
+        }
     }
-  }
 }

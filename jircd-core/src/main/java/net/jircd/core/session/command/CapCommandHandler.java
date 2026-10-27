@@ -44,129 +44,135 @@ import net.jircd.protocol.NumericReply;
  */
 public final class CapCommandHandler implements CommandHandler {
 
-  private final CapabilityNegotiator negotiator;
-  private final Supplier<String> serverName;
-  private final RegistrationCompletion registrationCompletion;
+    private final CapabilityNegotiator negotiator;
+    private final Supplier<String> serverName;
+    private final RegistrationCompletion registrationCompletion;
 
-  public CapCommandHandler(
-      CapabilityNegotiator negotiator,
-      Supplier<String> serverName,
-      RegistrationCompletion registrationCompletion) {
-    this.negotiator = negotiator;
-    this.serverName = serverName;
-    this.registrationCompletion = registrationCompletion;
-  }
-
-  @Override
-  public void handle(ClientSession session, Message message) {
-    CapabilityNegotiationGrammar.Subcommand subcommand =
-        CapabilityNegotiationGrammar.parseSubcommand(message);
-    if (subcommand == null) {
-      String rawSubcommand = message.params().isEmpty() ? "*" : message.params().getFirst();
-      Replies.sendFitted(
-          session,
-          serverName.get(),
-          NumericReply.ERR_INVALIDCAPCMD,
-          List.of(rawSubcommand),
-          "Invalid CAP subcommand");
-      return;
+    public CapCommandHandler(
+            CapabilityNegotiator negotiator,
+            Supplier<String> serverName,
+            RegistrationCompletion registrationCompletion) {
+        this.negotiator = negotiator;
+        this.serverName = serverName;
+        this.registrationCompletion = registrationCompletion;
     }
-    switch (subcommand) {
-      case LS -> handleLs(session, message);
-      case LIST -> handleList(session);
-      case REQ -> handleReq(session, message);
-      case END -> handleEnd(session);
-      case ACK, NAK -> {
-        // server-originated only in this design; nothing to do on receipt
-      }
-    }
-  }
 
-  private static boolean continuation(ClientSession session) {
-    return session.highestCapVersion() >= CapabilityNegotiationGrammar.NOTIFY_VERSION;
-  }
-
-  private void handleLs(ClientSession session, Message message) {
-    negotiator.beginNegotiation(session);
-    int version = CapabilityNegotiationGrammar.parseLsVersion(message);
-    String server = serverName.get();
-    negotiator.runUnderControl(
-        () -> {
-          session.recordCapVersion(version);
-          String target = Replies.target(session);
-          List<String> offered = negotiator.currentlyOfferedCapabilityNames();
-          // Enable rejects an offer set that cannot fit one line for an older client at the
-          // configured nickname length; a later longer limit still never truncates the list.
-          boolean continuation =
-              continuation(session)
-                  || !CapabilityNegotiationGrammar.fitsOneLine(server, target, "LS", offered);
-          enqueueAll(
-              session,
-              CapabilityNegotiationGrammar.lsReplies(server, target, offered, continuation));
-        });
-  }
-
-  private void handleList(ClientSession session) {
-    String server = serverName.get();
-    negotiator.runUnderControl(
-        () -> {
-          String target = Replies.target(session);
-          List<String> held = new ArrayList<>(session.negotiatedCapabilities());
-          held.sort(Comparator.naturalOrder());
-          // A held set an older client could not get on one line still reaches it whole.
-          boolean continuation =
-              continuation(session)
-                  || !CapabilityNegotiationGrammar.fitsOneLine(server, target, "LIST", held);
-          enqueueAll(
-              session,
-              CapabilityNegotiationGrammar.listReplies(server, target, held, continuation));
-        });
-  }
-
-  /**
-   * The reply is built and size-checked before any state changes: an echo that cannot fit the
-   * 512-byte outbound limit would be dropped by the writer after the change, leaving the client
-   * unaware of it, so that case gets {@code 417} and changes nothing. An empty request is never
-   * ACKed. Validation, the size check, the change and the reply happen in one step under the
-   * administrative mutex.
-   */
-  private void handleReq(ClientSession session, Message message) {
-    List<String> requested = CapabilityNegotiationGrammar.parseCapabilityList(message);
-    String server = serverName.get();
-    negotiator.runUnderControl(
-        () -> {
-          String target = Replies.target(session);
-          Optional<Set<String>> candidate = negotiator.candidate(session, requested);
-          Message reply =
-              candidate.isPresent()
-                  ? CapabilityNegotiationGrammar.ack(server, target, requested)
-                  : CapabilityNegotiationGrammar.nak(server, target, requested);
-          if (MessageSerializer.commandBytes(reply) > MessageSerializer.MAX_COMMAND_BYTES) {
+    @Override
+    public void handle(ClientSession session, Message message) {
+        CapabilityNegotiationGrammar.Subcommand subcommand =
+                CapabilityNegotiationGrammar.parseSubcommand(message);
+        if (subcommand == null) {
+            String rawSubcommand = message.params().isEmpty() ? "*" : message.params().getFirst();
             Replies.sendFitted(
-                session,
-                server,
-                NumericReply.ERR_INPUTTOOLONG,
-                List.of(),
-                "Input line was too long");
+                    session,
+                    serverName.get(),
+                    NumericReply.ERR_INVALIDCAPCMD,
+                    List.of(rawSubcommand),
+                    "Invalid CAP subcommand");
             return;
-          }
-          candidate.ifPresent(session::replaceNegotiatedCapabilities);
-          enqueue(session, reply);
-        });
-  }
-
-  private void handleEnd(ClientSession session) {
-    negotiator.endNegotiation(session);
-    registrationCompletion.tryComplete(session);
-  }
-
-  private static void enqueueAll(ClientSession session, List<Message> messages) {
-    messages.forEach(message -> enqueue(session, message));
-  }
-
-  private static void enqueue(ClientSession session, Message message) {
-    if (session.writer() != null) {
-      session.writer().enqueueRaw(message);
+        }
+        switch (subcommand) {
+            case LS -> handleLs(session, message);
+            case LIST -> handleList(session);
+            case REQ -> handleReq(session, message);
+            case END -> handleEnd(session);
+            case ACK, NAK -> {
+                // server-originated only in this design; nothing to do on receipt
+            }
+        }
     }
-  }
+
+    private static boolean continuation(ClientSession session) {
+        return session.highestCapVersion() >= CapabilityNegotiationGrammar.NOTIFY_VERSION;
+    }
+
+    private void handleLs(ClientSession session, Message message) {
+        negotiator.beginNegotiation(session);
+        int version = CapabilityNegotiationGrammar.parseLsVersion(message);
+        String server = serverName.get();
+        negotiator.runUnderControl(
+                () -> {
+                    session.recordCapVersion(version);
+                    String target = Replies.target(session);
+                    List<String> offered = negotiator.currentlyOfferedCapabilityNames();
+                    // Enable rejects an offer set that cannot fit one line for an older client at
+                    // the configured nickname length; a later longer limit still never truncates
+                    // the list.
+                    boolean continuation =
+                            continuation(session)
+                                    || !CapabilityNegotiationGrammar.fitsOneLine(
+                                            server, target, "LS", offered);
+                    enqueueAll(
+                            session,
+                            CapabilityNegotiationGrammar.lsReplies(
+                                    server, target, offered, continuation));
+                });
+    }
+
+    private void handleList(ClientSession session) {
+        String server = serverName.get();
+        negotiator.runUnderControl(
+                () -> {
+                    String target = Replies.target(session);
+                    List<String> held = new ArrayList<>(session.negotiatedCapabilities());
+                    held.sort(Comparator.naturalOrder());
+                    // A held set an older client could not get on one line still reaches it whole.
+                    boolean continuation =
+                            continuation(session)
+                                    || !CapabilityNegotiationGrammar.fitsOneLine(
+                                            server, target, "LIST", held);
+                    enqueueAll(
+                            session,
+                            CapabilityNegotiationGrammar.listReplies(
+                                    server, target, held, continuation));
+                });
+    }
+
+    /**
+     * The reply is built and size-checked before any state changes: an echo that cannot fit the
+     * 512-byte outbound limit would be dropped by the writer after the change, leaving the client
+     * unaware of it, so that case gets {@code 417} and changes nothing. An empty request is never
+     * ACKed. Validation, the size check, the change and the reply happen in one step under the
+     * administrative mutex.
+     */
+    private void handleReq(ClientSession session, Message message) {
+        List<String> requested = CapabilityNegotiationGrammar.parseCapabilityList(message);
+        String server = serverName.get();
+        negotiator.runUnderControl(
+                () -> {
+                    String target = Replies.target(session);
+                    Optional<Set<String>> candidate = negotiator.candidate(session, requested);
+                    Message reply =
+                            candidate.isPresent()
+                                    ? CapabilityNegotiationGrammar.ack(server, target, requested)
+                                    : CapabilityNegotiationGrammar.nak(server, target, requested);
+                    if (MessageSerializer.commandBytes(reply)
+                            > MessageSerializer.MAX_COMMAND_BYTES) {
+                        Replies.sendFitted(
+                                session,
+                                server,
+                                NumericReply.ERR_INPUTTOOLONG,
+                                List.of(),
+                                "Input line was too long");
+                        return;
+                    }
+                    candidate.ifPresent(session::replaceNegotiatedCapabilities);
+                    enqueue(session, reply);
+                });
+    }
+
+    private void handleEnd(ClientSession session) {
+        negotiator.endNegotiation(session);
+        registrationCompletion.tryComplete(session);
+    }
+
+    private static void enqueueAll(ClientSession session, List<Message> messages) {
+        messages.forEach(message -> enqueue(session, message));
+    }
+
+    private static void enqueue(ClientSession session, Message message) {
+        if (session.writer() != null) {
+            session.writer().enqueueRaw(message);
+        }
+    }
 }

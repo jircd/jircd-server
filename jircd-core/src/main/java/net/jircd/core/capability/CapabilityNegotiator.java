@@ -40,100 +40,102 @@ import net.jircd.protocol.CapabilityNegotiationGrammar;
  */
 public final class CapabilityNegotiator {
 
-  private final ExtensionRegistry extensionRegistry;
+    private final ExtensionRegistry extensionRegistry;
 
-  public CapabilityNegotiator(ExtensionRegistry extensionRegistry) {
-    this.extensionRegistry = extensionRegistry;
-  }
-
-  public void beginNegotiation(ClientSession session) {
-    session.setNegotiating(true);
-  }
-
-  /** Core cap-notify and every published provider's capability, sorted. */
-  public List<String> currentlyOfferedCapabilityNames() {
-    List<String> offered = new ArrayList<>(extensionRegistry.capabilitySnapshot().offeredNames());
-    offered.add(CapabilityName.CAP_NOTIFY);
-    offered.sort(Comparator.naturalOrder());
-    return offered;
-  }
-
-  /** Runs {@code action} under the administrative mutex CAP state shares with publication. */
-  public void runUnderControl(Runnable action) {
-    extensionRegistry.capabilityControl().runUnderControl(action);
-  }
-
-  /**
-   * The explicit set {@code requested} would leave {@code session} with, applying its tokens in
-   * order, or empty if the whole request must be refused. Changes nothing. A positive token must be
-   * offered now. A {@code -name} token is accepted if the name is held at that point (offered or
-   * not), or if it is a known capability that is simply not held (for example one a disable already
-   * pruned); an unknown, unheld name refuses the request. Notification support is not removable by
-   * a client that indicated {@code CAP LS 302}. An empty request is refused.
-   */
-  public Optional<Set<String>> candidate(ClientSession session, List<String> requested) {
-    if (requested.isEmpty()) return Optional.empty();
-    Set<String> offered = new HashSet<>(currentlyOfferedCapabilityNames());
-    Set<String> candidate = new HashSet<>(session.negotiatedCapabilities());
-    for (String token : requested) {
-      if (!isRemoval(token)) {
-        if (!offered.contains(token)) return Optional.empty();
-        candidate.add(token);
-        continue;
-      }
-      String name = bareName(token);
-      if (name.equals(CapabilityName.CAP_NOTIFY)
-          && session.highestCapVersion() >= CapabilityNegotiationGrammar.NOTIFY_VERSION) {
-        return Optional.empty();
-      }
-      if (!candidate.remove(name) && !isKnown(name)) return Optional.empty();
+    public CapabilityNegotiator(ExtensionRegistry extensionRegistry) {
+        this.extensionRegistry = extensionRegistry;
     }
-    return Optional.of(candidate);
-  }
 
-  /**
-   * Whether {@code name} is core cap-notify or offered by any discovered provider, enabled or not.
-   */
-  private boolean isKnown(String name) {
-    return name.equals(CapabilityName.CAP_NOTIFY)
-        || extensionRegistry.knownCapabilityNames().contains(name);
-  }
+    public void beginNegotiation(ClientSession session) {
+        session.setNegotiating(true);
+    }
 
-  /**
-   * Applies a {@code CAP REQ} atomically under the administrative mutex: the session changes only
-   * if the whole request is acceptable, and then through one swap of the whole negotiated set.
-   * Returns whether the request was accepted; the {@code ACK}/{@code NAK} echo is the caller's,
-   * built from the client's original list so it keeps order and duplicates
-   * (005-fix-batch-conformance FR-009).
-   */
-  public boolean request(ClientSession session, List<String> requested) {
-    return extensionRegistry
-        .capabilityControl()
-        .underControl(
-            () -> {
-              Optional<Set<String>> accepted = candidate(session, requested);
-              accepted.ifPresent(session::replaceNegotiatedCapabilities);
-              return accepted.isPresent();
-            });
-  }
+    /** Core cap-notify and every published provider's capability, sorted. */
+    public List<String> currentlyOfferedCapabilityNames() {
+        List<String> offered =
+                new ArrayList<>(extensionRegistry.capabilitySnapshot().offeredNames());
+        offered.add(CapabilityName.CAP_NOTIFY);
+        offered.sort(Comparator.naturalOrder());
+        return offered;
+    }
 
-  private static boolean isRemoval(String name) {
-    return name.startsWith("-");
-  }
+    /** Runs {@code action} under the administrative mutex CAP state shares with publication. */
+    public void runUnderControl(Runnable action) {
+        extensionRegistry.capabilityControl().runUnderControl(action);
+    }
 
-  private static String bareName(String name) {
-    return isRemoval(name) ? name.substring(1) : name;
-  }
+    /**
+     * The explicit set {@code requested} would leave {@code session} with, applying its tokens in
+     * order, or empty if the whole request must be refused. Changes nothing. A positive token must
+     * be offered now. A {@code -name} token is accepted if the name is held at that point (offered
+     * or not), or if it is a known capability that is simply not held (for example one a disable
+     * already pruned); an unknown, unheld name refuses the request. Notification support is not
+     * removable by a client that indicated {@code CAP LS 302}. An empty request is refused.
+     */
+    public Optional<Set<String>> candidate(ClientSession session, List<String> requested) {
+        if (requested.isEmpty()) return Optional.empty();
+        Set<String> offered = new HashSet<>(currentlyOfferedCapabilityNames());
+        Set<String> candidate = new HashSet<>(session.negotiatedCapabilities());
+        for (String token : requested) {
+            if (!isRemoval(token)) {
+                if (!offered.contains(token)) return Optional.empty();
+                candidate.add(token);
+                continue;
+            }
+            String name = bareName(token);
+            if (name.equals(CapabilityName.CAP_NOTIFY)
+                    && session.highestCapVersion() >= CapabilityNegotiationGrammar.NOTIFY_VERSION) {
+                return Optional.empty();
+            }
+            if (!candidate.remove(name) && !isKnown(name)) return Optional.empty();
+        }
+        return Optional.of(candidate);
+    }
 
-  public void endNegotiation(ClientSession session) {
-    session.setNegotiating(false);
-  }
+    /**
+     * Whether {@code name} is core cap-notify or offered by any discovered provider, enabled or
+     * not.
+     */
+    private boolean isKnown(String name) {
+        return name.equals(CapabilityName.CAP_NOTIFY)
+                || extensionRegistry.knownCapabilityNames().contains(name);
+    }
 
-  /**
-   * Whether {@code CAP} params name a recognized subcommand at all — for a generic
-   * malformed-command fallback.
-   */
-  public static boolean isRecognizedSubcommand(net.jircd.protocol.Message message) {
-    return CapabilityNegotiationGrammar.parseSubcommand(message) != null;
-  }
+    /**
+     * Applies a {@code CAP REQ} atomically under the administrative mutex: the session changes only
+     * if the whole request is acceptable, and then through one swap of the whole negotiated set.
+     * Returns whether the request was accepted; the {@code ACK}/{@code NAK} echo is the caller's,
+     * built from the client's original list so it keeps order and duplicates
+     * (005-fix-batch-conformance FR-009).
+     */
+    public boolean request(ClientSession session, List<String> requested) {
+        return extensionRegistry
+                .capabilityControl()
+                .underControl(
+                        () -> {
+                            Optional<Set<String>> accepted = candidate(session, requested);
+                            accepted.ifPresent(session::replaceNegotiatedCapabilities);
+                            return accepted.isPresent();
+                        });
+    }
+
+    private static boolean isRemoval(String name) {
+        return name.startsWith("-");
+    }
+
+    private static String bareName(String name) {
+        return isRemoval(name) ? name.substring(1) : name;
+    }
+
+    public void endNegotiation(ClientSession session) {
+        session.setNegotiating(false);
+    }
+
+    /**
+     * Whether {@code CAP} params name a recognized subcommand at all — for a generic
+     * malformed-command fallback.
+     */
+    public static boolean isRecognizedSubcommand(net.jircd.protocol.Message message) {
+        return CapabilityNegotiationGrammar.parseSubcommand(message) != null;
+    }
 }

@@ -38,90 +38,90 @@ import net.jircd.protocol.NumericReply;
  */
 public final class SamodeCommandHandler implements CommandHandler {
 
-  private final ChannelRegistry channelRegistry;
-  private final ExtensionRegistry extensionRegistry;
-  private final Supplier<String> serverName;
-  private final Runnable beforeMemberChange;
+    private final ChannelRegistry channelRegistry;
+    private final ExtensionRegistry extensionRegistry;
+    private final Supplier<String> serverName;
+    private final Runnable beforeMemberChange;
 
-  public SamodeCommandHandler(
-      ChannelRegistry channelRegistry,
-      ExtensionRegistry extensionRegistry,
-      Supplier<String> serverName) {
-    this(channelRegistry, extensionRegistry, serverName, () -> {});
-  }
-
-  // Test seam for a departure after the membership pre-check, outside membership monitors.
-  SamodeCommandHandler(
-      ChannelRegistry channelRegistry,
-      ExtensionRegistry extensionRegistry,
-      Supplier<String> serverName,
-      Runnable beforeMemberChange) {
-    this.beforeMemberChange = beforeMemberChange;
-    this.channelRegistry = channelRegistry;
-    this.extensionRegistry = extensionRegistry;
-    this.serverName = serverName;
-  }
-
-  @Override
-  public void handle(ClientSession session, Message message) {
-    if (AdminPrivilege.rejectUnlessAuthorized(session, extensionRegistry, serverName.get())) {
-      return;
-    }
-    if (AdminPrivilege.rejectIfTooFewParams(
-        session, serverName.get(), "SAMODE", message.params(), 2)) {
-      return;
-    }
-    String channelName = message.params().getFirst();
-    String modeArg = message.params().get(1);
-
-    var found = channelRegistry.lookup(channelName);
-    if (found.isEmpty() || !found.get().members().contains(session)) {
-      Replies.sendFitted(
-          session,
-          serverName.get(),
-          NumericReply.ERR_NOTONCHANNEL,
-          List.of(channelName),
-          "You're not on that channel");
-      return;
-    }
-    Channel channel = found.get();
-
-    char sign;
-    if ("+o".equals(modeArg)) {
-      sign = '+';
-    } else if ("-o".equals(modeArg)) {
-      sign = '-';
-    } else {
-      Replies.sendFitted(
-          session,
-          serverName.get(),
-          NumericReply.ERR_UNKNOWNMODE,
-          List.of(modeArg),
-          "is unknown mode char to me");
-      return;
+    public SamodeCommandHandler(
+            ChannelRegistry channelRegistry,
+            ExtensionRegistry extensionRegistry,
+            Supplier<String> serverName) {
+        this(channelRegistry, extensionRegistry, serverName, () -> {});
     }
 
-    beforeMemberChange.run();
-    boolean accepted =
-        channel.setMemberPrivilege(session, Channel.MemberPrivilege.OPERATOR, sign == '+');
-    if (!accepted) {
-      Replies.sendFitted(
-          session,
-          serverName.get(),
-          NumericReply.ERR_USERNOTINCHANNEL,
-          List.of(session.nickname()),
-          "They aren't on that channel");
-      return;
+    // Test seam for a departure after the membership pre-check, outside membership monitors.
+    SamodeCommandHandler(
+            ChannelRegistry channelRegistry,
+            ExtensionRegistry extensionRegistry,
+            Supplier<String> serverName,
+            Runnable beforeMemberChange) {
+        this.beforeMemberChange = beforeMemberChange;
+        this.channelRegistry = channelRegistry;
+        this.extensionRegistry = extensionRegistry;
+        this.serverName = serverName;
     }
 
-    String presentedForm = PresentedIdentity.presentedForm(session, extensionRegistry);
-    Message echo =
-        new Message(
-            Map.of(),
-            presentedForm,
-            Command.MODE,
-            "MODE",
-            List.of(channel.name(), sign + "o", session.nickname()));
-    Recipients.deliver(channel.members(), echo);
-  }
+    @Override
+    public void handle(ClientSession session, Message message) {
+        if (AdminPrivilege.rejectUnlessAuthorized(session, extensionRegistry, serverName.get())) {
+            return;
+        }
+        if (AdminPrivilege.rejectIfTooFewParams(
+                session, serverName.get(), "SAMODE", message.params(), 2)) {
+            return;
+        }
+        String channelName = message.params().getFirst();
+        String modeArg = message.params().get(1);
+
+        var found = channelRegistry.lookup(channelName);
+        if (found.isEmpty() || !found.get().members().contains(session)) {
+            Replies.sendFitted(
+                    session,
+                    serverName.get(),
+                    NumericReply.ERR_NOTONCHANNEL,
+                    List.of(channelName),
+                    "You're not on that channel");
+            return;
+        }
+        Channel channel = found.get();
+
+        char sign;
+        if ("+o".equals(modeArg)) {
+            sign = '+';
+        } else if ("-o".equals(modeArg)) {
+            sign = '-';
+        } else {
+            Replies.sendFitted(
+                    session,
+                    serverName.get(),
+                    NumericReply.ERR_UNKNOWNMODE,
+                    List.of(modeArg),
+                    "is unknown mode char to me");
+            return;
+        }
+
+        beforeMemberChange.run();
+        boolean accepted =
+                channel.setMemberPrivilege(session, Channel.MemberPrivilege.OPERATOR, sign == '+');
+        if (!accepted) {
+            Replies.sendFitted(
+                    session,
+                    serverName.get(),
+                    NumericReply.ERR_USERNOTINCHANNEL,
+                    List.of(session.nickname()),
+                    "They aren't on that channel");
+            return;
+        }
+
+        String presentedForm = PresentedIdentity.presentedForm(session, extensionRegistry);
+        Message echo =
+                new Message(
+                        Map.of(),
+                        presentedForm,
+                        Command.MODE,
+                        "MODE",
+                        List.of(channel.name(), sign + "o", session.nickname()));
+        Recipients.deliver(channel.members(), echo);
+    }
 }

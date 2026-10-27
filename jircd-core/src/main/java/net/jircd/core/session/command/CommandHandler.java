@@ -22,5 +22,5 @@ import net.jircd.protocol.Message;
 @FunctionalInterface
 public interface CommandHandler {
 
-  void handle(ClientSession session, Message message);
+    void handle(ClientSession session, Message message);
 }

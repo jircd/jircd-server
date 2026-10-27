@@ -17,32 +17,32 @@ package net.jircd.core.extension.capability;
 
 /** Protocol-safe identifier rules shared by provider ids, capability names and tag keys. */
 final class Tokens {
-  static final int MAX_LENGTH = 64;
+    static final int MAX_LENGTH = 64;
 
-  private Tokens() {}
+    private Tokens() {}
 
-  static boolean isSafe(String token) {
-    if (token == null || token.isEmpty() || token.length() > MAX_LENGTH) return false;
-    for (int i = 0; i < token.length(); i++) {
-      char c = token.charAt(i);
-      boolean ok =
-          (c >= 'a' && c <= 'z')
-              || (c >= 'A' && c <= 'Z')
-              || (c >= '0' && c <= '9')
-              || c == '-'
-              || c == '.'
-              || c == '/'
-              || c == '_';
-      if (!ok) return false;
+    static boolean isSafe(String token) {
+        if (token == null || token.isEmpty() || token.length() > MAX_LENGTH) return false;
+        for (int i = 0; i < token.length(); i++) {
+            char c = token.charAt(i);
+            boolean ok =
+                    (c >= 'a' && c <= 'z')
+                            || (c >= 'A' && c <= 'Z')
+                            || (c >= '0' && c <= '9')
+                            || c == '-'
+                            || c == '.'
+                            || c == '/'
+                            || c == '_';
+            if (!ok) return false;
+        }
+        return true;
     }
-    return true;
-  }
 
-  static String require(String token, String what) {
-    if (!isSafe(token)) {
-      throw new IllegalArgumentException(
-          what + " must be 1-" + MAX_LENGTH + " characters of [A-Za-z0-9._/-]");
+    static String require(String token, String what) {
+        if (!isSafe(token)) {
+            throw new IllegalArgumentException(
+                    what + " must be 1-" + MAX_LENGTH + " characters of [A-Za-z0-9._/-]");
+        }
+        return token;
     }
-    return token;
-  }
 }

@@ -31,14 +31,14 @@ import net.jircd.protocol.CapabilityName;
  */
 public final class EchoMessageExtension extends AbstractCapabilityExtension {
 
-  public static final String ID = CapabilityName.ECHO_MESSAGE;
+    public static final String ID = CapabilityName.ECHO_MESSAGE;
 
-  public EchoMessageExtension() {
-    super(ID);
-  }
+    public EchoMessageExtension() {
+        super(ID);
+    }
 
-  @Override
-  public void register(CapabilityRegistrar registrar) {
-    registrar.onRecipients((intent, context) -> Set.of(DeliveryRole.SENDER_COPY));
-  }
+    @Override
+    public void register(CapabilityRegistrar registrar) {
+        registrar.onRecipients((intent, context) -> Set.of(DeliveryRole.SENDER_COPY));
+    }
 }

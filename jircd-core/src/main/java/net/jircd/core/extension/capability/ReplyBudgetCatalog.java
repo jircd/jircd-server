@@ -29,47 +29,48 @@ import java.util.Map;
  */
 public record ReplyBudgetCatalog(List<ReplyContribution> contributions) {
 
-  private static final ReplyBudgetCatalog EMPTY = new ReplyBudgetCatalog(List.of());
+    private static final ReplyBudgetCatalog EMPTY = new ReplyBudgetCatalog(List.of());
 
-  public ReplyBudgetCatalog {
-    contributions = List.copyOf(contributions);
-  }
+    public ReplyBudgetCatalog {
+        contributions = List.copyOf(contributions);
+    }
 
-  public static ReplyBudgetCatalog empty() {
-    return EMPTY;
-  }
+    public static ReplyBudgetCatalog empty() {
+        return EMPTY;
+    }
 
-  /** The slot decorations declared by {@code descriptors}' hooks. */
-  public static ReplyBudgetCatalog fromDescriptors(Collection<CapabilityDescriptor> descriptors) {
-    List<ReplyContribution> contributions = new ArrayList<>();
-    for (CapabilityDescriptor descriptor : descriptors) {
-      for (HookRegistration r : descriptor.registrations()) {
-        if (r.slot() != null) {
-          contributions.add(new ReplyContribution(r.providerId(), r.slot(), r.replyBound()));
+    /** The slot decorations declared by {@code descriptors}' hooks. */
+    public static ReplyBudgetCatalog fromDescriptors(Collection<CapabilityDescriptor> descriptors) {
+        List<ReplyContribution> contributions = new ArrayList<>();
+        for (CapabilityDescriptor descriptor : descriptors) {
+            for (HookRegistration r : descriptor.registrations()) {
+                if (r.slot() != null) {
+                    contributions.add(
+                            new ReplyContribution(r.providerId(), r.slot(), r.replyBound()));
+                }
+            }
         }
-      }
+        return new ReplyBudgetCatalog(contributions);
     }
-    return new ReplyBudgetCatalog(contributions);
-  }
 
-  /** This catalog plus {@code other}'s contributions. */
-  public ReplyBudgetCatalog plus(ReplyBudgetCatalog other) {
-    List<ReplyContribution> merged = new ArrayList<>(contributions);
-    merged.addAll(other.contributions);
-    return new ReplyBudgetCatalog(merged);
-  }
-
-  /** Reserved bytes per slot, evaluated against {@code limits}. */
-  public Map<ReplySlot, Long> slotBytes(ReplyLimits limits) {
-    Map<ReplySlot, Long> bytes = new HashMap<>();
-    for (ReplyContribution contribution : contributions) {
-      bytes.merge(contribution.slot(), contribution.evaluate(limits), Math::max);
+    /** This catalog plus {@code other}'s contributions. */
+    public ReplyBudgetCatalog plus(ReplyBudgetCatalog other) {
+        List<ReplyContribution> merged = new ArrayList<>(contributions);
+        merged.addAll(other.contributions);
+        return new ReplyBudgetCatalog(merged);
     }
-    return bytes;
-  }
 
-  /** Worst-case bytes of one reply under this catalog. */
-  public long worstCaseBytes(ReplyLayout layout, ReplyLimits limits) {
-    return layout.worstCaseBytes(limits, slotBytes(limits));
-  }
+    /** Reserved bytes per slot, evaluated against {@code limits}. */
+    public Map<ReplySlot, Long> slotBytes(ReplyLimits limits) {
+        Map<ReplySlot, Long> bytes = new HashMap<>();
+        for (ReplyContribution contribution : contributions) {
+            bytes.merge(contribution.slot(), contribution.evaluate(limits), Math::max);
+        }
+        return bytes;
+    }
+
+    /** Worst-case bytes of one reply under this catalog. */
+    public long worstCaseBytes(ReplyLayout layout, ReplyLimits limits) {
+        return layout.worstCaseBytes(limits, slotBytes(limits));
+    }
 }
