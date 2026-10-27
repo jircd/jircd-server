@@ -78,6 +78,13 @@ def diff_unit_percent(a, b):
     return 100 * math.hypot(median_se(a), median_se(b)) / st.median(a)
 
 
+def in_units(diff, unit):
+    """`diff` in noise units; "n/a" for no difference and no noise, "inf" for a difference with none."""
+    if unit == 0:
+        return "n/a" if diff == 0 else "inf"
+    return f"{diff / unit:+.1f}"
+
+
 def aa(directory):
     runs = load(directory)
     n = len(runs)
@@ -117,7 +124,7 @@ def ab(dir_a, dir_b):
             unit = diff_unit_percent(va, vb)
             diff = 100 * (st.median(vb) - st.median(va)) / st.median(va)
             print(f"{key[0]:>10} {key[1]:<8} {metric:<17} {diff:>+13.1f} {unit:>12.1f} "
-                  f"{diff / unit:>+9.1f}")
+                  f"{in_units(diff, unit):>9}")
 
 
 def self_test():
@@ -129,6 +136,11 @@ def self_test():
     wide = [100.0, 130.0, 70.0, 120.0, 80.0]
     assert diff_unit_percent(base, wide) > same, "a noisier build must raise the noise"
     assert median_se([5.0, 5.0, 5.0]) == 0
+    # Identical (or zero-spread) builds have no noise: no ZeroDivisionError.
+    assert in_units(0.0, 0.0) == "n/a" and in_units(3.0, 0.0) == "inf"
+    assert in_units(-4.0, 2.0) == "-2.0"
+    same = [100.0, 100.0, 100.0]
+    assert diff_unit_percent(same, same) == 0
 
     def run_file(directory, name, drop=None, extra=""):
         lines = [
@@ -167,6 +179,16 @@ def self_test():
             "throughputPerSec=1000", "throughputPerSec=nan", 1)
         open(os.path.join(d, "A-1.txt"), "w").write(text)
         assert "finite positive" in rejected(d)
+    with tempfile.TemporaryDirectory() as a, tempfile.TemporaryDirectory() as b:
+        for directory in (a, b):
+            for name in ("A-1.txt", "A-2.txt", "A-3.txt"):
+                run_file(directory, name)  # every metric identical in every run
+        import contextlib
+        import io
+        captured = io.StringIO()
+        with contextlib.redirect_stdout(captured):
+            ab(a, b)  # must print n/a rather than raise
+        assert "n/a" in captured.getvalue()
     print("self-test passed")
 
 

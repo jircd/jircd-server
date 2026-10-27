@@ -17,6 +17,7 @@ pairs="${1:-5}"
 root="$(cd "$(dirname "$0")/.." && pwd)"
 out="${2:-$root/build/fanout-aa/$(date +%Y%m%d-%H%M%S)}"
 mkdir -p "$out"
+out="$(cd "$out" && pwd)" # absolute, so the cd below cannot move it
 cd "$root"
 
 power() {

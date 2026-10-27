@@ -25,6 +25,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.BitSet;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
@@ -33,6 +34,7 @@ import java.util.concurrent.atomic.AtomicLongArray;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.ToDoubleFunction;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import net.jircd.core.session.SessionWriter;
 import net.jircd.protocol.Command;
@@ -75,12 +77,34 @@ class CapabilityFanoutLoadTest {
     private static final int GROUP_MEMBERS = 3;
 
     /**
-     * Items per round. Each phase's window must outlast a GC pause or a timer tick by a wide margin
-     * (about 50 ms or more), or one stall decides the round, so the counts shrink as the recipient
-     * count grows, within bounds that keep the sender's own queue (echoes, replies) well under the
-     * SendQ limit.
+     * The least time a measured round's timed delivery lasts. A round repeats its batch until the
+     * summed delivery time (the time spent preparing and collecting is not counted) reaches this,
+     * so one GC pause or timer tick cannot decide it however fast the machine is.
+     */
+    static final long MIN_WINDOW_NANOS = Duration.ofMillis(60).toNanos();
+
+    /** Batches a round may need to reach {@link #MIN_WINDOW_NANOS}; more fails the test. */
+    private static final int MAX_BATCHES = 16;
+
+    /**
+     * Items per batch, sized so that on the development machine one batch alone reaches the minimum
+     * window; the counts shrink as the recipient count grows, within bounds that keep the sender's
+     * own queue (echoes, replies) well under the SendQ limit. Per-item state is kept for {@link
+     * #MAX_BATCHES} batches, indexed by sequence number modulo the slot count.
      */
     private record Load(int messages, int aways, int listings, int groups) {
+        int messageSlots() {
+            return messages * MAX_BATCHES;
+        }
+
+        int awaySlots() {
+            return aways * MAX_BATCHES;
+        }
+
+        int groupSlots() {
+            return groups * MAX_BATCHES;
+        }
+
         static Load of(int recipients) {
             return new Load(
                     Math.clamp(80_000 / recipients, 200, 4000),
@@ -134,9 +158,9 @@ class CapabilityFanoutLoadTest {
         final int index;
         final int mix;
         final RawIrcClient client;
-        // Written by the reader thread at the item's index within its round (sequence number modulo
-        // the round's size); the test thread reads them only after that round's latch, which
-        // orders them, and the next round overwrites every entry.
+        // Written by the reader thread at the item's slot (sequence number modulo the slot count);
+        // the test thread reads a round's slots only after the latch of the round's last batch,
+        // which orders them, and before a later round reuses them.
         final Load load;
         final long[] messageNanos;
         final long[] awayNanos;
@@ -163,10 +187,10 @@ class CapabilityFanoutLoadTest {
 
         Reader(int index, int mix, RawIrcClient client, Load load) {
             this.load = load;
-            messageNanos = new long[load.messages()];
-            awayNanos = new long[load.aways()];
-            groupNanos = new long[load.groups()];
-            groupSent = new AtomicLongArray(load.groups());
+            messageNanos = new long[load.messageSlots()];
+            awayNanos = new long[load.awaySlots()];
+            groupNanos = new long[load.groupSlots()];
+            groupSent = new AtomicLongArray(load.groupSlots());
             messagesSeen = new BitSet();
             awaysSeen = new BitSet();
             this.index = index;
@@ -197,8 +221,12 @@ class CapabilityFanoutLoadTest {
         return perRecipient;
     }
 
-    /** One timed round: its latencies in ascending order and what the process spent on it. */
-    private record Round(long[] sortedNanos, long wallNanos, long cpuNanos, long bytes) {
+    /**
+     * One round: its latencies in ascending order, the batches it took, and the delivery time and
+     * what the process spent over exactly those timed deliveries.
+     */
+    private record Round(
+            long[] sortedNanos, int batches, long wallNanos, long cpuNanos, long bytes) {
         double p50Ms() {
             return FanoutStats.quantileMs(sortedNanos, 0.5);
         }
@@ -218,8 +246,13 @@ class CapabilityFanoutLoadTest {
 
     /** The warm-up rounds, which are only checked, and the measured rounds, which are reported. */
     private record Phase(String name, List<Round> warmup, List<Round> measured) {
-        int rounds() {
-            return warmup.size() + measured.size();
+        /** Batches run in the whole phase, which is what the readers must have received. */
+        int batches() {
+            return Stream.concat(warmup.stream(), measured.stream()).mapToInt(Round::batches).sum();
+        }
+
+        double minWindowMs() {
+            return measured.stream().mapToDouble(r -> r.wallNanos() / 1e6).min().orElseThrow();
         }
 
         private double median(ToDoubleFunction<Round> metric) {
@@ -242,10 +275,10 @@ class CapabilityFanoutLoadTest {
             System.out.printf(
                     "CapabilityFanoutLoadTest: recipients=%d phase=%s items=%d p50Ms=%.3f p99Ms=%.3f"
                             + " maxMs=%.3f throughputPerSec=%.0f cpuMs=%.1f allocMB=%.1f rounds=%d"
-                            + " windowMs=%.1f worstMaxMs=%.3f roundCvThroughputPct=%.1f roundCvP99Pct=%.1f%n",
+                            + " windowMs=%.1f minWindowMs=%.1f worstMaxMs=%.3f roundCvThroughputPct=%.1f roundCvP99Pct=%.1f%n",
                     recipients,
                     name,
-                    measured.get(0).sortedNanos().length,
+                    (int) median(r -> r.sortedNanos().length),
                     median(Round::p50Ms),
                     median(Round::p99Ms),
                     median(Round::maxMs),
@@ -254,6 +287,7 @@ class CapabilityFanoutLoadTest {
                     median(r -> r.bytes() / 1e6),
                     measured.size(),
                     median(r -> r.wallNanos() / 1e6),
+                    minWindowMs(),
                     worstMaxMs(),
                     cv(Round::throughputPerSec),
                     cv(Round::p99Ms));
@@ -283,42 +317,74 @@ class CapabilityFanoutLoadTest {
      * the rest of the listing queued, and push the sender past the SendQ limit.
      */
     private static void readThroughReply(RawIrcClient client, String code) throws IOException {
-        while (true) {
+        // The idle timeout alone would never fire on a server that keeps sending other lines.
+        Instant deadline = Instant.now().plus(TIMEOUT);
+        while (Instant.now().isBefore(deadline)) {
             String line = client.readLine();
             if (line == null) throw new IOException("Connection closed while waiting for " + code);
             String[] fields = line.split(" ", 4);
             int numeric = fields[0].startsWith("@") ? 2 : 1;
             if (fields.length > numeric && fields[numeric].equals(code)) return;
         }
+        throw new AssertionError("no " + code + " reply within " + TIMEOUT);
     }
 
-    /** One round of a phase: set up outside the timed window, then do the timed work. */
+    /** Sets one batch up outside the timed window. */
     @FunctionalInterface
-    private interface RoundPlan {
-        Timed prepare(int round) throws Exception;
+    private interface Prepare {
+        Timed prepare(int batch) throws Exception;
     }
 
-    /** The timed part of a round; returns one latency in nanoseconds per item. */
+    /** The timed part of a batch: send it and wait until every recipient has it. */
     @FunctionalInterface
     private interface Timed {
-        long[] run() throws Exception;
+        void run() throws Exception;
     }
 
-    private static Phase measure(String name, RoundPlan plan) throws Exception {
+    /** Reads a round's per-item latencies, in nanoseconds, after its timed window has ended. */
+    @FunctionalInterface
+    private interface Collect {
+        long[] collect(int firstBatch, int batches);
+    }
+
+    /**
+     * Runs rounds of whole batches. A round repeats batches until their summed timed delivery
+     * reaches {@link #MIN_WINDOW_NANOS}; the wall, CPU and allocation samples cover only those
+     * deliveries, not the preparation or the collecting and sorting of latencies.
+     */
+    private static Phase measure(String name, Prepare prepare, Collect collect) throws Exception {
         List<Round> warmup = new ArrayList<>();
         List<Round> measured = new ArrayList<>();
         long warmupStart = System.nanoTime();
+        int batch = 0;
         for (int round = 0; measured.size() < MEASURED_ROUNDS; round++) {
             boolean warm = round < WARMUP_ROUNDS || System.nanoTime() - warmupStart < WARMUP_NANOS;
-            Timed timed = plan.prepare(round);
-            long cpu = cpuNanos();
-            long bytes = allocatedBytes();
-            long start = System.nanoTime();
-            long[] nanos = timed.run();
-            long wall = System.nanoTime() - start;
+            int first = batch;
+            long wall = 0;
+            long cpu = 0;
+            long bytes = 0;
+            while (wall < MIN_WINDOW_NANOS) {
+                if (batch - first == MAX_BATCHES) {
+                    throw new AssertionError(
+                            name
+                                    + ": "
+                                    + MAX_BATCHES
+                                    + " batches took under "
+                                    + MIN_WINDOW_NANOS / 1_000_000
+                                    + " ms; raise the item counts");
+                }
+                Timed timed = prepare.prepare(batch++);
+                long cpu0 = cpuNanos();
+                long bytes0 = allocatedBytes();
+                long start = System.nanoTime();
+                timed.run();
+                wall += System.nanoTime() - start;
+                cpu += cpuNanos() - cpu0;
+                bytes += allocatedBytes() - bytes0;
+            }
+            long[] nanos = collect.collect(first, batch - first);
             Arrays.sort(nanos);
-            (warm ? warmup : measured)
-                    .add(new Round(nanos, wall, cpuNanos() - cpu, allocatedBytes() - bytes));
+            (warm ? warmup : measured).add(new Round(nanos, batch - first, wall, cpu, bytes));
         }
         return new Phase(name, warmup, measured);
     }
@@ -338,12 +404,24 @@ class CapabilityFanoutLoadTest {
     private volatile AtomicLongArray messageSent;
     private volatile AtomicLongArray awaySent;
 
-    /** The latencies of the round's items across the readers that {@code receive} them. */
+    /**
+     * The latencies of sequence numbers {@code [first, first + count)} across the readers that
+     * {@code receive} them, read from their slots after the timed window has ended.
+     */
     private static long[] latencies(
-            List<Reader> readers, Predicate<Reader> receive, Function<Reader, long[]> of) {
+            List<Reader> readers,
+            Predicate<Reader> receive,
+            Function<Reader, long[]> of,
+            int first,
+            int count) {
         return readers.stream()
                 .filter(receive)
-                .flatMapToLong(r -> Arrays.stream(of.apply(r)))
+                .flatMapToLong(
+                        r -> {
+                            long[] slots = of.apply(r);
+                            return IntStream.range(first, first + count)
+                                    .mapToLong(seq -> slots[seq % slots.length]);
+                        })
                 .toArray();
     }
 
@@ -399,8 +477,8 @@ class CapabilityFanoutLoadTest {
             }
             reader.nextMessage = message + 1;
             reader.messagesSeen.set(message);
-            reader.messageNanos[message % reader.load.messages()] =
-                    now - messageSent.get(message % reader.load.messages());
+            int slot = message % reader.load.messageSlots();
+            reader.messageNanos[slot] = now - messageSent.get(slot);
             messagesPending.countDown();
         } else if (away >= 0) {
             if (reader.awaysSeen.get(away)) reader.violations.add("AWAY twice: " + away);
@@ -409,8 +487,8 @@ class CapabilityFanoutLoadTest {
             }
             reader.nextAway = away + 1;
             reader.awaysSeen.set(away);
-            reader.awayNanos[away % reader.load.aways()] =
-                    now - awaySent.get(away % reader.load.aways());
+            int slot = away % reader.load.awaySlots();
+            reader.awayNanos[slot] = now - awaySent.get(slot);
             awaysPending.countDown();
         }
     }
@@ -447,7 +525,7 @@ class CapabilityFanoutLoadTest {
         }
         reader.membersInGroup++;
         if (member == GROUP_MEMBERS - 1) {
-            int slot = seq % reader.load.groups();
+            int slot = seq % reader.load.groupSlots();
             reader.groupNanos[slot] = now - reader.groupSent.get(slot);
             groupsPending.countDown();
         }
@@ -494,8 +572,8 @@ class CapabilityFanoutLoadTest {
     @ValueSource(ints = {10, 100, 1000})
     void mixedFanoutStaysWithinTheDeliveryBudget(int recipients) throws Exception {
         Load load = Load.of(recipients);
-        messageSent = new AtomicLongArray(load.messages());
-        awaySent = new AtomicLongArray(load.aways());
+        messageSent = new AtomicLongArray(load.messageSlots());
+        awaySent = new AtomicLongArray(load.awaySlots());
         List<Reader> readers = new ArrayList<>();
         List<RawIrcClient> clients = new ArrayList<>();
         try (TestServer server = TestServer.start(YAML)) {
@@ -543,14 +621,15 @@ class CapabilityFanoutLoadTest {
             phases.add(
                     measure(
                             "message",
-                            round -> {
+                            batch -> {
                                 // The sender also gets its echoes; empty them before the window.
                                 sender.readThroughPong(TIMEOUT);
-                                int first = round * load.messages();
+                                int first = batch * load.messages();
                                 messagesPending = new CountDownLatch(recipients * load.messages());
                                 return () -> {
                                     for (int seq = first; seq < first + load.messages(); seq++) {
-                                        messageSent.set(seq % load.messages(), System.nanoTime());
+                                        messageSent.set(
+                                                seq % load.messageSlots(), System.nanoTime());
                                         sender.send(
                                                 "@+fan="
                                                         + seq
@@ -560,32 +639,45 @@ class CapabilityFanoutLoadTest {
                                                         + payload);
                                     }
                                     await(messagesPending, "message");
-                                    return latencies(readers, everyone, r -> r.messageNanos);
                                 };
-                            }));
+                            },
+                            (first, batches) ->
+                                    latencies(
+                                            readers,
+                                            everyone,
+                                            r -> r.messageNanos,
+                                            first * load.messages(),
+                                            batches * load.messages())));
 
             phases.add(
                     measure(
                             "away",
-                            round -> {
+                            batch -> {
                                 sender.readThroughPong(TIMEOUT);
-                                int first = round * load.aways();
+                                int first = batch * load.aways();
                                 awaysPending = new CountDownLatch(awayRecipients * load.aways());
                                 return () -> {
                                     for (int seq = first; seq < first + load.aways(); seq++) {
-                                        awaySent.set(seq % load.aways(), System.nanoTime());
+                                        awaySent.set(seq % load.awaySlots(), System.nanoTime());
                                         sender.send("AWAY :a" + seq + " busy");
                                     }
                                     await(awaysPending, "AWAY");
-                                    return latencies(readers, awayNotified, r -> r.awayNanos);
                                 };
-                            }));
+                            },
+                            (first, batches) ->
+                                    latencies(
+                                            readers,
+                                            awayNotified,
+                                            r -> r.awayNanos,
+                                            first * load.aways(),
+                                            batches * load.aways())));
 
             // The sender reads its own listings; the readers ignore them.
+            Map<Integer, long[]> listingsByBatch = new HashMap<>();
             phases.add(
                     measure(
                             "member",
-                            round -> {
+                            batch -> {
                                 sender.readThroughPong(TIMEOUT);
                                 return () -> {
                                     long[] listings = new long[2 * load.listings()];
@@ -599,15 +691,20 @@ class CapabilityFanoutLoadTest {
                                         readThroughReply(sender, "315");
                                         listings[2 * i + 1] = System.nanoTime() - sent;
                                     }
-                                    return listings;
+                                    listingsByBatch.put(batch, listings);
                                 };
-                            }));
+                            },
+                            (first, batches) ->
+                                    IntStream.range(first, first + batches)
+                                            .mapToObj(listingsByBatch::remove)
+                                            .flatMapToLong(Arrays::stream)
+                                            .toArray()));
 
             phases.add(
                     measure(
                             "group",
-                            round -> {
-                                int first = round * load.groups();
+                            batch -> {
+                                int first = batch * load.groups();
                                 // Build every group before the window so it times delivery only.
                                 List<List<List<Message>>> groups = new ArrayList<>();
                                 for (int i = 0; i < load.groups(); i++) {
@@ -616,27 +713,34 @@ class CapabilityFanoutLoadTest {
                                 groupsPending = new CountDownLatch(recipients * load.groups());
                                 return () -> {
                                     for (int i = 0; i < load.groups(); i++) {
+                                        int slot = (first + i) % load.groupSlots();
                                         for (int w = 0; w < writers.size(); w++) {
                                             NicknameWriter target = writers.get(w);
-                                            target.reader().groupSent.set(i, System.nanoTime());
+                                            target.reader().groupSent.set(slot, System.nanoTime());
                                             target.writer()
                                                     .enqueueGroup(
                                                             "fan", List.of(), groups.get(i).get(w));
                                         }
                                     }
                                     await(groupsPending, "group");
-                                    return latencies(readers, everyone, r -> r.groupNanos);
                                 };
-                            }));
+                            },
+                            (first, batches) ->
+                                    latencies(
+                                            readers,
+                                            everyone,
+                                            r -> r.groupNanos,
+                                            first * load.groups(),
+                                            batches * load.groups())));
 
             for (Phase phase : phases) phase.print(recipients);
             for (Phase phase : phases) {
                 assertThat(phase.worstMaxMs()).as(phase.name()).isLessThan(1000.0);
             }
 
-            int messages = load.messages() * phases.get(0).rounds();
-            int aways = load.aways() * phases.get(1).rounds();
-            int groupItems = load.groups() * phases.get(3).rounds();
+            int messages = load.messages() * phases.get(0).batches();
+            int aways = load.aways() * phases.get(1).batches();
+            int groupItems = load.groups() * phases.get(3).batches();
             // Nothing more is sent; each reader checks everything queued before its barrier.
             for (Reader reader : readers) reader.client.send("PING " + BARRIER);
             for (Reader reader : readers) reader.thread.join(TimeUnit.SECONDS.toMillis(30));
