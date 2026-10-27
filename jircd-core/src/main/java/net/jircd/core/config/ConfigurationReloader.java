@@ -19,7 +19,10 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Path;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import net.jircd.core.extension.ExtensionRegistry;
 
 /**
@@ -117,7 +120,8 @@ public final class ConfigurationReloader {
             reloaded.nicknameMaxLength(),
             reloaded.channelNameMaxLength(),
             reloaded.topicMaxLength(),
-            reloaded.maxModesPerCommand());
+            reloaded.maxModesPerCommand(),
+            changedEntries(current.capabilityStates(), reloaded.capabilityStates()));
     Map<String, String> failures;
     try {
       failures = extensionRegistry.applyDesiredState(desired, () -> this.current = reloaded);
@@ -125,5 +129,23 @@ public final class ConfigurationReloader {
       throw new ConfigurationException(e.getMessage());
     }
     return new ReloadOutcome(reloaded, failures);
+  }
+
+  /**
+   * The ids whose entry differs between the last applied and the reloaded section: a changed value,
+   * an added entry or a removed one. Only these may retry a FAILED provider.
+   */
+  private static Set<String> changedEntries(
+      Map<String, Boolean> applied, Map<String, Boolean> reloaded) {
+    Set<String> changed = new HashSet<>();
+    for (Map.Entry<String, Boolean> entry : applied.entrySet()) {
+      if (!Objects.equals(entry.getValue(), reloaded.get(entry.getKey()))) {
+        changed.add(entry.getKey());
+      }
+    }
+    for (String id : reloaded.keySet()) {
+      if (!applied.containsKey(id)) changed.add(id);
+    }
+    return changed;
   }
 }

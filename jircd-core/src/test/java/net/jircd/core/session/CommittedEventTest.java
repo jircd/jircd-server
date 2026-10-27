@@ -28,6 +28,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import net.jircd.core.extension.AbstractCapabilityExtension;
+import net.jircd.core.extension.Extension;
 import net.jircd.core.extension.ExtensionRegistry;
 import net.jircd.core.extension.HostnameDisplayExtension;
 import net.jircd.core.extension.ServerExtension;
@@ -81,7 +82,10 @@ class CommittedEventTest {
 
   private final NicknameRegistry nicknames = new NicknameRegistry();
   private final ChannelRegistry channels = new ChannelRegistry();
-  private final ExtensionRegistry extensions = new ExtensionRegistry();
+
+  /** A faulting listener is withdrawn on the faulting thread here, so tests see the outcome. */
+  private final ExtensionRegistry extensions = new ExtensionRegistry(Runnable::run);
+
   private final List<SessionWriter> writers = new ArrayList<>();
   private final Map<ClientSession, ByteArrayOutputStream> outputs = new HashMap<>();
   private final JoinCommandHandler join =
@@ -391,12 +395,11 @@ class CommittedEventTest {
   // --- listener faults ---
 
   @Test
-  void committedStateStandsAndLaterEventsStillFlowAfterAListenerFault() throws Exception {
-    extensions.disable("spy");
+  void committedStateStandsAndLaterEventsStillFlowAfterAListenerFaultWithdrawsIt()
+      throws Exception {
     Spy faulty = new Spy("faulty", true);
     extensions.register(faulty);
     extensions.enable("faulty");
-    spy = faulty;
     ClientSession alice = user("alice");
     ClientSession bob = user("bob");
 
@@ -410,7 +413,10 @@ class CommittedEventTest {
     assertThat(alice.awayReason()).isEqualTo("x");
     assertThat(alice.nickname()).isEqualTo("alicia");
     assertThat(nicknames.lookup("bob")).isEmpty();
-    assertThat(faulty.calls.get()).isGreaterThanOrEqualTo(5);
+    // #102: the first fault withdraws the listener as FAILED; the healthy one gets every event.
+    assertThat(faulty.calls).hasValue(1);
+    assertThat(extensions.stateOf("faulty")).isEqualTo(Extension.State.FAILED);
+    assertThat(spy.calls.get()).isGreaterThanOrEqualTo(5);
   }
 
   @Test

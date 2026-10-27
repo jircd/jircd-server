@@ -44,6 +44,10 @@ public interface Extension {
    * Releases everything {@link #start} acquired. Must tolerate a partial start and being called
    * again after a failure (a failed disable is retried). The same lifecycle-lock rule as {@link
    * #start} applies.
+   *
+   * <p>For a {@link CapabilityExtension} this also runs after a hook fault withdrew it as {@code
+   * FAILED}, on a thread of the registry's, while callbacks captured earlier may still be running:
+   * guard anything they share with {@code stop}.
    */
   void stop();
 }

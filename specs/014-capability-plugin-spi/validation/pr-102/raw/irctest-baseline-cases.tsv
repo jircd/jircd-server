@@ -1,0 +1,474 @@
+fail	irctest.server_tests.cap.CapTestCase::testReqOne
+fail	irctest.server_tests.cap.CapTestCase::testReqOneThenOne
+fail	irctest.server_tests.cap.CapTestCase::testReqPostRegistration
+fail	irctest.server_tests.cap.CapTestCase::testReqTwo
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative[{'command': '004', 'params': ['nick', '...', OptStrRe(r'[a-zA-Z]+')]}-004 nick ... 123]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative[{'command': '004', 'params': ['nick', '...', OptStrRe(r'[a-zA-Z]+')]}-004 nick ... :]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative[{'command': '004', 'params': [Either('nick', '*', '.'), '...', 'trailer']}-004 f ... trailer]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative[{'command': '004', 'params': [Either('nick', '*', '.'), '...', 'trailer']}-004 foo ... trailer]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative[{'command': '005', 'params': ['nick', 'FOO=1', *ANYLIST]}-005 nick BAR=2]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative[{'command': '005', 'params': ['nick', 'FOO=1', *ANYLIST]}-005 nick]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative[{'command': '005', 'params': ['nick', ListRemainder(ANYSTR, min_length=1)]}-005 nick]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative[{'command': '005', 'params': ['nick', ListRemainder(StrRe(r'[A-Z]+=.*'), min_length=1)]}-005 nick foo=1]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative[{'command': '005', 'params': ['nick', ListRemainder(StrRe(r'[A-Z]+=.*'), min_length=1)]}-005 nick]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative[{'command': 'PING', 'params': ['abc']}-PONG def]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative[{'command': 'PRIVMSG', 'params': ['#chan', 'hello']}-PRIVMSG #chan hello2]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative[{'command': 'PRIVMSG', 'params': ['#chan', 'hello']}-PRIVMSG #chan2 hello]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative[{'command': 'PRIVMSG', 'params': ['#chan', StrRe(r'hello.*')]}-PRIVMSG #chan :hi]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative[{'command': 'PRIVMSG', 'params': ['#chan', StrRe(r'hello.*')]}-PRIVMSG #chan2 hello]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative[{'nick': 'foo', 'command': 'PRIVMSG'}-:foo2!baz@qux PRIVMSG #chan hello]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative[{'nick': 'foo', 'command': 'PRIVMSG'}-@tag1=bar :foo2!baz@qux PRIVMSG #chan :hello]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative[{'nick': 'foo', 'command': 'PRIVMSG'}-PRIVMSG #chan :hi]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative[{'tags': {'tag1': 'bar', RemainingKeys(ANYSTR): ANYOPTSTR}, 'command': 'PRIVMSG', 'params': ['#chan', 'hello']}-:foo!baz@qux PRIVMSG #chan hello]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative[{'tags': {'tag1': 'bar', RemainingKeys(ANYSTR): ANYOPTSTR}, 'command': 'PRIVMSG', 'params': ['#chan', 'hello']}-@tag1=value1 PRIVMSG #chan :hello]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative[{'tags': {'tag1': 'bar', RemainingKeys(ANYSTR): ANYOPTSTR}, 'command': 'PRIVMSG', 'params': ['#chan', 'hello']}-PRIVMG #chan :hello]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative[{'tags': {'tag1': 'bar', RemainingKeys(ANYSTR): ANYOPTSTR}, 'command': 'PRIVMSG', 'params': ['#chan', 'hello']}-PRIVMSG #chan hello2]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative[{'tags': {'tag1': 'bar', RemainingKeys(ANYSTR): ANYOPTSTR}, 'command': 'PRIVMSG', 'params': ['#chan', 'hello']}-PRIVMSG #chan2 hello]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative[{'tags': {'tag1': 'bar', RemainingKeys(NotStrRe(r'tag2')): ANYOPTSTR}, 'command': 'PRIVMSG', 'params': ['#chan', 'hello']}-@tag1=bar;tag2= PRIVMSG #chan :hello]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative[{'tags': {'tag1': 'bar', RemainingKeys(NotStrRe(r'tag2')): ANYOPTSTR}, 'command': 'PRIVMSG', 'params': ['#chan', 'hello']}-@tag1=bar;tag2=baz PRIVMSG #chan :hello]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative[{'tags': {'tag1': 'bar', RemainingKeys(NotStrRe(r'tag2')): ANYOPTSTR}, 'command': 'PRIVMSG', 'params': ['#chan', 'hello']}-@tag1=value1 PRIVMSG #chan :hello]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative[{'tags': {'tag1': 'bar', RemainingKeys(NotStrRe(r'tag2')): ANYOPTSTR}, 'command': 'PRIVMSG', 'params': ['#chan', 'hello']}-PRIVMG #chan :hello]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative[{'tags': {'tag1': 'bar'}, 'command': 'PRIVMSG', 'params': ['#chan', 'hello']}-:foo!baz@qux PRIVMSG #chan hello]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative[{'tags': {'tag1': 'bar'}, 'command': 'PRIVMSG', 'params': ['#chan', 'hello']}-@tag1=bar;tag2= PRIVMSG #chan :hello]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative[{'tags': {'tag1': 'bar'}, 'command': 'PRIVMSG', 'params': ['#chan', 'hello']}-@tag1=value1 PRIVMSG #chan :hello]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative[{'tags': {'tag1': 'bar'}, 'command': 'PRIVMSG', 'params': ['#chan', 'hello']}-PRIVMSG #chan hello]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative[{'tags': {'tag1': ANYSTR}, 'command': 'PRIVMSG', 'params': ['#chan', ANYSTR]}-:foo!baz@qux PRIVMSG #chan hello]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative[{'tags': {'tag1': ANYSTR}, 'command': 'PRIVMSG', 'params': ['#chan', ANYSTR]}-@tag1=bar;tag2= PRIVMSG #chan :hello]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative[{'tags': {'tag1': ANYSTR}, 'command': 'PRIVMSG', 'params': ['#chan', ANYSTR]}-PRIVMSG #chan hello]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative[{'tags': {StrRe(r'tag[12]'): 'bar', RemainingKeys(ANYSTR): ANYOPTSTR}, 'command': 'PRIVMSG', 'params': ['#chan', 'hello']}-:foo!baz@qux PRIVMSG #chan hello]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative[{'tags': {StrRe(r'tag[12]'): 'bar', RemainingKeys(ANYSTR): ANYOPTSTR}, 'command': 'PRIVMSG', 'params': ['#chan', 'hello']}-@tag1=value1 PRIVMSG #chan :hello]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative[{'tags': {StrRe(r'tag[12]'): 'bar', RemainingKeys(ANYSTR): ANYOPTSTR}, 'command': 'PRIVMSG', 'params': ['#chan', 'hello']}-PRIVMG #chan :hello]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative[{'tags': {StrRe(r'tag[12]'): 'bar', RemainingKeys(ANYSTR): ANYOPTSTR}, 'command': 'PRIVMSG', 'params': ['#chan', 'hello']}-PRIVMSG #chan hello2]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative[{'tags': {StrRe(r'tag[12]'): 'bar', RemainingKeys(ANYSTR): ANYOPTSTR}, 'command': 'PRIVMSG', 'params': ['#chan', 'hello']}-PRIVMSG #chan2 hello]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative_message[expected command to match PING, got PONG]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative_message[expected command to match PRIVMSG, got PRIVMG0]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative_message[expected command to match PRIVMSG, got PRIVMG1]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative_message[expected command to match PRIVMSG, got PRIVMG2]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative_message[expected nick to be foo, got None instead]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative_message[expected nick to be foo, got foo2 instead0]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative_message[expected nick to be foo, got foo2 instead1]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative_message[expected params to match ['#chan', 'hello'], got ['#chan', 'hello2']0]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative_message[expected params to match ['#chan', 'hello'], got ['#chan', 'hello2']1]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative_message[expected params to match ['#chan', 'hello'], got ['#chan', 'hello2']2]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative_message[expected params to match ['#chan', 'hello'], got ['#chan2', 'hello']0]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative_message[expected params to match ['#chan', 'hello'], got ['#chan2', 'hello']1]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative_message[expected params to match ['#chan', 'hello'], got ['#chan2', 'hello']2]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative_message[expected params to match ['#chan', StrRe(r'hello.*')], got ['#chan', 'hi']]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative_message[expected params to match ['#chan', StrRe(r'hello.*')], got ['#chan2', 'hello']]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative_message[expected params to match ['nick', '...', OptStrRe(r'[a-zA-Z]+')], got ['nick', '...', '']]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative_message[expected params to match ['nick', '...', OptStrRe(r'[a-zA-Z]+')], got ['nick', '...', '123']]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative_message[expected params to match ['nick', 'FOO=1', *ANYLIST], got ['nick', 'BAR=2']]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative_message[expected params to match ['nick', 'FOO=1', *ANYLIST], got ['nick']]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative_message[expected params to match ['nick', ListRemainder(ANYSTR, min_length=1)], got ['nick']]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative_message[expected params to match ['nick', ListRemainder(StrRe(r'[A-Z]+=.*'), min_length=1)], got ['nick', 'foo=1']]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative_message[expected params to match ['nick', ListRemainder(StrRe(r'[A-Z]+=.*'), min_length=1)], got ['nick']]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative_message[expected params to match [Either('nick', '*', '.'), '...', 'trailer'], got ['f', '...', 'trailer']]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative_message[expected params to match [Either('nick', '*', '.'), '...', 'trailer'], got ['foo', '...', 'trailer']]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative_message[expected tags to match {'tag1': 'bar', RemainingKeys(ANYSTR): ANYOPTSTR}, got {'tag1': 'value1'}]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative_message[expected tags to match {'tag1': 'bar', RemainingKeys(ANYSTR): ANYOPTSTR}, got {}]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative_message[expected tags to match {'tag1': 'bar', RemainingKeys(NotStrRe(r'tag2')): ANYOPTSTR}, got {'tag1': 'bar', 'tag2': ''}]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative_message[expected tags to match {'tag1': 'bar', RemainingKeys(NotStrRe(r'tag2')): ANYOPTSTR}, got {'tag1': 'bar', 'tag2': 'baz'}]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative_message[expected tags to match {'tag1': 'bar', RemainingKeys(NotStrRe(r'tag2')): ANYOPTSTR}, got {'tag1': 'value1'}]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative_message[expected tags to match {'tag1': 'bar'}, got {'tag1': 'bar', 'tag2': ''}]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative_message[expected tags to match {'tag1': 'bar'}, got {'tag1': 'value1'}]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative_message[expected tags to match {'tag1': 'bar'}, got {}0]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative_message[expected tags to match {'tag1': 'bar'}, got {}1]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative_message[expected tags to match {'tag1': ANYSTR}, got {'tag1': 'bar', 'tag2': ''}]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative_message[expected tags to match {'tag1': ANYSTR}, got {}0]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative_message[expected tags to match {'tag1': ANYSTR}, got {}1]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative_message[expected tags to match {StrRe(r'tag[12]'): 'bar', RemainingKeys(ANYSTR): ANYOPTSTR}, got {'tag1': 'value1'}]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_negative_message[expected tags to match {StrRe(r'tag[12]'): 'bar', RemainingKeys(ANYSTR): ANYOPTSTR}, got {}]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_positive[{'command': '004', 'params': ['nick', '...', OptStrRe(r'[a-zA-Z]+')]}-004 nick ... abc]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_positive[{'command': '004', 'params': ['nick', '...', OptStrRe(r'[a-zA-Z]+')]}-004 nick ...]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_positive[{'command': '004', 'params': [Either('nick', '*', '.'), '...', 'trailer']}-004 * ... trailer]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_positive[{'command': '004', 'params': [Either('nick', '*', '.'), '...', 'trailer']}-004 . ... trailer]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_positive[{'command': '004', 'params': [Either('nick', '*', '.'), '...', 'trailer']}-004 nick ... trailer]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_positive[{'command': '005', 'params': ['nick', 'FOO=1', *ANYLIST]}-005 nick FOO=1 BAR=2]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_positive[{'command': '005', 'params': ['nick', 'FOO=1', *ANYLIST]}-005 nick FOO=1]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_positive[{'command': '005', 'params': ['nick', ListRemainder(ANYSTR, min_length=1)]}-005 nick BAR=2]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_positive[{'command': '005', 'params': ['nick', ListRemainder(ANYSTR, min_length=1)]}-005 nick FOO=1 BAR=2]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_positive[{'command': '005', 'params': ['nick', ListRemainder(ANYSTR, min_length=1)]}-005 nick FOO=1]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_positive[{'command': '005', 'params': ['nick', ListRemainder(StrRe(r'[A-Z]+=.*'), min_length=1)]}-005 nick BAR=2]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_positive[{'command': '005', 'params': ['nick', ListRemainder(StrRe(r'[A-Z]+=.*'), min_length=1)]}-005 nick FOO=1 BAR=2]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_positive[{'command': '005', 'params': ['nick', ListRemainder(StrRe(r'[A-Z]+=.*'), min_length=1)]}-005 nick FOO=1]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_positive[{'command': 'PING', 'params': ['abc']}-PING abc]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_positive[{'command': 'PRIVMSG', 'params': ['#chan', 'hello']}-:foo!baz@qux PRIVMSG #chan hello]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_positive[{'command': 'PRIVMSG', 'params': ['#chan', 'hello']}-@tag1=bar :foo!baz@qux PRIVMSG #chan :hello]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_positive[{'command': 'PRIVMSG', 'params': ['#chan', 'hello']}-@tag1=bar PRIVMSG #chan :hello]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_positive[{'command': 'PRIVMSG', 'params': ['#chan', 'hello']}-@tag1=bar;tag2= PRIVMSG #chan :hello]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_positive[{'command': 'PRIVMSG', 'params': ['#chan', 'hello']}-PRIVMSG #chan :hello]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_positive[{'command': 'PRIVMSG', 'params': ['#chan', 'hello']}-PRIVMSG #chan hello]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_positive[{'command': 'PRIVMSG', 'params': ['#chan', StrRe(r'hello.*')]}-:foo!baz@qux PRIVMSG #chan hello]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_positive[{'command': 'PRIVMSG', 'params': ['#chan', StrRe(r'hello.*')]}-@tag1=bar :foo!baz@qux PRIVMSG #chan :hello]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_positive[{'command': 'PRIVMSG', 'params': ['#chan', StrRe(r'hello.*')]}-@tag1=bar PRIVMSG #chan :hello]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_positive[{'command': 'PRIVMSG', 'params': ['#chan', StrRe(r'hello.*')]}-@tag1=bar;tag2= PRIVMSG #chan :hello]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_positive[{'command': 'PRIVMSG', 'params': ['#chan', StrRe(r'hello.*')]}-PRIVMSG #chan :hello]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_positive[{'command': 'PRIVMSG', 'params': ['#chan', StrRe(r'hello.*')]}-PRIVMSG #chan hello2]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_positive[{'command': 'PRIVMSG', 'params': ['#chan', StrRe(r'hello.*')]}-PRIVMSG #chan hello]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_positive[{'nick': 'foo', 'command': 'PRIVMSG'}-:foo!baz@qux PRIVMSG #chan hello]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_positive[{'nick': 'foo', 'command': 'PRIVMSG'}-@tag1=bar :foo!baz@qux PRIVMSG #chan :hello]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_positive[{'tags': {'tag1': 'bar', RemainingKeys(ANYSTR): ANYOPTSTR}, 'command': 'PRIVMSG', 'params': ['#chan', 'hello']}-@tag1=bar :foo!baz@qux PRIVMSG #chan :hello]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_positive[{'tags': {'tag1': 'bar', RemainingKeys(ANYSTR): ANYOPTSTR}, 'command': 'PRIVMSG', 'params': ['#chan', 'hello']}-@tag1=bar PRIVMSG #chan :hello]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_positive[{'tags': {'tag1': 'bar', RemainingKeys(ANYSTR): ANYOPTSTR}, 'command': 'PRIVMSG', 'params': ['#chan', 'hello']}-@tag1=bar;tag2= PRIVMSG #chan :hello]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_positive[{'tags': {'tag1': 'bar', RemainingKeys(NotStrRe(r'tag2')): ANYOPTSTR}, 'command': 'PRIVMSG', 'params': ['#chan', 'hello']}-@tag1=bar :foo!baz@qux PRIVMSG #chan :hello]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_positive[{'tags': {'tag1': 'bar', RemainingKeys(NotStrRe(r'tag2')): ANYOPTSTR}, 'command': 'PRIVMSG', 'params': ['#chan', 'hello']}-@tag1=bar PRIVMSG #chan :hello]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_positive[{'tags': {'tag1': 'bar', RemainingKeys(NotStrRe(r'tag2')): ANYOPTSTR}, 'command': 'PRIVMSG', 'params': ['#chan', 'hello']}-@tag1=bar;tag3= PRIVMSG #chan :hello]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_positive[{'tags': {'tag1': 'bar'}, 'command': 'PRIVMSG', 'params': ['#chan', 'hello']}-@tag1=bar :foo!baz@qux PRIVMSG #chan :hello]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_positive[{'tags': {'tag1': 'bar'}, 'command': 'PRIVMSG', 'params': ['#chan', 'hello']}-@tag1=bar PRIVMSG #chan :hello]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_positive[{'tags': {'tag1': ANYSTR}, 'command': 'PRIVMSG', 'params': ['#chan', ANYSTR]}-@tag1=bar :foo!baz@qux PRIVMSG #chan :hello]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_positive[{'tags': {'tag1': ANYSTR}, 'command': 'PRIVMSG', 'params': ['#chan', ANYSTR]}-@tag1=bar PRIVMSG #chan :hello]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_positive[{'tags': {'tag1': ANYSTR}, 'command': 'PRIVMSG', 'params': ['#chan', ANYSTR]}-@tag1=value1 PRIVMSG #chan :hello]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_positive[{'tags': {StrRe(r'tag[12]'): 'bar', RemainingKeys(ANYSTR): ANYOPTSTR}, 'command': 'PRIVMSG', 'params': ['#chan', 'hello']}-@tag1=;tag2=bar PRIVMSG #chan :hello]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_positive[{'tags': {StrRe(r'tag[12]'): 'bar', RemainingKeys(ANYSTR): ANYOPTSTR}, 'command': 'PRIVMSG', 'params': ['#chan', 'hello']}-@tag1=bar :foo!baz@qux PRIVMSG #chan :hello]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_positive[{'tags': {StrRe(r'tag[12]'): 'bar', RemainingKeys(ANYSTR): ANYOPTSTR}, 'command': 'PRIVMSG', 'params': ['#chan', 'hello']}-@tag1=bar PRIVMSG #chan :hello]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_positive[{'tags': {StrRe(r'tag[12]'): 'bar', RemainingKeys(ANYSTR): ANYOPTSTR}, 'command': 'PRIVMSG', 'params': ['#chan', 'hello']}-@tag1=bar;tag2= PRIVMSG #chan :hello0]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_positive[{'tags': {StrRe(r'tag[12]'): 'bar', RemainingKeys(ANYSTR): ANYOPTSTR}, 'command': 'PRIVMSG', 'params': ['#chan', 'hello']}-@tag1=bar;tag2= PRIVMSG #chan :hello1]
+pass	irctest.self_tests.cases.IrcTestCaseTestCase::test_message_matching_positive[{'tags': {StrRe(r'tag[12]'): 'bar', RemainingKeys(ANYSTR): ANYOPTSTR}, 'command': 'PRIVMSG', 'params': ['#chan', 'hello']}-@tag2=bar PRIVMSG #chan :hello]
+pass	irctest.server_tests.away.AwayTestCase::testAway
+pass	irctest.server_tests.away.AwayTestCase::testAwayAck
+pass	irctest.server_tests.away.AwayTestCase::testAwayEmptyMessage
+pass	irctest.server_tests.away.AwayTestCase::testAwayPrivmsg
+pass	irctest.server_tests.away.AwayTestCase::testAwayUserhost
+pass	irctest.server_tests.away.AwayTestCase::testAwayWhois
+pass	irctest.server_tests.buffering.BufferingTestCase::testNoTags[byteperbyte-colon]
+pass	irctest.server_tests.buffering.BufferingTestCase::testNoTags[byteperbyte-no colon]
+pass	irctest.server_tests.buffering.BufferingTestCase::testNoTags[charperchar-colon]
+pass	irctest.server_tests.buffering.BufferingTestCase::testNoTags[charperchar-no colon]
+pass	irctest.server_tests.buffering.BufferingTestCase::testNoTags[whole-colon]
+pass	irctest.server_tests.buffering.BufferingTestCase::testNoTags[whole-no colon]
+pass	irctest.server_tests.cap.CapTestCase::testCapRemovalByClient
+pass	irctest.server_tests.cap.CapTestCase::testEmptyCapList
+pass	irctest.server_tests.cap.CapTestCase::testInvalidCapSubcommand
+pass	irctest.server_tests.cap.CapTestCase::testIrc301CapLs
+pass	irctest.server_tests.cap.CapTestCase::testNakExactString
+pass	irctest.server_tests.cap.CapTestCase::testNoMultiline301Response
+pass	irctest.server_tests.cap.CapTestCase::testNoReq
+pass	irctest.server_tests.cap.CapTestCase::testReqUnavailable
+pass	irctest.server_tests.channel.ChannelCaseSensitivityTestCase::testChannelsEquivalent[rfc1459-#F]|oo{-#f}\\oo[]
+pass	irctest.server_tests.channel.ChannelCaseSensitivityTestCase::testChannelsEquivalent[rfc1459-#Foo-#foo]
+pass	irctest.server_tests.channel.ChannelCaseSensitivityTestCase::testChannelsEquivalent[rfc1459-#F}o\\o[-#f]o|o{]
+pass	irctest.server_tests.channel.ChannelCaseSensitivityTestCase::testChannelsNotEquivalent[rfc1459-#Foo-#fooa]
+pass	irctest.server_tests.chmodes.ban.BanModeTestCase::testBan
+pass	irctest.server_tests.chmodes.ban.BanModeTestCase::testBanException
+pass	irctest.server_tests.chmodes.ban.BanModeTestCase::testBanList
+pass	irctest.server_tests.chmodes.invite_exception.InviteExceptionTestCase::testInviteException
+pass	irctest.server_tests.chmodes.invite_exception.InviteExceptionTestCase::testInviteExceptionList
+pass	irctest.server_tests.chmodes.invite_exception.InviteExceptionTestCase::testInviteExceptionMultipleMasks
+pass	irctest.server_tests.chmodes.invite_exception.InviteExceptionTestCase::testInviteExceptionRemoval
+pass	irctest.server_tests.chmodes.invite_exception.InviteExceptionTestCase::testInviteExceptionWithoutInviteOnly
+pass	irctest.server_tests.chmodes.key.KeyTestCase::testKeyNormal
+pass	irctest.server_tests.chmodes.key.KeyTestCase::testKeyValidation[empty]
+pass	irctest.server_tests.chmodes.key.KeyTestCase::testKeyValidation[long]
+pass	irctest.server_tests.chmodes.key.KeyTestCase::testKeyValidation[only-space]
+pass	irctest.server_tests.chmodes.key.KeyTestCase::testKeyValidation[spaces]
+pass	irctest.server_tests.chmodes.limit.LimitTestCase::testLimitAfterPart
+pass	irctest.server_tests.chmodes.limit.LimitTestCase::testLimitChange
+pass	irctest.server_tests.chmodes.limit.LimitTestCase::testLimitDecrease
+pass	irctest.server_tests.chmodes.limit.LimitTestCase::testLimitInvalidValues[empty]
+pass	irctest.server_tests.chmodes.limit.LimitTestCase::testLimitInvalidValues[negative]
+pass	irctest.server_tests.chmodes.limit.LimitTestCase::testLimitInvalidValues[non-numeric]
+pass	irctest.server_tests.chmodes.limit.LimitTestCase::testLimitInvalidValues[zero]
+pass	irctest.server_tests.chmodes.limit.LimitTestCase::testLimitMode
+pass	irctest.server_tests.chmodes.limit.LimitTestCase::testLimitMultipleChannels
+pass	irctest.server_tests.chmodes.limit.LimitTestCase::testLimitRemoval
+pass	irctest.server_tests.chmodes.limit.LimitTestCase::testLimitWithInvite
+pass	irctest.server_tests.chmodes.modeis.RplChannelModeIsTestCase::testChannelModeIs
+pass	irctest.server_tests.chmodes.moderated.ModeratedModeTestCase::testModeratedMode
+pass	irctest.server_tests.chmodes.no_external.NoExternalMessagesTestCase::testNoExternalMessagesMode
+pass	irctest.server_tests.chmodes.operator.ChannelOperatorModeTestCase::testChannelOperatorModeChannelAndTargetDoNotExist
+pass	irctest.server_tests.chmodes.operator.ChannelOperatorModeTestCase::testChannelOperatorModeChannelDoesNotExist
+pass	irctest.server_tests.chmodes.operator.ChannelOperatorModeTestCase::testChannelOperatorModeSenderAndTargetNonMembers
+pass	irctest.server_tests.chmodes.operator.ChannelOperatorModeTestCase::testChannelOperatorModeSenderNonMember
+pass	irctest.server_tests.chmodes.operator.ChannelOperatorModeTestCase::testChannelOperatorModeSenderPrivsNeeded
+pass	irctest.server_tests.chmodes.operator.ChannelOperatorModeTestCase::testChannelOperatorModeSuccess
+pass	irctest.server_tests.chmodes.operator.ChannelOperatorModeTestCase::testChannelOperatorModeTargetDoesNotExist
+pass	irctest.server_tests.chmodes.operator.ChannelOperatorModeTestCase::testChannelOperatorModeTargetNotInChannel
+pass	irctest.server_tests.chmodes.secret.SecretChannelTestCase::testSecretChannelListCommand
+pass	irctest.server_tests.connection_registration.ConnectionRegistrationTestCase::testConnectionRegistration
+pass	irctest.server_tests.connection_registration.ConnectionRegistrationTestCase::testEarlyNickCollision
+pass	irctest.server_tests.connection_registration.ConnectionRegistrationTestCase::testEmptyRealname
+pass	irctest.server_tests.connection_registration.ConnectionRegistrationTestCase::testNickCollision
+pass	irctest.server_tests.connection_registration.ConnectionRegistrationTestCase::testNonutf8Realname
+pass	irctest.server_tests.connection_registration.ConnectionRegistrationTestCase::testNonutf8Username
+pass	irctest.server_tests.connection_registration.ConnectionRegistrationTestCase::testQuitDisconnects
+pass	irctest.server_tests.connection_registration.ConnectionRegistrationTestCase::testQuitErrors
+pass	irctest.server_tests.echo_message.EchoMessageTestCase::testEchoMessage[NOTICE-False-True]
+pass	irctest.server_tests.echo_message.EchoMessageTestCase::testEchoMessage[PRIVMSG-False-False]
+pass	irctest.server_tests.echo_message.EchoMessageTestCase::testEchoMessage[PRIVMSG-False-True]
+pass	irctest.server_tests.echo_message.EchoMessageTestCase::testEchoMessage[PRIVMSG-True-True]
+pass	irctest.server_tests.help.HelpTestCase::testHelpNoArg[HELPOP]
+pass	irctest.server_tests.help.HelpTestCase::testHelpNoArg[HELP]
+pass	irctest.server_tests.help.HelpTestCase::testHelpPrivmsg[HELPOP]
+pass	irctest.server_tests.help.HelpTestCase::testHelpPrivmsg[HELP]
+pass	irctest.server_tests.help.HelpTestCase::testHelpUnknownSubject[HELPOP]
+pass	irctest.server_tests.help.HelpTestCase::testHelpUnknownSubject[HELP]
+pass	irctest.server_tests.info.InfoTestCase::testInfo
+pass	irctest.server_tests.invite.InviteTestCase::testInviteAlreadyInChannel
+pass	irctest.server_tests.invite.InviteTestCase::testInviteInviteOnly
+pass	irctest.server_tests.invite.InviteTestCase::testInviteNoNotificationForOtherMembers
+pass	irctest.server_tests.invite.InviteTestCase::testInviteOnlyFromUsersInChannel
+pass	irctest.server_tests.invite.InviteTestCase::testInviteUnopped
+pass	irctest.server_tests.invite.InviteTestCase::testInvite[False]
+pass	irctest.server_tests.invite.InviteTestCase::testInvite[True]
+pass	irctest.server_tests.invite.InviteTestCase::testInvites
+pass	irctest.server_tests.isupport.IsupportTestCase::testParameters
+pass	irctest.server_tests.isupport.IsupportTestCase::testPrefix
+pass	irctest.server_tests.join.JoinTestCase::testJoinAllMessages
+pass	irctest.server_tests.join.JoinTestCase::testJoinKey
+pass	irctest.server_tests.join.JoinTestCase::testJoinKeys
+pass	irctest.server_tests.join.JoinTestCase::testJoinManySingleKey
+pass	irctest.server_tests.join.JoinTestCase::testJoinNamreply
+pass	irctest.server_tests.join.JoinTestCase::testJoinPartiallyInvalid
+pass	irctest.server_tests.join.JoinTestCase::testJoinTwice
+pass	irctest.server_tests.kick.KickTestCase::testKickDefaultComment
+pass	irctest.server_tests.kick.KickTestCase::testKickNoComment
+pass	irctest.server_tests.kick.KickTestCase::testKickNonexistentChannel
+pass	irctest.server_tests.kick.KickTestCase::testKickPrivileges
+pass	irctest.server_tests.kick.KickTestCase::testKickSendsMessages
+pass	irctest.server_tests.kill.KillTestCase::testKill
+pass	irctest.server_tests.list.ListTestCase::testListEmpty
+pass	irctest.server_tests.list.ListTestCase::testListNonexistent
+pass	irctest.server_tests.list.ListTestCase::testListOne
+pass	irctest.server_tests.lusers.BasicLusersTestCase::testLusers
+pass	irctest.server_tests.lusers.BasicLusersTestCase::testLusersFull
+pass	irctest.server_tests.lusers.LusersUnregisteredDefaultInvisibleTestCase::testLusersFull
+pass	irctest.server_tests.lusers.LusersUnregisteredDefaultInvisibleTestCase::testLusersRfc2812
+pass	irctest.server_tests.lusers.LusersUnregisteredTestCase::testLusersFull
+pass	irctest.server_tests.lusers.LusersUnregisteredTestCase::testLusersRfc2812
+pass	irctest.server_tests.message_tags.MessageTagsTestCase::testBasic
+pass	irctest.server_tests.message_tags.MessageTagsTestCase::testLengthLimits
+pass	irctest.server_tests.message_tags.MessageTagsTestCase::testRecipientCapability
+pass	irctest.server_tests.messages.NoticeTestCase::testNotice
+pass	irctest.server_tests.messages.NoticeTestCase::testNoticeNonexistentChannel
+pass	irctest.server_tests.messages.PrivmsgTestCase::testEmptyPrivmsg
+pass	irctest.server_tests.messages.PrivmsgTestCase::testPrivmsg
+pass	irctest.server_tests.messages.PrivmsgTestCase::testPrivmsgNonexistentChannel
+pass	irctest.server_tests.messages.PrivmsgTestCase::testPrivmsgNonexistentUser
+pass	irctest.server_tests.messages.PrivmsgTestCase::testPrivmsgToUser
+pass	irctest.server_tests.messages.TagsTestCase::testLineTooLong
+pass	irctest.server_tests.multi_prefix.MultiPrefixTestCase::testNoMultiPrefix
+pass	irctest.server_tests.names.NamesTestCase::testNames2812
+pass	irctest.server_tests.names.NamesTestCase::testNames2812Secret
+pass	irctest.server_tests.names.NamesTestCase::testNamesInvalidChannel
+pass	irctest.server_tests.names.NamesTestCase::testNamesModern
+pass	irctest.server_tests.names.NamesTestCase::testNamesNonexistingChannel
+pass	irctest.server_tests.oper.OperTestCase::testOperFailure
+pass	irctest.server_tests.oper.OperTestCase::testOperNoPassword
+pass	irctest.server_tests.oper.OperTestCase::testOperNonexistentUser
+pass	irctest.server_tests.oper.OperTestCase::testOperSuccess
+pass	irctest.server_tests.part.PartTestCase::testBasicPart
+pass	irctest.server_tests.part.PartTestCase::testBasicPartRfc2812
+pass	irctest.server_tests.part.PartTestCase::testPartMessage
+pass	irctest.server_tests.part.PartTestCase::testPartNotInEmptyChannel
+pass	irctest.server_tests.part.PartTestCase::testPartNotInNonEmptyChannel
+pass	irctest.server_tests.pingpong.PingPongTestCase::testPing
+pass	irctest.server_tests.pingpong.PingPongTestCase::testPingEmptyToken
+pass	irctest.server_tests.pingpong.PingPongTestCase::testPingNoToken
+pass	irctest.server_tests.quit.ChannelQuitTestCase::testQuit
+pass	irctest.server_tests.regressions.RegressionsTestCase::testCaseChanges
+pass	irctest.server_tests.regressions.RegressionsTestCase::testEmptyNick
+pass	irctest.server_tests.regressions.RegressionsTestCase::testFailedNickChange
+pass	irctest.server_tests.regressions.RegressionsTestCase::testNickRelease
+pass	irctest.server_tests.regressions.RegressionsTestCase::testNickReleaseQuit
+pass	irctest.server_tests.regressions.RegressionsTestCase::testStarNick
+pass	irctest.server_tests.time.TimeTestCase::testTime
+pass	irctest.server_tests.topic.TopicPrivilegesTestCase::testTopicPrivileges
+pass	irctest.server_tests.topic.TopicTestCase::testTopicMode
+pass	irctest.server_tests.topic.TopicTestCase::testTopicModern
+pass	irctest.server_tests.topic.TopicTestCase::testTopicNonexistentChannel
+pass	irctest.server_tests.topic.TopicTestCase::testTopicRfc
+pass	irctest.server_tests.topic.TopicTestCase::testUnsetTopicResponses
+pass	irctest.server_tests.utf8.Utf8TestCase::testNonutf8Realname
+pass	irctest.server_tests.utf8.Utf8TestCase::testNonutf8Username
+pass	irctest.server_tests.utf8.Utf8TestCase::testUtf8Validation
+pass	irctest.server_tests.wallops.WallopsTestCase::testWallops
+pass	irctest.server_tests.wallops.WallopsTestCase::testWallopsPrivileges
+pass	irctest.server_tests.who.WhoInvisibleTestCase::testWhoInvisible
+pass	irctest.server_tests.who.WhoTestCase::testWhoChan[casefolded]
+pass	irctest.server_tests.who.WhoTestCase::testWhoChan[exact]
+pass	irctest.server_tests.who.WhoTestCase::testWhoMultiChan
+pass	irctest.server_tests.who.WhoTestCase::testWhoNickAwayAndOper[casefolded]
+pass	irctest.server_tests.who.WhoTestCase::testWhoNickAwayAndOper[exact]
+pass	irctest.server_tests.who.WhoTestCase::testWhoNickAwayAndOper[mask]
+pass	irctest.server_tests.who.WhoTestCase::testWhoNickAway[casefolded]
+pass	irctest.server_tests.who.WhoTestCase::testWhoNickAway[exact]
+pass	irctest.server_tests.who.WhoTestCase::testWhoNickAway[mask]
+pass	irctest.server_tests.who.WhoTestCase::testWhoNickNotExists
+pass	irctest.server_tests.who.WhoTestCase::testWhoNickOper[casefolded]
+pass	irctest.server_tests.who.WhoTestCase::testWhoNickOper[exact]
+pass	irctest.server_tests.who.WhoTestCase::testWhoNickOper[mask]
+pass	irctest.server_tests.who.WhoTestCase::testWhoNick[casefolded]
+pass	irctest.server_tests.who.WhoTestCase::testWhoNick[exact]
+pass	irctest.server_tests.who.WhoTestCase::testWhoNick[mask]
+pass	irctest.server_tests.who.WhoTestCase::testWhoStar
+pass	irctest.server_tests.whois.WhoisTestCase::testWhoisMissingUser
+pass	irctest.server_tests.whois.WhoisTestCase::testWhoisNumerics[away]
+pass	irctest.server_tests.whois.WhoisTestCase::testWhoisNumerics[normal]
+pass	irctest.server_tests.whois.WhoisTestCase::testWhoisNumerics[oper]
+pass	irctest.server_tests.whois.WhoisTestCase::testWhoisUser[no-target]
+pass	irctest.server_tests.whois.WhoisTestCase::testWhoisUser[target-nick]
+pass	irctest.server_tests.whois.WhoisTestCase::testWhoisUser[target_server]
+pass	irctest.server_tests.whowas.WhowasTestCase::testWhowasCount1
+pass	irctest.server_tests.whowas.WhowasTestCase::testWhowasCount2
+pass	irctest.server_tests.whowas.WhowasTestCase::testWhowasCountNegative
+pass	irctest.server_tests.whowas.WhowasTestCase::testWhowasCountZero
+pass	irctest.server_tests.whowas.WhowasTestCase::testWhowasEnd
+pass	irctest.server_tests.whowas.WhowasTestCase::testWhowasMultiple
+pass	irctest.server_tests.whowas.WhowasTestCase::testWhowasNoParamModern
+pass	irctest.server_tests.whowas.WhowasTestCase::testWhowasNoSuchNick
+pass	irctest.server_tests.whowas.WhowasTestCase::testWhowasNumerics
+skip	irctest.server_tests.away_notify.AwayNotifyTestCase::testAwayNotify
+skip	irctest.server_tests.away_notify.AwayNotifyTestCase::testAwayNotifyOnJoin
+skip	irctest.server_tests.bot_mode.BotModeTestCase::testBotChannelMessage
+skip	irctest.server_tests.bot_mode.BotModeTestCase::testBotEchoMessage
+skip	irctest.server_tests.bot_mode.BotModeTestCase::testBotMode
+skip	irctest.server_tests.bot_mode.BotModeTestCase::testBotPrivateMessage
+skip	irctest.server_tests.bot_mode.BotModeTestCase::testBotWhois
+skip	irctest.server_tests.bot_mode.BotModeTestCase::testBotWhox
+skip	irctest.server_tests.cap.CapTestCase::testNakWhole
+skip	irctest.server_tests.channel.ChannelCaseSensitivityTestCase::testChannelsEquivalent[ascii-#Foo-#foo]
+skip	irctest.server_tests.channel.ChannelCaseSensitivityTestCase::testChannelsNotEquivalent[ascii-#Foo-#fooa]
+skip	irctest.server_tests.channel_rename.ChannelRenameTestCase::testChannelRename
+skip	irctest.server_tests.chmodes.mute_extban.MuteExtbanTestCase::testMuteExtban
+skip	irctest.server_tests.chmodes.mute_extban.MuteExtbanTestCase::testMuteExtbanExempt
+skip	irctest.server_tests.chmodes.mute_extban.MuteExtbanTestCase::testMuteExtbanVoiced
+skip	irctest.server_tests.chmodes.no_ctcp.NoctcpModeTestCase::testNoctcpMode
+skip	irctest.server_tests.connection_registration.PasswordedConnectionRegistrationTestCase::testNoPassword
+skip	irctest.server_tests.connection_registration.PasswordedConnectionRegistrationTestCase::testPassAfterNickuser
+skip	irctest.server_tests.connection_registration.PasswordedConnectionRegistrationTestCase::testPassBeforeNickuser
+skip	irctest.server_tests.connection_registration.PasswordedConnectionRegistrationTestCase::testWrongPassword
+skip	irctest.server_tests.echo_message.EchoMessageTestCase::testDirectMessageEcho
+skip	irctest.server_tests.invite.InviteTestCase::testInviteList
+skip	irctest.server_tests.isupport.IsupportTestCase::testTargmax
+skip	irctest.server_tests.isupport.IsupportTestCase::testValues
+skip	irctest.server_tests.join.JoinTestCase::testJoinPartiallyInvalidLabeledResponse
+skip	irctest.server_tests.kick.KickTestCase::testDoubleKickMessages[False]
+skip	irctest.server_tests.kick.KickTestCase::testDoubleKickMessages[True]
+skip	irctest.server_tests.labeled_responses.LabeledResponsesTestCase::testBatchedJoinMessages
+skip	irctest.server_tests.labeled_responses.LabeledResponsesTestCase::testEmptyBatchForNoResponse
+skip	irctest.server_tests.labeled_responses.LabeledResponsesTestCase::testLabeledNoticeResponsesToChannel
+skip	irctest.server_tests.labeled_responses.LabeledResponsesTestCase::testLabeledNoticeResponsesToClient
+skip	irctest.server_tests.labeled_responses.LabeledResponsesTestCase::testLabeledNoticeResponsesToSelf
+skip	irctest.server_tests.labeled_responses.LabeledResponsesTestCase::testLabeledPrivmsgResponsesToChannel
+skip	irctest.server_tests.labeled_responses.LabeledResponsesTestCase::testLabeledPrivmsgResponsesToClient
+skip	irctest.server_tests.labeled_responses.LabeledResponsesTestCase::testLabeledPrivmsgResponsesToMultipleClients
+skip	irctest.server_tests.labeled_responses.LabeledResponsesTestCase::testLabeledPrivmsgResponsesToSelf
+skip	irctest.server_tests.labeled_responses.LabeledResponsesTestCase::testLabeledTagMsgResponsesToChannel
+skip	irctest.server_tests.labeled_responses.LabeledResponsesTestCase::testLabeledTagMsgResponsesToClient
+skip	irctest.server_tests.labeled_responses.LabeledResponsesTestCase::testLabeledTagMsgResponsesToSelf
+skip	irctest.server_tests.labeled_responses.LabeledResponsesTestCase::testNoBatchForSingleMessage
+skip	irctest.server_tests.labeled_responses.LabeledResponsesTestCase::testUnknownCommand
+skip	irctest.server_tests.links.LinksTestCase::testLinksSingleServer
+skip	irctest.server_tests.list.FaketimeListTestCase::testListCreationTime
+skip	irctest.server_tests.list.FaketimeListTestCase::testListTopicTime
+skip	irctest.server_tests.list.ListTestCase::testListMask
+skip	irctest.server_tests.list.ListTestCase::testListNotMask
+skip	irctest.server_tests.list.ListTestCase::testListUsers
+skip	irctest.server_tests.metadata_3.MetadataTestCase::testClearChannel
+skip	irctest.server_tests.metadata_3.MetadataTestCase::testGetListSyncInviteOnlyChannel
+skip	irctest.server_tests.metadata_3.MetadataTestCase::testGetOneUnsetValid
+skip	irctest.server_tests.metadata_3.MetadataTestCase::testGetOtherUser
+skip	irctest.server_tests.metadata_3.MetadataTestCase::testGetTwoUnsetValid
+skip	irctest.server_tests.metadata_3.MetadataTestCase::testListChannel
+skip	irctest.server_tests.metadata_3.MetadataTestCase::testListInvalidTarget
+skip	irctest.server_tests.metadata_3.MetadataTestCase::testListNoSet
+skip	irctest.server_tests.metadata_3.MetadataTestCase::testSetClearOtherUser
+skip	irctest.server_tests.metadata_3.MetadataTestCase::testSetGetChannel
+skip	irctest.server_tests.metadata_3.MetadataTestCase::testSetGetChannelNotOp
+skip	irctest.server_tests.metadata_3.MetadataTestCase::testSetGetHeartInValue
+skip	irctest.server_tests.metadata_3.MetadataTestCase::testSetGetUserAgain
+skip	irctest.server_tests.metadata_3.MetadataTestCase::testSetGetUser[*-*]
+skip	irctest.server_tests.metadata_3.MetadataTestCase::testSetGetUser[*-foo]
+skip	irctest.server_tests.metadata_3.MetadataTestCase::testSetGetUser[foo-*]
+skip	irctest.server_tests.metadata_3.MetadataTestCase::testSetGetUser[foo-foo]
+skip	irctest.server_tests.metadata_3.MetadataTestCase::testSetGetValidBeforeConnect
+skip	irctest.server_tests.metadata_3.MetadataTestCase::testSetInvalidUtf8
+skip	irctest.server_tests.metadata_3.MetadataTestCase::testSetTooManyBytes
+skip	irctest.server_tests.metadata_3.MetadataTestCase::testSetTooManyChars
+skip	irctest.server_tests.metadata_3.MetadataTestCase::testSetUnsetChannel
+skip	irctest.server_tests.metadata_3.MetadataTestCase::testSetUnsetUser
+skip	irctest.server_tests.metadata_3.MetadataTestCase::testSubChannel
+skip	irctest.server_tests.metadata_3.MetadataTestCase::testSubChannelSetBeforeJoin
+skip	irctest.server_tests.metadata_3.MetadataTestCase::testSubUser
+skip	irctest.server_tests.metadata_3.MetadataTestCase::testSubUserSetBeforeJoin
+skip	irctest.server_tests.metadata_3.MetadataTestCase::testWhoisKeyValue
+skip	irctest.server_tests.monitor.ExtendedMonitorTestCase::testExtendedMonitorAwayNoCap[-]
+skip	irctest.server_tests.monitor.ExtendedMonitorTestCase::testExtendedMonitorAwayNoCap[-with-cap]
+skip	irctest.server_tests.monitor.ExtendedMonitorTestCase::testExtendedMonitorAwayNoCap[monitor_before_connect-]
+skip	irctest.server_tests.monitor.ExtendedMonitorTestCase::testExtendedMonitorAwayNoCap[monitor_before_connect-with-cap]
+skip	irctest.server_tests.monitor.ExtendedMonitorTestCase::testExtendedMonitorAway[-]
+skip	irctest.server_tests.monitor.ExtendedMonitorTestCase::testExtendedMonitorAway[-with-cap]
+skip	irctest.server_tests.monitor.ExtendedMonitorTestCase::testExtendedMonitorAway[monitor_before_connect-]
+skip	irctest.server_tests.monitor.ExtendedMonitorTestCase::testExtendedMonitorAway[monitor_before_connect-with-cap]
+skip	irctest.server_tests.monitor.ExtendedMonitorTestCase::testExtendedMonitorSetNameNoCap[False]
+skip	irctest.server_tests.monitor.ExtendedMonitorTestCase::testExtendedMonitorSetNameNoCap[True]
+skip	irctest.server_tests.monitor.ExtendedMonitorTestCase::testExtendedMonitorSetName[False]
+skip	irctest.server_tests.monitor.ExtendedMonitorTestCase::testExtendedMonitorSetName[True]
+skip	irctest.server_tests.monitor.MonitorTestCase::testMonitorClear
+skip	irctest.server_tests.monitor.MonitorTestCase::testMonitorConnectedAndDisconnected
+skip	irctest.server_tests.monitor.MonitorTestCase::testMonitorForbidsMasks
+skip	irctest.server_tests.monitor.MonitorTestCase::testMonitorList
+skip	irctest.server_tests.monitor.MonitorTestCase::testMonitorOneConnected
+skip	irctest.server_tests.monitor.MonitorTestCase::testMonitorOneConnection
+skip	irctest.server_tests.monitor.MonitorTestCase::testMonitorOneConnectionWithQuit
+skip	irctest.server_tests.monitor.MonitorTestCase::testMonitorOneDisconnected
+skip	irctest.server_tests.monitor.MonitorTestCase::testMonitorStatus
+skip	irctest.server_tests.monitor.MonitorTestCase::testNickChange
+skip	irctest.server_tests.monitor.MonitorTestCase::testTwoMonitoringOneRemove
+skip	irctest.server_tests.monitor.MonitorTestCase::testUnmonitor
+skip	irctest.server_tests.multi_prefix.MultiPrefixTestCase::testMultiPrefix
+skip	irctest.server_tests.multiline.MultilineTestCase::testBasic
+skip	irctest.server_tests.multiline.MultilineTestCase::testBlankLines[client_tag]
+skip	irctest.server_tests.multiline.MultilineTestCase::testBlankLines[no_client_tag]
+skip	irctest.server_tests.multiline.MultilineTestCase::testInvalidBlankConcatTag
+skip	irctest.server_tests.names.NamesTestCase::testNamesMultipleChannels2812
+skip	irctest.server_tests.read_marker.ReadMarkerTestCase::testGetNoReadMarker
+skip	irctest.server_tests.read_marker.ReadMarkerTestCase::testInvalidTimestamp
+skip	irctest.server_tests.read_marker.ReadMarkerTestCase::testMissingParams
+skip	irctest.server_tests.read_marker.ReadMarkerTestCase::testReadMarkerDoesNotDecrease
+skip	irctest.server_tests.read_marker.ReadMarkerTestCase::testReadMarkerOnJoin
+skip	irctest.server_tests.read_marker.ReadMarkerTestCase::testReadMarkerOnJoinWithStoredTimestamp
+skip	irctest.server_tests.read_marker.ReadMarkerTestCase::testReadMarkerUserTarget
+skip	irctest.server_tests.read_marker.ReadMarkerTestCase::testSetAndGet
+skip	irctest.server_tests.read_marker.ReadMarkerTestCase::testWildcardTimestampRejected
+skip	irctest.server_tests.redact.RedactTestCase::testCantRedactOthersPrivmsg
+skip	irctest.server_tests.redact.RedactTestCase::testOpRedactOthersPrivmsg
+skip	irctest.server_tests.redact.RedactTestCase::testOpRedactSelfPrivmsg
+skip	irctest.server_tests.redact.RedactTestCase::testRedactInvalidTarget
+skip	irctest.server_tests.redact.RedactTestCase::testRedactNotRelayedToNonSupportingClients
+skip	irctest.server_tests.redact.RedactTestCase::testRedactTagmsg
+skip	irctest.server_tests.redact.RedactTestCase::testRedactUnknownMsgid
+skip	irctest.server_tests.redact.RedactTestCase::testRedactWithReason
+skip	irctest.server_tests.redact.RedactTestCase::testRedactedMessageDisappearsFromChathistory
+skip	irctest.server_tests.regressions.RegressionsTestCase::testLabeledNick
+skip	irctest.server_tests.setname.SetnameMessageTestCase::testSetnameChannel
+skip	irctest.server_tests.setname.SetnameMessageTestCase::testSetnameMessage
+skip	irctest.server_tests.statusmsg.StatusmsgTestCase::testStatusmsgFromOp
+skip	irctest.server_tests.statusmsg.StatusmsgTestCase::testStatusmsgFromRegular
+skip	irctest.server_tests.websocket.WebsocketTestCase::testReceiveNonUtf8Text
+skip	irctest.server_tests.websocket.WebsocketTestCase::testReceiveTruncation
+skip	irctest.server_tests.websocket.WebsocketTestCase::testSendNonUtf8Text
+skip	irctest.server_tests.websocket.WebsocketTestCase::testSendTruncation
+skip	irctest.server_tests.websocket.WebsocketTestCase::testSubprotocolNegotiation[binary-first]
+skip	irctest.server_tests.websocket.WebsocketTestCase::testSubprotocolNegotiation[binary-only]
+skip	irctest.server_tests.websocket.WebsocketTestCase::testSubprotocolNegotiation[text-first]
+skip	irctest.server_tests.websocket.WebsocketTestCase::testSubprotocolNegotiation[text-only]
+skip	irctest.server_tests.who.WhoTestCase::testWhoRealNameSpaces
+skip	irctest.server_tests.who.WhoTestCase::testWhoUsernameRealName[hostname]
+skip	irctest.server_tests.who.WhoTestCase::testWhoUsernameRealName[realname-mask]
+skip	irctest.server_tests.who.WhoTestCase::testWhoUsernameRealName[username]
+skip	irctest.server_tests.who.WhoTestCase::testWhoxFull
+skip	irctest.server_tests.who.WhoTestCase::testWhoxFullReversed
+skip	irctest.server_tests.who.WhoTestCase::testWhoxOneChar[a]
+skip	irctest.server_tests.who.WhoTestCase::testWhoxOneChar[c]
+skip	irctest.server_tests.who.WhoTestCase::testWhoxOneChar[d]
+skip	irctest.server_tests.who.WhoTestCase::testWhoxOneChar[f]
+skip	irctest.server_tests.who.WhoTestCase::testWhoxOneChar[h]
+skip	irctest.server_tests.who.WhoTestCase::testWhoxOneChar[i]
+skip	irctest.server_tests.who.WhoTestCase::testWhoxOneChar[l]
+skip	irctest.server_tests.who.WhoTestCase::testWhoxOneChar[n]
+skip	irctest.server_tests.who.WhoTestCase::testWhoxOneChar[o]
+skip	irctest.server_tests.who.WhoTestCase::testWhoxOneChar[r]
+skip	irctest.server_tests.who.WhoTestCase::testWhoxOneChar[s]
+skip	irctest.server_tests.who.WhoTestCase::testWhoxOneChar[u]
+skip	irctest.server_tests.who.WhoTestCase::testWhoxToken

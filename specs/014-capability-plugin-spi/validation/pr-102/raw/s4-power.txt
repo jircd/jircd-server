@@ -1,0 +1,15 @@
+21:34:54 before baseline s4-warmup | Now drawing from 'AC Power' | load { 3.51 8.03 9.46 }
+21:34:59 before candidate s4-warmup | Now drawing from 'AC Power' | load { 3.63 7.98 9.44 }
+21:35:03 before candidate s4-1 | Now drawing from 'AC Power' | load { 4.78 8.15 9.49 }
+21:35:07 before baseline s4-1 | Now drawing from 'AC Power' | load { 4.40 8.01 9.43 }
+21:35:11 before baseline s4-2 | Now drawing from 'AC Power' | load { 4.40 8.01 9.43 }
+21:35:15 before candidate s4-2 | Now drawing from 'AC Power' | load { 4.44 7.96 9.40 }
+21:35:19 before candidate s4-3 | Now drawing from 'AC Power' | load { 4.81 7.98 9.40 }
+21:35:23 before baseline s4-3 | Now drawing from 'AC Power' | load { 5.87 8.14 9.45 }
+21:35:27 before baseline s4-4 | Now drawing from 'AC Power' | load { 5.48 8.03 9.40 }
+21:35:30 before candidate s4-4 | Now drawing from 'AC Power' | load { 5.48 8.03 9.40 }
+21:35:34 before candidate s4-5 | Now drawing from 'AC Power' | load { 5.52 7.99 9.38 }
+21:35:38 before baseline s4-5 | Now drawing from 'AC Power' | load { 5.48 7.94 9.36 }
+21:35:42 before full baseline | Now drawing from 'AC Power' | load { 6.72 8.16 9.42 }
+21:36:34 before full candidate | Now drawing from 'AC Power' | load { 7.49 8.11 9.33 }
+21:37:16 after last | Now drawing from 'AC Power' | load { 5.78 7.64 9.10 }

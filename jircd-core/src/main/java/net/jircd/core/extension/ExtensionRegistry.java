@@ -27,8 +27,11 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Consumer;
 import net.jircd.core.capability.Capability;
 import net.jircd.core.config.HostmaskReplyBudget;
 import net.jircd.core.extension.capability.CapabilityControl;
@@ -36,7 +39,6 @@ import net.jircd.core.extension.capability.CapabilityDescriptor;
 import net.jircd.core.extension.capability.CapabilityRegistrar;
 import net.jircd.core.extension.capability.CapabilityRuntime;
 import net.jircd.core.extension.capability.CapabilityServices;
-import net.jircd.core.extension.capability.FaultReporter;
 import net.jircd.core.extension.capability.HookDispatcher;
 import net.jircd.core.extension.capability.HookKind;
 import net.jircd.core.extension.capability.HookRegistration;
@@ -94,7 +96,8 @@ public final class ExtensionRegistry {
   private volatile SupportedFeatures supportedFeatures = SupportedFeatures.defaults();
 
   private final CapabilityRuntime capabilityRuntime = new CapabilityRuntime();
-  private final HookDispatcher hookDispatcher = new HookDispatcher(FaultReporter.logging());
+  private final CapabilityFaults faults;
+  private final HookDispatcher hookDispatcher;
   private final CommittedEvents committedEvents = new CommittedEvents(this);
 
   /**
@@ -105,6 +108,29 @@ public final class ExtensionRegistry {
    * that short mutex, and provider callbacks never do.
    */
   private final ReentrantLock lifecycle = new ReentrantLock();
+
+  /** Withdraws faulting providers on a virtual thread of their own, never the faulting one. */
+  public ExtensionRegistry() {
+    this(onOwnThread(Thread.ofVirtual().name("capability-fault-withdrawal").factory()));
+  }
+
+  private static Executor onOwnThread(ThreadFactory threads) {
+    return task -> threads.newThread(task).start();
+  }
+
+  /**
+   * @param faultWithdrawals runs the FAILED withdrawal a provider's runtime hook fault starts; it
+   *     must not run the task on the faulting thread in production, which may hold no lock but is
+   *     some client's delivery
+   */
+  public ExtensionRegistry(Executor faultWithdrawals) {
+    this.faults =
+        new CapabilityFaults(
+            faultWithdrawals,
+            id -> capabilityRuntime.snapshot().descriptor(id).orElse(null),
+            this::failProvider);
+    this.hookDispatcher = new HookDispatcher(faults);
+  }
 
   /**
    * The handler for {@code command} if a published provider owns it, resolved from one read of the
@@ -137,6 +163,15 @@ public final class ExtensionRegistry {
    */
   public void attachLiveSessions(Collection<ClientSession> sessions) {
     capabilityRuntime.attachLiveSessions(sessions);
+  }
+
+  /**
+   * Receives the stage timings of every later capability publication that changes the offered set:
+   * mutex wait, snapshot swap and all-session prune, and notification enqueue. For measurement.
+   */
+  public void observeCapabilityPublications(
+      Consumer<CapabilityRuntime.PublicationTiming> observer) {
+    capabilityRuntime.observePublications(observer);
   }
 
   /** The handle {@link CapabilityExtension}s receive through {@link ServerContext}. */
@@ -470,17 +505,43 @@ public final class ExtensionRegistry {
     }
   }
 
-  /** The extension states and configured lengths a validated configuration asks for. */
+  /**
+   * The extension states and configured lengths a validated configuration asks for.
+   *
+   * @param changedCapabilities the capability ids whose entry differs from the configuration last
+   *     applied (its value changed, or it was added or removed). Only these count as an explicit
+   *     request to retry a FAILED provider; a FAILED provider whose entry is unchanged stays FAILED
+   */
   public record DesiredState(
       Map<String, Boolean> capabilities,
       Map<String, Boolean> serverExtensions,
       int nicknameMaxLength,
       int channelNameMaxLength,
       int topicMaxLength,
-      int maxModesPerCommand) {
+      int maxModesPerCommand,
+      Set<String> changedCapabilities) {
     public DesiredState {
       capabilities = Map.copyOf(capabilities);
       serverExtensions = Map.copyOf(serverExtensions);
+      changedCapabilities = Set.copyOf(changedCapabilities);
+    }
+
+    /** A first application, with no earlier configuration: every listed entry counts as changed. */
+    public DesiredState(
+        Map<String, Boolean> capabilities,
+        Map<String, Boolean> serverExtensions,
+        int nicknameMaxLength,
+        int channelNameMaxLength,
+        int topicMaxLength,
+        int maxModesPerCommand) {
+      this(
+          capabilities,
+          serverExtensions,
+          nicknameMaxLength,
+          channelNameMaxLength,
+          topicMaxLength,
+          maxModesPerCommand,
+          capabilities.keySet());
     }
   }
 
@@ -494,8 +555,10 @@ public final class ExtensionRegistry {
    * the new snapshot with the new reply limits, prunes every session, queues {@code DEL}/{@code
    * NEW}, and runs {@code publishConfiguration} in the same critical section. Withdrawn providers
    * are stopped afterwards, each before what it requires. A provider whose start fails ends {@code
-   * FAILED} alone (with any dependent in the same reload); the rest still applies. Server
-   * extensions are reconciled one by one inside the same lifecycle hold.
+   * FAILED} alone (with any dependent in the same reload); the rest still applies. A provider
+   * already FAILED is restarted only if its entry is among {@link
+   * DesiredState#changedCapabilities}. Server extensions are reconciled one by one inside the same
+   * lifecycle hold.
    *
    * @return each extension that could not reach its desired state, with why
    * @throws InvalidDesiredStateException if the desired provider graph is invalid; nothing changed
@@ -607,7 +670,9 @@ public final class ExtensionRegistry {
     Map<String, Throwable> stagingFailures = new TreeMap<>();
     Set<String> withdrawRoots = new TreeSet<>();
     for (var entry : desired.capabilities().entrySet()) {
-      classify(entry.getKey(), entry.getValue(), staged, stagingFailures, withdrawRoots);
+      String id = entry.getKey();
+      if (isUnrequestedRetry(id, entry.getValue(), desired)) continue;
+      classify(id, entry.getValue(), staged, stagingFailures, withdrawRoots);
     }
     List<String> withdrawn = current.withdrawalOrder(withdrawRoots);
     requireNoneDesiredEnabled(withdrawn, desired);
@@ -615,6 +680,20 @@ public final class ExtensionRegistry {
     validateCandidate(current, withdrawn, staged.values(), features);
     return new CapabilityPlan(
         prerequisitesFirst(staged.values()), stagingFailures, withdrawn, features);
+  }
+
+  /**
+   * Whether a reload would restart a FAILED provider that nobody asked to retry: it is desired
+   * enabled, but its entry is the same as in the configuration last applied. Such a provider, a
+   * hard dependent included, stays FAILED; only a changed entry or {@code EXTENSION ENABLE} retries
+   * it.
+   */
+  private boolean isUnrequestedRetry(String id, Boolean desiredEnabled, DesiredState desired) {
+    Entry known = byId.get(id);
+    return Boolean.TRUE.equals(desiredEnabled)
+        && known != null
+        && known.state == Extension.State.FAILED
+        && !desired.changedCapabilities().contains(id);
   }
 
   /** Sorts one desired capability into the withdrawals, the stagings or the staging failures. */
@@ -932,6 +1011,47 @@ public final class ExtensionRegistry {
       extensionPointOwners.remove(point, id);
     }
     return failure;
+  }
+
+  /**
+   * Withdraws a provider whose runtime hook faulted, together with every published provider that
+   * requires it, through the same publication a disable uses: one snapshot swap, the all-session
+   * prune and one {@code DEL}. Each is then stopped, dependents first, outside the administrative
+   * mutex and without waiting for callbacks still running against an older snapshot; every one ends
+   * FAILED, and one whose stop throws keeps that cleanup owed to a later disable. Nothing restarts
+   * automatically. A provider no longer enabled when this runs (disabled, or already failed by an
+   * earlier incident) is left as it is.
+   */
+  private void failProvider(String id, CapabilityFaults.Fault fault) {
+    lifecycle.lock();
+    try {
+      Entry entry = byId.get(id);
+      Set<String> withdrawn =
+          entry != null && entry.state == Extension.State.ENABLED
+              ? capabilityRuntime.withdraw(id)
+              : Set.of();
+      if (withdrawn.isEmpty()) {
+        faults.dropped(id, fault);
+        return;
+      }
+      List<String> dependents = new ArrayList<>(withdrawn);
+      dependents.remove(id);
+      faults.failed(id, fault, dependents);
+      for (String failed : withdrawn) stopAfterFault(byId.get(failed));
+    } finally {
+      lifecycle.unlock();
+    }
+  }
+
+  private void stopAfterFault(Entry entry) {
+    boolean stopFailed = false;
+    try {
+      entry.extension.stop();
+    } catch (RuntimeException | LinkageError e) {
+      stopFailed = true;
+      faults.stopFailed(entry.extension.id(), e);
+    }
+    markFailed(entry, stopFailed);
   }
 
   private static String extensionPoint(Extension extension) {
