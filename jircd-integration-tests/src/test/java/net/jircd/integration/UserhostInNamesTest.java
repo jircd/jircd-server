@@ -163,7 +163,13 @@ class UserhostInNamesTest {
             owner.readUntil("MODE #secret " + hiddenMode, WAIT);
             viewer.registerAndAwaitWelcome("viewer", "user");
             negotiate(viewer, "viewer", CAPABILITY);
-            assertThat(tokens(replies(viewer, "NAMES"))).doesNotContain(OWNER_IDENTITY);
+            assertThat(
+                            tokens(replies(viewer, "NAMES")).stream()
+                                    .map(
+                                            token ->
+                                                    token.replaceFirst("^[~&@%+]+", "")
+                                                            .split("!", 2)[0]))
+                    .doesNotContain("owner");
             assertThat(names(viewer, "NAMES #secret")).isEmpty();
             assertThat(names(viewer, "NAMES #missing")).isEmpty();
             oper(viewer);

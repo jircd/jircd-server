@@ -32,6 +32,8 @@ public final class CapabilityName {
     public static final String AWAY_NOTIFY = "away-notify";
     public static final String BATCH = "batch";
     public static final String MULTI_PREFIX = "multi-prefix";
+
+    /** Negotiates full nick!ident@displayHost identities in NAMES replies. */
     public static final String USERHOST_IN_NAMES = "userhost-in-names";
 
     /**

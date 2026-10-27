@@ -306,7 +306,7 @@ public final class HookDispatcher {
         if (token.isEmpty()) return false;
         for (int i = 0; i < token.length(); i++) {
             char c = token.charAt(i);
-            if (c <= ' ' || c == 0x7f) return false;
+            if (c == ' ' || Character.isISOControl(c)) return false;
         }
         return MessageSerializer.utf8Bytes(token)
                 <= MessageSerializer.utf8Bytes(member.nickname()) + bound;

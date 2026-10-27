@@ -32,6 +32,8 @@ import net.jircd.core.extension.capability.ReplyLimits;
 import net.jircd.core.extension.capability.ReplySlot;
 import net.jircd.core.extension.capability.RuntimeSnapshot;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 class UserhostInNamesExtensionTest {
     private static final String CAP = "userhost-in-names";
@@ -91,6 +93,20 @@ class UserhostInNamesExtensionTest {
                 .isEqualTo(
                         ReplyBudgetCatalog.empty()
                                 .worstCaseBytes(ReplyLayout.WHO_ENTRY, ReplyLimits.REFERENCE));
+    }
+
+    @ParameterizedTest
+    @CsvSource({"'',host", "ident,''", "'',''"})
+    void missingIdentOrDisplayHostKeepsBareNickname(String ident, String displayHost) {
+        HookDispatcher dispatcher =
+                new HookDispatcher(
+                        (provider, kind, category) -> {
+                            throw new AssertionError(provider + "/" + kind + "/" + category);
+                        });
+        RuntimeSnapshot snapshot = RuntimeSnapshot.EMPTY.with(descriptor());
+        MemberSnapshot member = new MemberSnapshot("nick", ident, displayHost, List.of());
+
+        assertThat(dispatcher.namesIdentity(snapshot, Set.of(CAP), member)).isEqualTo("nick");
     }
 
     @Test

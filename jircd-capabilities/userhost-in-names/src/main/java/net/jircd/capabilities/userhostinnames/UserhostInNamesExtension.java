@@ -29,6 +29,7 @@ import net.jircd.protocol.CapabilityName;
  * limits ({@code U=27} ident bytes, {@code H=63} display-host bytes).
  */
 public final class UserhostInNamesExtension extends AbstractCapabilityExtension {
+    /** Provider id and negotiated capability name for expanded NAMES identities. */
     public static final String CAPABILITY_ID = CapabilityName.USERHOST_IN_NAMES;
 
     public UserhostInNamesExtension() {
@@ -46,6 +47,9 @@ public final class UserhostInNamesExtension extends AbstractCapabilityExtension 
     }
 
     private static String identity(MemberSnapshot member) {
+        if (member.ident().isEmpty() || member.displayHost().isEmpty()) {
+            return member.nickname();
+        }
         return member.nickname() + "!" + member.ident() + "@" + member.displayHost();
     }
 }
