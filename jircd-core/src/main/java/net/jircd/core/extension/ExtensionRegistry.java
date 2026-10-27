@@ -31,6 +31,7 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import net.jircd.core.capability.Capability;
 import net.jircd.core.config.HostmaskReplyBudget;
@@ -569,7 +570,11 @@ public final class ExtensionRegistry {
      * whose start fails ends {@code FAILED} alone (with any dependent in the same reload); the rest
      * still applies. A provider already FAILED is restarted only if its entry is among {@link
      * DesiredState#changedCapabilities}. Server extensions are reconciled one by one inside the
-     * same lifecycle hold.
+     * same lifecycle hold. An Error while stopping withdrawn capabilities propagates after all
+     * pending capability stops run and skips server reconciliation. An Error during server
+     * reconciliation propagates after the remaining desired server changes run. In either case the
+     * configuration stays published, collected failures are logged, and no failures map is
+     * returned.
      *
      * @return each extension that could not reach its desired state, with why
      * @throws InvalidDesiredStateException if the desired provider graph is invalid; nothing
@@ -649,19 +654,40 @@ public final class ExtensionRegistry {
      */
     private void finishWithdrawn(
             List<String> withdrawn, DesiredState desired, Map<String, String> failures) {
-        for (String id : withdrawn) {
-            Throwable failure = finish(byId.get(id));
-            if (failure != null) failures.put(id, describe(failure));
-        }
+        List<String> toFinish = new ArrayList<>(withdrawn);
         for (var entry : desired.capabilities().entrySet()) {
             Entry pending = byId.get(entry.getKey());
             if (Boolean.FALSE.equals(entry.getValue())
                     && pending != null
                     && pending.cleanupPending
                     && !withdrawn.contains(entry.getKey())) {
-                Throwable failure = finish(pending);
-                if (failure != null) failures.put(entry.getKey(), describe(failure));
+                toFinish.add(entry.getKey());
             }
+        }
+        boolean completed = false;
+        try {
+            finishAll(toFinish, 0, (id, failure) -> failures.put(id, describe(failure)));
+            completed = true;
+        } finally {
+            if (!completed) logUnreportedFailures(failures);
+        }
+    }
+
+    /**
+     * Finishes every withdrawal even if a stop throws an Error. As in {@link #stopAfterFault},
+     * continuation in finally lets the Error propagate only after the remaining stops run. Only the
+     * last Error propagates; earlier Errors are lost and collected RuntimeExceptions are logged
+     * rather than attached. Their providers remain FAILED with cleanup owed.
+     */
+    private void finishAll(
+            List<String> withdrawn, int from, BiConsumer<String, Throwable> recordFailure) {
+        if (from == withdrawn.size()) return;
+        String id = withdrawn.get(from);
+        try {
+            Throwable failure = finish(id);
+            if (failure != null) recordFailure.accept(id, failure);
+        } finally {
+            finishAll(withdrawn, from + 1, recordFailure);
         }
     }
 
@@ -919,27 +945,68 @@ public final class ExtensionRegistry {
         return RuntimeSnapshot.of(next);
     }
 
+    /** Applies every desired server change before propagating an escaping Error. */
     private void reconcileServerExtensions(
             Map<String, Boolean> desiredStates, Map<String, String> failures) {
-        for (var entry : new TreeMap<>(desiredStates).entrySet()) {
-            String id = entry.getKey();
-            try {
-                if (Boolean.TRUE.equals(entry.getValue())) {
-                    enableLocked(id);
-                } else {
-                    // Idempotent; for a FAILED provider it retries the cleanup that is still
-                    // pending.
-                    disableLocked(id);
-                }
-            } catch (RuntimeException | LinkageError e) {
-                LOG.warn(
-                        "Failed to reconcile extension '{}' to desired state {}",
-                        id,
-                        entry.getValue(),
-                        e);
-                failures.put(id, describe(e));
-            }
+        Map<String, Throwable> caught = new LinkedHashMap<>();
+        boolean completed = false;
+        try {
+            reconcileServerExtensions(
+                    List.copyOf(new TreeMap<>(desiredStates).entrySet()), 0, failures, caught);
+            completed = true;
+        } finally {
+            if (!completed) logUnreportedFailures(failures);
         }
+        caught.forEach(
+                (id, cause) ->
+                        LOG.warn(
+                                "Failed to reconcile extension '{}' to desired state {}",
+                                id,
+                                desiredStates.get(id),
+                                cause));
+    }
+
+    private void reconcileServerExtensions(
+            List<Map.Entry<String, Boolean>> desiredStates,
+            int from,
+            Map<String, String> failures,
+            Map<String, Throwable> caught) {
+        if (from == desiredStates.size()) return;
+        var entry = desiredStates.get(from);
+        String id = entry.getKey();
+        try {
+            if (Boolean.TRUE.equals(entry.getValue())) {
+                enableLocked(id);
+            } else {
+                // Idempotent; for a FAILED provider it retries the cleanup that is still pending.
+                disableLocked(id);
+            }
+        } catch (RuntimeException | LinkageError e) {
+            failures.put(id, describe(e));
+            caught.put(id, e);
+        } finally {
+            reconcileServerExtensions(desiredStates, from + 1, failures, caught);
+        }
+    }
+
+    /** Logs collected causes or descriptions when an Error prevents returning the failures. */
+    private static void logUnreportedFailures(Map<String, ?> failures) {
+        failures.forEach(
+                (id, failure) -> {
+                    if (failure instanceof Throwable cause) {
+                        String why = describe(cause);
+                        LOG.warn(
+                                "Extension '{}' failed during an interrupted lifecycle operation: {}",
+                                id,
+                                why,
+                                cause);
+                    } else {
+                        LOG.warn(
+                                "Extension '{}' failed during an interrupted lifecycle operation: {}",
+                                id,
+                                failure);
+                    }
+                });
     }
 
     private static String describe(Throwable failure) {
@@ -954,7 +1021,10 @@ public final class ExtensionRegistry {
      * FAILED provider whose cleanup is unfinished keeps its {@code extensionPoint} claim, so no
      * other provider can take the point while its resources may still be live; calling {@code
      * disable} again retries the cleanup, and the claim is released when that succeeds. Provider
-     * callbacks run under the lifecycle lock only, never the registry monitor.
+     * callbacks run under the lifecycle lock only, never the registry monitor. An Error from stop
+     * propagates after every withdrawn provider is finished and its outcome recorded. Only the last
+     * Error propagates; earlier Errors are lost and collected RuntimeExceptions are logged rather
+     * than attached. Their providers remain FAILED with cleanup owed.
      */
     public void disable(String id) {
         requireNoLifecycleCallback();
@@ -991,47 +1061,55 @@ public final class ExtensionRegistry {
      */
     private Throwable cleanUp(Entry entry) {
         String id = entry.extension.id();
-        List<Throwable> dependentFailures = new ArrayList<>();
         // Withdrawal comes first; stop then runs outside any snapshot, so callbacks already holding
-        // an older one finish against it.
-        for (String dependent : capabilityRuntime.withdraw(id)) {
-            Entry other = byId.get(dependent);
-            if (dependent.equals(id) || other == null) continue;
-            Throwable dependentFailure = finish(other);
-            if (dependentFailure != null) {
-                dependentFailures.add(
-                        new IllegalStateException(
-                                "'"
-                                        + dependent
-                                        + "' failed to stop after its prerequisite '"
-                                        + id
-                                        + "' was withdrawn: "
-                                        + describe(dependentFailure),
-                                dependentFailure));
-            }
+        // an older one finish against it. A cleanup retry may no longer be in the snapshot.
+        List<String> withdrawn = new ArrayList<>(capabilityRuntime.withdraw(id));
+        withdrawn.remove(id);
+        withdrawn.add(id);
+        Map<String, Throwable> failures = new LinkedHashMap<>();
+        boolean completed = false;
+        try {
+            finishAll(withdrawn, 0, failures::put);
+            completed = true;
+        } finally {
+            if (!completed) logUnreportedFailures(failures);
         }
-        Throwable failure = finish(entry);
-        if (failure == null && !dependentFailures.isEmpty())
-            failure = dependentFailures.removeFirst();
-        if (failure != null) dependentFailures.forEach(failure::addSuppressed);
+        Throwable failure = failures.remove(id);
+        for (var dependent : failures.entrySet()) {
+            Throwable dependentFailure =
+                    new IllegalStateException(
+                            "'"
+                                    + dependent.getKey()
+                                    + "' failed to stop after its prerequisite '"
+                                    + id
+                                    + "' was withdrawn: "
+                                    + describe(dependent.getValue()),
+                            dependent.getValue());
+            if (failure == null) failure = dependentFailure;
+            else failure.addSuppressed(dependentFailure);
+        }
         return failure;
     }
 
-    /** Stops an already withdrawn provider and records the outcome. */
-    private Throwable finish(Entry entry) {
-        String id = entry.extension.id();
+    /** Stops an already withdrawn provider and records the outcome, including an escaping Error. */
+    private Throwable finish(String id) {
+        Entry entry = byId.get(id);
         Throwable failure = null;
+        boolean stopped = false;
         try {
             entry.extension.stop();
+            stopped = true;
         } catch (RuntimeException | LinkageError e) {
             // Already withdrawn: it stays withdrawn, recorded as failed rather than half-enabled.
             failure = e;
-        }
-        entry.state = failure == null ? Extension.State.DISABLED : Extension.State.FAILED;
-        entry.cleanupPending = failure != null;
-        String point = extensionPoint(entry.extension);
-        if (point != null && failure == null) {
-            extensionPointOwners.remove(point, id);
+        } finally {
+            entry.state = stopped ? Extension.State.DISABLED : Extension.State.FAILED;
+            entry.cleanupPending = !stopped;
+            if (stopped) {
+                // One claim per provider. Remove only this owner's value without invoking an
+                // extension callback during cleanup; the map remains concurrent for readers.
+                extensionPointOwners.values().remove(id);
+            }
         }
         return failure;
     }

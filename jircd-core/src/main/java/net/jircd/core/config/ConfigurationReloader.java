@@ -28,8 +28,10 @@ import net.jircd.core.extension.ExtensionRegistry;
 /**
  * The core, manually-triggered reload operation (research.md "Configuration reload mechanism") —
  * deliberately not automatic file-watching; it only runs when invoked by a trigger ({@code SIGHUP},
- * {@code REHASH}). On success, reconciles the result against {@link ExtensionRegistry}; on failure,
- * the previously-active configuration is left untouched.
+ * {@code REHASH}). On success, reconciles the result against {@link ExtensionRegistry}; on
+ * validation failure, the previously-active configuration is left untouched. An Error from a
+ * withdrawn provider's stop propagates after publication and cleanup of the remaining withdrawn
+ * capabilities; the new configuration stays current and no ReloadOutcome is returned.
  */
 public final class ConfigurationReloader {
 
