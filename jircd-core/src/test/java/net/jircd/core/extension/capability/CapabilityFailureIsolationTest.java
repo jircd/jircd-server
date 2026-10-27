@@ -17,6 +17,7 @@ package net.jircd.core.extension.capability;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
@@ -729,6 +730,56 @@ class CapabilityFailureIsolationTest {
     assertThat(attempts).hasValue(2);
     assertThat(registry.stateOf("faulty")).isEqualTo(Extension.State.FAILED);
     assertSanitized();
+  }
+
+  @Test
+  void aStopThatThrowsAnErrorStillLeavesEveryWithdrawnProviderFailedAndStoppedThenPropagates() {
+    // Sourcery, PR #112 comment 3: an Error is not contained as a provider failure, but it must not
+    // leave a withdrawn provider ENABLED or skip the stops after it.
+    List<Runnable> scheduled = new ArrayList<>();
+    registry = registry(scheduled::add);
+    Faulty faulty = new Faulty("faulty", HookKind.OUTBOUND_TAGS);
+    Extension child =
+        new AbstractCapabilityExtension("child") {
+          @Override
+          public void register(CapabilityRegistrar registrar) {
+            registrar.requiresProviders("faulty");
+          }
+
+          @Override
+          public void stop() {
+            throw new AssertionError("child stop");
+          }
+        };
+    enable(faulty, child);
+    ClientSession holder = connect("holder", "faulty", "child");
+    faulty.mode = Mode.THROW;
+    invoke(HookKind.OUTBOUND_TAGS, holder, holder);
+
+    assertThatThrownBy(scheduled.getFirst()::run).isInstanceOf(AssertionError.class);
+    assertThat(faulty.stops).as("the prerequisite is still stopped").hasValue(1);
+    assertThat(registry.stateOf("child")).isEqualTo(Extension.State.FAILED);
+    assertThat(registry.stateOf("faulty")).isEqualTo(Extension.State.FAILED);
+    assertThat(registry.capabilitySnapshot().providerIds()).isEmpty();
+  }
+
+  @Test
+  void aThrowingPublicationObserverChangesNoPublicationsOutcome() {
+    // Sourcery, PR #112 comment 1: the observer runs after the publication has committed.
+    registry.observeCapabilityPublications(
+        timing -> {
+          throw new IllegalStateException("observer");
+        });
+    Faulty faulty = new Faulty("faulty", HookKind.MEMBER_STATUS);
+    enable(faulty);
+    assertThat(registry.stateOf("faulty")).isEqualTo(Extension.State.ENABLED);
+    assertThat(registry.capabilitySnapshot().providerIds()).containsExactly("faulty");
+
+    ClientSession holder = connect("holder", "faulty");
+    faulty.mode = Mode.THROW;
+    invoke(HookKind.MEMBER_STATUS, holder, holder);
+    assertThat(registry.stateOf("faulty")).isEqualTo(Extension.State.FAILED);
+    assertThat(faulty.stops).hasValue(1);
   }
 
   @Test

@@ -1037,21 +1037,30 @@ public final class ExtensionRegistry {
       List<String> dependents = new ArrayList<>(withdrawn);
       dependents.remove(id);
       faults.failed(id, fault, dependents);
-      for (String failed : withdrawn) stopAfterFault(byId.get(failed));
+      stopAfterFault(List.copyOf(withdrawn), 0);
     } finally {
       lifecycle.unlock();
     }
   }
 
-  private void stopAfterFault(Entry entry) {
-    boolean stopFailed = false;
+  /**
+   * Stops {@code withdrawn} from {@code from} on, in order, and records each FAILED. An {@link
+   * Error} from a stop is not a provider failure and still propagates, but only after that provider
+   * is recorded FAILED with its cleanup owed and every later one has been stopped too.
+   */
+  private void stopAfterFault(List<String> withdrawn, int from) {
+    if (from == withdrawn.size()) return;
+    Entry entry = byId.get(withdrawn.get(from));
+    boolean stopped = false;
     try {
       entry.extension.stop();
+      stopped = true;
     } catch (RuntimeException | LinkageError e) {
-      stopFailed = true;
       faults.stopFailed(entry.extension.id(), e);
+    } finally {
+      markFailed(entry, !stopped);
+      stopAfterFault(withdrawn, from + 1);
     }
-    markFailed(entry, stopFailed);
   }
 
   private static String extensionPoint(Extension extension) {

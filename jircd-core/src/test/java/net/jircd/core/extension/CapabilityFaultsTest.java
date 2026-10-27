@@ -19,6 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import net.jircd.core.extension.capability.FaultCategory;
 import net.jircd.core.extension.capability.HookKind;
@@ -34,36 +35,70 @@ class CapabilityFaultsTest {
   private final List<String> withdrawn = new ArrayList<>();
 
   @Test
-  void aReportForAnInstanceNoLongerPublishedNeverReplacesTheCurrentInstancesIncident() {
-    // Review round 2, item 1: report A looks up instance A, then "pauses". Meanwhile B is
-    // published and B's report opens B's incident. A resumes after that.
-    AtomicReference<CapabilityFaults> faults = new AtomicReference<>();
-    AtomicReference<Boolean> paused = new AtomicReference<>(false);
-    faults.set(
-        new CapabilityFaults(
-            scheduled::add,
-            id -> {
-              Object seen = current.get();
-              if (seen == instanceA && !paused.getAndSet(true)) {
-                current.set(instanceB);
-                faults.get().report(id, HookKind.OUTBOUND_TAGS, FaultCategory.EXCEPTION);
-              }
-              return seen;
-            },
-            (id, fault) -> withdrawn.add(id)));
+  void aFaultFromWorkCapturedBeforeAReEnableAddsNothingWhileTheCurrentInstancesIncidentIsOpen() {
+    // Review round 2, item 1: a report from work that captured instance A, arriving once B is
+    // published and B's incident is open, must not replace B's marker or open a second incident.
+    CapabilityFaults faults =
+        new CapabilityFaults(scheduled::add, id -> current.get(), (id, fault) -> withdrawn.add(id));
+    current.set(instanceB);
+    faults.report("p", HookKind.OUTBOUND_TAGS, FaultCategory.EXCEPTION); // B's incident
 
-    faults.get().report("p", HookKind.OUTBOUND_TAGS, FaultCategory.EXCEPTION); // stale A
+    faults.report("p", HookKind.OUTBOUND_TAGS, FaultCategory.EXCEPTION); // late, from A's work
     assertThat(scheduled).as("only B's incident").hasSize(1);
-
-    // B's incident is still the open one, so B's next fault adds nothing.
-    faults.get().report("p", HookKind.OUTBOUND_TAGS, FaultCategory.EXCEPTION);
-    assertThat(scheduled).hasSize(1);
 
     scheduled.getFirst().run();
     assertThat(withdrawn).containsExactly("p");
     // B's incident has ended: a further fault by B opens a new one.
-    faults.get().report("p", HookKind.OUTBOUND_TAGS, FaultCategory.EXCEPTION);
+    faults.report("p", HookKind.OUTBOUND_TAGS, FaultCategory.EXCEPTION);
     assertThat(scheduled).hasSize(2);
+  }
+
+  @Test
+  void aFaultReportedWhileItsInstanceIsReplacedStillSchedulesAWithdrawal() {
+    // Sourcery, PR #112 comment 2: the report sees A, then A is disabled and B enabled before it
+    // records the incident. The fault is still the provider's, so B is withdrawn, not left running.
+    AtomicInteger lookups = new AtomicInteger();
+    CapabilityFaults faults =
+        new CapabilityFaults(
+            scheduled::add,
+            id -> {
+              Object seen = current.get();
+              if (lookups.incrementAndGet() == 1) current.set(instanceB);
+              return seen;
+            },
+            (id, fault) -> withdrawn.add(id));
+
+    faults.report("p", HookKind.OUTBOUND_TAGS, FaultCategory.EXCEPTION);
+    assertThat(scheduled).hasSize(1);
+    scheduled.getFirst().run();
+    assertThat(withdrawn).containsExactly("p");
+  }
+
+  @Test
+  void aFaultWhenNoInstanceIsPublishedSchedulesNothing() {
+    CapabilityFaults faults =
+        new CapabilityFaults(scheduled::add, id -> null, (id, fault) -> withdrawn.add(id));
+    faults.report("p", HookKind.OUTBOUND_TAGS, FaultCategory.EXCEPTION);
+    assertThat(scheduled).isEmpty();
+  }
+
+  @Test
+  void anExecutorThatThrowsLeavesNoIncidentOpenAndTheFaultingCallReturns() {
+    // Sourcery, PR #112 comment 5: any unchecked executor failure, not only a rejection.
+    AtomicInteger attempts = new AtomicInteger();
+    CapabilityFaults faults =
+        new CapabilityFaults(
+            task -> {
+              if (attempts.incrementAndGet() == 1) throw new IllegalStateException("broken");
+              scheduled.add(task);
+            },
+            id -> current.get(),
+            (id, fault) -> withdrawn.add(id));
+
+    faults.report("p", HookKind.OUTBOUND_TAGS, FaultCategory.EXCEPTION);
+    faults.report("p", HookKind.OUTBOUND_TAGS, FaultCategory.EXCEPTION);
+    assertThat(attempts).as("the second fault tried again").hasValue(2);
+    assertThat(scheduled).hasSize(1);
   }
 
   @Test

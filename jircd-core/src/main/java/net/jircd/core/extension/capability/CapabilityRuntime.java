@@ -100,8 +100,8 @@ public final class CapabilityRuntime {
 
   /**
    * Receives the timing of every later publication that changes the offered set, on the publishing
-   * thread once that publication's critical section has ended. For measurement; it must be quick
-   * and must not throw.
+   * thread once that publication's critical section has ended. For measurement; it must be quick.
+   * An exception it throws is logged and changes nothing about the publication.
    */
   public void observePublications(Consumer<PublicationTiming> observer) {
     timings.set(Objects.requireNonNull(observer));
@@ -194,7 +194,13 @@ public final class CapabilityRuntime {
   private record Published(RuntimeSnapshot snapshot, PublicationTiming timing) {}
 
   private void observe(Published published) {
-    if (published.timing() != null) timings.get().accept(published.timing());
+    if (published.timing() == null) return;
+    try {
+      timings.get().accept(published.timing());
+    } catch (RuntimeException e) {
+      // The publication has committed; a measurement callback cannot change its outcome.
+      LOG.warn("Capability publication observer failed; the publication stands", e);
+    }
   }
 
   /** The publication itself; the caller holds the mutex, acquired at {@code held}. */

@@ -20,7 +20,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
-import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
@@ -93,23 +92,22 @@ final class CapabilityFaults implements FaultReporter {
   }
 
   /**
-   * Opens an incident unless one is already open for the instance published now. An incident left
-   * open by an earlier instance (a re-enable happened before its withdrawal finished) does not
-   * count: the current instance's fault opens its own, so it can never be lost. A report whose
-   * instance stopped being the published one before it got here (it looked the instance up, then a
-   * re-enable overtook it) changes nothing, so it can never replace a newer instance's incident.
+   * Opens an incident unless one is already open for the instance published now. A fault is the
+   * provider's, whichever instance the faulting work captured, so it is charged to the instance
+   * published when the incident is recorded: the lookup and the decision are one step, and no
+   * re-enable can slip between them. An incident left open by an earlier instance (a re-enable
+   * happened before its withdrawal finished) does not count, so the current instance's fault opens
+   * its own and can never be lost, and a late report never replaces the current one's incident.
    */
   @Override
   public void report(String providerId, HookKind kind, FaultCategory category) {
     Fault fault = new Fault(kind, category);
-    Object instance = category.providerFault() ? published.apply(providerId) : null;
-    if (instance != null) {
-      Incident opened = new Incident(instance, fault);
+    if (category.providerFault()) {
       Incident open =
-          pending.compute(
-              providerId, (id, existing) -> chooseIncident(id, existing, instance, opened));
-      if (open == opened) {
-        schedule(providerId, opened);
+          pending.compute(providerId, (id, existing) -> chooseIncident(id, existing, fault));
+      // Only an incident opened by this report carries this report's fault.
+      if (open != null && open.fault == fault) {
+        schedule(providerId, open);
         return;
       }
     }
@@ -117,18 +115,23 @@ final class CapabilityFaults implements FaultReporter {
   }
 
   /**
-   * The marker to keep: the existing one if the reporting instance is no longer published or
-   * already has its incident open, otherwise the reporter's new incident.
+   * The marker to keep: none while nothing is published, the existing one if the published instance
+   * already has its incident open, otherwise a new incident for it.
    */
-  private Incident chooseIncident(
-      String providerId, Incident existing, Object instance, Incident opened) {
-    if (published.apply(providerId) != instance) return existing;
+  private Incident chooseIncident(String providerId, Incident existing, Fault fault) {
+    Object instance = published.apply(providerId);
+    if (instance == null) return existing;
     if (existing != null && existing.instance == instance) return existing;
-    return opened;
+    return new Incident(instance, fault);
   }
 
-  /** Ends only {@code incident}: a newer instance's incident for the same id stays open. */
+  /**
+   * Ends only {@code incident}: a newer instance's incident for the same id stays open. If the
+   * executor refuses or fails, the incident ends unscheduled, so the provider's next fault tries
+   * again; the withdrawal is never run on the faulting thread instead.
+   */
   private void schedule(String providerId, Incident incident) {
+    boolean handedOff = false;
     try {
       withdrawals.execute(
           () -> {
@@ -138,14 +141,18 @@ final class CapabilityFaults implements FaultReporter {
               pending.remove(providerId, incident);
             }
           });
-    } catch (RejectedExecutionException _) {
-      pending.remove(providerId, incident);
+      handedOff = true;
+    } catch (RuntimeException e) {
       Fault fault = incident.fault;
       LOG.warn(
-          "Capability provider '{}' hook {} faulted ({}) but its withdrawal could not be scheduled",
+          "Capability provider '{}' hook {} faulted ({}) but its withdrawal could not be scheduled"
+              + " ({}); its next fault tries again",
           providerId,
           fault.kind(),
-          fault.category());
+          fault.category(),
+          e.getClass().getSimpleName());
+    } finally {
+      if (!handedOff) pending.remove(providerId, incident);
     }
   }
 

@@ -66,6 +66,9 @@ class CapabilityLifecycleLoadTest {
   private static final Duration TIMEOUT = Duration.ofSeconds(30);
   private static final List<String> TOGGLED = List.of("multi-prefix", "message-tags");
 
+  /** The trailing text of each group member, in order. */
+  private static final List<String> GROUP_MEMBERS = List.of("one member", "two member");
+
   private static final String LIMITS =
       """
       maxConnections: 10000
@@ -97,6 +100,7 @@ class CapabilityLifecycleLoadTest {
     final AtomicInteger violations = new AtomicInteger();
     final AtomicInteger lines = new AtomicInteger();
     boolean inGroup;
+    int groupMembers;
     volatile boolean drained;
     Thread thread;
 
@@ -137,14 +141,23 @@ class CapabilityLifecycleLoadTest {
     if (line.startsWith("BATCH +")) {
       if (reader.inGroup) reader.violations.incrementAndGet();
       reader.inGroup = true;
+      reader.groupMembers = 0;
       reader.opens.incrementAndGet();
     } else if (line.startsWith("BATCH -")) {
-      if (!reader.inGroup) reader.violations.incrementAndGet();
+      // An admitted group closes after all of its members, never empty or short.
+      if (!reader.inGroup || reader.groupMembers != GROUP_MEMBERS.size()) {
+        reader.violations.incrementAndGet();
+      }
       reader.inGroup = false;
       reader.closes.incrementAndGet();
-    } else if (reader.inGroup && !(line.startsWith("@batch=") && line.contains(" PRIVMSG #grp "))) {
-      // Nothing else may land inside an admitted group, and its members are all tagged.
-      reader.violations.incrementAndGet();
+    } else if (reader.inGroup) {
+      // Nothing else may land inside an admitted group; its members are all tagged, in order.
+      int member = reader.groupMembers++;
+      if (!line.startsWith("@batch=")
+          || member >= GROUP_MEMBERS.size()
+          || !line.endsWith(" PRIVMSG #grp :" + GROUP_MEMBERS.get(member))) {
+        reader.violations.incrementAndGet();
+      }
     } else if (line.contains(" CAP " + reader.nick + " ACK ")) {
       reader.acks.incrementAndGet();
       acksPending.get().countDown();
@@ -257,19 +270,16 @@ class CapabilityLifecycleLoadTest {
                   () -> {
                     List<ClientSession> sessions = List.copyOf(live);
                     List<Message> members =
-                        List.of(
-                            new Message(
-                                Map.of(),
-                                "bot!bot@host",
-                                Command.PRIVMSG,
-                                "PRIVMSG",
-                                List.of("#grp", "one member")),
-                            new Message(
-                                Map.of(),
-                                "bot!bot@host",
-                                Command.PRIVMSG,
-                                "PRIVMSG",
-                                List.of("#grp", "two member")));
+                        GROUP_MEMBERS.stream()
+                            .map(
+                                text ->
+                                    new Message(
+                                        Map.of(),
+                                        "bot!bot@host",
+                                        Command.PRIVMSG,
+                                        "PRIVMSG",
+                                        List.of("#grp", text)))
+                            .toList();
                     try {
                       while (!done.get()) {
                         ClientSession target =

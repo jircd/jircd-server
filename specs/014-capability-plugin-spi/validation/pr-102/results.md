@@ -86,6 +86,8 @@ Further cases:
 
 ## Build (T066)
 
+After the Sourcery round on PR #112 (review.md, "Sourcery round"): `./gradlew build` exit 0, 1,416 tests, 0 failed; coverage line **96.13%** (6,315 of 6,569), branch **89.39%** (2,587 of 2,894); SonarCloud gate OK with 0 open issues. The build recorded below is the one before that round.
+
 Final build, after both review rounds and the series-4 loads: `./gradlew spotlessApply`, then `./gradlew build --rerun-tasks`, exit code 0, `BUILD SUCCESSFUL in 1m 34s`.
 - 1,411 tests, 0 failed, 0 skipped.
 - Spotless, SpotBugs, PMD and coverage verification green.
