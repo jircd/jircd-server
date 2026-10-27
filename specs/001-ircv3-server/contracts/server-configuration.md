@@ -482,7 +482,15 @@ administratorCredentials:
   `REHASH` sender, or in the server log for `SIGHUP`. `EXTENSION` reports the
   state the toggle actually left; a disable whose withdrawn dependent fails
   to stop reports that failure even though the named provider itself is
-  disabled.
+  disabled. A stop that throws leaves that provider withdrawn and `FAILED`
+  with cleanup owed to a later disable or reload; every remaining withdrawn
+  provider is still stopped and recorded. An `Error` other than the contained
+  `LinkageError` propagates after those stops. Only the last `Error` propagates;
+  earlier Errors and collected RuntimeExceptions are not attached, but their
+  providers remain `FAILED` with cleanup owed. During reload the new
+  configuration, reply limits and capability snapshot remain published; no
+  failures outcome is returned and server-extension reconciliation is skipped.
+  The lifecycle lock and reload monitor are released even on that path.
   A nickname change and the client's own `NICK` line are serialized with
   publication, so a notification always addresses the nickname the client
   knows at that point.
