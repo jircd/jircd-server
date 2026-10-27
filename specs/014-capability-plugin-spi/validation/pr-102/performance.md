@@ -13,7 +13,7 @@ Dedicated SC-005 measurements: the fan-out class ([CapabilityFanoutLoadTest](../
 
 ## Series 4 on AC power (decision-grade, T061)
 
-Run on 2026-10-26 from 21:34 with the laptop **on AC power** for the whole series. The power source and load average were recorded before every run and after the last, and the power source never changed ([raw/s4-power.txt](raw/s4-power.txt)). No other build, test or irctest was running. Both revisions used the current fan-out class, sha256 `4d4a7e5d358b438925d288fc30fced6a5c9c2f9b208b6e9cfd21705d71f6f1b8`; the baseline ran the byte-identical injected copy. The lifecycle class ran inside the candidate's `./gradlew loadTest`.
+Run on 2026-10-26 from 21:34 with the laptop **on AC power** for the whole series. The power source and load average were recorded before every run and after the last, and the power source never changed. No other build, test or irctest was running. Both revisions used the current fan-out class, sha256 `4d4a7e5d358b438925d288fc30fced6a5c9c2f9b208b6e9cfd21705d71f6f1b8`; the baseline ran the byte-identical injected copy. The lifecycle class ran inside the candidate's `./gradlew loadTest`.
 
 The order was:
 1. A warmup per revision, baseline then candidate.
@@ -117,7 +117,7 @@ No cause is claimed. The runs below show the spread behind these medians. For ex
 
 ### `./gradlew loadTest` on AC
 
-Both revisions passed every load test: 13 on the baseline (with the injected fan-out class) and 14 on the candidate. Raw output: [raw/loadtest-full-s4-baseline.txt](raw/loadtest-full-s4-baseline.txt), [raw/loadtest-full-s4-candidate.txt](raw/loadtest-full-s4-candidate.txt).
+Both revisions passed every load test: 13 on the baseline (with the injected fan-out class) and 14 on the candidate.
 
 | Load test | Baseline | Candidate |
 | --- | --- | --- |
@@ -148,10 +148,10 @@ Every framed group was whole (1,195 seen), and every session was coherent after 
 ## A/A control: baseline against baseline (AC)
 
 Run on 2026-10-26 from 21:54, to see how far two identical builds drift apart. Conditions:
-- **Power:** on AC for every run, recorded before each run and after the last ([raw/aa-power.txt](raw/aa-power.txt)). Nothing else heavy was running.
+- **Power:** on AC for every run, recorded before each run and after the last. Nothing else heavy was running.
 - **Build:** the baseline worktree (main `3b7d66d`) only, with the same injected fan-out class (sha256 `4d4a7e5d…f1b8`). Side A plays the baseline's role and side B the candidate's.
 - **Order:** the same pattern as series 4, a warmup per side, then the pairs B A, A B, B A, A B, B A.
-- **Outcome:** all 12 runs passed every assertion. No test server was left running. Raw per-run summaries: `raw/fanout-baseline-aa*.txt`.
+- **Outcome:** all 12 runs passed every assertion. No test server was left running.
 
 ```
 21:54:27 before aaA-warmup | Now drawing from 'AC Power' | load { 2.02 4.34 7.91 }
@@ -274,7 +274,7 @@ One warmup run per revision, then three series of five runs each:
 - **Series 2** (10:43): the order alternated (C B, B C, C B, B C, C B) to control for run order and heat.
 - **Series 3** (15:38, after the machine was suspended and resumed): a new warmup per revision, then the alternated order again (C B, B C, C B, B C, C B).
 
-All 34 runs passed. Raw per-run summaries are in [raw/](raw/) (`fanout-<revision>-<run>.txt`); the JUnit XML and the JFR recordings of each run are kept with the coordinator's scratch outputs.
+All 34 runs passed. The raw per-run output, JUnit XML and JFR recordings are kept outside the repository.
 
 ### Medians over series 1 and 2 (ten measured runs per revision)
 
@@ -441,7 +441,7 @@ Run 1 is the first complete run. It failed one of the test's own checks: readers
 
 ## `./gradlew loadTest` (existing budgets)
 
-One run per revision, baseline first, nothing else running. Both passed every load test: 13 on the baseline (with the fan-out class added as above) and 14 on the candidate (plus the lifecycle class). Raw output: [raw/loadtest-full-baseline.txt](raw/loadtest-full-baseline.txt), [raw/loadtest-full-candidate.txt](raw/loadtest-full-candidate.txt).
+One run per revision, baseline first, nothing else running. Both passed every load test: 13 on the baseline (with the fan-out class added as above) and 14 on the candidate (plus the lifecycle class).
 
 | Load test | Baseline | Candidate |
 | --- | --- | --- |
@@ -456,7 +456,7 @@ One run per revision, baseline first, nothing else running. Both passed every lo
 | CapabilityFanout, 1,000 recipients, message | 497,813/s, p99 382.1 ms, CPU 4,801 ms | 468,848/s (−5.8%), p99 405.7 ms (+6.2%), CPU 4,942 ms (+2.9%) |
 | CapabilityLifecycle (run 3) | — | wait + swap/prune p99 1.668 ms; enqueue p99 1.589 ms; REHASH change p99 16.827 ms; DEL receipt p99 20.664 ms |
 
-**Second run (15:39, after the resume, baseline first):** every load test passed on both revisions. Raw output: [raw/loadtest-full-s3-baseline.txt](raw/loadtest-full-s3-baseline.txt), [raw/loadtest-full-s3-candidate.txt](raw/loadtest-full-s3-candidate.txt).
+**Second run (15:39, after the resume, baseline first):** every load test passed on both revisions.
 
 | Load test | Baseline | Candidate |
 | --- | --- | --- |
