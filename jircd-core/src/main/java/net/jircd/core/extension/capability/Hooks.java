@@ -23,51 +23,51 @@ import net.jircd.core.session.OutboundMessage;
 /** The functional shapes of the typed hooks {@link CapabilityRegistrar} accepts. */
 public interface Hooks {
 
-  /** Reacts to a committed event with delivery intents for permitted peers. */
-  @FunctionalInterface
-  interface EventHook {
-    List<EventIntent> apply(CommittedEvent event);
-  }
+    /** Reacts to a committed event with delivery intents for permitted peers. */
+    @FunctionalInterface
+    interface EventHook {
+        List<EventIntent> apply(CommittedEvent event);
+    }
 
-  /** Selects forwarded client tags and provider-scoped request context. */
-  @FunctionalInterface
-  interface InboundTagHook {
-    InboundTagResult apply(InboundTags tags, RequestContext context);
-  }
+    /** Selects forwarded client tags and provider-scoped request context. */
+    @FunctionalInterface
+    interface InboundTagHook {
+        InboundTagResult apply(InboundTags tags, RequestContext context);
+    }
 
-  /** Adds delivery roles (sender copy) for an authorized delivery. */
-  @FunctionalInterface
-  interface RecipientHook {
-    Set<DeliveryRole> apply(DeliveryIntent intent, RequestContext context);
-  }
+    /** Adds delivery roles (sender copy) for an authorized delivery. */
+    @FunctionalInterface
+    interface RecipientHook {
+        Set<DeliveryRole> apply(DeliveryIntent intent, RequestContext context);
+    }
 
-  /** Contributes owned server tags; pure in the immutable message. */
-  @FunctionalInterface
-  interface OutboundTagHook {
-    Map<String, String> apply(OutboundMessage message);
-  }
+    /** Contributes owned server tags; pure in the immutable message. */
+    @FunctionalInterface
+    interface OutboundTagHook {
+        Map<String, String> apply(OutboundMessage message);
+    }
 
-  /** Replaces a member's status string with held symbols in PREFIX order. */
-  @FunctionalInterface
-  interface MemberStatusHook {
-    String apply(MemberSnapshot member);
-  }
+    /** Replaces a member's status string with held symbols in PREFIX order. */
+    @FunctionalInterface
+    interface MemberStatusHook {
+        String apply(MemberSnapshot member);
+    }
 
-  /** Replaces a NAMES member's identity token. */
-  @FunctionalInterface
-  interface NamesIdentityHook {
-    String apply(MemberSnapshot member);
-  }
+    /** Replaces a NAMES member's identity token. */
+    @FunctionalInterface
+    interface NamesIdentityHook {
+        String apply(MemberSnapshot member);
+    }
 
-  /** Contributes bounded text to a schema-declared reply slot. */
-  @FunctionalInterface
-  interface ReplyFieldHook {
-    String apply(MemberSnapshot member);
-  }
+    /** Contributes bounded text to a schema-declared reply slot. */
+    @FunctionalInterface
+    interface ReplyFieldHook {
+        String apply(MemberSnapshot member);
+    }
 
-  /** Frames a finite output group. */
-  @FunctionalInterface
-  interface OutputGroupHook {
-    FramingPlan apply(OutputGroup group, RequestContext context);
-  }
+    /** Frames a finite output group. */
+    @FunctionalInterface
+    interface OutputGroupHook {
+        FramingPlan apply(OutputGroup group, RequestContext context);
+    }
 }

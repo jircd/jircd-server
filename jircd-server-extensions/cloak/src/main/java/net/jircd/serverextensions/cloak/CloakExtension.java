@@ -32,34 +32,34 @@ import net.jircd.core.extension.ServerExtension;
  */
 public final class CloakExtension implements ServerExtension, HostnameDisplayExtension {
 
-  public static final String ID = "cloak";
-  private static final String HASH_ALGORITHM = "SHA-256";
+    public static final String ID = "cloak";
+    private static final String HASH_ALGORITHM = "SHA-256";
 
-  @Override
-  public String id() {
-    return ID;
-  }
-
-  @Override
-  public String extensionPoint() {
-    return "hostname-display";
-  }
-
-  @Override
-  public void start(ServerContext context) {}
-
-  @Override
-  public void stop() {}
-
-  /** A stable, deterministic, non-reversible-in-practice value — no algorithm is mandated. */
-  @Override
-  public String display(String realHostname) {
-    try {
-      MessageDigest digest = MessageDigest.getInstance(HASH_ALGORITHM);
-      byte[] hash = digest.digest(realHostname.getBytes(StandardCharsets.UTF_8));
-      return "user-" + HexFormat.of().formatHex(hash, 0, 8);
-    } catch (NoSuchAlgorithmException e) {
-      throw new IllegalStateException(HASH_ALGORITHM + " is always available on the JDK", e);
+    @Override
+    public String id() {
+        return ID;
     }
-  }
+
+    @Override
+    public String extensionPoint() {
+        return "hostname-display";
+    }
+
+    @Override
+    public void start(ServerContext context) {}
+
+    @Override
+    public void stop() {}
+
+    /** A stable, deterministic, non-reversible-in-practice value — no algorithm is mandated. */
+    @Override
+    public String display(String realHostname) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance(HASH_ALGORITHM);
+            byte[] hash = digest.digest(realHostname.getBytes(StandardCharsets.UTF_8));
+            return "user-" + HexFormat.of().formatHex(hash, 0, 8);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException(HASH_ALGORITHM + " is always available on the JDK", e);
+        }
+    }
 }

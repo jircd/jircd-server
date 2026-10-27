@@ -72,483 +72,517 @@ import org.slf4j.LoggerFactory;
  */
 public final class JircdServerApplication {
 
-  private static final Logger LOG = LoggerFactory.getLogger(JircdServerApplication.class);
+    private static final Logger LOG = LoggerFactory.getLogger(JircdServerApplication.class);
 
-  private final NicknameRegistry nicknameRegistry = new NicknameRegistry();
-  private final net.jircd.core.session.UserStatistics userStatistics =
-      new net.jircd.core.session.UserStatistics();
-  private final ChannelRegistry channelRegistry = new ChannelRegistry();
-  private final ExtensionRegistry extensionRegistry = new ExtensionRegistry();
-  private final WhowasHistory whowasHistory;
-  private final DisconnectCleanup disconnectCleanup;
-  private final ConnectionHandler connectionHandler;
-  private final Instant startedAt = Instant.now();
+    private final NicknameRegistry nicknameRegistry = new NicknameRegistry();
+    private final net.jircd.core.session.UserStatistics userStatistics =
+            new net.jircd.core.session.UserStatistics();
+    private final ChannelRegistry channelRegistry = new ChannelRegistry();
+    private final ExtensionRegistry extensionRegistry = new ExtensionRegistry();
+    private final WhowasHistory whowasHistory;
+    private final DisconnectCleanup disconnectCleanup;
+    private final ConnectionHandler connectionHandler;
+    private final Instant startedAt = Instant.now();
 
-  private volatile ServerConfiguration configuration;
-  private volatile String serverName;
-  private final String serverVersion;
-  private final ConfigurationReloader reloader;
+    private volatile ServerConfiguration configuration;
+    private volatile String serverName;
+    private final String serverVersion;
+    private final ConfigurationReloader reloader;
 
-  private PlaintextListener plaintextListener;
-  private TlsListener tlsListener;
-  private final List<Closeable> ownedListeners = new ArrayList<>();
+    private PlaintextListener plaintextListener;
+    private TlsListener tlsListener;
+    private final List<Closeable> ownedListeners = new ArrayList<>();
 
-  public JircdServerApplication(Path configPath) throws ConfigurationException, IOException {
-    this(configPath, socket -> {});
-  }
-
-  /**
-   * Test seam for accepted-socket setup, such as deterministic backpressure. This is not a server
-   * configuration setting; socket ownership stays with the application.
-   */
-  public JircdServerApplication(Path configPath, Consumer<Socket> acceptedSocketCustomizer)
-      throws ConfigurationException, IOException {
-    this(configPath, acceptedSocketCustomizer, ConnectionHandler.DEFAULT_REJECTION_DEADLINE);
-  }
-
-  /** Test-only deadline override, kept separate from the administrator configuration. */
-  JircdServerApplication(
-      Path configPath, Consumer<Socket> acceptedSocketCustomizer, Duration rejectionDeadline)
-      throws ConfigurationException, IOException {
-    extensionRegistry.discover(Thread.currentThread().getContextClassLoader());
-
-    Set<String> knownCapabilityIds =
-        extensionRegistry.all().stream()
-            .filter(net.jircd.core.extension.CapabilityExtension.class::isInstance)
-            .map(net.jircd.core.extension.Extension::id)
-            .collect(java.util.stream.Collectors.toSet());
-    Set<String> knownServerExtensionIds =
-        extensionRegistry.all().stream()
-            .filter(e -> !(e instanceof net.jircd.core.extension.CapabilityExtension))
-            .map(net.jircd.core.extension.Extension::id)
-            .collect(java.util.stream.Collectors.toSet());
-    ConfigurationLoader loader =
-        new ConfigurationLoader(
-            knownCapabilityIds,
-            knownServerExtensionIds,
-            extensionRegistry::discoveredReplyBudgetCatalog);
-
-    try (InputStream in = new FileInputStream(configPath.toFile())) {
-      this.configuration = loader.load(in);
+    public JircdServerApplication(Path configPath) throws ConfigurationException, IOException {
+        this(configPath, socket -> {});
     }
 
-    this.serverVersion = resolveServerVersion();
-    this.serverName = configuration.serverName();
-    extensionRegistry.updateConfiguredLengths(
-        configuration.nicknameMaxLength(),
-        configuration.channelNameMaxLength(),
-        configuration.topicMaxLength(),
-        configuration.maxModesPerCommand());
-
-    this.reloader = new ConfigurationReloader(configPath, loader, extensionRegistry, configuration);
-    this.whowasHistory = new WhowasHistory(() -> reloader.current().whowasHistorySize());
-    this.disconnectCleanup =
-        new DisconnectCleanup(
-            nicknameRegistry, channelRegistry, whowasHistory, extensionRegistry, userStatistics);
-
-    this.connectionHandler =
-        new ConnectionHandler(
-            extensionRegistry,
-            disconnectCleanup,
-            () -> serverName,
-            new ConnectionHandler.Settings(
-                () -> reloader.current().rateLimit(),
-                () -> reloader.current().keepAliveFrequencySeconds(),
-                () -> reloader.current().sendqLimitBytes(),
-                () -> reloader.current().connectionLimits(),
-                rejectionDeadline,
-                () -> Duration.ofSeconds(reloader.current().registrationTimeoutSeconds())),
-            acceptedSocketCustomizer);
-    registerStory1Handlers();
-
-    extensionRegistry.attachContext(
-        new net.jircd.core.extension.ServerContext(
-            nicknameRegistry,
-            channelRegistry,
-            extensionRegistry,
-            () -> serverName,
-            reloader,
-            disconnectCleanup,
-            connectionHandler.commandRegistrar(),
-            extensionRegistry.capabilityServices()));
-
-    enableConfiguredExtensions();
-  }
-
-  private void enableConfiguredExtensions() {
-    configuration
-        .capabilityStates()
-        .forEach(
-            (id, enabled) -> {
-              if (enabled) {
-                extensionRegistry.enable(id);
-              }
-            });
-    configuration
-        .serverExtensionStates()
-        .forEach(
-            (id, enabled) -> {
-              if (enabled) {
-                extensionRegistry.enable(id);
-              }
-            });
-  }
-
-  private void registerStory1Handlers() {
-    var motd =
-        new net.jircd.core.session.command.MotdService(
-            () -> serverName, () -> reloader.current().motdPath());
-    var registrationCompletion =
-        new net.jircd.core.session.command.RegistrationCompletion(
-            () -> serverName, serverVersion, startedAt, extensionRegistry, userStatistics, motd);
-    connectionHandler.registerHandler(
-        Command.PASS, new net.jircd.core.session.command.PassCommandHandler(() -> serverName));
-    connectionHandler.registerHandler(
-        Command.NICK,
-        new NickCommandHandler(
-            nicknameRegistry,
-            () -> serverName,
-            () -> reloader.current().nicknameMaxLength(),
-            registrationCompletion,
-            extensionRegistry));
-    connectionHandler.registerHandler(
-        Command.USER, new UserCommandHandler(() -> serverName, registrationCompletion));
-    connectionHandler.registerHandler(
-        Command.JOIN,
-        new JoinCommandHandler(
-            channelRegistry,
-            extensionRegistry,
-            () -> serverName,
-            () -> reloader.current().channelNameMaxLength()));
-    connectionHandler.registerHandler(
-        Command.PART, new PartCommandHandler(channelRegistry, extensionRegistry, () -> serverName));
-    connectionHandler.registerHandler(
-        Command.PRIVMSG,
-        new MessageCommandHandler(
-            channelRegistry, nicknameRegistry, extensionRegistry, () -> serverName, false));
-    connectionHandler.registerHandler(
-        Command.NOTICE,
-        new MessageCommandHandler(
-            channelRegistry, nicknameRegistry, extensionRegistry, () -> serverName, true));
-    connectionHandler.registerHandler(Command.QUIT, new QuitCommandHandler(disconnectCleanup));
-    connectionHandler.registerHandler(
-        Command.TOPIC,
-        new TopicCommandHandler(
-            channelRegistry,
-            extensionRegistry,
-            () -> serverName,
-            () -> reloader.current().topicMaxLength()));
-    connectionHandler.registerHandler(
-        Command.NAMES,
-        new NamesCommandHandler(channelRegistry, extensionRegistry, () -> serverName));
-    connectionHandler.registerHandler(
-        Command.LIST, new ListCommandHandler(channelRegistry, extensionRegistry, () -> serverName));
-    connectionHandler.registerHandler(
-        Command.WHOIS,
-        new WhoisCommandHandler(nicknameRegistry, extensionRegistry, () -> serverName));
-    connectionHandler.registerHandler(
-        Command.WHO,
-        new WhoCommandHandler(
-            channelRegistry,
-            nicknameRegistry,
-            extensionRegistry,
-            () -> serverName,
-            () -> reloader.current().whoMaskEnabled()));
-    connectionHandler.registerHandler(Command.PING, PingPongCommandHandler.ping(() -> serverName));
-    connectionHandler.registerHandler(Command.PONG, PingPongCommandHandler.pong());
-    connectionHandler.registerHandler(
-        Command.CAP,
-        new CapCommandHandler(
-            new CapabilityNegotiator(extensionRegistry), () -> serverName, registrationCompletion));
-    registerModerationHandlers();
-    registerExtendedCommandHandlers(motd);
-  }
-
-  /**
-   * VERSION/TIME/LUSERS/AWAY/WHOWAS (002-extended-irc-commands), plus MOTD, ISON, ADMIN, STATS and
-   * HELP/HELPOP.
-   */
-  private void registerExtendedCommandHandlers(net.jircd.core.session.command.MotdService motd) {
-    connectionHandler.registerHandler(
-        Command.MOTD,
-        new net.jircd.core.session.command.MotdCommandHandler(motd, () -> serverName));
-    connectionHandler.registerHandler(
-        Command.ISON,
-        new net.jircd.core.session.command.IsonCommandHandler(nicknameRegistry, () -> serverName));
-    connectionHandler.registerHandler(
-        Command.ADMIN,
-        new net.jircd.core.session.command.AdminCommandHandler(
-            () -> serverName, () -> reloader.current().adminContact()));
-    connectionHandler.registerHandler(
-        Command.STATS,
-        new net.jircd.core.session.command.StatsCommandHandler(
-            () -> serverName, startedAt, java.time.Clock.systemUTC()));
-    var help = new net.jircd.core.session.command.HelpCommandHandler(() -> serverName);
-    connectionHandler.registerHandler(Command.HELP, help);
-    connectionHandler.registerHandler(Command.HELPOP, help);
-    connectionHandler.registerHandler(
-        Command.VERSION,
-        new VersionCommandHandler(() -> serverName, serverVersion, extensionRegistry));
-    connectionHandler.registerHandler(Command.TIME, new TimeCommandHandler(() -> serverName));
-    connectionHandler.registerHandler(
-        Command.USERHOST,
-        new net.jircd.core.session.command.UserhostCommandHandler(
-            nicknameRegistry, extensionRegistry, () -> serverName));
-    connectionHandler.registerHandler(
-        Command.INFO,
-        new net.jircd.core.session.command.InfoCommandHandler(() -> serverName, serverVersion));
-    connectionHandler.registerHandler(
-        Command.LUSERS,
-        new LusersCommandHandler(
-            nicknameRegistry,
-            channelRegistry,
-            userStatistics,
-            connectionHandler::unregisteredConnectionCount,
-            () -> serverName));
-    connectionHandler.registerHandler(
-        Command.AWAY, new AwayCommandHandler(() -> serverName, extensionRegistry));
-    connectionHandler.registerHandler(
-        Command.WHOWAS, new WhowasCommandHandler(whowasHistory, () -> serverName));
-  }
-
-  /** {@code KICK}/channel-{@code MODE}/{@code INVITE} (Story 5, FR-013/FR-014/FR-064/FR-065). */
-  private void registerModerationHandlers() {
-    connectionHandler.registerHandler(
-        Command.KICK,
-        new net.jircd.core.session.command.KickCommandHandler(
-            channelRegistry, extensionRegistry, () -> serverName));
-    connectionHandler.registerHandler(
-        Command.INVITE,
-        new net.jircd.core.session.command.InviteCommandHandler(
-            channelRegistry,
-            nicknameRegistry,
-            extensionRegistry,
-            () -> serverName,
-            () -> reloader.current().channelNameMaxLength()));
-
-    var userModeHandler = new UserModeCommandHandler(() -> serverName);
-    var channelModeHandler =
-        new net.jircd.core.session.command.ModeCommandHandler(
-            channelRegistry,
-            nicknameRegistry,
-            extensionRegistry,
-            () -> serverName,
-            () -> reloader.current().maxModesPerCommand());
-    connectionHandler.registerHandler(
-        Command.MODE,
-        (session, message) -> {
-          if (!message.params().isEmpty() && message.params().getFirst().startsWith("#")) {
-            channelModeHandler.handle(session, message);
-          } else {
-            userModeHandler.handle(session, message);
-          }
-        });
-  }
-
-  public synchronized void start() throws IOException, GeneralSecurityException {
-    connectionHandler.startAccepting();
-    // No TLS entry in the zero-config default (004-fix-tls-certificate, research.md "The
-    // zero-config default listener list") — a TLS listener with no certificate configured now
-    // refuses to start, so defaulting to one here would break the simplest possible quickstart.
-    List<ServerConfiguration.Listener> listeners =
-        configuration.listeners().isEmpty()
-            ? List.of(new ServerConfiguration.Listener(6667, false))
-            : configuration.listeners();
-    int previousListenerCount = ownedListeners.size();
-    // These aliases remain owned by ownedListeners; rollback must not close them.
-    @SuppressWarnings("PMD.CloseResource")
-    PlaintextListener previousPlaintextListener = plaintextListener;
-    @SuppressWarnings("PMD.CloseResource")
-    TlsListener previousTlsListener = tlsListener;
-    try {
-      startListeners(listeners);
-    } catch (IOException | GeneralSecurityException | RuntimeException failure) {
-      rollbackStart(failure, previousListenerCount);
-      plaintextListener = previousPlaintextListener;
-      tlsListener = previousTlsListener;
-      throw failure;
+    /**
+     * Test seam for accepted-socket setup, such as deterministic backpressure. This is not a server
+     * configuration setting; socket ownership stays with the application.
+     */
+    public JircdServerApplication(Path configPath, Consumer<Socket> acceptedSocketCustomizer)
+            throws ConfigurationException, IOException {
+        this(configPath, acceptedSocketCustomizer, ConnectionHandler.DEFAULT_REJECTION_DEADLINE);
     }
-  }
 
-  private void startListeners(List<ServerConfiguration.Listener> listeners)
-      throws IOException, GeneralSecurityException {
-    for (ServerConfiguration.Listener listener : listeners) {
-      if (listener.tls()) {
-        tlsListener = new TlsListener(listener, connectionHandler);
-        ownedListeners.add(tlsListener);
-        tlsListener.start();
-        LOG.info("TLS listener started on port {}", listener.port());
-      } else {
-        plaintextListener = new PlaintextListener(listener, connectionHandler);
-        ownedListeners.add(plaintextListener);
-        plaintextListener.start();
-        LOG.info("Plaintext listener started on port {}", listener.port());
-      }
-    }
-  }
+    /** Test-only deadline override, kept separate from the administrator configuration. */
+    JircdServerApplication(
+            Path configPath, Consumer<Socket> acceptedSocketCustomizer, Duration rejectionDeadline)
+            throws ConfigurationException, IOException {
+        extensionRegistry.discover(Thread.currentThread().getContextClassLoader());
 
-  /** Closes listeners and connections from a failed start; cleanup failures are suppressed. */
-  private void rollbackStart(Exception failure, int previousListenerCount) {
-    try {
-      closeListeners(
-          ownedListeners.subList(previousListenerCount, ownedListeners.size()),
-          System.nanoTime() + Duration.ofSeconds(3).toNanos());
-    } catch (IOException | RuntimeException cleanupFailure) {
-      suppressUnlessSame(failure, cleanupFailure);
-    }
-    if (previousListenerCount == 0) {
-      // Nothing else was serving, so every connection belongs to this failed attempt.
-      try {
-        connectionHandler.closeConnections(Duration.ofSeconds(3));
-      } catch (IOException | RuntimeException cleanupFailure) {
-        suppressUnlessSame(failure, cleanupFailure);
-      }
-    }
-  }
+        Set<String> knownCapabilityIds =
+                extensionRegistry.all().stream()
+                        .filter(net.jircd.core.extension.CapabilityExtension.class::isInstance)
+                        .map(net.jircd.core.extension.Extension::id)
+                        .collect(java.util.stream.Collectors.toSet());
+        Set<String> knownServerExtensionIds =
+                extensionRegistry.all().stream()
+                        .filter(e -> !(e instanceof net.jircd.core.extension.CapabilityExtension))
+                        .map(net.jircd.core.extension.Extension::id)
+                        .collect(java.util.stream.Collectors.toSet());
+        ConfigurationLoader loader =
+                new ConfigurationLoader(
+                        knownCapabilityIds,
+                        knownServerExtensionIds,
+                        extensionRegistry::discoveredReplyBudgetCatalog);
 
-  private static void suppressUnlessSame(Exception failure, Exception cleanupFailure) {
-    if (failure != cleanupFailure) {
-      failure.addSuppressed(cleanupFailure);
-    }
-  }
-
-  /**
-   * Stops listeners and accepted connections within one 30-second budget. Connection cleanup is
-   * attempted even when a listener fails; additional failures are suppressed on the first failure.
-   */
-  public synchronized void stop() throws IOException {
-    long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
-    connectionHandler.stopAccepting();
-    Exception failure = null;
-    try {
-      closeListeners(ownedListeners, deadline);
-    } catch (IOException | RuntimeException listenerFailure) {
-      failure = listenerFailure;
-    }
-    try {
-      connectionHandler.closeConnections(remainingShutdownTime(deadline));
-    } catch (IOException | RuntimeException connectionFailure) {
-      if (failure == null) {
-        failure = connectionFailure;
-      } else if (failure != connectionFailure) {
-        failure.addSuppressed(connectionFailure);
-      }
-    }
-    if (failure instanceof IOException ioFailure) {
-      throw ioFailure;
-    }
-    if (failure instanceof RuntimeException runtimeFailure) {
-      throw runtimeFailure;
-    }
-  }
-
-  private static Duration remainingShutdownTime(long deadline) {
-    return Duration.ofNanos(Math.max(1, deadline - System.nanoTime()));
-  }
-
-  // Successful closes relinquish ownership; failed resources remain available for a retry.
-  @SuppressWarnings("PMD.CloseResource")
-  private static void closeListeners(List<Closeable> listeners, long deadline) throws IOException {
-    List<Exception> failures = new ArrayList<>();
-    var iterator = listeners.iterator();
-    while (iterator.hasNext()) {
-      Closeable listener = iterator.next();
-      try {
-        switch (listener) {
-          case PlaintextListener plaintext -> plaintext.close(remainingShutdownTime(deadline));
-          case TlsListener tls -> tls.close(remainingShutdownTime(deadline));
-          default -> listener.close();
+        try (InputStream in = new FileInputStream(configPath.toFile())) {
+            this.configuration = loader.load(in);
         }
-        iterator.remove();
-      } catch (IOException | RuntimeException closeFailure) {
-        failures.add(closeFailure);
-      }
+
+        this.serverVersion = resolveServerVersion();
+        this.serverName = configuration.serverName();
+        extensionRegistry.updateConfiguredLengths(
+                configuration.nicknameMaxLength(),
+                configuration.channelNameMaxLength(),
+                configuration.topicMaxLength(),
+                configuration.maxModesPerCommand());
+
+        this.reloader =
+                new ConfigurationReloader(configPath, loader, extensionRegistry, configuration);
+        this.whowasHistory = new WhowasHistory(() -> reloader.current().whowasHistorySize());
+        this.disconnectCleanup =
+                new DisconnectCleanup(
+                        nicknameRegistry,
+                        channelRegistry,
+                        whowasHistory,
+                        extensionRegistry,
+                        userStatistics);
+
+        this.connectionHandler =
+                new ConnectionHandler(
+                        extensionRegistry,
+                        disconnectCleanup,
+                        () -> serverName,
+                        new ConnectionHandler.Settings(
+                                () -> reloader.current().rateLimit(),
+                                () -> reloader.current().keepAliveFrequencySeconds(),
+                                () -> reloader.current().sendqLimitBytes(),
+                                () -> reloader.current().connectionLimits(),
+                                rejectionDeadline,
+                                () ->
+                                        Duration.ofSeconds(
+                                                reloader.current().registrationTimeoutSeconds())),
+                        acceptedSocketCustomizer);
+        registerStory1Handlers();
+
+        extensionRegistry.attachContext(
+                new net.jircd.core.extension.ServerContext(
+                        nicknameRegistry,
+                        channelRegistry,
+                        extensionRegistry,
+                        () -> serverName,
+                        reloader,
+                        disconnectCleanup,
+                        connectionHandler.commandRegistrar(),
+                        extensionRegistry.capabilityServices()));
+
+        enableConfiguredExtensions();
     }
-    if (failures.isEmpty()) {
-      return;
+
+    private void enableConfiguredExtensions() {
+        configuration
+                .capabilityStates()
+                .forEach(
+                        (id, enabled) -> {
+                            if (enabled) {
+                                extensionRegistry.enable(id);
+                            }
+                        });
+        configuration
+                .serverExtensionStates()
+                .forEach(
+                        (id, enabled) -> {
+                            if (enabled) {
+                                extensionRegistry.enable(id);
+                            }
+                        });
     }
-    Exception primary =
-        failures.stream()
-            .filter(IOException.class::isInstance)
-            .findFirst()
-            .orElse(failures.getFirst());
-    for (Exception failure : failures) {
-      if (failure != primary) {
-        primary.addSuppressed(failure);
-      }
+
+    private void registerStory1Handlers() {
+        var motd =
+                new net.jircd.core.session.command.MotdService(
+                        () -> serverName, () -> reloader.current().motdPath());
+        var registrationCompletion =
+                new net.jircd.core.session.command.RegistrationCompletion(
+                        () -> serverName,
+                        serverVersion,
+                        startedAt,
+                        extensionRegistry,
+                        userStatistics,
+                        motd);
+        connectionHandler.registerHandler(
+                Command.PASS,
+                new net.jircd.core.session.command.PassCommandHandler(() -> serverName));
+        connectionHandler.registerHandler(
+                Command.NICK,
+                new NickCommandHandler(
+                        nicknameRegistry,
+                        () -> serverName,
+                        () -> reloader.current().nicknameMaxLength(),
+                        registrationCompletion,
+                        extensionRegistry));
+        connectionHandler.registerHandler(
+                Command.USER, new UserCommandHandler(() -> serverName, registrationCompletion));
+        connectionHandler.registerHandler(
+                Command.JOIN,
+                new JoinCommandHandler(
+                        channelRegistry,
+                        extensionRegistry,
+                        () -> serverName,
+                        () -> reloader.current().channelNameMaxLength()));
+        connectionHandler.registerHandler(
+                Command.PART,
+                new PartCommandHandler(channelRegistry, extensionRegistry, () -> serverName));
+        connectionHandler.registerHandler(
+                Command.PRIVMSG,
+                new MessageCommandHandler(
+                        channelRegistry,
+                        nicknameRegistry,
+                        extensionRegistry,
+                        () -> serverName,
+                        false));
+        connectionHandler.registerHandler(
+                Command.NOTICE,
+                new MessageCommandHandler(
+                        channelRegistry,
+                        nicknameRegistry,
+                        extensionRegistry,
+                        () -> serverName,
+                        true));
+        connectionHandler.registerHandler(Command.QUIT, new QuitCommandHandler(disconnectCleanup));
+        connectionHandler.registerHandler(
+                Command.TOPIC,
+                new TopicCommandHandler(
+                        channelRegistry,
+                        extensionRegistry,
+                        () -> serverName,
+                        () -> reloader.current().topicMaxLength()));
+        connectionHandler.registerHandler(
+                Command.NAMES,
+                new NamesCommandHandler(channelRegistry, extensionRegistry, () -> serverName));
+        connectionHandler.registerHandler(
+                Command.LIST,
+                new ListCommandHandler(channelRegistry, extensionRegistry, () -> serverName));
+        connectionHandler.registerHandler(
+                Command.WHOIS,
+                new WhoisCommandHandler(nicknameRegistry, extensionRegistry, () -> serverName));
+        connectionHandler.registerHandler(
+                Command.WHO,
+                new WhoCommandHandler(
+                        channelRegistry,
+                        nicknameRegistry,
+                        extensionRegistry,
+                        () -> serverName,
+                        () -> reloader.current().whoMaskEnabled()));
+        connectionHandler.registerHandler(
+                Command.PING, PingPongCommandHandler.ping(() -> serverName));
+        connectionHandler.registerHandler(Command.PONG, PingPongCommandHandler.pong());
+        connectionHandler.registerHandler(
+                Command.CAP,
+                new CapCommandHandler(
+                        new CapabilityNegotiator(extensionRegistry),
+                        () -> serverName,
+                        registrationCompletion));
+        registerModerationHandlers();
+        registerExtendedCommandHandlers(motd);
     }
-    if (primary instanceof IOException ioFailure) {
-      throw ioFailure;
+
+    /**
+     * VERSION/TIME/LUSERS/AWAY/WHOWAS (002-extended-irc-commands), plus MOTD, ISON, ADMIN, STATS
+     * and HELP/HELPOP.
+     */
+    private void registerExtendedCommandHandlers(net.jircd.core.session.command.MotdService motd) {
+        connectionHandler.registerHandler(
+                Command.MOTD,
+                new net.jircd.core.session.command.MotdCommandHandler(motd, () -> serverName));
+        connectionHandler.registerHandler(
+                Command.ISON,
+                new net.jircd.core.session.command.IsonCommandHandler(
+                        nicknameRegistry, () -> serverName));
+        connectionHandler.registerHandler(
+                Command.ADMIN,
+                new net.jircd.core.session.command.AdminCommandHandler(
+                        () -> serverName, () -> reloader.current().adminContact()));
+        connectionHandler.registerHandler(
+                Command.STATS,
+                new net.jircd.core.session.command.StatsCommandHandler(
+                        () -> serverName, startedAt, java.time.Clock.systemUTC()));
+        var help = new net.jircd.core.session.command.HelpCommandHandler(() -> serverName);
+        connectionHandler.registerHandler(Command.HELP, help);
+        connectionHandler.registerHandler(Command.HELPOP, help);
+        connectionHandler.registerHandler(
+                Command.VERSION,
+                new VersionCommandHandler(() -> serverName, serverVersion, extensionRegistry));
+        connectionHandler.registerHandler(Command.TIME, new TimeCommandHandler(() -> serverName));
+        connectionHandler.registerHandler(
+                Command.USERHOST,
+                new net.jircd.core.session.command.UserhostCommandHandler(
+                        nicknameRegistry, extensionRegistry, () -> serverName));
+        connectionHandler.registerHandler(
+                Command.INFO,
+                new net.jircd.core.session.command.InfoCommandHandler(
+                        () -> serverName, serverVersion));
+        connectionHandler.registerHandler(
+                Command.LUSERS,
+                new LusersCommandHandler(
+                        nicknameRegistry,
+                        channelRegistry,
+                        userStatistics,
+                        connectionHandler::unregisteredConnectionCount,
+                        () -> serverName));
+        connectionHandler.registerHandler(
+                Command.AWAY, new AwayCommandHandler(() -> serverName, extensionRegistry));
+        connectionHandler.registerHandler(
+                Command.WHOWAS, new WhowasCommandHandler(whowasHistory, () -> serverName));
     }
-    throw (RuntimeException) primary;
-  }
 
-  public ConfigurationReloader reloader() {
-    return reloader;
-  }
+    /** {@code KICK}/channel-{@code MODE}/{@code INVITE} (Story 5, FR-013/FR-014/FR-064/FR-065). */
+    private void registerModerationHandlers() {
+        connectionHandler.registerHandler(
+                Command.KICK,
+                new net.jircd.core.session.command.KickCommandHandler(
+                        channelRegistry, extensionRegistry, () -> serverName));
+        connectionHandler.registerHandler(
+                Command.INVITE,
+                new net.jircd.core.session.command.InviteCommandHandler(
+                        channelRegistry,
+                        nicknameRegistry,
+                        extensionRegistry,
+                        () -> serverName,
+                        () -> reloader.current().channelNameMaxLength()));
 
-  public int plaintextPort() {
-    return plaintextListener.boundPort();
-  }
-
-  public int tlsPort() {
-    return tlsListener.boundPort();
-  }
-
-  /** Test seam for exercising acceptance and connection-drain lifecycle independently. */
-  ConnectionHandler connectionHandlerForTesting() {
-    return connectionHandler;
-  }
-
-  public ExtensionRegistry extensionRegistry() {
-    return extensionRegistry;
-  }
-
-  public NicknameRegistry nicknameRegistry() {
-    return nicknameRegistry;
-  }
-
-  public ChannelRegistry channelRegistry() {
-    return channelRegistry;
-  }
-
-  public String serverName() {
-    return serverName;
-  }
-
-  private String resolveServerVersion() throws IOException {
-    try (InputStream in =
-        getClass().getClassLoader().getResourceAsStream("net/jircd/server/version.properties")) {
-      if (in == null) {
-        throw new IOException("net/jircd/server/version.properties resource is missing");
-      }
-      Properties properties = new Properties();
-      properties.load(in);
-      String version = properties.getProperty("version");
-      if (version == null || version.isBlank()) {
-        throw new IOException("net/jircd/server/version.properties has no 'version' entry");
-      }
-      return version;
+        var userModeHandler = new UserModeCommandHandler(() -> serverName);
+        var channelModeHandler =
+                new net.jircd.core.session.command.ModeCommandHandler(
+                        channelRegistry,
+                        nicknameRegistry,
+                        extensionRegistry,
+                        () -> serverName,
+                        () -> reloader.current().maxModesPerCommand());
+        connectionHandler.registerHandler(
+                Command.MODE,
+                (session, message) -> {
+                    if (!message.params().isEmpty()
+                            && message.params().getFirst().startsWith("#")) {
+                        channelModeHandler.handle(session, message);
+                    } else {
+                        userModeHandler.handle(session, message);
+                    }
+                });
     }
-  }
 
-  public static void main(String[] args) throws InterruptedException {
-    Path configPath = Path.of(args.length > 0 ? args[0] : "jircd.yaml");
-    JircdServerApplication application;
-    try {
-      application = new JircdServerApplication(configPath);
-      application.start();
-    } catch (ConfigurationException e) {
-      LOG.error("Refusing to start: {}", e.getMessage());
-      System.exit(1);
-      return;
-    } catch (IOException | GeneralSecurityException e) {
-      LOG.error("Refusing to start: {}", e.getMessage());
-      System.exit(1);
-      return;
+    public synchronized void start() throws IOException, GeneralSecurityException {
+        connectionHandler.startAccepting();
+        // No TLS entry in the zero-config default (004-fix-tls-certificate, research.md "The
+        // zero-config default listener list") — a TLS listener with no certificate configured now
+        // refuses to start, so defaulting to one here would break the simplest possible quickstart.
+        List<ServerConfiguration.Listener> listeners =
+                configuration.listeners().isEmpty()
+                        ? List.of(new ServerConfiguration.Listener(6667, false))
+                        : configuration.listeners();
+        int previousListenerCount = ownedListeners.size();
+        // These aliases remain owned by ownedListeners; rollback must not close them.
+        @SuppressWarnings("PMD.CloseResource")
+        PlaintextListener previousPlaintextListener = plaintextListener;
+        @SuppressWarnings("PMD.CloseResource")
+        TlsListener previousTlsListener = tlsListener;
+        try {
+            startListeners(listeners);
+        } catch (IOException | GeneralSecurityException | RuntimeException failure) {
+            rollbackStart(failure, previousListenerCount);
+            plaintextListener = previousPlaintextListener;
+            tlsListener = previousTlsListener;
+            throw failure;
+        }
     }
-    SighupReloadHandler.install(application);
-    LOG.info("jircd started as {}", application.serverName());
-    Thread.currentThread().join();
-  }
+
+    private void startListeners(List<ServerConfiguration.Listener> listeners)
+            throws IOException, GeneralSecurityException {
+        for (ServerConfiguration.Listener listener : listeners) {
+            if (listener.tls()) {
+                tlsListener = new TlsListener(listener, connectionHandler);
+                ownedListeners.add(tlsListener);
+                tlsListener.start();
+                LOG.info("TLS listener started on port {}", listener.port());
+            } else {
+                plaintextListener = new PlaintextListener(listener, connectionHandler);
+                ownedListeners.add(plaintextListener);
+                plaintextListener.start();
+                LOG.info("Plaintext listener started on port {}", listener.port());
+            }
+        }
+    }
+
+    /** Closes listeners and connections from a failed start; cleanup failures are suppressed. */
+    private void rollbackStart(Exception failure, int previousListenerCount) {
+        try {
+            closeListeners(
+                    ownedListeners.subList(previousListenerCount, ownedListeners.size()),
+                    System.nanoTime() + Duration.ofSeconds(3).toNanos());
+        } catch (IOException | RuntimeException cleanupFailure) {
+            suppressUnlessSame(failure, cleanupFailure);
+        }
+        if (previousListenerCount == 0) {
+            // Nothing else was serving, so every connection belongs to this failed attempt.
+            try {
+                connectionHandler.closeConnections(Duration.ofSeconds(3));
+            } catch (IOException | RuntimeException cleanupFailure) {
+                suppressUnlessSame(failure, cleanupFailure);
+            }
+        }
+    }
+
+    private static void suppressUnlessSame(Exception failure, Exception cleanupFailure) {
+        if (failure != cleanupFailure) {
+            failure.addSuppressed(cleanupFailure);
+        }
+    }
+
+    /**
+     * Stops listeners and accepted connections within one 30-second budget. Connection cleanup is
+     * attempted even when a listener fails; additional failures are suppressed on the first
+     * failure.
+     */
+    public synchronized void stop() throws IOException {
+        long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
+        connectionHandler.stopAccepting();
+        Exception failure = null;
+        try {
+            closeListeners(ownedListeners, deadline);
+        } catch (IOException | RuntimeException listenerFailure) {
+            failure = listenerFailure;
+        }
+        try {
+            connectionHandler.closeConnections(remainingShutdownTime(deadline));
+        } catch (IOException | RuntimeException connectionFailure) {
+            if (failure == null) {
+                failure = connectionFailure;
+            } else if (failure != connectionFailure) {
+                failure.addSuppressed(connectionFailure);
+            }
+        }
+        if (failure instanceof IOException ioFailure) {
+            throw ioFailure;
+        }
+        if (failure instanceof RuntimeException runtimeFailure) {
+            throw runtimeFailure;
+        }
+    }
+
+    private static Duration remainingShutdownTime(long deadline) {
+        return Duration.ofNanos(Math.max(1, deadline - System.nanoTime()));
+    }
+
+    // Successful closes relinquish ownership; failed resources remain available for a retry.
+    @SuppressWarnings("PMD.CloseResource")
+    private static void closeListeners(List<Closeable> listeners, long deadline)
+            throws IOException {
+        List<Exception> failures = new ArrayList<>();
+        var iterator = listeners.iterator();
+        while (iterator.hasNext()) {
+            Closeable listener = iterator.next();
+            try {
+                switch (listener) {
+                    case PlaintextListener plaintext ->
+                            plaintext.close(remainingShutdownTime(deadline));
+                    case TlsListener tls -> tls.close(remainingShutdownTime(deadline));
+                    default -> listener.close();
+                }
+                iterator.remove();
+            } catch (IOException | RuntimeException closeFailure) {
+                failures.add(closeFailure);
+            }
+        }
+        if (failures.isEmpty()) {
+            return;
+        }
+        Exception primary =
+                failures.stream()
+                        .filter(IOException.class::isInstance)
+                        .findFirst()
+                        .orElse(failures.getFirst());
+        for (Exception failure : failures) {
+            if (failure != primary) {
+                primary.addSuppressed(failure);
+            }
+        }
+        if (primary instanceof IOException ioFailure) {
+            throw ioFailure;
+        }
+        throw (RuntimeException) primary;
+    }
+
+    public ConfigurationReloader reloader() {
+        return reloader;
+    }
+
+    public int plaintextPort() {
+        return plaintextListener.boundPort();
+    }
+
+    public int tlsPort() {
+        return tlsListener.boundPort();
+    }
+
+    /** Test seam for exercising acceptance and connection-drain lifecycle independently. */
+    ConnectionHandler connectionHandlerForTesting() {
+        return connectionHandler;
+    }
+
+    public ExtensionRegistry extensionRegistry() {
+        return extensionRegistry;
+    }
+
+    public NicknameRegistry nicknameRegistry() {
+        return nicknameRegistry;
+    }
+
+    public ChannelRegistry channelRegistry() {
+        return channelRegistry;
+    }
+
+    public String serverName() {
+        return serverName;
+    }
+
+    private String resolveServerVersion() throws IOException {
+        try (InputStream in =
+                getClass()
+                        .getClassLoader()
+                        .getResourceAsStream("net/jircd/server/version.properties")) {
+            if (in == null) {
+                throw new IOException("net/jircd/server/version.properties resource is missing");
+            }
+            Properties properties = new Properties();
+            properties.load(in);
+            String version = properties.getProperty("version");
+            if (version == null || version.isBlank()) {
+                throw new IOException("net/jircd/server/version.properties has no 'version' entry");
+            }
+            return version;
+        }
+    }
+
+    public static void main(String[] args) throws InterruptedException {
+        Path configPath = Path.of(args.length > 0 ? args[0] : "jircd.yaml");
+        JircdServerApplication application;
+        try {
+            application = new JircdServerApplication(configPath);
+            application.start();
+        } catch (ConfigurationException e) {
+            LOG.error("Refusing to start: {}", e.getMessage());
+            System.exit(1);
+            return;
+        } catch (IOException | GeneralSecurityException e) {
+            LOG.error("Refusing to start: {}", e.getMessage());
+            System.exit(1);
+            return;
+        }
+        SighupReloadHandler.install(application);
+        LOG.info("jircd started as {}", application.serverName());
+        Thread.currentThread().join();
+    }
 }

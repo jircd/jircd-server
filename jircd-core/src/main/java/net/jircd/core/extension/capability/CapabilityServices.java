@@ -25,12 +25,12 @@ import java.util.function.Supplier;
  */
 public record CapabilityServices(Supplier<RuntimeSnapshot> source) {
 
-  public CapabilityServices {
-    Objects.requireNonNull(source);
-  }
+    public CapabilityServices {
+        Objects.requireNonNull(source);
+    }
 
-  /** The currently published providers and their hooks. */
-  public RuntimeSnapshot snapshot() {
-    return source.get();
-  }
+    /** The currently published providers and their hooks. */
+    public RuntimeSnapshot snapshot() {
+        return source.get();
+    }
 }

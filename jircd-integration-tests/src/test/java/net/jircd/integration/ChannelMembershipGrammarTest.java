@@ -28,71 +28,71 @@ import org.junit.jupiter.api.Test;
  */
 class ChannelMembershipGrammarTest {
 
-  @Test
-  void commaSeparatedJoinBecomesAMemberOfEveryNamedChannel() throws Exception {
-    try (TestServer server = TestServer.start();
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void commaSeparatedJoinBecomesAMemberOfEveryNamedChannel() throws Exception {
+        try (TestServer server = TestServer.start();
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      alice.registerAndAwaitWelcome("alice", "alice");
+            alice.registerAndAwaitWelcome("alice", "alice");
 
-      alice.send("JOIN #one,#two");
-      assertThat(alice.readUntil("353", Duration.ofSeconds(5))).contains("#one");
-      assertThat(alice.readUntil("353", Duration.ofSeconds(5))).contains("#two");
+            alice.send("JOIN #one,#two");
+            assertThat(alice.readUntil("353", Duration.ofSeconds(5))).contains("#one");
+            assertThat(alice.readUntil("353", Duration.ofSeconds(5))).contains("#two");
+        }
     }
-  }
 
-  @Test
-  void joiningAChannelWithAnExistingTopicReceivesItImmediately() throws Exception {
-    try (TestServer server = TestServer.start();
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
-        RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void joiningAChannelWithAnExistingTopicReceivesItImmediately() throws Exception {
+        try (TestServer server = TestServer.start();
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
+                RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      alice.registerAndAwaitWelcome("alice", "alice");
-      bob.registerAndAwaitWelcome("bob", "bob");
+            alice.registerAndAwaitWelcome("alice", "alice");
+            bob.registerAndAwaitWelcome("bob", "bob");
 
-      alice.send("JOIN #lobby");
-      alice.readUntil("353", Duration.ofSeconds(5));
-      alice.send("TOPIC #lobby :hello world");
-      alice.readUntil("TOPIC #lobby", Duration.ofSeconds(5));
+            alice.send("JOIN #lobby");
+            alice.readUntil("353", Duration.ofSeconds(5));
+            alice.send("TOPIC #lobby :hello world");
+            alice.readUntil("TOPIC #lobby", Duration.ofSeconds(5));
 
-      bob.send("JOIN #lobby");
-      assertThat(bob.readUntil("332", Duration.ofSeconds(5))).contains("hello world");
+            bob.send("JOIN #lobby");
+            assertThat(bob.readUntil("332", Duration.ofSeconds(5))).contains("hello world");
+        }
     }
-  }
 
-  @Test
-  void kickWithNoCommentDefaultsToTheKickersNickname() throws Exception {
-    try (TestServer server = TestServer.start();
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
-        RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void kickWithNoCommentDefaultsToTheKickersNickname() throws Exception {
+        try (TestServer server = TestServer.start();
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
+                RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      alice.registerAndAwaitWelcome("alice", "alice"); // operator
-      bob.registerAndAwaitWelcome("bob", "bob");
-      alice.send("JOIN #lobby");
-      alice.readUntil("353", Duration.ofSeconds(5));
-      bob.send("JOIN #lobby");
-      bob.readUntil("353", Duration.ofSeconds(5));
-      alice.readUntil("JOIN #lobby", Duration.ofSeconds(5));
+            alice.registerAndAwaitWelcome("alice", "alice"); // operator
+            bob.registerAndAwaitWelcome("bob", "bob");
+            alice.send("JOIN #lobby");
+            alice.readUntil("353", Duration.ofSeconds(5));
+            bob.send("JOIN #lobby");
+            bob.readUntil("353", Duration.ofSeconds(5));
+            alice.readUntil("JOIN #lobby", Duration.ofSeconds(5));
 
-      alice.send("KICK #lobby bob");
-      String kick = alice.readUntil("KICK #lobby bob", Duration.ofSeconds(5));
-      assertThat(kick).contains("alice");
+            alice.send("KICK #lobby bob");
+            String kick = alice.readUntil("KICK #lobby bob", Duration.ofSeconds(5));
+            assertThat(kick).contains("alice");
+        }
     }
-  }
 
-  @Test
-  void modePlusBListQueryFormReturnsTheBanList() throws Exception {
-    try (TestServer server = TestServer.start();
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void modePlusBListQueryFormReturnsTheBanList() throws Exception {
+        try (TestServer server = TestServer.start();
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      alice.registerAndAwaitWelcome("alice", "alice"); // operator
-      alice.send("JOIN #lobby");
-      alice.readUntil("353", Duration.ofSeconds(5));
-      alice.send("MODE #lobby +b mask!*@*");
-      alice.readUntil("MODE #lobby +b", Duration.ofSeconds(5));
+            alice.registerAndAwaitWelcome("alice", "alice"); // operator
+            alice.send("JOIN #lobby");
+            alice.readUntil("353", Duration.ofSeconds(5));
+            alice.send("MODE #lobby +b mask!*@*");
+            alice.readUntil("MODE #lobby +b", Duration.ofSeconds(5));
 
-      alice.send("MODE #lobby +b");
-      assertThat(alice.readUntil("368", Duration.ofSeconds(5))).contains("368");
+            alice.send("MODE #lobby +b");
+            assertThat(alice.readUntil("368", Duration.ofSeconds(5))).contains("368");
+        }
     }
-  }
 }

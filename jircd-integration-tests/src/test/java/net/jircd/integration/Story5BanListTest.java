@@ -23,45 +23,47 @@ import org.junit.jupiter.api.Test;
 
 class Story5BanListTest {
 
-  @Test
-  void banListQueryReturnsEntriesAndAddRemoveNoOpsAreSilent() throws Exception {
-    try (TestServer server = TestServer.start();
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void banListQueryReturnsEntriesAndAddRemoveNoOpsAreSilent() throws Exception {
+        try (TestServer server = TestServer.start();
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      alice.registerAndAwaitWelcome("alice", "alice"); // operator
-      alice.send("JOIN #lobby");
-      alice.readUntil("353", Duration.ofSeconds(5));
+            alice.registerAndAwaitWelcome("alice", "alice"); // operator
+            alice.send("JOIN #lobby");
+            alice.readUntil("353", Duration.ofSeconds(5));
 
-      // a channel with zero bans still closes the query with bare 368
-      alice.send("MODE #lobby b");
-      assertThat(alice.readUntil("368", Duration.ofSeconds(5))).contains("368");
+            // a channel with zero bans still closes the query with bare 368
+            alice.send("MODE #lobby b");
+            assertThat(alice.readUntil("368", Duration.ofSeconds(5))).contains("368");
 
-      alice.send("MODE #lobby +b mask1!*@*");
-      alice.readUntil("MODE #lobby +b mask1", Duration.ofSeconds(5));
-      alice.send("MODE #lobby +b mask2!*@*");
-      alice.readUntil("MODE #lobby +b mask2", Duration.ofSeconds(5));
+            alice.send("MODE #lobby +b mask1!*@*");
+            alice.readUntil("MODE #lobby +b mask1", Duration.ofSeconds(5));
+            alice.send("MODE #lobby +b mask2!*@*");
+            alice.readUntil("MODE #lobby +b mask2", Duration.ofSeconds(5));
 
-      alice.send("MODE #lobby b");
-      List<String> lines = alice.readLinesFor(Duration.ofSeconds(2));
-      long banEntries = lines.stream().filter(l -> l.contains("367")).count();
-      assertThat(banEntries).isEqualTo(2);
-      assertThat(lines).anyMatch(l -> l.contains("mask1"));
-      assertThat(lines).anyMatch(l -> l.contains("mask2"));
-      assertThat(lines).anyMatch(l -> l.contains("368"));
+            alice.send("MODE #lobby b");
+            List<String> lines = alice.readLinesFor(Duration.ofSeconds(2));
+            long banEntries = lines.stream().filter(l -> l.contains("367")).count();
+            assertThat(banEntries).isEqualTo(2);
+            assertThat(lines).anyMatch(l -> l.contains("mask1"));
+            assertThat(lines).anyMatch(l -> l.contains("mask2"));
+            assertThat(lines).anyMatch(l -> l.contains("368"));
 
-      // removing a mask not present is a silent no-op
-      alice.send("MODE #lobby -b notpresent!*@*");
-      alice.readUntil("MODE #lobby -b notpresent", Duration.ofSeconds(5));
-      alice.send("MODE #lobby b");
-      List<String> afterNoOpRemoval = alice.readLinesFor(Duration.ofSeconds(2));
-      assertThat(afterNoOpRemoval.stream().filter(l -> l.contains("367")).count()).isEqualTo(2);
+            // removing a mask not present is a silent no-op
+            alice.send("MODE #lobby -b notpresent!*@*");
+            alice.readUntil("MODE #lobby -b notpresent", Duration.ofSeconds(5));
+            alice.send("MODE #lobby b");
+            List<String> afterNoOpRemoval = alice.readLinesFor(Duration.ofSeconds(2));
+            assertThat(afterNoOpRemoval.stream().filter(l -> l.contains("367")).count())
+                    .isEqualTo(2);
 
-      // adding a mask already present doesn't grow the list
-      alice.send("MODE #lobby +b mask1!*@*");
-      alice.readUntil("MODE #lobby +b mask1", Duration.ofSeconds(5));
-      alice.send("MODE #lobby b");
-      List<String> afterDuplicateAdd = alice.readLinesFor(Duration.ofSeconds(2));
-      assertThat(afterDuplicateAdd.stream().filter(l -> l.contains("367")).count()).isEqualTo(2);
+            // adding a mask already present doesn't grow the list
+            alice.send("MODE #lobby +b mask1!*@*");
+            alice.readUntil("MODE #lobby +b mask1", Duration.ofSeconds(5));
+            alice.send("MODE #lobby b");
+            List<String> afterDuplicateAdd = alice.readLinesFor(Duration.ofSeconds(2));
+            assertThat(afterDuplicateAdd.stream().filter(l -> l.contains("367")).count())
+                    .isEqualTo(2);
+        }
     }
-  }
 }

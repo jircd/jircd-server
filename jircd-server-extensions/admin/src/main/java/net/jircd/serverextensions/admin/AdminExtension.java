@@ -30,55 +30,61 @@ import net.jircd.protocol.Command;
  */
 public final class AdminExtension implements ServerExtension {
 
-  public static final String ID = "admin";
+    public static final String ID = "admin";
 
-  private final OperAttemptTracker attempts = new OperAttemptTracker(Clock.systemUTC(), 10_000);
+    private final OperAttemptTracker attempts = new OperAttemptTracker(Clock.systemUTC(), 10_000);
 
-  @Override
-  public String id() {
-    return ID;
-  }
+    @Override
+    public String id() {
+        return ID;
+    }
 
-  @Override
-  public void start(ServerContext context) {
-    var registrar = context.commandRegistrar();
-    var extensionRegistry = context.extensionRegistry();
-    var serverName = context.serverName();
+    @Override
+    public void start(ServerContext context) {
+        var registrar = context.commandRegistrar();
+        var extensionRegistry = context.extensionRegistry();
+        var serverName = context.serverName();
 
-    registrar.register(
-        Command.OPER,
-        new OperCommandHandler(
-            serverName, context.configurationReloader(), context.disconnectCleanup(), attempts));
-    registrar.register(
-        Command.EXTENSION, new ExtensionCommandHandler(extensionRegistry, serverName));
-    registrar.register(
-        Command.REHASH,
-        new RehashCommandHandler(context.configurationReloader(), extensionRegistry, serverName));
-    registrar.register(
-        Command.WHOHOST,
-        new WhohostCommandHandler(context.nicknameRegistry(), extensionRegistry, serverName));
-    registrar.register(
-        Command.SAJOIN,
-        new SajoinCommandHandler(
-            context.channelRegistry(),
-            extensionRegistry,
-            serverName,
-            () -> context.configurationReloader().current().channelNameMaxLength()));
-    registrar.register(
-        Command.SAMODE,
-        new SamodeCommandHandler(context.channelRegistry(), extensionRegistry, serverName));
-    registrar.register(
-        Command.KILL,
-        new KillCommandHandler(
-            context.nicknameRegistry(),
-            extensionRegistry,
-            serverName,
-            context.disconnectCleanup()));
-    registrar.register(
-        Command.WALLOPS,
-        new WallopsCommandHandler(context.nicknameRegistry(), extensionRegistry, serverName));
-  }
+        registrar.register(
+                Command.OPER,
+                new OperCommandHandler(
+                        serverName,
+                        context.configurationReloader(),
+                        context.disconnectCleanup(),
+                        attempts));
+        registrar.register(
+                Command.EXTENSION, new ExtensionCommandHandler(extensionRegistry, serverName));
+        registrar.register(
+                Command.REHASH,
+                new RehashCommandHandler(
+                        context.configurationReloader(), extensionRegistry, serverName));
+        registrar.register(
+                Command.WHOHOST,
+                new WhohostCommandHandler(
+                        context.nicknameRegistry(), extensionRegistry, serverName));
+        registrar.register(
+                Command.SAJOIN,
+                new SajoinCommandHandler(
+                        context.channelRegistry(),
+                        extensionRegistry,
+                        serverName,
+                        () -> context.configurationReloader().current().channelNameMaxLength()));
+        registrar.register(
+                Command.SAMODE,
+                new SamodeCommandHandler(context.channelRegistry(), extensionRegistry, serverName));
+        registrar.register(
+                Command.KILL,
+                new KillCommandHandler(
+                        context.nicknameRegistry(),
+                        extensionRegistry,
+                        serverName,
+                        context.disconnectCleanup()));
+        registrar.register(
+                Command.WALLOPS,
+                new WallopsCommandHandler(
+                        context.nicknameRegistry(), extensionRegistry, serverName));
+    }
 
-  @Override
-  public void stop() {}
+    @Override
+    public void stop() {}
 }

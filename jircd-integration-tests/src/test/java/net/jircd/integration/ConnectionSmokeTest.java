@@ -26,22 +26,22 @@ import org.junit.jupiter.api.Test;
  */
 class ConnectionSmokeTest {
 
-  @Test
-  void connectsOverPlaintextAndTls() throws Exception {
-    try (TestServer server = TestServer.start()) {
-      try (RawIrcClient plaintext = RawIrcClient.connectPlaintext(server.plaintextPort())) {
-        plaintext.send("NICK plainuser");
-        plaintext.send("USER plainuser 0 * :Plain User");
-        String welcome = plaintext.readUntil(" 001 ", Duration.ofSeconds(5));
-        assertThat(welcome).contains("001");
-      }
+    @Test
+    void connectsOverPlaintextAndTls() throws Exception {
+        try (TestServer server = TestServer.start()) {
+            try (RawIrcClient plaintext = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+                plaintext.send("NICK plainuser");
+                plaintext.send("USER plainuser 0 * :Plain User");
+                String welcome = plaintext.readUntil(" 001 ", Duration.ofSeconds(5));
+                assertThat(welcome).contains("001");
+            }
 
-      try (RawIrcClient tls = RawIrcClient.connectTls(server.tlsPort())) {
-        tls.send("NICK tlsuser");
-        tls.send("USER tlsuser 0 * :TLS User");
-        String welcome = tls.readUntil(" 001 ", Duration.ofSeconds(5));
-        assertThat(welcome).contains("001");
-      }
+            try (RawIrcClient tls = RawIrcClient.connectTls(server.tlsPort())) {
+                tls.send("NICK tlsuser");
+                tls.send("USER tlsuser 0 * :TLS User");
+                String welcome = tls.readUntil(" 001 ", Duration.ofSeconds(5));
+                assertThat(welcome).contains("001");
+            }
+        }
     }
-  }
 }

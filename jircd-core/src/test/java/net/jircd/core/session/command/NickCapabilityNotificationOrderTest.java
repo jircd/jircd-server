@@ -42,120 +42,119 @@ import org.junit.jupiter.api.Test;
  */
 class NickCapabilityNotificationOrderTest {
 
-  private static final class Offer extends AbstractCapabilityExtension {
-    Offer() {
-      super("alpha");
+    private static final class Offer extends AbstractCapabilityExtension {
+        Offer() {
+            super("alpha");
+        }
     }
-  }
 
-  private final HandlerHarness harness = new HandlerHarness();
-  private final ExtensionRegistry registry = new ExtensionRegistry();
-  private final Set<ClientSession> live = ConcurrentHashMap.newKeySet();
+    private final HandlerHarness harness = new HandlerHarness();
+    private final ExtensionRegistry registry = new ExtensionRegistry();
+    private final Set<ClientSession> live = ConcurrentHashMap.newKeySet();
 
-  private NickCommandHandler nick() {
-    registry.attachContext(
-        new ServerContext(
-            null,
-            null,
-            registry,
-            () -> "irc.example",
-            null,
-            null,
-            null,
-            registry.capabilityServices()));
-    registry.attachLiveSessions(live);
-    return new NickCommandHandler(
-        harness.nicknames,
-        () -> "irc.example",
-        () -> 30,
-        new RegistrationCompletion(
-            () -> "irc.example", "test", Instant.now(), registry, new UserStatistics()),
-        registry);
-  }
-
-  @Test
-  void aNickChangeWaitsForAPublicationHoldingTheMutex() throws Exception {
-    NickCommandHandler handler = nick();
-    ClientSession alice = harness.register("alice");
-    live.add(alice);
-    CountDownLatch held = new CountDownLatch(1);
-    CountDownLatch release = new CountDownLatch(1);
-    Thread owner =
-        Thread.ofVirtual()
-            .start(
-                () ->
-                    registry
-                        .capabilityControl()
-                        .runUnderControl(
-                            () -> {
-                              held.countDown();
-                              try {
-                                release.await(5, TimeUnit.SECONDS);
-                              } catch (InterruptedException _) {
-                                Thread.currentThread().interrupt();
-                              }
-                            }));
-    assertThat(held.await(5, TimeUnit.SECONDS)).isTrue();
-    ByteArrayOutputStream out = new ByteArrayOutputStream();
-    try (SessionWriter writer = new SessionWriter(alice, out, TagRenderer.NONE)) {
-      alice.attachWriter(writer);
-      Thread change =
-          Thread.ofVirtual()
-              .start(
-                  () -> {
-                    try {
-                      handler.handle(alice, MessageParser.parse("NICK bob"));
-                    } catch (Exception e) {
-                      throw new IllegalStateException(e);
-                    }
-                  });
-      // Bounded: while a publication holds the mutex, the change has not happened yet.
-      assertThat(change.join(java.time.Duration.ofMillis(200))).isFalse();
-      assertThat(alice.nickname()).isEqualTo("alice");
-      release.countDown();
-      assertThat(change.join(java.time.Duration.ofSeconds(5))).isTrue();
-    } finally {
-      release.countDown();
-      owner.join(5000);
+    private NickCommandHandler nick() {
+        registry.attachContext(
+                new ServerContext(
+                        null,
+                        null,
+                        registry,
+                        () -> "irc.example",
+                        null,
+                        null,
+                        null,
+                        registry.capabilityServices()));
+        registry.attachLiveSessions(live);
+        return new NickCommandHandler(
+                harness.nicknames,
+                () -> "irc.example",
+                () -> 30,
+                new RegistrationCompletion(
+                        () -> "irc.example", "test", Instant.now(), registry, new UserStatistics()),
+                registry);
     }
-    assertThat(alice.nickname()).isEqualTo("bob");
-    assertThat(out.toString(StandardCharsets.UTF_8)).contains(" NICK bob");
-  }
 
-  @Test
-  void racingPublicationsAlwaysAddressTheNicknameTheClientCurrentlyKnows() throws Exception {
-    NickCommandHandler handler = nick();
-    registry.register(new Offer());
-    registry.enable("alpha");
-    ClientSession client = harness.register("n0");
-    client.recordCapVersion(302);
-    live.add(client);
-    ByteArrayOutputStream out = new ByteArrayOutputStream();
-    try (SessionWriter writer = new SessionWriter(client, out, TagRenderer.NONE)) {
-      client.attachWriter(writer);
-      Thread toggler =
-          Thread.ofVirtual()
-              .start(
-                  () -> {
-                    for (int i = 0; i < 200; i++) {
-                      registry.disable("alpha");
-                      registry.enable("alpha");
-                    }
-                  });
-      for (int i = 1; i <= 200; i++) {
-        handler.handle(client, MessageParser.parse("NICK n" + i));
-      }
-      toggler.join(10_000);
+    @Test
+    void aNickChangeWaitsForAPublicationHoldingTheMutex() throws Exception {
+        NickCommandHandler handler = nick();
+        ClientSession alice = harness.register("alice");
+        live.add(alice);
+        CountDownLatch held = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        Thread owner =
+                Thread.ofVirtual()
+                        .start(
+                                () ->
+                                        registry.capabilityControl()
+                                                .runUnderControl(
+                                                        () -> {
+                                                            held.countDown();
+                                                            try {
+                                                                release.await(5, TimeUnit.SECONDS);
+                                                            } catch (InterruptedException _) {
+                                                                Thread.currentThread().interrupt();
+                                                            }
+                                                        }));
+        assertThat(held.await(5, TimeUnit.SECONDS)).isTrue();
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        try (SessionWriter writer = new SessionWriter(alice, out, TagRenderer.NONE)) {
+            alice.attachWriter(writer);
+            Thread change =
+                    Thread.ofVirtual()
+                            .start(
+                                    () -> {
+                                        try {
+                                            handler.handle(alice, MessageParser.parse("NICK bob"));
+                                        } catch (Exception e) {
+                                            throw new IllegalStateException(e);
+                                        }
+                                    });
+            // Bounded: while a publication holds the mutex, the change has not happened yet.
+            assertThat(change.join(java.time.Duration.ofMillis(200))).isFalse();
+            assertThat(alice.nickname()).isEqualTo("alice");
+            release.countDown();
+            assertThat(change.join(java.time.Duration.ofSeconds(5))).isTrue();
+        } finally {
+            release.countDown();
+            owner.join(5000);
+        }
+        assertThat(alice.nickname()).isEqualTo("bob");
+        assertThat(out.toString(StandardCharsets.UTF_8)).contains(" NICK bob");
     }
-    String known = "n0";
-    List<String> lines = List.of(out.toString(StandardCharsets.UTF_8).split("\r\n"));
-    assertThat(lines).anyMatch(l -> l.contains(" CAP "));
-    for (String line : lines) {
-      if (line.contains(" NICK ")) {
-        known = line.substring(line.lastIndexOf(' ') + 1);
-      } else if (line.contains(" CAP ")) {
-        assertThat(line).as("after NICK %s", known).contains(" CAP " + known + " ");
-      }
+
+    @Test
+    void racingPublicationsAlwaysAddressTheNicknameTheClientCurrentlyKnows() throws Exception {
+        NickCommandHandler handler = nick();
+        registry.register(new Offer());
+        registry.enable("alpha");
+        ClientSession client = harness.register("n0");
+        client.recordCapVersion(302);
+        live.add(client);
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        try (SessionWriter writer = new SessionWriter(client, out, TagRenderer.NONE)) {
+            client.attachWriter(writer);
+            Thread toggler =
+                    Thread.ofVirtual()
+                            .start(
+                                    () -> {
+                                        for (int i = 0; i < 200; i++) {
+                                            registry.disable("alpha");
+                                            registry.enable("alpha");
+                                        }
+                                    });
+            for (int i = 1; i <= 200; i++) {
+                handler.handle(client, MessageParser.parse("NICK n" + i));
+            }
+            toggler.join(10_000);
+        }
+        String known = "n0";
+        List<String> lines = List.of(out.toString(StandardCharsets.UTF_8).split("\r\n"));
+        assertThat(lines).anyMatch(l -> l.contains(" CAP "));
+        for (String line : lines) {
+            if (line.contains(" NICK ")) {
+                known = line.substring(line.lastIndexOf(' ') + 1);
+            } else if (line.contains(" CAP ")) {
+                assertThat(line).as("after NICK %s", known).contains(" CAP " + known + " ");
+            }
+        }
     }
-  }
 }

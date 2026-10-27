@@ -32,46 +32,47 @@ import org.junit.jupiter.api.Test;
 @Tag("load")
 class KeepAliveLoadTest {
 
-  /**
-   * 009-connection-monitoring-log made the idle interval administrator-configurable (default 120s)
-   * instead of a hardcoded 30s constant — both tests below configure a short interval explicitly so
-   * this load test doesn't have to wait on the new, much larger default.
-   */
-  private static final String SHORT_KEEP_ALIVE_YAML = "keepAliveFrequencySeconds: 2\n";
+    /**
+     * 009-connection-monitoring-log made the idle interval administrator-configurable (default
+     * 120s) instead of a hardcoded 30s constant — both tests below configure a short interval
+     * explicitly so this load test doesn't have to wait on the new, much larger default.
+     */
+    private static final String SHORT_KEEP_ALIVE_YAML = "keepAliveFrequencySeconds: 2\n";
 
-  @Test
-  void idleConnectionIsProbedThenDisconnectedIfNeverAnswered() throws Exception {
-    try (TestServer server = TestServer.start(SHORT_KEEP_ALIVE_YAML);
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void idleConnectionIsProbedThenDisconnectedIfNeverAnswered() throws Exception {
+        try (TestServer server = TestServer.start(SHORT_KEEP_ALIVE_YAML);
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      alice.registerAndAwaitWelcome("alice", "alice");
+            alice.registerAndAwaitWelcome("alice", "alice");
 
-      // Past the configured 2s idle interval (plus tick granularity) with no traffic sent: a
-      // server-initiated PING must arrive.
-      assertThat(alice.readUntil("PING", Duration.ofSeconds(10))).contains("PING");
+            // Past the configured 2s idle interval (plus tick granularity) with no traffic sent: a
+            // server-initiated PING must arrive.
+            assertThat(alice.readUntil("PING", Duration.ofSeconds(10))).contains("PING");
 
-      // No PONG is sent in reply: past the 10s timeout (plus tick granularity and scheduling
-      // slack under the full load suite's contention — e.g. running alongside
-      // ConcurrentConnectionScaleLoadTest's 1,000 connections), the server closes the connection.
-      assertThatThrownBy(() -> alice.readUntil("_never_matches_", Duration.ofSeconds(20)))
-          .hasMessageContaining("Connection closed");
+            // No PONG is sent in reply: past the 10s timeout (plus tick granularity and scheduling
+            // slack under the full load suite's contention — e.g. running alongside
+            // ConcurrentConnectionScaleLoadTest's 1,000 connections), the server closes the
+            // connection.
+            assertThatThrownBy(() -> alice.readUntil("_never_matches_", Duration.ofSeconds(20)))
+                    .hasMessageContaining("Connection closed");
+        }
     }
-  }
 
-  @Test
-  void respondingToTheServersPingKeepsTheConnectionAlive() throws Exception {
-    try (TestServer server = TestServer.start(SHORT_KEEP_ALIVE_YAML);
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void respondingToTheServersPingKeepsTheConnectionAlive() throws Exception {
+        try (TestServer server = TestServer.start(SHORT_KEEP_ALIVE_YAML);
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      alice.registerAndAwaitWelcome("alice", "alice");
+            alice.registerAndAwaitWelcome("alice", "alice");
 
-      String ping = alice.readUntil("PING", Duration.ofSeconds(10));
-      String token = ping.substring(ping.indexOf("PING") + 5).replace(":", "").trim();
-      alice.send("PONG " + token);
+            String ping = alice.readUntil("PING", Duration.ofSeconds(10));
+            String token = ping.substring(ping.indexOf("PING") + 5).replace(":", "").trim();
+            alice.send("PONG " + token);
 
-      // Well past the original timeout window, the connection is still usable.
-      alice.send("JOIN #lobby");
-      assertThat(alice.readUntil("353", Duration.ofSeconds(15))).contains("353");
+            // Well past the original timeout window, the connection is still usable.
+            alice.send("JOIN #lobby");
+            assertThat(alice.readUntil("353", Duration.ofSeconds(15))).contains("353");
+        }
     }
-  }
 }

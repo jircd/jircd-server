@@ -22,72 +22,72 @@ package net.jircd.protocol;
  * given command this release.
  */
 public enum Command {
-  PASS,
-  NICK,
-  USER,
-  OPER,
-  MODE,
-  SERVICE,
-  QUIT,
-  SQUIT,
-  JOIN,
-  PART,
-  TOPIC,
-  NAMES,
-  LIST,
-  INVITE,
-  KICK,
-  PRIVMSG,
-  NOTICE,
-  MOTD,
-  LUSERS,
-  VERSION,
-  STATS,
-  LINKS,
-  TIME,
-  CONNECT,
-  TRACE,
-  ADMIN,
-  INFO,
-  SERVLIST,
-  SQUERY,
-  WHO,
-  WHOIS,
-  WHOWAS,
-  KILL,
-  PING,
-  PONG,
-  ERROR,
-  AWAY,
-  REHASH,
-  DIE,
-  RESTART,
-  SUMMON,
-  USERS,
-  WALLOPS,
-  USERHOST,
-  ISON,
-  CAP,
-  AUTHENTICATE,
-  TAGMSG,
-  EXTENSION,
-  WHOHOST,
-  SAJOIN,
-  SAMODE,
-  HELP,
-  HELPOP;
+    PASS,
+    NICK,
+    USER,
+    OPER,
+    MODE,
+    SERVICE,
+    QUIT,
+    SQUIT,
+    JOIN,
+    PART,
+    TOPIC,
+    NAMES,
+    LIST,
+    INVITE,
+    KICK,
+    PRIVMSG,
+    NOTICE,
+    MOTD,
+    LUSERS,
+    VERSION,
+    STATS,
+    LINKS,
+    TIME,
+    CONNECT,
+    TRACE,
+    ADMIN,
+    INFO,
+    SERVLIST,
+    SQUERY,
+    WHO,
+    WHOIS,
+    WHOWAS,
+    KILL,
+    PING,
+    PONG,
+    ERROR,
+    AWAY,
+    REHASH,
+    DIE,
+    RESTART,
+    SUMMON,
+    USERS,
+    WALLOPS,
+    USERHOST,
+    ISON,
+    CAP,
+    AUTHENTICATE,
+    TAGMSG,
+    EXTENSION,
+    WHOHOST,
+    SAJOIN,
+    SAMODE,
+    HELP,
+    HELPOP;
 
-  /**
-   * Resolves a wire command token to its {@link Command}, matched case-insensitively (FR-015 —
-   * {@code join}/{@code Join}/{@code JOIN} all resolve to the same entry). Returns {@code null} if
-   * the token does not name any recognized command.
-   */
-  public static Command fromToken(String token) {
-    for (Command command : values()) {
-      if (command.name().equalsIgnoreCase(token)) {
-        return command;
-      }
+    /**
+     * Resolves a wire command token to its {@link Command}, matched case-insensitively (FR-015 —
+     * {@code join}/{@code Join}/{@code JOIN} all resolve to the same entry). Returns {@code null}
+     * if the token does not name any recognized command.
+     */
+    public static Command fromToken(String token) {
+        for (Command command : values()) {
+            if (command.name().equalsIgnoreCase(token)) {
+                return command;
+            }
+        }
+        return null;
     }
-    return null;
-  }
 }

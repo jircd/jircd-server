@@ -22,25 +22,25 @@ import org.junit.jupiter.api.Test;
 
 class Story1ChatTest {
 
-  @Test
-  void twoClientsExchangePrivmsgInLobby() throws Exception {
-    try (TestServer server = TestServer.start();
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
-        RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void twoClientsExchangePrivmsgInLobby() throws Exception {
+        try (TestServer server = TestServer.start();
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
+                RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      alice.registerAndAwaitWelcome("alice", "alice");
-      bob.registerAndAwaitWelcome("bob", "bob");
+            alice.registerAndAwaitWelcome("alice", "alice");
+            bob.registerAndAwaitWelcome("bob", "bob");
 
-      alice.send("JOIN #lobby");
-      alice.readUntil("353", Duration.ofSeconds(5));
-      bob.send("JOIN #lobby");
-      bob.readUntil("353", Duration.ofSeconds(5));
+            alice.send("JOIN #lobby");
+            alice.readUntil("353", Duration.ofSeconds(5));
+            bob.send("JOIN #lobby");
+            bob.readUntil("353", Duration.ofSeconds(5));
 
-      alice.send("PRIVMSG #lobby :hello there");
-      String received = bob.readUntil("PRIVMSG #lobby", Duration.ofSeconds(5));
+            alice.send("PRIVMSG #lobby :hello there");
+            String received = bob.readUntil("PRIVMSG #lobby", Duration.ofSeconds(5));
 
-      assertThat(received).startsWith(":alice!alice@");
-      assertThat(received).contains("PRIVMSG #lobby :hello there");
+            assertThat(received).startsWith(":alice!alice@");
+            assertThat(received).contains("PRIVMSG #lobby :hello there");
+        }
     }
-  }
 }

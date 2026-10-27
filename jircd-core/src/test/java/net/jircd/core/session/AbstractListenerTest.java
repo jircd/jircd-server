@@ -32,110 +32,111 @@ import org.junit.jupiter.api.Test;
 
 class AbstractListenerTest {
 
-  @Test
-  void closeFailsWhenAcceptThreadDoesNotExitWithinTimeout() throws Exception {
-    var entered = new CountDownLatch(1);
-    var release = new CountDownLatch(1);
-    var closed = new AtomicBoolean();
-    var acceptThread = new AtomicReference<Thread>();
-    var listener =
-        new AbstractListener<Closeable>(
-            () -> closed.set(true),
-            socket -> fail("No connection expected"),
-            "blocked-listener",
-            Duration.ofMillis(50)) {
-          @Override
-          protected Socket accept() throws IOException {
-            acceptThread.set(Thread.currentThread());
-            entered.countDown();
-            try {
-              release.await();
-            } catch (InterruptedException e) {
-              Thread.currentThread().interrupt();
-              throw new IOException(e);
-            }
-            throw new IOException("Accept released after socket closure");
-          }
+    @Test
+    void closeFailsWhenAcceptThreadDoesNotExitWithinTimeout() throws Exception {
+        var entered = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        var closed = new AtomicBoolean();
+        var acceptThread = new AtomicReference<Thread>();
+        var listener =
+                new AbstractListener<Closeable>(
+                        () -> closed.set(true),
+                        socket -> fail("No connection expected"),
+                        "blocked-listener",
+                        Duration.ofMillis(50)) {
+                    @Override
+                    protected Socket accept() throws IOException {
+                        acceptThread.set(Thread.currentThread());
+                        entered.countDown();
+                        try {
+                            release.await();
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            throw new IOException(e);
+                        }
+                        throw new IOException("Accept released after socket closure");
+                    }
 
-          @Override
-          public int boundPort() {
-            return 0;
-          }
-        };
-    try (listener) {
-      try {
-        listener.start();
-        assertThat(entered.await(1, TimeUnit.SECONDS)).isTrue();
-        assertTimeoutPreemptively(
-            Duration.ofSeconds(1),
-            () ->
+                    @Override
+                    public int boundPort() {
+                        return 0;
+                    }
+                };
+        try (listener) {
+            try {
+                listener.start();
+                assertThat(entered.await(1, TimeUnit.SECONDS)).isTrue();
+                assertTimeoutPreemptively(
+                        Duration.ofSeconds(1),
+                        () ->
+                                assertThatThrownBy(listener::close)
+                                        .isInstanceOf(IOException.class)
+                                        .hasMessageContaining(
+                                                "Timed out stopping blocked-listener"));
+                assertThat(closed).isTrue();
+                assertThat(acceptThread.get().isAlive()).isTrue();
+            } finally {
+                release.countDown();
+                assertThat(acceptThread.get().join(Duration.ofSeconds(1))).isTrue();
+            }
+        }
+    }
+
+    @Test
+    void socketCloseFailureStillJoinsAndSuppressesJoinFailure() throws Exception {
+        var entered = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        var closeFailure = new IOException("socket close failure");
+        var acceptThread = new AtomicReference<Thread>();
+        var closeAttempted = new AtomicBoolean();
+        var listener =
+                new AbstractListener<Closeable>(
+                        () -> {
+                            if (!closeAttempted.getAndSet(true)) {
+                                throw closeFailure;
+                            }
+                        },
+                        socket -> fail("No connection expected"),
+                        "failing-listener",
+                        Duration.ofMillis(50)) {
+                    @Override
+                    protected Socket accept() throws IOException {
+                        acceptThread.set(Thread.currentThread());
+                        entered.countDown();
+                        try {
+                            release.await();
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            throw new IOException(e);
+                        }
+                        throw new IOException("Released");
+                    }
+
+                    @Override
+                    public int boundPort() {
+                        return 0;
+                    }
+                };
+        try (listener) {
+            try {
+                listener.start();
+                assertThat(entered.await(1, TimeUnit.SECONDS)).isTrue();
+                Thread.currentThread().interrupt();
                 assertThatThrownBy(listener::close)
-                    .isInstanceOf(IOException.class)
-                    .hasMessageContaining("Timed out stopping blocked-listener"));
-        assertThat(closed).isTrue();
-        assertThat(acceptThread.get().isAlive()).isTrue();
-      } finally {
-        release.countDown();
-        assertThat(acceptThread.get().join(Duration.ofSeconds(1))).isTrue();
-      }
-    }
-  }
-
-  @Test
-  void socketCloseFailureStillJoinsAndSuppressesJoinFailure() throws Exception {
-    var entered = new CountDownLatch(1);
-    var release = new CountDownLatch(1);
-    var closeFailure = new IOException("socket close failure");
-    var acceptThread = new AtomicReference<Thread>();
-    var closeAttempted = new AtomicBoolean();
-    var listener =
-        new AbstractListener<Closeable>(
-            () -> {
-              if (!closeAttempted.getAndSet(true)) {
-                throw closeFailure;
-              }
-            },
-            socket -> fail("No connection expected"),
-            "failing-listener",
-            Duration.ofMillis(50)) {
-          @Override
-          protected Socket accept() throws IOException {
-            acceptThread.set(Thread.currentThread());
-            entered.countDown();
-            try {
-              release.await();
-            } catch (InterruptedException e) {
-              Thread.currentThread().interrupt();
-              throw new IOException(e);
+                        .isSameAs(closeFailure)
+                        .satisfies(
+                                failure -> {
+                                    assertThat(failure.getSuppressed()).hasSize(1);
+                                    assertThat(failure.getSuppressed()[0])
+                                            .isInstanceOf(IOException.class)
+                                            .hasCauseInstanceOf(InterruptedException.class);
+                                });
+                assertThat(Thread.currentThread().isInterrupted()).isTrue();
+            } finally {
+                Thread.interrupted();
+                release.countDown();
             }
-            throw new IOException("Released");
-          }
-
-          @Override
-          public int boundPort() {
-            return 0;
-          }
-        };
-    try (listener) {
-      try {
-        listener.start();
-        assertThat(entered.await(1, TimeUnit.SECONDS)).isTrue();
-        Thread.currentThread().interrupt();
-        assertThatThrownBy(listener::close)
-            .isSameAs(closeFailure)
-            .satisfies(
-                failure -> {
-                  assertThat(failure.getSuppressed()).hasSize(1);
-                  assertThat(failure.getSuppressed()[0])
-                      .isInstanceOf(IOException.class)
-                      .hasCauseInstanceOf(InterruptedException.class);
-                });
-        assertThat(Thread.currentThread().isInterrupted()).isTrue();
-      } finally {
-        Thread.interrupted();
-        release.countDown();
-      }
+        }
+        assertThat(acceptThread.get().join(Duration.ofSeconds(1))).isTrue();
     }
-    assertThat(acceptThread.get().join(Duration.ofSeconds(1))).isTrue();
-  }
 }

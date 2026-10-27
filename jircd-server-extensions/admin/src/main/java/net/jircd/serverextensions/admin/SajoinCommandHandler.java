@@ -40,61 +40,61 @@ import net.jircd.protocol.NumericReply;
  */
 public final class SajoinCommandHandler implements CommandHandler {
 
-  private final ChannelRegistry channelRegistry;
-  private final ExtensionRegistry extensionRegistry;
-  private final Supplier<String> serverName;
-  private final IntSupplier channelNameMaxLength;
+    private final ChannelRegistry channelRegistry;
+    private final ExtensionRegistry extensionRegistry;
+    private final Supplier<String> serverName;
+    private final IntSupplier channelNameMaxLength;
 
-  public SajoinCommandHandler(
-      ChannelRegistry channelRegistry,
-      ExtensionRegistry extensionRegistry,
-      Supplier<String> serverName,
-      IntSupplier channelNameMaxLength) {
-    this.channelRegistry = channelRegistry;
-    this.extensionRegistry = extensionRegistry;
-    this.serverName = serverName;
-    this.channelNameMaxLength = channelNameMaxLength;
-  }
-
-  @Override
-  public void handle(ClientSession session, Message message) {
-    if (AdminPrivilege.rejectUnlessAuthorized(session, extensionRegistry, serverName.get())) {
-      return;
-    }
-    if (AdminPrivilege.rejectIfTooFewParams(
-        session, serverName.get(), "SAJOIN", message.params(), 1)) {
-      return;
-    }
-    String name = message.params().getFirst();
-
-    if (!ChannelName.isValid(name, channelNameMaxLength.getAsInt())) {
-      Replies.sendFitted(
-          session,
-          serverName.get(),
-          NumericReply.ERR_BADCHANMASK,
-          List.of(name),
-          "Bad Channel Mask");
-      return;
+    public SajoinCommandHandler(
+            ChannelRegistry channelRegistry,
+            ExtensionRegistry extensionRegistry,
+            Supplier<String> serverName,
+            IntSupplier channelNameMaxLength) {
+        this.channelRegistry = channelRegistry;
+        this.extensionRegistry = extensionRegistry;
+        this.serverName = serverName;
+        this.channelNameMaxLength = channelNameMaxLength;
     }
 
-    var joined = channelRegistry.join(name, session, ignored -> true);
-    if (joined.isEmpty()) {
-      return;
-    }
-    var result = joined.get();
-    Channel channel = result.channel();
+    @Override
+    public void handle(ClientSession session, Message message) {
+        if (AdminPrivilege.rejectUnlessAuthorized(session, extensionRegistry, serverName.get())) {
+            return;
+        }
+        if (AdminPrivilege.rejectIfTooFewParams(
+                session, serverName.get(), "SAJOIN", message.params(), 1)) {
+            return;
+        }
+        String name = message.params().getFirst();
 
-    String presentedForm = PresentedIdentity.presentedForm(session, extensionRegistry);
-    Message joinNotification =
-        new Message(Map.of(), presentedForm, Command.JOIN, "JOIN", List.of(channel.name()));
-    Recipients.deliver(result.recipients(), joinNotification);
-    if (!result.alreadyMember()) {
-      extensionRegistry
-          .committedEvents()
-          .joined(session, presentedForm, channel.name(), result.recipients());
-    }
+        if (!ChannelName.isValid(name, channelNameMaxLength.getAsInt())) {
+            Replies.sendFitted(
+                    session,
+                    serverName.get(),
+                    NumericReply.ERR_BADCHANMASK,
+                    List.of(name),
+                    "Bad Channel Mask");
+            return;
+        }
 
-    JoinCommandHandler.sendNamesReply(
-        extensionRegistry, session, channel, serverName.get(), result.members());
-  }
+        var joined = channelRegistry.join(name, session, ignored -> true);
+        if (joined.isEmpty()) {
+            return;
+        }
+        var result = joined.get();
+        Channel channel = result.channel();
+
+        String presentedForm = PresentedIdentity.presentedForm(session, extensionRegistry);
+        Message joinNotification =
+                new Message(Map.of(), presentedForm, Command.JOIN, "JOIN", List.of(channel.name()));
+        Recipients.deliver(result.recipients(), joinNotification);
+        if (!result.alreadyMember()) {
+            extensionRegistry
+                    .committedEvents()
+                    .joined(session, presentedForm, channel.name(), result.recipients());
+        }
+
+        JoinCommandHandler.sendNamesReply(
+                extensionRegistry, session, channel, serverName.get(), result.members());
+    }
 }

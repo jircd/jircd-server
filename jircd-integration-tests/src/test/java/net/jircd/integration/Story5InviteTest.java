@@ -22,69 +22,69 @@ import org.junit.jupiter.api.Test;
 
 class Story5InviteTest {
 
-  @Test
-  void inviteOnlyRequiresAnInvitationConsumedOnJoin() throws Exception {
-    try (TestServer server = TestServer.start();
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
-        RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort());
-        RawIrcClient carol = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void inviteOnlyRequiresAnInvitationConsumedOnJoin() throws Exception {
+        try (TestServer server = TestServer.start();
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
+                RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort());
+                RawIrcClient carol = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      alice.registerAndAwaitWelcome("alice", "alice"); // operator
-      bob.registerAndAwaitWelcome("bob", "bob");
-      carol.registerAndAwaitWelcome("carol", "carol");
+            alice.registerAndAwaitWelcome("alice", "alice"); // operator
+            bob.registerAndAwaitWelcome("bob", "bob");
+            carol.registerAndAwaitWelcome("carol", "carol");
 
-      alice.send("JOIN #lobby");
-      alice.readUntil("353", Duration.ofSeconds(5));
-      carol.send("JOIN #lobby");
-      carol.readUntil("353", Duration.ofSeconds(5));
-      alice.readUntil("JOIN #lobby", Duration.ofSeconds(5));
+            alice.send("JOIN #lobby");
+            alice.readUntil("353", Duration.ofSeconds(5));
+            carol.send("JOIN #lobby");
+            carol.readUntil("353", Duration.ofSeconds(5));
+            alice.readUntil("JOIN #lobby", Duration.ofSeconds(5));
 
-      alice.send("MODE #lobby +i");
-      alice.readUntil("MODE #lobby +i", Duration.ofSeconds(5));
+            alice.send("MODE #lobby +i");
+            alice.readUntil("MODE #lobby +i", Duration.ofSeconds(5));
 
-      // INVITE naming a nickname already a member is rejected
-      alice.send("INVITE carol #lobby");
-      assertThat(alice.readUntil("443", Duration.ofSeconds(5))).contains("443");
+            // INVITE naming a nickname already a member is rejected
+            alice.send("INVITE carol #lobby");
+            assertThat(alice.readUntil("443", Duration.ofSeconds(5))).contains("443");
 
-      // INVITE naming a nickname not currently connected is rejected
-      alice.send("INVITE nobody #lobby");
-      assertThat(alice.readUntil("401", Duration.ofSeconds(5))).contains("401");
+            // INVITE naming a nickname not currently connected is rejected
+            alice.send("INVITE nobody #lobby");
+            assertThat(alice.readUntil("401", Duration.ofSeconds(5))).contains("401");
 
-      // a non-operator's INVITE while +i is active is rejected
-      carol.send("INVITE bob #lobby");
-      assertThat(carol.readUntil("482", Duration.ofSeconds(5))).contains("482");
+            // a non-operator's INVITE while +i is active is rejected
+            carol.send("INVITE bob #lobby");
+            assertThat(carol.readUntil("482", Duration.ofSeconds(5))).contains("482");
 
-      bob.send("JOIN #lobby");
-      assertThat(bob.readUntil("473", Duration.ofSeconds(5))).contains("473");
+            bob.send("JOIN #lobby");
+            assertThat(bob.readUntil("473", Duration.ofSeconds(5))).contains("473");
 
-      alice.send("INVITE bob #lobby");
-      assertThat(alice.readUntil("341", Duration.ofSeconds(5))).contains("341");
-      String inviteMsg = bob.readUntil("INVITE bob #lobby", Duration.ofSeconds(5));
-      assertThat(inviteMsg).startsWith(":alice!alice@");
+            alice.send("INVITE bob #lobby");
+            assertThat(alice.readUntil("341", Duration.ofSeconds(5))).contains("341");
+            String inviteMsg = bob.readUntil("INVITE bob #lobby", Duration.ofSeconds(5));
+            assertThat(inviteMsg).startsWith(":alice!alice@");
 
-      bob.send("JOIN #lobby");
-      bob.readUntil("353", Duration.ofSeconds(5));
+            bob.send("JOIN #lobby");
+            bob.readUntil("353", Duration.ofSeconds(5));
 
-      // the invitation was consumed — a second join after parting is rejected again
-      bob.send("PART #lobby");
-      bob.readUntil("PART #lobby", Duration.ofSeconds(5));
-      bob.send("JOIN #lobby");
-      assertThat(bob.readUntil("473", Duration.ofSeconds(5))).contains("473");
+            // the invitation was consumed — a second join after parting is rejected again
+            bob.send("PART #lobby");
+            bob.readUntil("PART #lobby", Duration.ofSeconds(5));
+            bob.send("JOIN #lobby");
+            assertThat(bob.readUntil("473", Duration.ofSeconds(5))).contains("473");
 
-      // once +i is cleared, a non-operator member's INVITE succeeds
-      alice.send("MODE #lobby -i");
-      alice.readUntil("MODE #lobby -i", Duration.ofSeconds(5));
-      carol.send("INVITE bob #lobby");
-      assertThat(carol.readUntil("341", Duration.ofSeconds(5))).contains("341");
+            // once +i is cleared, a non-operator member's INVITE succeeds
+            alice.send("MODE #lobby -i");
+            alice.readUntil("MODE #lobby -i", Duration.ofSeconds(5));
+            carol.send("INVITE bob #lobby");
+            assertThat(carol.readUntil("341", Duration.ofSeconds(5))).contains("341");
 
-      // INVITE from a sender who isn't a member of an EXISTING target channel is rejected — using
-      // an existing channel here specifically, since inviting to a not-yet-existing one now
-      // succeeds instead (006-complete-core-protocol FR-013, covered by
-      // InviteNotYetExistingChannelTest).
-      alice.send("JOIN #other");
-      alice.readUntil("353", Duration.ofSeconds(5));
-      bob.send("INVITE carol #other");
-      assertThat(bob.readUntil("442", Duration.ofSeconds(5))).contains("442");
+            // INVITE from a sender who isn't a member of an EXISTING target channel is rejected —
+            // using an existing channel here specifically, since inviting to a not-yet-existing one
+            // now succeeds instead (006-complete-core-protocol FR-013, covered by
+            // InviteNotYetExistingChannelTest).
+            alice.send("JOIN #other");
+            alice.readUntil("353", Duration.ofSeconds(5));
+            bob.send("INVITE carol #other");
+            assertThat(bob.readUntil("442", Duration.ofSeconds(5))).contains("442");
+        }
     }
-  }
 }

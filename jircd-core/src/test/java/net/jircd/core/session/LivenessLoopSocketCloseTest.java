@@ -39,53 +39,57 @@ import org.junit.jupiter.api.Test;
  */
 class LivenessLoopSocketCloseTest {
 
-  @Test
-  @SuppressWarnings("PMD.CloseResource") // the fake socket/writer are closed by the code under test
-  void socketIsNotClosedWhileTheWriterStillHasQueuedOutput() throws Exception {
-    var session =
-        new ClientSession("c1", "127.0.0.1", new RateLimitBucket(20, 10.0, Clock.systemUTC()));
-    var writeStarted = new CountDownLatch(1);
-    var releaseWrite = new CountDownLatch(1);
-    var written = new AtomicBoolean();
-    OutputStream blockingOut =
-        new OutputStream() {
-          @Override
-          public void write(int b) throws IOException {
-            writeStarted.countDown();
-            try {
-              releaseWrite.await();
-            } catch (InterruptedException e) {
-              Thread.currentThread().interrupt();
-              throw new IOException(e);
-            }
-            written.set(true);
-          }
-        };
-    var closed = new CountDownLatch(1);
-    var socketClosedAfterWrite = new AtomicBoolean();
-    Socket socket =
-        new Socket() {
-          @Override
-          public void close() {
-            socketClosedAfterWrite.set(written.get());
-            closed.countDown();
-          }
-        };
-    var writer = new SessionWriter(session, blockingOut, (recipient, message) -> Map.of());
-    session.attachWriter(writer);
-    writer.enqueueRaw(new Message(Map.of(), null, Command.ERROR, "ERROR", List.of("bye")));
-    assertTrue(writeStarted.await(5, TimeUnit.SECONDS));
+    @Test
+    @SuppressWarnings(
+            "PMD.CloseResource") // the fake socket/writer are closed by the code under test
+    void socketIsNotClosedWhileTheWriterStillHasQueuedOutput() throws Exception {
+        var session =
+                new ClientSession(
+                        "c1", "127.0.0.1", new RateLimitBucket(20, 10.0, Clock.systemUTC()));
+        var writeStarted = new CountDownLatch(1);
+        var releaseWrite = new CountDownLatch(1);
+        var written = new AtomicBoolean();
+        OutputStream blockingOut =
+                new OutputStream() {
+                    @Override
+                    public void write(int b) throws IOException {
+                        writeStarted.countDown();
+                        try {
+                            releaseWrite.await();
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            throw new IOException(e);
+                        }
+                        written.set(true);
+                    }
+                };
+        var closed = new CountDownLatch(1);
+        var socketClosedAfterWrite = new AtomicBoolean();
+        Socket socket =
+                new Socket() {
+                    @Override
+                    public void close() {
+                        socketClosedAfterWrite.set(written.get());
+                        closed.countDown();
+                    }
+                };
+        var writer = new SessionWriter(session, blockingOut, (recipient, message) -> Map.of());
+        session.attachWriter(writer);
+        writer.enqueueRaw(new Message(Map.of(), null, Command.ERROR, "ERROR", List.of("bye")));
+        assertTrue(writeStarted.await(5, TimeUnit.SECONDS));
 
-    // DisconnectCleanup's first step; its writer drain (blocked on our stream) comes after.
-    session.lifecycle().closeIfNotAlreadyClosing();
-    Thread liveness =
-        Thread.ofVirtual().start(() -> ConnectionHandler.runLivenessLoop(session, null, socket));
+        // DisconnectCleanup's first step; its writer drain (blocked on our stream) comes after.
+        session.lifecycle().closeIfNotAlreadyClosing();
+        Thread liveness =
+                Thread.ofVirtual()
+                        .start(() -> ConnectionHandler.runLivenessLoop(session, null, socket));
 
-    assertFalse(
-        closed.await(300, TimeUnit.MILLISECONDS), "socket closed while output was still queued");
-    releaseWrite.countDown();
-    assertTrue(closed.await(5, TimeUnit.SECONDS));
-    assertTrue(socketClosedAfterWrite.get());
-    liveness.join();
-  }
+        assertFalse(
+                closed.await(300, TimeUnit.MILLISECONDS),
+                "socket closed while output was still queued");
+        releaseWrite.countDown();
+        assertTrue(closed.await(5, TimeUnit.SECONDS));
+        assertTrue(socketClosedAfterWrite.get());
+        liveness.join();
+    }
 }

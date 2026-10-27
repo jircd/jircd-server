@@ -25,145 +25,145 @@ import net.jircd.protocol.Command;
  * memoization key for per-envelope results (never as a lifecycle version).
  */
 public final class HookRegistration {
-  private final HookKind kind;
-  private final String providerId;
-  private final String capabilityName;
-  private final Object hook;
-  private final Set<String> requiresNegotiated;
-  private final Set<String> ownedKeys;
-  private final ReplySlot slot;
-  private final ReplyBound replyBound;
-  private final EventKind eventKind;
-  private final Command command;
-  private final long maxBytes;
-
-  private HookRegistration(Builder builder) {
-    this.kind = Objects.requireNonNull(builder.kind);
-    this.providerId = builder.providerId;
-    this.capabilityName = builder.capabilityName;
-    this.hook = Objects.requireNonNull(builder.hook);
-    this.requiresNegotiated = Set.copyOf(builder.requiresNegotiated);
-    this.ownedKeys = Set.copyOf(builder.ownedKeys);
-    this.slot = builder.slot;
-    this.replyBound = builder.replyBound;
-    this.eventKind = builder.eventKind;
-    this.command = builder.command;
-    this.maxBytes = builder.maxBytes;
-  }
-
-  /** Collects a registration's attributes at staging; only the registrar creates one. */
-  static final class Builder {
     private final HookKind kind;
     private final String providerId;
     private final String capabilityName;
     private final Object hook;
-    private Set<String> requiresNegotiated = Set.of();
-    private Set<String> ownedKeys = Set.of();
-    private ReplySlot slot;
-    private ReplyBound replyBound;
-    private EventKind eventKind;
-    private Command command;
-    private long maxBytes;
+    private final Set<String> requiresNegotiated;
+    private final Set<String> ownedKeys;
+    private final ReplySlot slot;
+    private final ReplyBound replyBound;
+    private final EventKind eventKind;
+    private final Command command;
+    private final long maxBytes;
 
-    Builder(HookKind kind, String providerId, String capabilityName, Object hook) {
-      this.kind = kind;
-      this.providerId = providerId;
-      this.capabilityName = capabilityName;
-      this.hook = Objects.requireNonNull(hook);
+    private HookRegistration(Builder builder) {
+        this.kind = Objects.requireNonNull(builder.kind);
+        this.providerId = builder.providerId;
+        this.capabilityName = builder.capabilityName;
+        this.hook = Objects.requireNonNull(builder.hook);
+        this.requiresNegotiated = Set.copyOf(builder.requiresNegotiated);
+        this.ownedKeys = Set.copyOf(builder.ownedKeys);
+        this.slot = builder.slot;
+        this.replyBound = builder.replyBound;
+        this.eventKind = builder.eventKind;
+        this.command = builder.command;
+        this.maxBytes = builder.maxBytes;
     }
 
-    Builder requiring(Set<String> negotiated) {
-      this.requiresNegotiated = Objects.requireNonNull(negotiated);
-      return this;
+    /** Collects a registration's attributes at staging; only the registrar creates one. */
+    static final class Builder {
+        private final HookKind kind;
+        private final String providerId;
+        private final String capabilityName;
+        private final Object hook;
+        private Set<String> requiresNegotiated = Set.of();
+        private Set<String> ownedKeys = Set.of();
+        private ReplySlot slot;
+        private ReplyBound replyBound;
+        private EventKind eventKind;
+        private Command command;
+        private long maxBytes;
+
+        Builder(HookKind kind, String providerId, String capabilityName, Object hook) {
+            this.kind = kind;
+            this.providerId = providerId;
+            this.capabilityName = capabilityName;
+            this.hook = Objects.requireNonNull(hook);
+        }
+
+        Builder requiring(Set<String> negotiated) {
+            this.requiresNegotiated = Objects.requireNonNull(negotiated);
+            return this;
+        }
+
+        Builder owning(Set<String> keys, long bytes) {
+            this.ownedKeys = keys;
+            this.maxBytes = bytes;
+            return this;
+        }
+
+        Builder decorating(ReplySlot replySlot, ReplyBound bound, long bytes) {
+            this.slot = replySlot;
+            this.replyBound = bound;
+            this.maxBytes = bytes;
+            return this;
+        }
+
+        Builder onEvent(EventKind event) {
+            this.eventKind = event;
+            return this;
+        }
+
+        Builder forCommand(Command handled) {
+            this.command = handled;
+            return this;
+        }
+
+        HookRegistration build() {
+            return new HookRegistration(this);
+        }
     }
 
-    Builder owning(Set<String> keys, long bytes) {
-      this.ownedKeys = keys;
-      this.maxBytes = bytes;
-      return this;
+    public HookKind kind() {
+        return kind;
     }
 
-    Builder decorating(ReplySlot replySlot, ReplyBound bound, long bytes) {
-      this.slot = replySlot;
-      this.replyBound = bound;
-      this.maxBytes = bytes;
-      return this;
+    public String providerId() {
+        return providerId;
     }
 
-    Builder onEvent(EventKind event) {
-      this.eventKind = event;
-      return this;
+    /** The capability the owner offers; recipients/senders must have negotiated it where gated. */
+    public String capabilityName() {
+        return capabilityName;
     }
 
-    Builder forCommand(Command handled) {
-      this.command = handled;
-      return this;
+    /** Further session capabilities that must be negotiated, evaluated with the owner's. */
+    public Set<String> requiresNegotiated() {
+        return requiresNegotiated;
     }
 
-    HookRegistration build() {
-      return new HookRegistration(this);
+    /** Server tag keys this registration owns; empty for other kinds. */
+    public Set<String> ownedKeys() {
+        return ownedKeys;
     }
-  }
 
-  public HookKind kind() {
-    return kind;
-  }
+    public ReplySlot slot() {
+        return slot;
+    }
 
-  public String providerId() {
-    return providerId;
-  }
+    public ReplyBound replyBound() {
+        return replyBound;
+    }
 
-  /** The capability the owner offers; recipients/senders must have negotiated it where gated. */
-  public String capabilityName() {
-    return capabilityName;
-  }
+    public EventKind eventKind() {
+        return eventKind;
+    }
 
-  /** Further session capabilities that must be negotiated, evaluated with the owner's. */
-  public Set<String> requiresNegotiated() {
-    return requiresNegotiated;
-  }
+    public Command command() {
+        return command;
+    }
 
-  /** Server tag keys this registration owns; empty for other kinds. */
-  public Set<String> ownedKeys() {
-    return ownedKeys;
-  }
+    /** The declared byte bound: tag data bytes, or the reply slot's bytes at reference limits. */
+    public long maxBytes() {
+        return maxBytes;
+    }
 
-  public ReplySlot slot() {
-    return slot;
-  }
+    <T> T hook(Class<T> type) {
+        return type.cast(hook);
+    }
 
-  public ReplyBound replyBound() {
-    return replyBound;
-  }
+    CommandHandler commandHandler() {
+        return hook(CommandHandler.class);
+    }
 
-  public EventKind eventKind() {
-    return eventKind;
-  }
+    /** Whether {@code negotiated} satisfies this registration's declared session prerequisites. */
+    boolean prerequisitesMet(Set<String> negotiated) {
+        return negotiated.containsAll(requiresNegotiated);
+    }
 
-  public Command command() {
-    return command;
-  }
-
-  /** The declared byte bound: tag data bytes, or the reply slot's bytes at reference limits. */
-  public long maxBytes() {
-    return maxBytes;
-  }
-
-  <T> T hook(Class<T> type) {
-    return type.cast(hook);
-  }
-
-  CommandHandler commandHandler() {
-    return hook(CommandHandler.class);
-  }
-
-  /** Whether {@code negotiated} satisfies this registration's declared session prerequisites. */
-  boolean prerequisitesMet(Set<String> negotiated) {
-    return negotiated.containsAll(requiresNegotiated);
-  }
-
-  /** Whether the party also negotiated the owner's capability. */
-  boolean ownerNegotiated(Set<String> negotiated) {
-    return negotiated.contains(capabilityName);
-  }
+    /** Whether the party also negotiated the owner's capability. */
+    boolean ownerNegotiated(Set<String> negotiated) {
+        return negotiated.contains(capabilityName);
+    }
 }

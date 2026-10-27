@@ -27,92 +27,92 @@ import org.junit.jupiter.api.Test;
  */
 class NickBroadcastTest {
 
-  @Test
-  void clientWithNoChannelMembershipsReceivesItsOwnConfirmation() throws Exception {
-    try (TestServer server = TestServer.start();
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void clientWithNoChannelMembershipsReceivesItsOwnConfirmation() throws Exception {
+        try (TestServer server = TestServer.start();
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      alice.registerAndAwaitWelcome("alice", "alice");
+            alice.registerAndAwaitWelcome("alice", "alice");
 
-      alice.send("NICK alicia");
-      assertThat(alice.readUntil("NICK alicia", Duration.ofSeconds(5))).contains("alice!");
+            alice.send("NICK alicia");
+            assertThat(alice.readUntil("NICK alicia", Duration.ofSeconds(5))).contains("alice!");
+        }
     }
-  }
 
-  @Test
-  void channelCoMemberReceivesTheNotification() throws Exception {
-    try (TestServer server = TestServer.start();
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
-        RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void channelCoMemberReceivesTheNotification() throws Exception {
+        try (TestServer server = TestServer.start();
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
+                RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      alice.registerAndAwaitWelcome("alice", "alice");
-      bob.registerAndAwaitWelcome("bob", "bob");
-      alice.send("JOIN #lobby");
-      alice.readUntil("353", Duration.ofSeconds(5));
-      bob.send("JOIN #lobby");
-      bob.readUntil("353", Duration.ofSeconds(5));
-      alice.readUntil("JOIN #lobby", Duration.ofSeconds(5));
+            alice.registerAndAwaitWelcome("alice", "alice");
+            bob.registerAndAwaitWelcome("bob", "bob");
+            alice.send("JOIN #lobby");
+            alice.readUntil("353", Duration.ofSeconds(5));
+            bob.send("JOIN #lobby");
+            bob.readUntil("353", Duration.ofSeconds(5));
+            alice.readUntil("JOIN #lobby", Duration.ofSeconds(5));
 
-      alice.send("NICK alicia");
-      assertThat(alice.readUntil("NICK alicia", Duration.ofSeconds(5))).contains("alice!");
-      assertThat(bob.readUntil("NICK alicia", Duration.ofSeconds(5))).contains("alice!");
+            alice.send("NICK alicia");
+            assertThat(alice.readUntil("NICK alicia", Duration.ofSeconds(5))).contains("alice!");
+            assertThat(bob.readUntil("NICK alicia", Duration.ofSeconds(5))).contains("alice!");
+        }
     }
-  }
 
-  @Test
-  void reclaimingTheExactCurrentNicknameBroadcastsNothing() throws Exception {
-    try (TestServer server = TestServer.start();
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void reclaimingTheExactCurrentNicknameBroadcastsNothing() throws Exception {
+        try (TestServer server = TestServer.start();
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      alice.registerAndAwaitWelcome("alice", "alice");
+            alice.registerAndAwaitWelcome("alice", "alice");
 
-      alice.send("NICK alice");
-      alice.send("PING sentinel");
-      assertThat(alice.readUntil("PONG", Duration.ofSeconds(5))).contains("sentinel");
+            alice.send("NICK alice");
+            alice.send("PING sentinel");
+            assertThat(alice.readUntil("PONG", Duration.ofSeconds(5))).contains("sentinel");
+        }
     }
-  }
 
-  @Test
-  void peersSharingSeveralChannelsReceiveExactlyOneNotificationEach() throws Exception {
-    try (TestServer server = TestServer.start();
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
-        RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void peersSharingSeveralChannelsReceiveExactlyOneNotificationEach() throws Exception {
+        try (TestServer server = TestServer.start();
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
+                RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      alice.registerAndAwaitWelcome("alice", "alice");
-      bob.registerAndAwaitWelcome("bob", "bob");
-      for (String channel : List.of("#one", "#two")) {
-        alice.send("JOIN " + channel);
-        alice.readUntil("353", Duration.ofSeconds(5));
-        bob.send("JOIN " + channel);
-        bob.readUntil("353", Duration.ofSeconds(5));
-        alice.readUntil("JOIN " + channel, Duration.ofSeconds(5));
-      }
+            alice.registerAndAwaitWelcome("alice", "alice");
+            bob.registerAndAwaitWelcome("bob", "bob");
+            for (String channel : List.of("#one", "#two")) {
+                alice.send("JOIN " + channel);
+                alice.readUntil("353", Duration.ofSeconds(5));
+                bob.send("JOIN " + channel);
+                bob.readUntil("353", Duration.ofSeconds(5));
+                alice.readUntil("JOIN " + channel, Duration.ofSeconds(5));
+            }
 
-      alice.send("NICK alicia");
+            alice.send("NICK alicia");
 
-      assertThat(nickNotifications(alice.readLinesFor(Duration.ofSeconds(1)))).isEqualTo(1);
-      assertThat(nickNotifications(bob.readLinesFor(Duration.ofSeconds(1)))).isEqualTo(1);
+            assertThat(nickNotifications(alice.readLinesFor(Duration.ofSeconds(1)))).isEqualTo(1);
+            assertThat(nickNotifications(bob.readLinesFor(Duration.ofSeconds(1)))).isEqualTo(1);
+        }
     }
-  }
 
-  @Test
-  void changerInSeveralChannelsWithNoPeersReceivesExactlyOneNotification() throws Exception {
-    try (TestServer server = TestServer.start();
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void changerInSeveralChannelsWithNoPeersReceivesExactlyOneNotification() throws Exception {
+        try (TestServer server = TestServer.start();
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      alice.registerAndAwaitWelcome("alice", "alice");
-      for (String channel : List.of("#one", "#two")) {
-        alice.send("JOIN " + channel);
-        alice.readUntil("353", Duration.ofSeconds(5));
-      }
+            alice.registerAndAwaitWelcome("alice", "alice");
+            for (String channel : List.of("#one", "#two")) {
+                alice.send("JOIN " + channel);
+                alice.readUntil("353", Duration.ofSeconds(5));
+            }
 
-      alice.send("NICK alicia");
+            alice.send("NICK alicia");
 
-      assertThat(nickNotifications(alice.readLinesFor(Duration.ofSeconds(1)))).isEqualTo(1);
+            assertThat(nickNotifications(alice.readLinesFor(Duration.ofSeconds(1)))).isEqualTo(1);
+        }
     }
-  }
 
-  private static long nickNotifications(List<String> lines) {
-    return lines.stream().filter(line -> line.contains(" NICK alicia")).count();
-  }
+    private static long nickNotifications(List<String> lines) {
+        return lines.stream().filter(line -> line.contains(" NICK alicia")).count();
+    }
 }

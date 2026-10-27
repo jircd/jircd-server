@@ -41,216 +41,222 @@ import org.junit.jupiter.api.io.TempDir;
 
 class ExtensionRegistryTest {
 
-  private static class FakeServerExtension implements ServerExtension {
-    private final String id;
-    private final String extensionPoint;
-    boolean started;
-    boolean stopped;
+    private static class FakeServerExtension implements ServerExtension {
+        private final String id;
+        private final String extensionPoint;
+        boolean started;
+        boolean stopped;
 
-    FakeServerExtension(String id, String extensionPoint) {
-      this.id = id;
-      this.extensionPoint = extensionPoint;
+        FakeServerExtension(String id, String extensionPoint) {
+            this.id = id;
+            this.extensionPoint = extensionPoint;
+        }
+
+        @Override
+        public String id() {
+            return id;
+        }
+
+        @Override
+        public String extensionPoint() {
+            return extensionPoint;
+        }
+
+        @Override
+        public void start(ServerContext context) {
+            started = true;
+        }
+
+        @Override
+        public void stop() {
+            stopped = true;
+        }
     }
 
-    @Override
-    public String id() {
-      return id;
+    private ExtensionRegistry newRegistry() {
+        ExtensionRegistry registry = new ExtensionRegistry();
+        NicknameRegistry nicknameRegistry = new NicknameRegistry();
+        ChannelRegistry channelRegistry = new ChannelRegistry();
+        ServerConfiguration configuration =
+                new ServerConfiguration(
+                        Map.of(),
+                        Map.of(),
+                        List.of(),
+                        new ServerConfiguration.RateLimit(10, 1.0),
+                        List.of(),
+                        "test.jircd.local",
+                        ServerConfiguration.DEFAULT_NICKNAME_MAX_LENGTH,
+                        ServerConfiguration.DEFAULT_CHANNEL_NAME_MAX_LENGTH,
+                        ServerConfiguration.DEFAULT_TOPIC_MAX_LENGTH,
+                        true,
+                        ServerConfiguration.DEFAULT_MAX_MODES_PER_COMMAND,
+                        ServerConfiguration.DEFAULT_OPER_FAILURE_THRESHOLD,
+                        ServerConfiguration.DEFAULT_OPER_LOCKOUT_SECONDS,
+                        false,
+                        ServerConfiguration.DEFAULT_WHOWAS_HISTORY_SIZE,
+                        ServerConfiguration.DEFAULT_KEEP_ALIVE_FREQUENCY_SECONDS,
+                        ServerConfiguration.DEFAULT_SENDQ_LIMIT_BYTES,
+                        ServerConfiguration.DEFAULT_MAX_CONNECTIONS,
+                        ServerConfiguration.DEFAULT_MAX_CONNECTIONS_PER_IP,
+                        ServerConfiguration.DEFAULT_IPV6_CONNECTION_LIMIT_PREFIX,
+                        List.of(),
+                        ServerConfiguration.DEFAULT_REGISTRATION_TIMEOUT_SECONDS,
+                        null,
+                        null,
+                        null,
+                        null);
+        registry.attachContext(
+                new ServerContext(
+                        nicknameRegistry,
+                        channelRegistry,
+                        registry,
+                        () -> "test.jircd.local",
+                        new ConfigurationReloader(
+                                Path.of("unused.yaml"),
+                                new ConfigurationLoader(Set.of(), Set.of()),
+                                registry,
+                                configuration),
+                        new DisconnectCleanup(
+                                nicknameRegistry,
+                                channelRegistry,
+                                new WhowasHistory(() -> 100),
+                                registry),
+                        new CommandRegistrar() {
+                            @Override
+                            public void register(Command command, CommandHandler handler) {
+                                // Not exercised.
+                            }
+
+                            @Override
+                            public boolean isRegistered(Command command) {
+                                return false;
+                            }
+
+                            @Override
+                            public void unregister(Command command, CommandHandler installed) {
+                                // Not exercised.
+                            }
+                        },
+                        registry.capabilityServices()));
+        return registry;
     }
 
-    @Override
-    public String extensionPoint() {
-      return extensionPoint;
+    @Test
+    void invalidSendqReloadKeepsPreviousConfiguration(@TempDir Path directory) throws Exception {
+        ConfigurationLoader loader = new ConfigurationLoader(Set.of(), Set.of());
+        ServerConfiguration initial =
+                loader.load(
+                        new ByteArrayInputStream(
+                                "sendqLimitBytes: 32768".getBytes(StandardCharsets.UTF_8)));
+        Path configPath = directory.resolve("reload.yaml");
+        ConfigurationReloader reloader =
+                new ConfigurationReloader(configPath, loader, newRegistry(), initial);
+        Files.writeString(configPath, "sendqLimitBytes: 65536");
+        ServerConfiguration valid = reloader.reload();
+        assertThat(valid.sendqLimitBytes()).isEqualTo(65536);
+        Files.writeString(configPath, "sendqLimitBytes: 16383");
+
+        assertThatThrownBy(reloader::reload)
+                .isInstanceOf(ConfigurationException.class)
+                .hasMessageContaining("sendqLimitBytes");
+        assertThat(reloader.current()).isSameAs(valid);
+        assertThat(reloader.current().sendqLimitBytes()).isEqualTo(65536);
     }
 
-    @Override
-    public void start(ServerContext context) {
-      started = true;
+    @Test
+    void listModeContributionIsRejectedBeforeRegistration() {
+        ExtensionRegistry registry = newRegistry();
+        FakeServerExtension extension =
+                new FakeServerExtension("list-mode", null) {
+                    @Override
+                    public Set<ChannelMode> contributedChannelModes() {
+                        return Set.of(
+                                new ChannelMode(
+                                        "custom-list", 'X', ChannelMode.Kind.LIST, Set.of(), id()));
+                    }
+                };
+
+        assertThatThrownBy(() -> registry.register(extension))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("list-mode")
+                .hasMessageContaining("LIST")
+                .hasMessageContaining("X");
+        assertThat(registry.find(extension.id())).isEmpty();
+        assertThat(registry.stateOf(extension.id())).isNull();
+        assertThat(extension.started).isFalse();
     }
 
-    @Override
-    public void stop() {
-      stopped = true;
+    @Test
+    void booleanModeContributionCanStillBeRegisteredAndEnabled() {
+        ExtensionRegistry registry = newRegistry();
+        ChannelMode mode =
+                new ChannelMode(
+                        "custom-flag", 'X', ChannelMode.Kind.BOOLEAN, Set.of(), "flag-mode");
+        FakeServerExtension extension =
+                new FakeServerExtension("flag-mode", null) {
+                    @Override
+                    public Set<ChannelMode> contributedChannelModes() {
+                        return Set.of(mode);
+                    }
+                };
+        registry.register(extension);
+        registry.enable(extension.id());
+
+        assertThat(registry.recognizedChannelModes(Set.of())).containsExactly(mode);
     }
-  }
 
-  private ExtensionRegistry newRegistry() {
-    ExtensionRegistry registry = new ExtensionRegistry();
-    NicknameRegistry nicknameRegistry = new NicknameRegistry();
-    ChannelRegistry channelRegistry = new ChannelRegistry();
-    ServerConfiguration configuration =
-        new ServerConfiguration(
-            Map.of(),
-            Map.of(),
-            List.of(),
-            new ServerConfiguration.RateLimit(10, 1.0),
-            List.of(),
-            "test.jircd.local",
-            ServerConfiguration.DEFAULT_NICKNAME_MAX_LENGTH,
-            ServerConfiguration.DEFAULT_CHANNEL_NAME_MAX_LENGTH,
-            ServerConfiguration.DEFAULT_TOPIC_MAX_LENGTH,
-            true,
-            ServerConfiguration.DEFAULT_MAX_MODES_PER_COMMAND,
-            ServerConfiguration.DEFAULT_OPER_FAILURE_THRESHOLD,
-            ServerConfiguration.DEFAULT_OPER_LOCKOUT_SECONDS,
-            false,
-            ServerConfiguration.DEFAULT_WHOWAS_HISTORY_SIZE,
-            ServerConfiguration.DEFAULT_KEEP_ALIVE_FREQUENCY_SECONDS,
-            ServerConfiguration.DEFAULT_SENDQ_LIMIT_BYTES,
-            ServerConfiguration.DEFAULT_MAX_CONNECTIONS,
-            ServerConfiguration.DEFAULT_MAX_CONNECTIONS_PER_IP,
-            ServerConfiguration.DEFAULT_IPV6_CONNECTION_LIMIT_PREFIX,
-            List.of(),
-            ServerConfiguration.DEFAULT_REGISTRATION_TIMEOUT_SECONDS,
-            null,
-            null,
-            null,
-            null);
-    registry.attachContext(
-        new ServerContext(
-            nicknameRegistry,
-            channelRegistry,
-            registry,
-            () -> "test.jircd.local",
-            new ConfigurationReloader(
-                Path.of("unused.yaml"),
-                new ConfigurationLoader(Set.of(), Set.of()),
-                registry,
-                configuration),
-            new DisconnectCleanup(
-                nicknameRegistry, channelRegistry, new WhowasHistory(() -> 100), registry),
-            new CommandRegistrar() {
-              @Override
-              public void register(Command command, CommandHandler handler) {
-                // Not exercised.
-              }
+    @Test
+    void enableDisableLifecycle() {
+        ExtensionRegistry registry = newRegistry();
+        FakeServerExtension extension = new FakeServerExtension("cloak", "hostname-display");
+        registry.register(extension);
 
-              @Override
-              public boolean isRegistered(Command command) {
-                return false;
-              }
+        assertThat(registry.stateOf("cloak")).isEqualTo(Extension.State.DISABLED);
+        registry.enable("cloak");
+        assertThat(extension.started).isTrue();
+        assertThat(registry.stateOf("cloak")).isEqualTo(Extension.State.ENABLED);
 
-              @Override
-              public void unregister(Command command, CommandHandler installed) {
-                // Not exercised.
-              }
-            },
-            registry.capabilityServices()));
-    return registry;
-  }
+        registry.disable("cloak");
+        assertThat(extension.stopped).isTrue();
+        assertThat(registry.stateOf("cloak")).isEqualTo(Extension.State.DISABLED);
+    }
 
-  @Test
-  void invalidSendqReloadKeepsPreviousConfiguration(@TempDir Path directory) throws Exception {
-    ConfigurationLoader loader = new ConfigurationLoader(Set.of(), Set.of());
-    ServerConfiguration initial =
-        loader.load(
-            new ByteArrayInputStream("sendqLimitBytes: 32768".getBytes(StandardCharsets.UTF_8)));
-    Path configPath = directory.resolve("reload.yaml");
-    ConfigurationReloader reloader =
-        new ConfigurationReloader(configPath, loader, newRegistry(), initial);
-    Files.writeString(configPath, "sendqLimitBytes: 65536");
-    ServerConfiguration valid = reloader.reload();
-    assertThat(valid.sendqLimitBytes()).isEqualTo(65536);
-    Files.writeString(configPath, "sendqLimitBytes: 16383");
+    @Test
+    void failedStartTransitionsToFailedWithoutAffectingOtherExtensions() {
+        ExtensionRegistry registry = newRegistry();
+        FakeServerExtension healthy = new FakeServerExtension("admin", null);
+        FakeServerExtension broken =
+                new FakeServerExtension("broken", null) {
+                    @Override
+                    public void start(ServerContext context) {
+                        throw new RuntimeException("boom");
+                    }
+                };
+        registry.register(healthy);
+        registry.register(broken);
 
-    assertThatThrownBy(reloader::reload)
-        .isInstanceOf(ConfigurationException.class)
-        .hasMessageContaining("sendqLimitBytes");
-    assertThat(reloader.current()).isSameAs(valid);
-    assertThat(reloader.current().sendqLimitBytes()).isEqualTo(65536);
-  }
+        registry.enable("admin");
+        assertThatThrownBy(() -> registry.enable("broken")).isInstanceOf(RuntimeException.class);
 
-  @Test
-  void listModeContributionIsRejectedBeforeRegistration() {
-    ExtensionRegistry registry = newRegistry();
-    FakeServerExtension extension =
-        new FakeServerExtension("list-mode", null) {
-          @Override
-          public Set<ChannelMode> contributedChannelModes() {
-            return Set.of(
-                new ChannelMode("custom-list", 'X', ChannelMode.Kind.LIST, Set.of(), id()));
-          }
-        };
+        assertThat(registry.stateOf("broken")).isEqualTo(Extension.State.FAILED);
+        assertThat(registry.stateOf("admin")).isEqualTo(Extension.State.ENABLED);
+    }
 
-    assertThatThrownBy(() -> registry.register(extension))
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("list-mode")
-        .hasMessageContaining("LIST")
-        .hasMessageContaining("X");
-    assertThat(registry.find(extension.id())).isEmpty();
-    assertThat(registry.stateOf(extension.id())).isNull();
-    assertThat(extension.started).isFalse();
-  }
+    @Test
+    void conflictingExtensionPointClaimIsRejected() {
+        ExtensionRegistry registry = newRegistry();
+        FakeServerExtension first = new FakeServerExtension("cloak-a", "hostname-display");
+        FakeServerExtension second = new FakeServerExtension("cloak-b", "hostname-display");
+        registry.register(first);
+        registry.register(second);
 
-  @Test
-  void booleanModeContributionCanStillBeRegisteredAndEnabled() {
-    ExtensionRegistry registry = newRegistry();
-    ChannelMode mode =
-        new ChannelMode("custom-flag", 'X', ChannelMode.Kind.BOOLEAN, Set.of(), "flag-mode");
-    FakeServerExtension extension =
-        new FakeServerExtension("flag-mode", null) {
-          @Override
-          public Set<ChannelMode> contributedChannelModes() {
-            return Set.of(mode);
-          }
-        };
-    registry.register(extension);
-    registry.enable(extension.id());
+        registry.enable("cloak-a");
+        assertThatThrownBy(() -> registry.enable("cloak-b"))
+                .isInstanceOf(ExtensionRegistry.ExtensionPointConflictException.class);
+        assertThat(registry.stateOf("cloak-b")).isEqualTo(Extension.State.DISABLED);
 
-    assertThat(registry.recognizedChannelModes(Set.of())).containsExactly(mode);
-  }
-
-  @Test
-  void enableDisableLifecycle() {
-    ExtensionRegistry registry = newRegistry();
-    FakeServerExtension extension = new FakeServerExtension("cloak", "hostname-display");
-    registry.register(extension);
-
-    assertThat(registry.stateOf("cloak")).isEqualTo(Extension.State.DISABLED);
-    registry.enable("cloak");
-    assertThat(extension.started).isTrue();
-    assertThat(registry.stateOf("cloak")).isEqualTo(Extension.State.ENABLED);
-
-    registry.disable("cloak");
-    assertThat(extension.stopped).isTrue();
-    assertThat(registry.stateOf("cloak")).isEqualTo(Extension.State.DISABLED);
-  }
-
-  @Test
-  void failedStartTransitionsToFailedWithoutAffectingOtherExtensions() {
-    ExtensionRegistry registry = newRegistry();
-    FakeServerExtension healthy = new FakeServerExtension("admin", null);
-    FakeServerExtension broken =
-        new FakeServerExtension("broken", null) {
-          @Override
-          public void start(ServerContext context) {
-            throw new RuntimeException("boom");
-          }
-        };
-    registry.register(healthy);
-    registry.register(broken);
-
-    registry.enable("admin");
-    assertThatThrownBy(() -> registry.enable("broken")).isInstanceOf(RuntimeException.class);
-
-    assertThat(registry.stateOf("broken")).isEqualTo(Extension.State.FAILED);
-    assertThat(registry.stateOf("admin")).isEqualTo(Extension.State.ENABLED);
-  }
-
-  @Test
-  void conflictingExtensionPointClaimIsRejected() {
-    ExtensionRegistry registry = newRegistry();
-    FakeServerExtension first = new FakeServerExtension("cloak-a", "hostname-display");
-    FakeServerExtension second = new FakeServerExtension("cloak-b", "hostname-display");
-    registry.register(first);
-    registry.register(second);
-
-    registry.enable("cloak-a");
-    assertThatThrownBy(() -> registry.enable("cloak-b"))
-        .isInstanceOf(ExtensionRegistry.ExtensionPointConflictException.class);
-    assertThat(registry.stateOf("cloak-b")).isEqualTo(Extension.State.DISABLED);
-
-    registry.disable("cloak-a");
-    registry.enable("cloak-b"); // now free to claim
-    assertThat(registry.stateOf("cloak-b")).isEqualTo(Extension.State.ENABLED);
-  }
+        registry.disable("cloak-a");
+        registry.enable("cloak-b"); // now free to claim
+        assertThat(registry.stateOf("cloak-b")).isEqualTo(Extension.State.ENABLED);
+    }
 }

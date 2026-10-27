@@ -33,35 +33,37 @@ import net.jircd.core.extension.CapabilityExtension;
  */
 final class DiscoveredProbes {
 
-  private DiscoveredProbes() {}
+    private DiscoveredProbes() {}
 
-  @SafeVarargs
-  static TestServer start(String extraYaml, Class<? extends CapabilityExtension>... providers)
-      throws Exception {
-    Path root = Files.createTempDirectory("jircd-probes-");
-    Path services = root.resolve("META-INF/services");
-    Files.createDirectories(services);
-    Files.writeString(
-        services.resolve(CapabilityExtension.class.getName()),
-        Arrays.stream(providers).map(Class::getName).collect(Collectors.joining("\n")) + "\n");
-    Thread thread = Thread.currentThread();
-    ClassLoader previous = thread.getContextClassLoader();
-    try (URLClassLoader loader = new URLClassLoader(new URL[] {root.toUri().toURL()}, previous)) {
-      thread.setContextClassLoader(loader);
-      return TestServer.start(extraYaml);
-    } finally {
-      thread.setContextClassLoader(previous);
-      delete(root);
+    @SafeVarargs
+    static TestServer start(String extraYaml, Class<? extends CapabilityExtension>... providers)
+            throws Exception {
+        Path root = Files.createTempDirectory("jircd-probes-");
+        Path services = root.resolve("META-INF/services");
+        Files.createDirectories(services);
+        Files.writeString(
+                services.resolve(CapabilityExtension.class.getName()),
+                Arrays.stream(providers).map(Class::getName).collect(Collectors.joining("\n"))
+                        + "\n");
+        Thread thread = Thread.currentThread();
+        ClassLoader previous = thread.getContextClassLoader();
+        try (URLClassLoader loader =
+                new URLClassLoader(new URL[] {root.toUri().toURL()}, previous)) {
+            thread.setContextClassLoader(loader);
+            return TestServer.start(extraYaml);
+        } finally {
+            thread.setContextClassLoader(previous);
+            delete(root);
+        }
     }
-  }
 
-  private static void delete(Path root) {
-    try (var paths = Files.walk(root)) {
-      for (Path path : paths.sorted(java.util.Comparator.reverseOrder()).toList()) {
-        Files.delete(path);
-      }
-    } catch (IOException e) {
-      throw new UncheckedIOException(e);
+    private static void delete(Path root) {
+        try (var paths = Files.walk(root)) {
+            for (Path path : paths.sorted(java.util.Comparator.reverseOrder()).toList()) {
+                Files.delete(path);
+            }
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
     }
-  }
 }

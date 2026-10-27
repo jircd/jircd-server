@@ -23,50 +23,50 @@ import org.junit.jupiter.api.Test;
 /** 002-extended-irc-commands User Story 1: VERSION/TIME/LUSERS server information queries. */
 class ServerInfoQueriesTest {
 
-  @Test
-  void versionRepliesWithVersionThenAnIsupportBurstMatchingRegistration() throws Exception {
-    try (TestServer server = TestServer.start();
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void versionRepliesWithVersionThenAnIsupportBurstMatchingRegistration() throws Exception {
+        try (TestServer server = TestServer.start();
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      alice.send("NICK alice");
-      alice.send("USER alice 0 * :Alice");
-      String registrationIsupport = alice.readUntil("005", Duration.ofSeconds(5));
+            alice.send("NICK alice");
+            alice.send("USER alice 0 * :Alice");
+            String registrationIsupport = alice.readUntil("005", Duration.ofSeconds(5));
 
-      alice.send("VERSION");
-      assertThat(alice.readUntil("351", Duration.ofSeconds(5))).contains("351");
-      String versionIsupport = alice.readUntil("005", Duration.ofSeconds(5));
-      assertThat(versionIsupport).isEqualTo(registrationIsupport);
+            alice.send("VERSION");
+            assertThat(alice.readUntil("351", Duration.ofSeconds(5))).contains("351");
+            String versionIsupport = alice.readUntil("005", Duration.ofSeconds(5));
+            assertThat(versionIsupport).isEqualTo(registrationIsupport);
+        }
     }
-  }
 
-  @Test
-  void timeRepliesWith391() throws Exception {
-    try (TestServer server = TestServer.start();
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void timeRepliesWith391() throws Exception {
+        try (TestServer server = TestServer.start();
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      alice.registerAndAwaitWelcome("alice", "alice");
+            alice.registerAndAwaitWelcome("alice", "alice");
 
-      alice.send("TIME");
-      assertThat(alice.readUntil("391", Duration.ofSeconds(5))).contains("391");
+            alice.send("TIME");
+            assertThat(alice.readUntil("391", Duration.ofSeconds(5))).contains("391");
+        }
     }
-  }
 
-  @Test
-  void lusersReportsConnectedClientAndActiveChannelCounts() throws Exception {
-    try (TestServer server = TestServer.start();
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
-        RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void lusersReportsConnectedClientAndActiveChannelCounts() throws Exception {
+        try (TestServer server = TestServer.start();
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
+                RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      alice.registerAndAwaitWelcome("alice", "alice");
-      bob.registerAndAwaitWelcome("bob", "bob");
-      alice.send("JOIN #lobby");
-      alice.readUntil("353", Duration.ofSeconds(5));
+            alice.registerAndAwaitWelcome("alice", "alice");
+            bob.registerAndAwaitWelcome("bob", "bob");
+            alice.send("JOIN #lobby");
+            alice.readUntil("353", Duration.ofSeconds(5));
 
-      alice.send("LUSERS");
-      String lusersClient = alice.readUntil("251", Duration.ofSeconds(5));
-      assertThat(lusersClient).contains("2");
-      String lusersChannels = alice.readUntil("254", Duration.ofSeconds(5));
-      assertThat(lusersChannels).contains("1");
+            alice.send("LUSERS");
+            String lusersClient = alice.readUntil("251", Duration.ofSeconds(5));
+            assertThat(lusersClient).contains("2");
+            String lusersChannels = alice.readUntil("254", Duration.ofSeconds(5));
+            assertThat(lusersChannels).contains("1");
+        }
     }
-  }
 }

@@ -24,18 +24,18 @@ package net.jircd.protocol;
  */
 public final class CapabilityName {
 
-  private CapabilityName() {}
+    private CapabilityName() {}
 
-  public static final String MESSAGE_TAGS = "message-tags";
-  public static final String SERVER_TIME = "server-time";
-  public static final String ECHO_MESSAGE = "echo-message";
-  public static final String AWAY_NOTIFY = "away-notify";
-  public static final String BATCH = "batch";
-  public static final String MULTI_PREFIX = "multi-prefix";
+    public static final String MESSAGE_TAGS = "message-tags";
+    public static final String SERVER_TIME = "server-time";
+    public static final String ECHO_MESSAGE = "echo-message";
+    public static final String AWAY_NOTIFY = "away-notify";
+    public static final String BATCH = "batch";
+    public static final String MULTI_PREFIX = "multi-prefix";
 
-  /**
-   * Core infrastructure, not a provider: always offered in {@code CAP LS}, never a toggleable
-   * extension. It opts a pre-302 client in to {@code CAP NEW}/{@code DEL} notifications.
-   */
-  public static final String CAP_NOTIFY = "cap-notify";
+    /**
+     * Core infrastructure, not a provider: always offered in {@code CAP LS}, never a toggleable
+     * extension. It opts a pre-302 client in to {@code CAP NEW}/{@code DEL} notifications.
+     */
+    public static final String CAP_NOTIFY = "cap-notify";
 }

@@ -25,51 +25,51 @@ import org.junit.jupiter.api.Test;
 
 class RateLimitBucketTest {
 
-  private static final class MutableClock extends Clock {
-    private Instant instant;
+    private static final class MutableClock extends Clock {
+        private Instant instant;
 
-    MutableClock(Instant start) {
-      this.instant = start;
+        MutableClock(Instant start) {
+            this.instant = start;
+        }
+
+        void advance(Duration duration) {
+            instant = instant.plus(duration);
+        }
+
+        @Override
+        public ZoneOffset getZone() {
+            return ZoneOffset.UTC;
+        }
+
+        @Override
+        public Clock withZone(java.time.ZoneId zone) {
+            return this;
+        }
+
+        @Override
+        public Instant instant() {
+            return instant;
+        }
     }
 
-    void advance(Duration duration) {
-      instant = instant.plus(duration);
+    @Test
+    void exhaustsAfterCapacityConsumed() {
+        RateLimitBucket bucket = new RateLimitBucket(3, 1.0, new MutableClock(Instant.EPOCH));
+        assertThat(bucket.tryConsume()).isTrue();
+        assertThat(bucket.tryConsume()).isTrue();
+        assertThat(bucket.tryConsume()).isTrue();
+        assertThat(bucket.tryConsume()).isFalse();
     }
 
-    @Override
-    public ZoneOffset getZone() {
-      return ZoneOffset.UTC;
+    @Test
+    void refillsOverTime() {
+        MutableClock clock = new MutableClock(Instant.EPOCH);
+        RateLimitBucket bucket = new RateLimitBucket(2, 1.0, clock);
+        assertThat(bucket.tryConsume()).isTrue();
+        assertThat(bucket.tryConsume()).isTrue();
+        assertThat(bucket.tryConsume()).isFalse();
+
+        clock.advance(Duration.ofSeconds(1));
+        assertThat(bucket.tryConsume()).isTrue();
     }
-
-    @Override
-    public Clock withZone(java.time.ZoneId zone) {
-      return this;
-    }
-
-    @Override
-    public Instant instant() {
-      return instant;
-    }
-  }
-
-  @Test
-  void exhaustsAfterCapacityConsumed() {
-    RateLimitBucket bucket = new RateLimitBucket(3, 1.0, new MutableClock(Instant.EPOCH));
-    assertThat(bucket.tryConsume()).isTrue();
-    assertThat(bucket.tryConsume()).isTrue();
-    assertThat(bucket.tryConsume()).isTrue();
-    assertThat(bucket.tryConsume()).isFalse();
-  }
-
-  @Test
-  void refillsOverTime() {
-    MutableClock clock = new MutableClock(Instant.EPOCH);
-    RateLimitBucket bucket = new RateLimitBucket(2, 1.0, clock);
-    assertThat(bucket.tryConsume()).isTrue();
-    assertThat(bucket.tryConsume()).isTrue();
-    assertThat(bucket.tryConsume()).isFalse();
-
-    clock.advance(Duration.ofSeconds(1));
-    assertThat(bucket.tryConsume()).isTrue();
-  }
 }

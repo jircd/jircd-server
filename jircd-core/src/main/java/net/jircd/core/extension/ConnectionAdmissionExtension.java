@@ -25,5 +25,5 @@ package net.jircd.core.extension;
  */
 public interface ConnectionAdmissionExtension {
 
-  boolean admit(String remoteAddress);
+    boolean admit(String remoteAddress);
 }

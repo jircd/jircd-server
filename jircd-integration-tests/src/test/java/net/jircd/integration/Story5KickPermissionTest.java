@@ -22,27 +22,27 @@ import org.junit.jupiter.api.Test;
 
 class Story5KickPermissionTest {
 
-  @Test
-  void nonOperatorKickIsRejectedAndTargetIsNotRemoved() throws Exception {
-    try (TestServer server = TestServer.start();
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
-        RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void nonOperatorKickIsRejectedAndTargetIsNotRemoved() throws Exception {
+        try (TestServer server = TestServer.start();
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
+                RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      alice.registerAndAwaitWelcome("alice", "alice"); // operator
-      bob.registerAndAwaitWelcome("bob", "bob");
+            alice.registerAndAwaitWelcome("alice", "alice"); // operator
+            bob.registerAndAwaitWelcome("bob", "bob");
 
-      alice.send("JOIN #lobby");
-      alice.readUntil("353", Duration.ofSeconds(5));
-      bob.send("JOIN #lobby");
-      bob.readUntil("353", Duration.ofSeconds(5));
+            alice.send("JOIN #lobby");
+            alice.readUntil("353", Duration.ofSeconds(5));
+            bob.send("JOIN #lobby");
+            bob.readUntil("353", Duration.ofSeconds(5));
 
-      bob.send("KICK #lobby alice :nope");
-      String rejection = bob.readUntil("482", Duration.ofSeconds(5));
-      assertThat(rejection).contains("482");
+            bob.send("KICK #lobby alice :nope");
+            String rejection = bob.readUntil("482", Duration.ofSeconds(5));
+            assertThat(rejection).contains("482");
 
-      alice.send("NAMES #lobby");
-      String names = alice.readUntil("353", Duration.ofSeconds(5));
-      assertThat(names).contains("alice").contains("bob");
+            alice.send("NAMES #lobby");
+            String names = alice.readUntil("353", Duration.ofSeconds(5));
+            assertThat(names).contains("alice").contains("bob");
+        }
     }
-  }
 }

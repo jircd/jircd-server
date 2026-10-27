@@ -25,29 +25,29 @@ import net.jircd.core.capability.Capability;
  */
 public abstract class AbstractCapabilityExtension implements CapabilityExtension {
 
-  private final String id;
-  private final Capability capability;
+    private final String id;
+    private final Capability capability;
 
-  protected AbstractCapabilityExtension(String id) {
-    this.id = id;
-    this.capability = new Capability(id);
-  }
+    protected AbstractCapabilityExtension(String id) {
+        this.id = id;
+        this.capability = new Capability(id);
+    }
 
-  @Override
-  public final String id() {
-    return id;
-  }
+    @Override
+    public final String id() {
+        return id;
+    }
 
-  @Override
-  public final Capability providedCapability() {
-    return capability;
-  }
+    @Override
+    public final Capability providedCapability() {
+        return capability;
+    }
 
-  /** No-op: nothing to prepare. Acquire resources here, never in {@link #register}. */
-  @Override
-  public void start(ServerContext context) {}
+    /** No-op: nothing to prepare. Acquire resources here, never in {@link #register}. */
+    @Override
+    public void start(ServerContext context) {}
 
-  /** No-op: nothing to release. Runs after the provider's hooks are withdrawn. */
-  @Override
-  public void stop() {}
+    /** No-op: nothing to release. Runs after the provider's hooks are withdrawn. */
+    @Override
+    public void stop() {}
 }

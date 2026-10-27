@@ -27,58 +27,58 @@ import org.junit.jupiter.api.Test;
  */
 class InformationQueryCompletenessTest {
 
-  @Test
-  void userhostReturnsHostInformation() throws Exception {
-    try (TestServer server = TestServer.start();
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
-        RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void userhostReturnsHostInformation() throws Exception {
+        try (TestServer server = TestServer.start();
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
+                RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      alice.registerAndAwaitWelcome("alice", "alice");
-      bob.registerAndAwaitWelcome("bob", "bob");
+            alice.registerAndAwaitWelcome("alice", "alice");
+            bob.registerAndAwaitWelcome("bob", "bob");
 
-      alice.send("USERHOST bob");
-      String reply = alice.readUntil("302", Duration.ofSeconds(5));
-      assertThat(reply).contains("bob=");
+            alice.send("USERHOST bob");
+            String reply = alice.readUntil("302", Duration.ofSeconds(5));
+            assertThat(reply).contains("bob=");
+        }
     }
-  }
 
-  @Test
-  void infoRepliesInsteadOfUnknownCommand() throws Exception {
-    try (TestServer server = TestServer.start();
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void infoRepliesInsteadOfUnknownCommand() throws Exception {
+        try (TestServer server = TestServer.start();
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      alice.registerAndAwaitWelcome("alice", "alice");
+            alice.registerAndAwaitWelcome("alice", "alice");
 
-      alice.send("INFO");
-      assertThat(alice.readUntil("371", Duration.ofSeconds(5))).contains("371");
-      assertThat(alice.readUntil("374", Duration.ofSeconds(5))).contains("374");
+            alice.send("INFO");
+            assertThat(alice.readUntil("371", Duration.ofSeconds(5))).contains("371");
+            assertThat(alice.readUntil("374", Duration.ofSeconds(5))).contains("374");
+        }
     }
-  }
 
-  @Test
-  void whoisOnAMissingNicknameStillSendsEndOfWhois() throws Exception {
-    try (TestServer server = TestServer.start();
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void whoisOnAMissingNicknameStillSendsEndOfWhois() throws Exception {
+        try (TestServer server = TestServer.start();
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      alice.registerAndAwaitWelcome("alice", "alice");
+            alice.registerAndAwaitWelcome("alice", "alice");
 
-      alice.send("WHOIS nonexistentnick");
-      assertThat(alice.readUntil("401", Duration.ofSeconds(5))).contains("401");
-      assertThat(alice.readUntil("318", Duration.ofSeconds(5))).contains("318");
+            alice.send("WHOIS nonexistentnick");
+            assertThat(alice.readUntil("401", Duration.ofSeconds(5))).contains("401");
+            assertThat(alice.readUntil("318", Duration.ofSeconds(5))).contains("318");
+        }
     }
-  }
 
-  @Test
-  void awayWithEmptyArgumentClearsAwayStatus() throws Exception {
-    try (TestServer server = TestServer.start();
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void awayWithEmptyArgumentClearsAwayStatus() throws Exception {
+        try (TestServer server = TestServer.start();
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      alice.registerAndAwaitWelcome("alice", "alice");
-      alice.send("AWAY :gone for lunch");
-      alice.readUntil("306", Duration.ofSeconds(5));
+            alice.registerAndAwaitWelcome("alice", "alice");
+            alice.send("AWAY :gone for lunch");
+            alice.readUntil("306", Duration.ofSeconds(5));
 
-      alice.send("AWAY :");
-      assertThat(alice.readUntil("305", Duration.ofSeconds(5))).contains("305");
+            alice.send("AWAY :");
+            assertThat(alice.readUntil("305", Duration.ofSeconds(5))).contains("305");
+        }
     }
-  }
 }

@@ -39,103 +39,104 @@ import java.util.Base64;
  */
 public final class TlsCertificateLoader {
 
-  private static final String PEM_KEY_HEADER = "-----BEGIN PRIVATE KEY-----";
-  private static final String PEM_KEY_FOOTER = "-----END PRIVATE KEY-----";
-  private static final String ENCRYPTED_PEM_KEY_HEADER = "-----BEGIN ENCRYPTED PRIVATE KEY-----";
-  private static final String LEGACY_PEM_KEY_HEADER = "-----BEGIN RSA PRIVATE KEY-----";
+    private static final String PEM_KEY_HEADER = "-----BEGIN PRIVATE KEY-----";
+    private static final String PEM_KEY_FOOTER = "-----END PRIVATE KEY-----";
+    private static final String ENCRYPTED_PEM_KEY_HEADER = "-----BEGIN ENCRYPTED PRIVATE KEY-----";
+    private static final String LEGACY_PEM_KEY_HEADER = "-----BEGIN RSA PRIVATE KEY-----";
 
-  /** The password used for the in-memory {@link KeyStore} entry the PEM form builds. */
-  public static final char[] PEM_KEY_PASSWORD = new char[0];
+    /** The password used for the in-memory {@link KeyStore} entry the PEM form builds. */
+    public static final char[] PEM_KEY_PASSWORD = new char[0];
 
-  private TlsCertificateLoader() {}
+    private TlsCertificateLoader() {}
 
-  /**
-   * @return {@code listener.keystorePassword()} as a char array. No default is substituted — {@code
-   *     "changeit"}-style well-known defaults are exactly the kind of credential that defeats a
-   *     PKCS12 keystore's own password-based encryption of its private key entry; {@link
-   *     ConfigurationLoader} already guarantees a {@code keystorePath} listener has a non-null
-   *     password before this is ever called.
-   */
-  public static char[] keystorePassword(ServerConfiguration.Listener listener) {
-    return listener.keystorePassword().toCharArray();
-  }
-
-  /**
-   * Loads {@code listener}'s configured certificate — {@link
-   * ServerConfiguration.Listener#keystorePath()} if present, otherwise the PEM pair — into a {@link
-   * KeyStore}. Callers already know exactly one form is present (validated by {@link
-   * ConfigurationLoader#load}) before this is ever called.
-   */
-  public static KeyStore load(ServerConfiguration.Listener listener)
-      throws GeneralSecurityException, IOException {
-    return listener.keystorePath() != null
-        ? loadPkcs12Keystore(listener.keystorePath(), keystorePassword(listener))
-        : buildPemKeyStore(listener.certPath(), listener.keyPath());
-  }
-
-  private static KeyStore loadPkcs12Keystore(String path, char[] password)
-      throws GeneralSecurityException, IOException {
-    KeyStore keyStore = KeyStore.getInstance("PKCS12");
-    try (InputStream in = Files.newInputStream(Path.of(path))) {
-      keyStore.load(in, password);
-    }
-    return keyStore;
-  }
-
-  /**
-   * Parses the certificate and private key directly from their PEM files and assembles an in-memory
-   * PKCS12 {@link KeyStore} — no temp file is ever written.
-   */
-  private static KeyStore buildPemKeyStore(String certPath, String keyPath)
-      throws GeneralSecurityException, IOException {
-    Certificate certificate;
-    try (InputStream in = Files.newInputStream(Path.of(certPath))) {
-      certificate = CertificateFactory.getInstance("X.509").generateCertificate(in);
-    }
-    PrivateKey privateKey = readPemPrivateKey(Path.of(keyPath));
-
-    KeyStore keyStore = KeyStore.getInstance("PKCS12");
-    keyStore.load(null, null);
-    keyStore.setKeyEntry("jircd", privateKey, PEM_KEY_PASSWORD, new Certificate[] {certificate});
-    return keyStore;
-  }
-
-  /**
-   * Reads a PKCS#8-encoded, unencrypted private key (the format Let's Encrypt/certbot's own {@code
-   * privkey.pem} uses by default, research.md "PEM parsing") — a passphrase-encrypted key or the
-   * legacy PKCS#1 format are both out of scope, but rejected with a specific, actionable message
-   * rather than a generic parse failure.
-   */
-  private static PrivateKey readPemPrivateKey(Path path)
-      throws GeneralSecurityException, IOException {
-    String pem = Files.readString(path);
-    if (pem.contains(ENCRYPTED_PEM_KEY_HEADER)) {
-      throw new GeneralSecurityException(
-          "PEM private key at "
-              + path
-              + " is passphrase-encrypted, which jircd does not support — decrypt it first,"
-              + " e.g. 'openssl pkcs8 -in <key> -topk8 -nocrypt -out <output>'");
-    }
-    if (pem.contains(LEGACY_PEM_KEY_HEADER)) {
-      throw new GeneralSecurityException(
-          "PEM private key at "
-              + path
-              + " is in the legacy PKCS#1 format, which jircd does not support — convert it"
-              + " first, e.g. 'openssl pkcs8 -in <key> -topk8 -nocrypt -out <output>'");
-    }
-    if (!pem.contains(PEM_KEY_HEADER)) {
-      throw new GeneralSecurityException(
-          "PEM private key at " + path + " is not in a recognized PKCS#8 PEM format");
+    /**
+     * @return {@code listener.keystorePassword()} as a char array. No default is substituted —
+     *     {@code "changeit"}-style well-known defaults are exactly the kind of credential that
+     *     defeats a PKCS12 keystore's own password-based encryption of its private key entry;
+     *     {@link ConfigurationLoader} already guarantees a {@code keystorePath} listener has a
+     *     non-null password before this is ever called.
+     */
+    public static char[] keystorePassword(ServerConfiguration.Listener listener) {
+        return listener.keystorePassword().toCharArray();
     }
 
-    String base64 =
-        pem.replace(PEM_KEY_HEADER, "").replace(PEM_KEY_FOOTER, "").replaceAll("\\s", "");
-    byte[] der = Base64.getDecoder().decode(base64);
-    PKCS8EncodedKeySpec keySpec = new PKCS8EncodedKeySpec(der);
-    try {
-      return KeyFactory.getInstance("RSA").generatePrivate(keySpec);
-    } catch (InvalidKeySpecException e) {
-      return KeyFactory.getInstance("EC").generatePrivate(keySpec);
+    /**
+     * Loads {@code listener}'s configured certificate — {@link
+     * ServerConfiguration.Listener#keystorePath()} if present, otherwise the PEM pair — into a
+     * {@link KeyStore}. Callers already know exactly one form is present (validated by {@link
+     * ConfigurationLoader#load}) before this is ever called.
+     */
+    public static KeyStore load(ServerConfiguration.Listener listener)
+            throws GeneralSecurityException, IOException {
+        return listener.keystorePath() != null
+                ? loadPkcs12Keystore(listener.keystorePath(), keystorePassword(listener))
+                : buildPemKeyStore(listener.certPath(), listener.keyPath());
     }
-  }
+
+    private static KeyStore loadPkcs12Keystore(String path, char[] password)
+            throws GeneralSecurityException, IOException {
+        KeyStore keyStore = KeyStore.getInstance("PKCS12");
+        try (InputStream in = Files.newInputStream(Path.of(path))) {
+            keyStore.load(in, password);
+        }
+        return keyStore;
+    }
+
+    /**
+     * Parses the certificate and private key directly from their PEM files and assembles an
+     * in-memory PKCS12 {@link KeyStore} — no temp file is ever written.
+     */
+    private static KeyStore buildPemKeyStore(String certPath, String keyPath)
+            throws GeneralSecurityException, IOException {
+        Certificate certificate;
+        try (InputStream in = Files.newInputStream(Path.of(certPath))) {
+            certificate = CertificateFactory.getInstance("X.509").generateCertificate(in);
+        }
+        PrivateKey privateKey = readPemPrivateKey(Path.of(keyPath));
+
+        KeyStore keyStore = KeyStore.getInstance("PKCS12");
+        keyStore.load(null, null);
+        keyStore.setKeyEntry(
+                "jircd", privateKey, PEM_KEY_PASSWORD, new Certificate[] {certificate});
+        return keyStore;
+    }
+
+    /**
+     * Reads a PKCS#8-encoded, unencrypted private key (the format Let's Encrypt/certbot's own
+     * {@code privkey.pem} uses by default, research.md "PEM parsing") — a passphrase-encrypted key
+     * or the legacy PKCS#1 format are both out of scope, but rejected with a specific, actionable
+     * message rather than a generic parse failure.
+     */
+    private static PrivateKey readPemPrivateKey(Path path)
+            throws GeneralSecurityException, IOException {
+        String pem = Files.readString(path);
+        if (pem.contains(ENCRYPTED_PEM_KEY_HEADER)) {
+            throw new GeneralSecurityException(
+                    "PEM private key at "
+                            + path
+                            + " is passphrase-encrypted, which jircd does not support — decrypt it first,"
+                            + " e.g. 'openssl pkcs8 -in <key> -topk8 -nocrypt -out <output>'");
+        }
+        if (pem.contains(LEGACY_PEM_KEY_HEADER)) {
+            throw new GeneralSecurityException(
+                    "PEM private key at "
+                            + path
+                            + " is in the legacy PKCS#1 format, which jircd does not support — convert it"
+                            + " first, e.g. 'openssl pkcs8 -in <key> -topk8 -nocrypt -out <output>'");
+        }
+        if (!pem.contains(PEM_KEY_HEADER)) {
+            throw new GeneralSecurityException(
+                    "PEM private key at " + path + " is not in a recognized PKCS#8 PEM format");
+        }
+
+        String base64 =
+                pem.replace(PEM_KEY_HEADER, "").replace(PEM_KEY_FOOTER, "").replaceAll("\\s", "");
+        byte[] der = Base64.getDecoder().decode(base64);
+        PKCS8EncodedKeySpec keySpec = new PKCS8EncodedKeySpec(der);
+        try {
+            return KeyFactory.getInstance("RSA").generatePrivate(keySpec);
+        } catch (InvalidKeySpecException e) {
+            return KeyFactory.getInstance("EC").generatePrivate(keySpec);
+        }
+    }
 }

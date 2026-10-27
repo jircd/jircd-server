@@ -28,23 +28,24 @@ import net.jircd.protocol.NumericReply;
  */
 public final class InfoCommandHandler implements CommandHandler {
 
-  private final Supplier<String> serverName;
-  private final String serverVersion;
+    private final Supplier<String> serverName;
+    private final String serverVersion;
 
-  public InfoCommandHandler(Supplier<String> serverName, String serverVersion) {
-    this.serverName = serverName;
-    this.serverVersion = serverVersion;
-  }
+    public InfoCommandHandler(Supplier<String> serverName, String serverVersion) {
+        this.serverName = serverName;
+        this.serverVersion = serverVersion;
+    }
 
-  @Override
-  public void handle(ClientSession session, Message message) {
-    String server = serverName.get();
-    Replies.sendFitted(
-        session,
-        server,
-        NumericReply.RPL_INFO,
-        List.of(),
-        server + " (jircd IRC server) " + serverVersion);
-    Replies.sendFitted(session, server, NumericReply.RPL_ENDOFINFO, List.of(), "End of /INFO list");
-  }
+    @Override
+    public void handle(ClientSession session, Message message) {
+        String server = serverName.get();
+        Replies.sendFitted(
+                session,
+                server,
+                NumericReply.RPL_INFO,
+                List.of(),
+                server + " (jircd IRC server) " + serverVersion);
+        Replies.sendFitted(
+                session, server, NumericReply.RPL_ENDOFINFO, List.of(), "End of /INFO list");
+    }
 }

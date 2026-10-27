@@ -26,49 +26,50 @@ import org.junit.jupiter.api.Test;
  */
 class TopicLockTest {
 
-  @Test
-  void ordinaryMemberCanSetTheTopicWithTopicLockOff() throws Exception {
-    try (TestServer server = TestServer.start();
-        RawIrcClient foo = RawIrcClient.connectPlaintext(server.plaintextPort());
-        RawIrcClient bar = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void ordinaryMemberCanSetTheTopicWithTopicLockOff() throws Exception {
+        try (TestServer server = TestServer.start();
+                RawIrcClient foo = RawIrcClient.connectPlaintext(server.plaintextPort());
+                RawIrcClient bar = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      foo.registerAndAwaitWelcome("foo", "foo"); // operator via first-join
-      foo.send("JOIN #chan");
-      foo.readUntil("353", Duration.ofSeconds(5));
+            foo.registerAndAwaitWelcome("foo", "foo"); // operator via first-join
+            foo.send("JOIN #chan");
+            foo.readUntil("353", Duration.ofSeconds(5));
 
-      bar.registerAndAwaitWelcome("bar", "bar");
-      bar.send("JOIN #chan");
-      bar.readUntil("353", Duration.ofSeconds(5));
-      foo.readUntil("JOIN #chan", Duration.ofSeconds(5));
+            bar.registerAndAwaitWelcome("bar", "bar");
+            bar.send("JOIN #chan");
+            bar.readUntil("353", Duration.ofSeconds(5));
+            foo.readUntil("JOIN #chan", Duration.ofSeconds(5));
 
-      bar.send("TOPIC #chan :new topic");
-      assertThat(bar.readUntil("TOPIC #chan", Duration.ofSeconds(5))).contains("new topic");
+            bar.send("TOPIC #chan :new topic");
+            assertThat(bar.readUntil("TOPIC #chan", Duration.ofSeconds(5))).contains("new topic");
+        }
     }
-  }
 
-  @Test
-  void ordinaryMemberIsRejectedWithTopicLockOnButOperatorAlwaysSucceeds() throws Exception {
-    try (TestServer server = TestServer.start();
-        RawIrcClient foo = RawIrcClient.connectPlaintext(server.plaintextPort());
-        RawIrcClient bar = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void ordinaryMemberIsRejectedWithTopicLockOnButOperatorAlwaysSucceeds() throws Exception {
+        try (TestServer server = TestServer.start();
+                RawIrcClient foo = RawIrcClient.connectPlaintext(server.plaintextPort());
+                RawIrcClient bar = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      foo.registerAndAwaitWelcome("foo", "foo"); // operator via first-join
-      foo.send("JOIN #chan");
-      foo.readUntil("353", Duration.ofSeconds(5));
+            foo.registerAndAwaitWelcome("foo", "foo"); // operator via first-join
+            foo.send("JOIN #chan");
+            foo.readUntil("353", Duration.ofSeconds(5));
 
-      bar.registerAndAwaitWelcome("bar", "bar");
-      bar.send("JOIN #chan");
-      bar.readUntil("353", Duration.ofSeconds(5));
-      foo.readUntil("JOIN #chan", Duration.ofSeconds(5));
+            bar.registerAndAwaitWelcome("bar", "bar");
+            bar.send("JOIN #chan");
+            bar.readUntil("353", Duration.ofSeconds(5));
+            foo.readUntil("JOIN #chan", Duration.ofSeconds(5));
 
-      foo.send("MODE #chan +t");
-      foo.readUntil("MODE #chan +t", Duration.ofSeconds(5));
+            foo.send("MODE #chan +t");
+            foo.readUntil("MODE #chan +t", Duration.ofSeconds(5));
 
-      bar.send("TOPIC #chan :new topic");
-      assertThat(bar.readUntil("482", Duration.ofSeconds(5))).contains("482");
+            bar.send("TOPIC #chan :new topic");
+            assertThat(bar.readUntil("482", Duration.ofSeconds(5))).contains("482");
 
-      foo.send("TOPIC #chan :ops always can");
-      assertThat(foo.readUntil("TOPIC #chan", Duration.ofSeconds(5))).contains("ops always can");
+            foo.send("TOPIC #chan :ops always can");
+            assertThat(foo.readUntil("TOPIC #chan", Duration.ofSeconds(5)))
+                    .contains("ops always can");
+        }
     }
-  }
 }

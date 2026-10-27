@@ -23,14 +23,14 @@ package net.jircd.core.session;
  */
 public final class CaseMapping {
 
-  private CaseMapping() {}
+    private CaseMapping() {}
 
-  public static String fold(String value) {
-    return net.jircd.protocol.CaseMapping.fold(value);
-  }
+    public static String fold(String value) {
+        return net.jircd.protocol.CaseMapping.fold(value);
+    }
 
-  /** Case-insensitive (rfc1459-folded) {@code *}/{@code ?} wildcard match (FR-052/FR-061). */
-  public static boolean matches(String value, String mask) {
-    return net.jircd.protocol.CaseMapping.matches(value, mask);
-  }
+    /** Case-insensitive (rfc1459-folded) {@code *}/{@code ?} wildcard match (FR-052/FR-061). */
+    public static boolean matches(String value, String mask) {
+        return net.jircd.protocol.CaseMapping.matches(value, mask);
+    }
 }

@@ -33,122 +33,123 @@ import net.jircd.core.config.ServerConfiguration;
 import org.junit.jupiter.api.Test;
 
 class ListenerBacklogTest {
-  private static final InetAddress LOOPBACK = InetAddress.ofLiteral("127.0.0.1");
-  private static final int BACKLOG = 2048;
+    private static final InetAddress LOOPBACK = InetAddress.ofLiteral("127.0.0.1");
+    private static final int BACKLOG = 2048;
 
-  @Test
-  void plaintextPassesConfiguredBacklogToChannelBind() throws Exception {
-    try (RecordingChannel channel = new RecordingChannel()) {
-      assertThat(PlaintextListener.openServerChannel(configuration(false), channel))
-          .isSameAs(channel);
-      assertThat(channel.backlog).isEqualTo(BACKLOG);
-      assertThat(channel.address).isEqualTo(new InetSocketAddress(LOOPBACK, 0));
-    }
-  }
-
-  @Test
-  void tlsPassesConfiguredBacklogToSocketFactory() throws Exception {
-    RecordingSocketFactory factory = new RecordingSocketFactory();
-    try (SSLServerSocket socket = TlsListener.openServerSocket(configuration(true), factory)) {
-      assertThat(socket).isNotNull();
-      assertThat(factory.backlog).isEqualTo(BACKLOG);
-      assertThat(factory.address).isEqualTo(LOOPBACK);
-      assertThat(factory.port).isZero();
-    }
-  }
-
-  private static ServerConfiguration.Listener configuration(boolean tls) {
-    return new ServerConfiguration.Listener(0, tls, LOOPBACK, null, null, null, null, BACKLOG);
-  }
-
-  private static final class RecordingChannel extends ServerSocketChannel {
-    private int backlog;
-    private SocketAddress address;
-
-    RecordingChannel() {
-      super(SelectorProvider.provider());
+    @Test
+    void plaintextPassesConfiguredBacklogToChannelBind() throws Exception {
+        try (RecordingChannel channel = new RecordingChannel()) {
+            assertThat(PlaintextListener.openServerChannel(configuration(false), channel))
+                    .isSameAs(channel);
+            assertThat(channel.backlog).isEqualTo(BACKLOG);
+            assertThat(channel.address).isEqualTo(new InetSocketAddress(LOOPBACK, 0));
+        }
     }
 
-    @Override
-    public ServerSocketChannel bind(SocketAddress local, int requestedBacklog) {
-      address = local;
-      backlog = requestedBacklog;
-      return this;
+    @Test
+    void tlsPassesConfiguredBacklogToSocketFactory() throws Exception {
+        RecordingSocketFactory factory = new RecordingSocketFactory();
+        try (SSLServerSocket socket = TlsListener.openServerSocket(configuration(true), factory)) {
+            assertThat(socket).isNotNull();
+            assertThat(factory.backlog).isEqualTo(BACKLOG);
+            assertThat(factory.address).isEqualTo(LOOPBACK);
+            assertThat(factory.port).isZero();
+        }
     }
 
-    @Override
-    public <T> ServerSocketChannel setOption(SocketOption<T> name, T value) {
-      throw new UnsupportedOperationException();
+    private static ServerConfiguration.Listener configuration(boolean tls) {
+        return new ServerConfiguration.Listener(0, tls, LOOPBACK, null, null, null, null, BACKLOG);
     }
 
-    @Override
-    public <T> T getOption(SocketOption<T> name) {
-      throw new UnsupportedOperationException();
+    private static final class RecordingChannel extends ServerSocketChannel {
+        private int backlog;
+        private SocketAddress address;
+
+        RecordingChannel() {
+            super(SelectorProvider.provider());
+        }
+
+        @Override
+        public ServerSocketChannel bind(SocketAddress local, int requestedBacklog) {
+            address = local;
+            backlog = requestedBacklog;
+            return this;
+        }
+
+        @Override
+        public <T> ServerSocketChannel setOption(SocketOption<T> name, T value) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public <T> T getOption(SocketOption<T> name) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public Set<SocketOption<?>> supportedOptions() {
+            return Set.of();
+        }
+
+        @Override
+        public ServerSocket socket() {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public SocketChannel accept() {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public SocketAddress getLocalAddress() {
+            return address;
+        }
+
+        @Override
+        protected void implCloseSelectableChannel() {
+            // No native resources.
+        }
+
+        @Override
+        protected void implConfigureBlocking(boolean block) {
+            // No native resources.
+        }
     }
 
-    @Override
-    public Set<SocketOption<?>> supportedOptions() {
-      return Set.of();
-    }
+    private static final class RecordingSocketFactory extends SSLServerSocketFactory {
+        private int backlog;
+        private int port;
+        private InetAddress address;
 
-    @Override
-    public ServerSocket socket() {
-      throw new UnsupportedOperationException();
-    }
+        @Override
+        public ServerSocket createServerSocket(
+                int requestedPort, int requestedBacklog, InetAddress requestedAddress)
+                throws IOException {
+            port = requestedPort;
+            backlog = requestedBacklog;
+            address = requestedAddress;
+            return SSLServerSocketFactory.getDefault().createServerSocket();
+        }
 
-    @Override
-    public SocketChannel accept() {
-      throw new UnsupportedOperationException();
-    }
+        @Override
+        public ServerSocket createServerSocket(int requestedPort) {
+            throw new UnsupportedOperationException();
+        }
 
-    @Override
-    public SocketAddress getLocalAddress() {
-      return address;
-    }
+        @Override
+        public ServerSocket createServerSocket(int requestedPort, int requestedBacklog) {
+            throw new UnsupportedOperationException();
+        }
 
-    @Override
-    protected void implCloseSelectableChannel() {
-      // No native resources.
-    }
+        @Override
+        public String[] getDefaultCipherSuites() {
+            return new String[0];
+        }
 
-    @Override
-    protected void implConfigureBlocking(boolean block) {
-      // No native resources.
+        @Override
+        public String[] getSupportedCipherSuites() {
+            return new String[0];
+        }
     }
-  }
-
-  private static final class RecordingSocketFactory extends SSLServerSocketFactory {
-    private int backlog;
-    private int port;
-    private InetAddress address;
-
-    @Override
-    public ServerSocket createServerSocket(
-        int requestedPort, int requestedBacklog, InetAddress requestedAddress) throws IOException {
-      port = requestedPort;
-      backlog = requestedBacklog;
-      address = requestedAddress;
-      return SSLServerSocketFactory.getDefault().createServerSocket();
-    }
-
-    @Override
-    public ServerSocket createServerSocket(int requestedPort) {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public ServerSocket createServerSocket(int requestedPort, int requestedBacklog) {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public String[] getDefaultCipherSuites() {
-      return new String[0];
-    }
-
-    @Override
-    public String[] getSupportedCipherSuites() {
-      return new String[0];
-    }
-  }
 }

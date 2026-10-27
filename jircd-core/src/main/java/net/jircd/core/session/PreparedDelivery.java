@@ -25,8 +25,8 @@ import net.jircd.core.extension.capability.RuntimeSnapshot;
  */
 public record PreparedDelivery(FrameSequence frames, RuntimeSnapshot view) {
 
-  public PreparedDelivery {
-    Objects.requireNonNull(frames);
-    Objects.requireNonNull(view);
-  }
+    public PreparedDelivery {
+        Objects.requireNonNull(frames);
+        Objects.requireNonNull(view);
+    }
 }

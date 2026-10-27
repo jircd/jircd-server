@@ -25,45 +25,45 @@ import net.jircd.core.config.ServerConfiguration;
  */
 public final class RateLimitBucket {
 
-  private final int capacity;
-  private final double refillPerSecond;
-  private final Clock clock;
-  private final Object lock = new Object();
+    private final int capacity;
+    private final double refillPerSecond;
+    private final Clock clock;
+    private final Object lock = new Object();
 
-  private double tokens;
-  private long lastRefillNanos;
+    private double tokens;
+    private long lastRefillNanos;
 
-  public RateLimitBucket(int capacity, double refillPerSecond, Clock clock) {
-    this.capacity = capacity;
-    this.refillPerSecond = refillPerSecond;
-    this.clock = clock;
-    this.tokens = capacity;
-    this.lastRefillNanos = clock.instant().toEpochMilli() * 1_000_000L;
-  }
-
-  public static RateLimitBucket withDefaults() {
-    return new RateLimitBucket(
-        ServerConfiguration.DEFAULT_RATE_LIMIT_BUCKET_SIZE,
-        ServerConfiguration.DEFAULT_RATE_LIMIT_REFILL_PER_SECOND,
-        Clock.systemUTC());
-  }
-
-  /** Attempts to consume one token; returns {@code false} if the bucket is exhausted. */
-  public boolean tryConsume() {
-    synchronized (lock) {
-      refill();
-      if (tokens >= 1.0) {
-        tokens -= 1.0;
-        return true;
-      }
-      return false;
+    public RateLimitBucket(int capacity, double refillPerSecond, Clock clock) {
+        this.capacity = capacity;
+        this.refillPerSecond = refillPerSecond;
+        this.clock = clock;
+        this.tokens = capacity;
+        this.lastRefillNanos = clock.instant().toEpochMilli() * 1_000_000L;
     }
-  }
 
-  private void refill() {
-    long nowNanos = clock.instant().toEpochMilli() * 1_000_000L;
-    double elapsedSeconds = Math.max(0, nowNanos - lastRefillNanos) / 1_000_000_000.0;
-    tokens = Math.min(capacity, tokens + elapsedSeconds * refillPerSecond);
-    lastRefillNanos = nowNanos;
-  }
+    public static RateLimitBucket withDefaults() {
+        return new RateLimitBucket(
+                ServerConfiguration.DEFAULT_RATE_LIMIT_BUCKET_SIZE,
+                ServerConfiguration.DEFAULT_RATE_LIMIT_REFILL_PER_SECOND,
+                Clock.systemUTC());
+    }
+
+    /** Attempts to consume one token; returns {@code false} if the bucket is exhausted. */
+    public boolean tryConsume() {
+        synchronized (lock) {
+            refill();
+            if (tokens >= 1.0) {
+                tokens -= 1.0;
+                return true;
+            }
+            return false;
+        }
+    }
+
+    private void refill() {
+        long nowNanos = clock.instant().toEpochMilli() * 1_000_000L;
+        double elapsedSeconds = Math.max(0, nowNanos - lastRefillNanos) / 1_000_000_000.0;
+        tokens = Math.min(capacity, tokens + elapsedSeconds * refillPerSecond);
+        lastRefillNanos = nowNanos;
+    }
 }

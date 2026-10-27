@@ -40,112 +40,120 @@ import net.jircd.protocol.NumericReply;
  */
 public final class TopicCommandHandler implements CommandHandler {
 
-  private final ChannelRegistry channelRegistry;
-  private final ExtensionRegistry extensionRegistry;
-  private final Supplier<String> serverName;
-  private final IntSupplier topicMaxLength;
-  private final Clock clock;
+    private final ChannelRegistry channelRegistry;
+    private final ExtensionRegistry extensionRegistry;
+    private final Supplier<String> serverName;
+    private final IntSupplier topicMaxLength;
+    private final Clock clock;
 
-  public TopicCommandHandler(
-      ChannelRegistry channelRegistry,
-      ExtensionRegistry extensionRegistry,
-      Supplier<String> serverName,
-      IntSupplier topicMaxLength) {
-    this(channelRegistry, extensionRegistry, serverName, topicMaxLength, Clock.systemUTC());
-  }
-
-  public TopicCommandHandler(
-      ChannelRegistry channelRegistry,
-      ExtensionRegistry extensionRegistry,
-      Supplier<String> serverName,
-      IntSupplier topicMaxLength,
-      Clock clock) {
-    this.clock = clock;
-    this.channelRegistry = channelRegistry;
-    this.extensionRegistry = extensionRegistry;
-    this.serverName = serverName;
-    this.topicMaxLength = topicMaxLength;
-  }
-
-  @Override
-  public void handle(ClientSession session, Message message) {
-    if (message.params().isEmpty()) {
-      Replies.sendFitted(
-          session,
-          serverName.get(),
-          NumericReply.ERR_NEEDMOREPARAMS,
-          List.of("TOPIC"),
-          "Not enough parameters");
-      return;
-    }
-    String channelName = message.params().getFirst();
-    var found = channelRegistry.lookup(channelName);
-    if (found.isEmpty()
-        || ChannelVisibility.isHiddenFrom(found.get(), session, extensionRegistry)) {
-      Replies.sendFitted(
-          session,
-          serverName.get(),
-          NumericReply.ERR_NOSUCHCHANNEL,
-          List.of(channelName),
-          "No such channel");
-      return;
-    }
-    Channel channel = found.get();
-
-    if (message.params().size() < 2) {
-      Channel.Topic topic = channel.topicState();
-      if (topic == null) {
-        Replies.sendFitted(
-            session,
-            serverName.get(),
-            NumericReply.RPL_NOTOPIC,
-            List.of(channel.name()),
-            "No topic is set");
-      } else {
-        Replies.sendFitted(
-            session,
-            serverName.get(),
-            NumericReply.RPL_TOPIC,
-            List.of(channel.name()),
-            topic.text());
-        Replies.send(
-            session,
-            serverName.get(),
-            NumericReply.RPL_TOPICWHOTIME,
-            channel.name(),
-            topic.setter(),
-            Long.toString(topic.setAt()));
-      }
-      return;
+    public TopicCommandHandler(
+            ChannelRegistry channelRegistry,
+            ExtensionRegistry extensionRegistry,
+            Supplier<String> serverName,
+            IntSupplier topicMaxLength) {
+        this(channelRegistry, extensionRegistry, serverName, topicMaxLength, Clock.systemUTC());
     }
 
-    // Operator privilege is only required while
-    // topic-lock is active; any member may set the topic when it's off.
-    if (channel.activeModes().contains(CoreChannelModes.TOPIC_LOCK)
-        && !channel.operators().contains(session)) {
-      Replies.sendFitted(
-          session,
-          serverName.get(),
-          NumericReply.ERR_CHANOPRIVSNEEDED,
-          List.of(channel.name()),
-          "You're not channel operator");
-      return;
+    public TopicCommandHandler(
+            ChannelRegistry channelRegistry,
+            ExtensionRegistry extensionRegistry,
+            Supplier<String> serverName,
+            IntSupplier topicMaxLength,
+            Clock clock) {
+        this.clock = clock;
+        this.channelRegistry = channelRegistry;
+        this.extensionRegistry = extensionRegistry;
+        this.serverName = serverName;
+        this.topicMaxLength = topicMaxLength;
     }
 
-    String newTopic = message.params().get(1);
-    if (newTopic.length() > topicMaxLength.getAsInt()) {
-      Replies.sendFitted(
-          session, serverName.get(), NumericReply.ERR_INPUTTOOLONG, List.of(), "Topic too long");
-      return;
-    }
+    @Override
+    public void handle(ClientSession session, Message message) {
+        if (message.params().isEmpty()) {
+            Replies.sendFitted(
+                    session,
+                    serverName.get(),
+                    NumericReply.ERR_NEEDMOREPARAMS,
+                    List.of("TOPIC"),
+                    "Not enough parameters");
+            return;
+        }
+        String channelName = message.params().getFirst();
+        var found = channelRegistry.lookup(channelName);
+        if (found.isEmpty()
+                || ChannelVisibility.isHiddenFrom(found.get(), session, extensionRegistry)) {
+            Replies.sendFitted(
+                    session,
+                    serverName.get(),
+                    NumericReply.ERR_NOSUCHCHANNEL,
+                    List.of(channelName),
+                    "No such channel");
+            return;
+        }
+        Channel channel = found.get();
 
-    channel.setTopic(
-        newTopic,
-        PresentedIdentity.presentedForm(session, extensionRegistry),
-        clock.instant().getEpochSecond());
-    Message topicNotification =
-        new Message(
-            Map.of(), serverName.get(), Command.TOPIC, "TOPIC", List.of(channel.name(), newTopic));
-    Recipients.deliver(channel.members(), topicNotification);
-  }
+        if (message.params().size() < 2) {
+            Channel.Topic topic = channel.topicState();
+            if (topic == null) {
+                Replies.sendFitted(
+                        session,
+                        serverName.get(),
+                        NumericReply.RPL_NOTOPIC,
+                        List.of(channel.name()),
+                        "No topic is set");
+            } else {
+                Replies.sendFitted(
+                        session,
+                        serverName.get(),
+                        NumericReply.RPL_TOPIC,
+                        List.of(channel.name()),
+                        topic.text());
+                Replies.send(
+                        session,
+                        serverName.get(),
+                        NumericReply.RPL_TOPICWHOTIME,
+                        channel.name(),
+                        topic.setter(),
+                        Long.toString(topic.setAt()));
+            }
+            return;
+        }
+
+        // Operator privilege is only required while
+        // topic-lock is active; any member may set the topic when it's off.
+        if (channel.activeModes().contains(CoreChannelModes.TOPIC_LOCK)
+                && !channel.operators().contains(session)) {
+            Replies.sendFitted(
+                    session,
+                    serverName.get(),
+                    NumericReply.ERR_CHANOPRIVSNEEDED,
+                    List.of(channel.name()),
+                    "You're not channel operator");
+            return;
+        }
+
+        String newTopic = message.params().get(1);
+        if (newTopic.length() > topicMaxLength.getAsInt()) {
+            Replies.sendFitted(
+                    session,
+                    serverName.get(),
+                    NumericReply.ERR_INPUTTOOLONG,
+                    List.of(),
+                    "Topic too long");
+            return;
+        }
+
+        channel.setTopic(
+                newTopic,
+                PresentedIdentity.presentedForm(session, extensionRegistry),
+                clock.instant().getEpochSecond());
+        Message topicNotification =
+                new Message(
+                        Map.of(),
+                        serverName.get(),
+                        Command.TOPIC,
+                        "TOPIC",
+                        List.of(channel.name(), newTopic));
+        Recipients.deliver(channel.members(), topicNotification);
+    }
 }

@@ -24,8 +24,8 @@ import java.util.Objects;
  * a WHO flag for the requester, applying whichever capability providers that requester negotiated.
  */
 public record MemberFacts(ClientSession member, List<String> heldStatuses) {
-  public MemberFacts {
-    Objects.requireNonNull(member);
-    heldStatuses = List.copyOf(heldStatuses);
-  }
+    public MemberFacts {
+        Objects.requireNonNull(member);
+        heldStatuses = List.copyOf(heldStatuses);
+    }
 }

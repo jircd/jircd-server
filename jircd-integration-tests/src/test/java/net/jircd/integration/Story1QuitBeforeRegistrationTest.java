@@ -22,17 +22,17 @@ import org.junit.jupiter.api.Test;
 
 class Story1QuitBeforeRegistrationTest {
 
-  @Test
-  void quitBeforeRegistrationCompletesClosesCleanlyWithNoCrash() throws Exception {
-    try (TestServer server = TestServer.start();
-        RawIrcClient client = RawIrcClient.connectPlaintext(server.plaintextPort())) {
-      client.send("NICK alice"); // registration incomplete — no USER yet
-      client.send("QUIT");
+    @Test
+    void quitBeforeRegistrationCompletesClosesCleanlyWithNoCrash() throws Exception {
+        try (TestServer server = TestServer.start();
+                RawIrcClient client = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+            client.send("NICK alice"); // registration incomplete — no USER yet
+            client.send("QUIT");
 
-      // FR-001: ERROR is sent regardless of registration state, then the connection closes.
-      assertThat(client.readUntil("ERROR", Duration.ofSeconds(5))).contains("ERROR");
-      String line = client.readLine();
-      assertThat(line).isNull();
+            // FR-001: ERROR is sent regardless of registration state, then the connection closes.
+            assertThat(client.readUntil("ERROR", Duration.ofSeconds(5))).contains("ERROR");
+            String line = client.readLine();
+            assertThat(line).isNull();
+        }
     }
-  }
 }

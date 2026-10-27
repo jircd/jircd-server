@@ -23,7 +23,7 @@ import java.util.Set;
  * A removed membership with the recipients captured before removal, including the departed member.
  */
 public record Departure(Channel channel, ClientSession departed, Set<ClientSession> recipients) {
-  public Departure {
-    recipients = Collections.unmodifiableSet(new LinkedHashSet<>(recipients));
-  }
+    public Departure {
+        recipients = Collections.unmodifiableSet(new LinkedHashSet<>(recipients));
+    }
 }

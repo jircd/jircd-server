@@ -31,94 +31,94 @@ import org.junit.jupiter.api.Test;
  */
 class Utf8ValidationTest {
 
-  /** A single {@code 0xFF} byte is never valid standalone UTF-8, regardless of context. */
-  private static byte[] rawLine(String asciiPrefix, String asciiSuffix) {
-    byte[] prefixBytes = asciiPrefix.getBytes(StandardCharsets.UTF_8);
-    byte[] suffixBytes = asciiSuffix.getBytes(StandardCharsets.UTF_8);
-    byte[] result = new byte[prefixBytes.length + 1 + suffixBytes.length];
-    System.arraycopy(prefixBytes, 0, result, 0, prefixBytes.length);
-    result[prefixBytes.length] = (byte) 0xFF;
-    System.arraycopy(suffixBytes, 0, result, prefixBytes.length + 1, suffixBytes.length);
-    return result;
-  }
-
-  private static void assertClosesWithError(RawIrcClient client, byte[] malformedLine)
-      throws Exception {
-    client.sendRawBytes(malformedLine);
-    assertThat(client.readUntil("ERROR", Duration.ofSeconds(5))).contains("ERROR");
-    assertThat(client.readLine()).isNull();
-  }
-
-  @Test
-  void invalidUtf8InPrivmsgBodyIsRejected() throws Exception {
-    try (TestServer server = TestServer.start();
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
-
-      alice.registerAndAwaitWelcome("alice", "alice");
-      alice.send("JOIN #lobby");
-      alice.readUntil("353", Duration.ofSeconds(5));
-
-      assertClosesWithError(alice, rawLine("PRIVMSG #lobby :bad", "text"));
+    /** A single {@code 0xFF} byte is never valid standalone UTF-8, regardless of context. */
+    private static byte[] rawLine(String asciiPrefix, String asciiSuffix) {
+        byte[] prefixBytes = asciiPrefix.getBytes(StandardCharsets.UTF_8);
+        byte[] suffixBytes = asciiSuffix.getBytes(StandardCharsets.UTF_8);
+        byte[] result = new byte[prefixBytes.length + 1 + suffixBytes.length];
+        System.arraycopy(prefixBytes, 0, result, 0, prefixBytes.length);
+        result[prefixBytes.length] = (byte) 0xFF;
+        System.arraycopy(suffixBytes, 0, result, prefixBytes.length + 1, suffixBytes.length);
+        return result;
     }
-  }
 
-  @Test
-  void invalidUtf8InNoticeBodyIsRejected() throws Exception {
-    try (TestServer server = TestServer.start();
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
-
-      alice.registerAndAwaitWelcome("alice", "alice");
-      alice.send("JOIN #lobby");
-      alice.readUntil("353", Duration.ofSeconds(5));
-
-      assertClosesWithError(alice, rawLine("NOTICE #lobby :bad", "text"));
+    private static void assertClosesWithError(RawIrcClient client, byte[] malformedLine)
+            throws Exception {
+        client.sendRawBytes(malformedLine);
+        assertThat(client.readUntil("ERROR", Duration.ofSeconds(5))).contains("ERROR");
+        assertThat(client.readLine()).isNull();
     }
-  }
 
-  @Test
-  void invalidUtf8InTopicIsRejected() throws Exception {
-    try (TestServer server = TestServer.start();
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void invalidUtf8InPrivmsgBodyIsRejected() throws Exception {
+        try (TestServer server = TestServer.start();
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      alice.registerAndAwaitWelcome("alice", "alice"); // operator
-      alice.send("JOIN #lobby");
-      alice.readUntil("353", Duration.ofSeconds(5));
+            alice.registerAndAwaitWelcome("alice", "alice");
+            alice.send("JOIN #lobby");
+            alice.readUntil("353", Duration.ofSeconds(5));
 
-      assertClosesWithError(alice, rawLine("TOPIC #lobby :bad", "topic"));
+            assertClosesWithError(alice, rawLine("PRIVMSG #lobby :bad", "text"));
+        }
     }
-  }
 
-  @Test
-  void invalidUtf8InUserRealnameIsRejected() throws Exception {
-    try (TestServer server = TestServer.start();
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void invalidUtf8InNoticeBodyIsRejected() throws Exception {
+        try (TestServer server = TestServer.start();
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      alice.send("NICK alice");
-      assertClosesWithError(alice, rawLine("USER alice 0 * :bad", "name"));
+            alice.registerAndAwaitWelcome("alice", "alice");
+            alice.send("JOIN #lobby");
+            alice.readUntil("353", Duration.ofSeconds(5));
+
+            assertClosesWithError(alice, rawLine("NOTICE #lobby :bad", "text"));
+        }
     }
-  }
 
-  @Test
-  void invalidUtf8InQuitReasonIsRejected() throws Exception {
-    try (TestServer server = TestServer.start();
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void invalidUtf8InTopicIsRejected() throws Exception {
+        try (TestServer server = TestServer.start();
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      alice.registerAndAwaitWelcome("alice", "alice");
+            alice.registerAndAwaitWelcome("alice", "alice"); // operator
+            alice.send("JOIN #lobby");
+            alice.readUntil("353", Duration.ofSeconds(5));
 
-      assertClosesWithError(alice, rawLine("QUIT :bad", "reason"));
+            assertClosesWithError(alice, rawLine("TOPIC #lobby :bad", "topic"));
+        }
     }
-  }
 
-  @Test
-  void invalidUtf8InPartReasonIsRejected() throws Exception {
-    try (TestServer server = TestServer.start();
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void invalidUtf8InUserRealnameIsRejected() throws Exception {
+        try (TestServer server = TestServer.start();
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      alice.registerAndAwaitWelcome("alice", "alice");
-      alice.send("JOIN #lobby");
-      alice.readUntil("353", Duration.ofSeconds(5));
-
-      assertClosesWithError(alice, rawLine("PART #lobby :bad", "reason"));
+            alice.send("NICK alice");
+            assertClosesWithError(alice, rawLine("USER alice 0 * :bad", "name"));
+        }
     }
-  }
+
+    @Test
+    void invalidUtf8InQuitReasonIsRejected() throws Exception {
+        try (TestServer server = TestServer.start();
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+
+            alice.registerAndAwaitWelcome("alice", "alice");
+
+            assertClosesWithError(alice, rawLine("QUIT :bad", "reason"));
+        }
+    }
+
+    @Test
+    void invalidUtf8InPartReasonIsRejected() throws Exception {
+        try (TestServer server = TestServer.start();
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+
+            alice.registerAndAwaitWelcome("alice", "alice");
+            alice.send("JOIN #lobby");
+            alice.readUntil("353", Duration.ofSeconds(5));
+
+            assertClosesWithError(alice, rawLine("PART #lobby :bad", "reason"));
+        }
+    }
 }

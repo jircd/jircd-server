@@ -37,136 +37,136 @@ import org.junit.jupiter.api.Test;
  */
 class ConnectionHandlerCommandTableTest {
 
-  private static ConnectionHandler handler() {
-    ExtensionRegistry extensions = new ExtensionRegistry();
-    return new ConnectionHandler(
-        extensions,
-        new DisconnectCleanup(
-            new NicknameRegistry(),
-            new ChannelRegistry(),
-            new WhowasHistory(() -> 100),
-            extensions),
-        () -> "test.local",
-        new ConnectionHandler.Settings(
-            () -> new ServerConfiguration.RateLimit(100, 100),
-            () -> 60,
-            () -> 524288,
-            () -> new ServerConfiguration.ConnectionLimits(10, 10)),
-        socket -> {},
-        task -> Thread.ofVirtual().unstarted(task));
-  }
-
-  @Test
-  void unregisterRemovesOnlyTheInstalledHandlerNotALaterReplacement() {
-    ConnectionHandler table = handler();
-    CommandRegistrar registrar = table.commandRegistrar();
-    CommandHandler provider = (session, message) -> {};
-    CommandHandler admin = (session, message) -> {};
-    registrar.register(Command.OPER, provider);
-    assertThat(registrar.isRegistered(Command.OPER)).isTrue();
-    registrar.register(Command.OPER, admin); // admin enabled later takes OPER over
-    registrar.unregister(Command.OPER, provider); // the provider is disabled
-    assertThat(registrar.isRegistered(Command.OPER)).isTrue();
-    registrar.unregister(Command.OPER, admin);
-    assertThat(registrar.isRegistered(Command.OPER)).isFalse();
-  }
-
-  /** Two distinct handlers that consider themselves equal, as a value-like handler might. */
-  private static final class EqualHandler implements CommandHandler {
-    @Override
-    public void handle(ClientSession session, net.jircd.protocol.Message message) {
-      // Not invoked.
+    private static ConnectionHandler handler() {
+        ExtensionRegistry extensions = new ExtensionRegistry();
+        return new ConnectionHandler(
+                extensions,
+                new DisconnectCleanup(
+                        new NicknameRegistry(),
+                        new ChannelRegistry(),
+                        new WhowasHistory(() -> 100),
+                        extensions),
+                () -> "test.local",
+                new ConnectionHandler.Settings(
+                        () -> new ServerConfiguration.RateLimit(100, 100),
+                        () -> 60,
+                        () -> 524288,
+                        () -> new ServerConfiguration.ConnectionLimits(10, 10)),
+                socket -> {},
+                task -> Thread.ofVirtual().unstarted(task));
     }
 
-    @Override
-    public boolean equals(Object other) {
-      return other instanceof EqualHandler;
+    @Test
+    void unregisterRemovesOnlyTheInstalledHandlerNotALaterReplacement() {
+        ConnectionHandler table = handler();
+        CommandRegistrar registrar = table.commandRegistrar();
+        CommandHandler provider = (session, message) -> {};
+        CommandHandler admin = (session, message) -> {};
+        registrar.register(Command.OPER, provider);
+        assertThat(registrar.isRegistered(Command.OPER)).isTrue();
+        registrar.register(Command.OPER, admin); // admin enabled later takes OPER over
+        registrar.unregister(Command.OPER, provider); // the provider is disabled
+        assertThat(registrar.isRegistered(Command.OPER)).isTrue();
+        registrar.unregister(Command.OPER, admin);
+        assertThat(registrar.isRegistered(Command.OPER)).isFalse();
     }
 
-    @Override
-    public int hashCode() {
-      return 1;
-    }
-  }
+    /** Two distinct handlers that consider themselves equal, as a value-like handler might. */
+    private static final class EqualHandler implements CommandHandler {
+        @Override
+        public void handle(ClientSession session, net.jircd.protocol.Message message) {
+            // Not invoked.
+        }
 
-  @Test
-  void unregisterComparesTheInstalledHandlerByIdentityNotEquality() {
-    CommandRegistrar registrar = handler().commandRegistrar();
-    CommandHandler provider = new EqualHandler();
-    CommandHandler replacement = new EqualHandler();
-    registrar.register(Command.OPER, provider);
-    registrar.register(Command.OPER, replacement);
-    registrar.unregister(Command.OPER, provider);
-    assertThat(registrar.isRegistered(Command.OPER)).isTrue();
-    registrar.unregister(Command.OPER, replacement);
-    assertThat(registrar.isRegistered(Command.OPER)).isFalse();
-  }
+        @Override
+        public boolean equals(Object other) {
+            return other instanceof EqualHandler;
+        }
 
-  /** Owns TAGMSG as a capability provider. */
-  private static final class TagmsgOwner extends AbstractCapabilityExtension {
-    private final List<String> handled;
-
-    TagmsgOwner(List<String> handled) {
-      super("owner");
-      this.handled = handled;
+        @Override
+        public int hashCode() {
+            return 1;
+        }
     }
 
-    @Override
-    public void register(CapabilityRegistrar registrar) {
-      registrar.command(Command.TAGMSG, (session, message) -> handled.add("provider"));
+    @Test
+    void unregisterComparesTheInstalledHandlerByIdentityNotEquality() {
+        CommandRegistrar registrar = handler().commandRegistrar();
+        CommandHandler provider = new EqualHandler();
+        CommandHandler replacement = new EqualHandler();
+        registrar.register(Command.OPER, provider);
+        registrar.register(Command.OPER, replacement);
+        registrar.unregister(Command.OPER, provider);
+        assertThat(registrar.isRegistered(Command.OPER)).isTrue();
+        registrar.unregister(Command.OPER, replacement);
+        assertThat(registrar.isRegistered(Command.OPER)).isFalse();
     }
-  }
 
-  @Test
-  void aCommandAPublishedProviderOwnsIsRegisteredAndCannotBeClaimedByALaterServerExtension() {
-    ExtensionRegistry extensions = new ExtensionRegistry();
-    ConnectionHandler table =
-        new ConnectionHandler(
-            extensions,
-            new DisconnectCleanup(
-                new NicknameRegistry(),
-                new ChannelRegistry(),
-                new WhowasHistory(() -> 100),
-                extensions),
-            () -> "test.local",
-            new ConnectionHandler.Settings(
-                () -> new ServerConfiguration.RateLimit(100, 100),
-                () -> 60,
-                () -> 524288,
-                () -> new ServerConfiguration.ConnectionLimits(10, 10)),
-            socket -> {},
-            task -> Thread.ofVirtual().unstarted(task));
-    CommandRegistrar registrar = table.commandRegistrar();
-    extensions.attachContext(
-        new ServerContext(
-            null,
-            null,
-            extensions,
-            () -> "test.local",
-            null,
-            null,
-            registrar,
-            extensions.capabilityServices()));
-    List<String> handled = new ArrayList<>();
-    extensions.register(new TagmsgOwner(handled));
-    extensions.enable("owner");
+    /** Owns TAGMSG as a capability provider. */
+    private static final class TagmsgOwner extends AbstractCapabilityExtension {
+        private final List<String> handled;
 
-    assertThat(registrar.isRegistered(Command.TAGMSG)).isTrue();
-    CommandHandler serverExtension = (session, message) -> handled.add("server extension");
-    assertThatThrownBy(() -> registrar.register(Command.TAGMSG, serverExtension))
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("TAGMSG");
+        TagmsgOwner(List<String> handled) {
+            super("owner");
+            this.handled = handled;
+        }
 
-    ClientSession client = new ClientSession("c1", "host", RateLimitBucket.withDefaults());
-    client.setNickname("client");
-    assertThat(client.lifecycle().completeRegistration()).isTrue();
-    // Lowercase on the wire: dispatch folds it to the same command the checks use.
-    table.processLine(client, "tagmsg #c".getBytes(StandardCharsets.UTF_8));
-    assertThat(handled).containsExactly("provider");
+        @Override
+        public void register(CapabilityRegistrar registrar) {
+            registrar.command(Command.TAGMSG, (session, message) -> handled.add("provider"));
+        }
+    }
 
-    extensions.disable("owner");
-    assertThat(registrar.isRegistered(Command.TAGMSG)).isFalse();
-    registrar.register(Command.TAGMSG, serverExtension);
-    assertThat(registrar.isRegistered(Command.TAGMSG)).isTrue();
-  }
+    @Test
+    void aCommandAPublishedProviderOwnsIsRegisteredAndCannotBeClaimedByALaterServerExtension() {
+        ExtensionRegistry extensions = new ExtensionRegistry();
+        ConnectionHandler table =
+                new ConnectionHandler(
+                        extensions,
+                        new DisconnectCleanup(
+                                new NicknameRegistry(),
+                                new ChannelRegistry(),
+                                new WhowasHistory(() -> 100),
+                                extensions),
+                        () -> "test.local",
+                        new ConnectionHandler.Settings(
+                                () -> new ServerConfiguration.RateLimit(100, 100),
+                                () -> 60,
+                                () -> 524288,
+                                () -> new ServerConfiguration.ConnectionLimits(10, 10)),
+                        socket -> {},
+                        task -> Thread.ofVirtual().unstarted(task));
+        CommandRegistrar registrar = table.commandRegistrar();
+        extensions.attachContext(
+                new ServerContext(
+                        null,
+                        null,
+                        extensions,
+                        () -> "test.local",
+                        null,
+                        null,
+                        registrar,
+                        extensions.capabilityServices()));
+        List<String> handled = new ArrayList<>();
+        extensions.register(new TagmsgOwner(handled));
+        extensions.enable("owner");
+
+        assertThat(registrar.isRegistered(Command.TAGMSG)).isTrue();
+        CommandHandler serverExtension = (session, message) -> handled.add("server extension");
+        assertThatThrownBy(() -> registrar.register(Command.TAGMSG, serverExtension))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("TAGMSG");
+
+        ClientSession client = new ClientSession("c1", "host", RateLimitBucket.withDefaults());
+        client.setNickname("client");
+        assertThat(client.lifecycle().completeRegistration()).isTrue();
+        // Lowercase on the wire: dispatch folds it to the same command the checks use.
+        table.processLine(client, "tagmsg #c".getBytes(StandardCharsets.UTF_8));
+        assertThat(handled).containsExactly("provider");
+
+        extensions.disable("owner");
+        assertThat(registrar.isRegistered(Command.TAGMSG)).isFalse();
+        registrar.register(Command.TAGMSG, serverExtension);
+        assertThat(registrar.isRegistered(Command.TAGMSG)).isTrue();
+    }
 }

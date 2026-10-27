@@ -18,9 +18,9 @@ package net.jircd.protocol;
 /** One {@code (sign, flag)} pair parsed from a {@code MODE} command's modestring (FR-064). */
 public record ModeChange(char sign, char flag) {
 
-  public ModeChange {
-    if (sign != '+' && sign != '-') {
-      throw new IllegalArgumentException("sign must be '+' or '-', got: " + sign);
+    public ModeChange {
+        if (sign != '+' && sign != '-') {
+            throw new IllegalArgumentException("sign must be '+' or '-', got: " + sign);
+        }
     }
-  }
 }

@@ -28,33 +28,33 @@ import net.jircd.core.config.ServerConfiguration;
  */
 public final class AdminCredentialVerifier {
 
-  private AdminCredentialVerifier() {}
+    private AdminCredentialVerifier() {}
 
-  public static boolean verify(
-      List<ServerConfiguration.AdministratorCredential> credentials,
-      String username,
-      String password) {
-    for (ServerConfiguration.AdministratorCredential credential : credentials) {
-      if (credential.username().equals(username)) {
-        return verifyHash(password, credential.hashedPassword());
-      }
+    public static boolean verify(
+            List<ServerConfiguration.AdministratorCredential> credentials,
+            String username,
+            String password) {
+        for (ServerConfiguration.AdministratorCredential credential : credentials) {
+            if (credential.username().equals(username)) {
+                return verifyHash(password, credential.hashedPassword());
+            }
+        }
+        return false;
     }
-    return false;
-  }
 
-  private static boolean verifyHash(String password, String hashedPassword) {
-    try {
-      if (hashedPassword.startsWith("$2a$")
-          || hashedPassword.startsWith("$2b$")
-          || hashedPassword.startsWith("$2y$")) {
-        return Password.check(password, hashedPassword).withBcrypt();
-      }
-      if (hashedPassword.startsWith("$argon2id$")) {
-        return Password.check(password, hashedPassword).withArgon2();
-      }
-      return false;
-    } catch (IllegalArgumentException malformedOrUnsupportedHash) {
-      return false;
+    private static boolean verifyHash(String password, String hashedPassword) {
+        try {
+            if (hashedPassword.startsWith("$2a$")
+                    || hashedPassword.startsWith("$2b$")
+                    || hashedPassword.startsWith("$2y$")) {
+                return Password.check(password, hashedPassword).withBcrypt();
+            }
+            if (hashedPassword.startsWith("$argon2id$")) {
+                return Password.check(password, hashedPassword).withArgon2();
+            }
+            return false;
+        } catch (IllegalArgumentException malformedOrUnsupportedHash) {
+            return false;
+        }
     }
-  }
 }

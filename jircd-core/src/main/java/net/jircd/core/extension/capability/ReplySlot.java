@@ -20,13 +20,13 @@ package net.jircd.core.extension.capability;
  * declares can be registered; a provider cannot add parameters or change a numeric's arity.
  */
 public record ReplySlot(String name) {
-  /** The channel status symbols in a NAMES member token and a channel WHO flags field. */
-  public static final ReplySlot STATUS = new ReplySlot("STATUS");
+    /** The channel status symbols in a NAMES member token and a channel WHO flags field. */
+    public static final ReplySlot STATUS = new ReplySlot("STATUS");
 
-  /** The NAMES member identity token ({@code nick} by default). */
-  public static final ReplySlot IDENTITY = new ReplySlot("IDENTITY");
+    /** The NAMES member identity token ({@code nick} by default). */
+    public static final ReplySlot IDENTITY = new ReplySlot("IDENTITY");
 
-  public ReplySlot {
-    Tokens.require(name, "reply slot name");
-  }
+    public ReplySlot {
+        Tokens.require(name, "reply slot name");
+    }
 }

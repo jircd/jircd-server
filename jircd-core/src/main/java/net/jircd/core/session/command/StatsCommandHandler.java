@@ -33,49 +33,53 @@ import net.jircd.protocol.NumericReply;
  */
 public final class StatsCommandHandler implements CommandHandler {
 
-  private final Supplier<String> serverName;
-  private final Instant startedAt;
-  private final Clock clock;
+    private final Supplier<String> serverName;
+    private final Instant startedAt;
+    private final Clock clock;
 
-  public StatsCommandHandler(Supplier<String> serverName, Instant startedAt, Clock clock) {
-    this.serverName = serverName;
-    this.startedAt = startedAt;
-    this.clock = clock;
-  }
+    public StatsCommandHandler(Supplier<String> serverName, Instant startedAt, Clock clock) {
+        this.serverName = serverName;
+        this.startedAt = startedAt;
+        this.clock = clock;
+    }
 
-  @Override
-  public void handle(ClientSession session, Message message) {
-    String server = serverName.get();
-    if (message.params().isEmpty() || message.params().getFirst().isEmpty()) {
-      Replies.sendFitted(
-          session,
-          server,
-          NumericReply.ERR_NEEDMOREPARAMS,
-          List.of("STATS"),
-          "Not enough parameters");
-      return;
+    @Override
+    public void handle(ClientSession session, Message message) {
+        String server = serverName.get();
+        if (message.params().isEmpty() || message.params().getFirst().isEmpty()) {
+            Replies.sendFitted(
+                    session,
+                    server,
+                    NumericReply.ERR_NEEDMOREPARAMS,
+                    List.of("STATS"),
+                    "Not enough parameters");
+            return;
+        }
+        if (message.params().size() > 1
+                && !LocalServerTarget.accepts(session, serverName, message.params().get(1))) {
+            return;
+        }
+        String letter = new String(Character.toChars(message.params().getFirst().codePointAt(0)));
+        if (letter.equals("u")) {
+            Duration up = Duration.between(startedAt, clock.instant());
+            Replies.sendFitted(
+                    session,
+                    server,
+                    NumericReply.RPL_STATSUPTIME,
+                    List.of(),
+                    String.format(
+                            Locale.ROOT,
+                            "Server Up %d days %d:%02d:%02d",
+                            up.toDays(),
+                            up.toHoursPart(),
+                            up.toMinutesPart(),
+                            up.toSecondsPart()));
+        }
+        Replies.sendFitted(
+                session,
+                server,
+                NumericReply.RPL_ENDOFSTATS,
+                List.of(letter),
+                "End of /STATS report");
     }
-    if (message.params().size() > 1
-        && !LocalServerTarget.accepts(session, serverName, message.params().get(1))) {
-      return;
-    }
-    String letter = new String(Character.toChars(message.params().getFirst().codePointAt(0)));
-    if (letter.equals("u")) {
-      Duration up = Duration.between(startedAt, clock.instant());
-      Replies.sendFitted(
-          session,
-          server,
-          NumericReply.RPL_STATSUPTIME,
-          List.of(),
-          String.format(
-              Locale.ROOT,
-              "Server Up %d days %d:%02d:%02d",
-              up.toDays(),
-              up.toHoursPart(),
-              up.toMinutesPart(),
-              up.toSecondsPart()));
-    }
-    Replies.sendFitted(
-        session, server, NumericReply.RPL_ENDOFSTATS, List.of(letter), "End of /STATS report");
-  }
 }

@@ -29,18 +29,18 @@ import java.util.Map;
  *     parameter
  */
 public record Message(
-    Map<String, String> tags,
-    String prefix,
-    Command command,
-    String rawCommand,
-    List<String> params) {
+        Map<String, String> tags,
+        String prefix,
+        Command command,
+        String rawCommand,
+        List<String> params) {
 
-  public Message {
-    tags = Map.copyOf(tags);
-    params = List.copyOf(params);
-  }
+    public Message {
+        tags = Map.copyOf(tags);
+        params = List.copyOf(params);
+    }
 
-  public static Message of(Command command, String... params) {
-    return new Message(Map.of(), null, command, command.name(), List.of(params));
-  }
+    public static Message of(Command command, String... params) {
+        return new Message(Map.of(), null, command, command.name(), List.of(params));
+    }
 }

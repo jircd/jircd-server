@@ -23,5 +23,5 @@ package net.jircd.core.extension.capability;
 @FunctionalInterface
 public interface FaultReporter {
 
-  void report(String providerId, HookKind kind, FaultCategory category);
+    void report(String providerId, HookKind kind, FaultCategory category);
 }

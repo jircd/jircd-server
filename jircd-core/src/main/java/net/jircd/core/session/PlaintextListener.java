@@ -27,41 +27,42 @@ import net.jircd.core.config.ServerConfiguration;
  */
 public final class PlaintextListener extends AbstractListener<ServerSocketChannel> {
 
-  public PlaintextListener(
-      ServerConfiguration.Listener listener, ConnectionHandler connectionHandler)
-      throws IOException {
-    super(openServerChannel(listener), connectionHandler::accept, "plaintext-listener");
-  }
-
-  private static ServerSocketChannel openServerChannel(ServerConfiguration.Listener listener)
-      throws IOException {
-    return openServerChannel(listener, ServerSocketChannel.open());
-  }
-
-  static ServerSocketChannel openServerChannel(
-      ServerConfiguration.Listener listener, ServerSocketChannel channel) throws IOException {
-    try {
-      // A null bindAddress makes this the wildcard address.
-      channel.bind(
-          new InetSocketAddress(listener.bindAddress(), listener.port()), listener.backlog());
-      return channel;
-    } catch (IOException | RuntimeException failure) {
-      try {
-        channel.close();
-      } catch (IOException cleanupFailure) {
-        failure.addSuppressed(cleanupFailure);
-      }
-      throw failure;
+    public PlaintextListener(
+            ServerConfiguration.Listener listener, ConnectionHandler connectionHandler)
+            throws IOException {
+        super(openServerChannel(listener), connectionHandler::accept, "plaintext-listener");
     }
-  }
 
-  @Override
-  public int boundPort() {
-    return serverSocket.socket().getLocalPort();
-  }
+    private static ServerSocketChannel openServerChannel(ServerConfiguration.Listener listener)
+            throws IOException {
+        return openServerChannel(listener, ServerSocketChannel.open());
+    }
 
-  @Override
-  protected Socket accept() throws IOException {
-    return serverSocket.accept().socket();
-  }
+    static ServerSocketChannel openServerChannel(
+            ServerConfiguration.Listener listener, ServerSocketChannel channel) throws IOException {
+        try {
+            // A null bindAddress makes this the wildcard address.
+            channel.bind(
+                    new InetSocketAddress(listener.bindAddress(), listener.port()),
+                    listener.backlog());
+            return channel;
+        } catch (IOException | RuntimeException failure) {
+            try {
+                channel.close();
+            } catch (IOException cleanupFailure) {
+                failure.addSuppressed(cleanupFailure);
+            }
+            throw failure;
+        }
+    }
+
+    @Override
+    public int boundPort() {
+        return serverSocket.socket().getLocalPort();
+    }
+
+    @Override
+    protected Socket accept() throws IOException {
+        return serverSocket.accept().socket();
+    }
 }

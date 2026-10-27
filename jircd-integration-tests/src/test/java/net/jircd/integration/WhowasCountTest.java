@@ -29,75 +29,77 @@ import org.junit.jupiter.api.Test;
  */
 class WhowasCountTest {
 
-  private static void disconnectUnderNickname(TestServer server, String nickname) throws Exception {
-    try (RawIrcClient client = RawIrcClient.connectPlaintext(server.plaintextPort())) {
-      client.send("NICK " + nickname);
-      client.send("USER " + nickname + " 0 * :" + nickname);
-      client.readUntil(" 001 ", Duration.ofSeconds(5));
-      client.send("QUIT :bye");
+    private static void disconnectUnderNickname(TestServer server, String nickname)
+            throws Exception {
+        try (RawIrcClient client = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+            client.send("NICK " + nickname);
+            client.send("USER " + nickname + " 0 * :" + nickname);
+            client.readUntil(" 001 ", Duration.ofSeconds(5));
+            client.send("QUIT :bye");
+        }
+        Thread.sleep(200); // let server-side disconnect cleanup (and the WHOWAS recording) complete
     }
-    Thread.sleep(200); // let server-side disconnect cleanup (and the WHOWAS recording) complete
-  }
 
-  @Test
-  void countTwoReturnsTheTwoMostRecentEntries() throws Exception {
-    try (TestServer server = TestServer.start();
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
-      alice.registerAndAwaitWelcome("alice", "alice");
+    @Test
+    void countTwoReturnsTheTwoMostRecentEntries() throws Exception {
+        try (TestServer server = TestServer.start();
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+            alice.registerAndAwaitWelcome("alice", "alice");
 
-      disconnectUnderNickname(server, "erin");
-      disconnectUnderNickname(server, "erin");
-      disconnectUnderNickname(server, "erin");
+            disconnectUnderNickname(server, "erin");
+            disconnectUnderNickname(server, "erin");
+            disconnectUnderNickname(server, "erin");
 
-      alice.send("WHOWAS erin 2");
-      // readUntil first to skip past any still-unread registration-burst lines; readLine
-      // thereafter for a precise count (no silent skipping) confirming exactly two 314 lines.
-      assertThat(alice.readUntil("314", Duration.ofSeconds(5))).contains("314");
-      assertThat(alice.readLine()).contains("314");
-      assertThat(alice.readLine()).contains("369");
+            alice.send("WHOWAS erin 2");
+            // readUntil first to skip past any still-unread registration-burst lines; readLine
+            // thereafter for a precise count (no silent skipping) confirming exactly two 314 lines.
+            assertThat(alice.readUntil("314", Duration.ofSeconds(5))).contains("314");
+            assertThat(alice.readLine()).contains("314");
+            assertThat(alice.readLine()).contains("369");
+        }
     }
-  }
 
-  @Test
-  void countZeroOrNegativeReturnsEveryRetainedEntry() throws Exception {
-    try (TestServer server = TestServer.start();
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
-      alice.registerAndAwaitWelcome("alice", "alice");
+    @Test
+    void countZeroOrNegativeReturnsEveryRetainedEntry() throws Exception {
+        try (TestServer server = TestServer.start();
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+            alice.registerAndAwaitWelcome("alice", "alice");
 
-      disconnectUnderNickname(server, "erin");
-      disconnectUnderNickname(server, "erin");
-      disconnectUnderNickname(server, "erin");
+            disconnectUnderNickname(server, "erin");
+            disconnectUnderNickname(server, "erin");
+            disconnectUnderNickname(server, "erin");
 
-      alice.send("WHOWAS erin 0");
-      alice.readUntil("314", Duration.ofSeconds(5));
-      alice.readUntil("314", Duration.ofSeconds(5));
-      alice.readUntil("314", Duration.ofSeconds(5));
-      assertThat(alice.readUntil("369", Duration.ofSeconds(5))).contains("369");
+            alice.send("WHOWAS erin 0");
+            alice.readUntil("314", Duration.ofSeconds(5));
+            alice.readUntil("314", Duration.ofSeconds(5));
+            alice.readUntil("314", Duration.ofSeconds(5));
+            assertThat(alice.readUntil("369", Duration.ofSeconds(5))).contains("369");
 
-      alice.send("WHOWAS erin -1");
-      alice.readUntil("314", Duration.ofSeconds(5));
-      alice.readUntil("314", Duration.ofSeconds(5));
-      alice.readUntil("314", Duration.ofSeconds(5));
-      assertThat(alice.readUntil("369", Duration.ofSeconds(5))).contains("369");
+            alice.send("WHOWAS erin -1");
+            alice.readUntil("314", Duration.ofSeconds(5));
+            alice.readUntil("314", Duration.ofSeconds(5));
+            alice.readUntil("314", Duration.ofSeconds(5));
+            assertThat(alice.readUntil("369", Duration.ofSeconds(5))).contains("369");
+        }
     }
-  }
 
-  @Test
-  void noCountAlsoReturnsEveryRetainedEntryNotJustOne() throws Exception {
-    try (TestServer server = TestServer.start();
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
-      alice.registerAndAwaitWelcome("alice", "alice");
+    @Test
+    void noCountAlsoReturnsEveryRetainedEntryNotJustOne() throws Exception {
+        try (TestServer server = TestServer.start();
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+            alice.registerAndAwaitWelcome("alice", "alice");
 
-      disconnectUnderNickname(server, "erin");
-      disconnectUnderNickname(server, "erin");
+            disconnectUnderNickname(server, "erin");
+            disconnectUnderNickname(server, "erin");
 
-      alice.send("WHOWAS erin");
-      // readUntil first to skip past any still-unread registration-burst lines; readLine
-      // thereafter for a precise check (no silent skipping) confirming exactly two 314 lines are
-      // sent, not just one — omitting the count is not the same as requesting a count of one.
-      assertThat(alice.readUntil("314", Duration.ofSeconds(5))).contains("314");
-      assertThat(alice.readLine()).contains("314");
-      assertThat(alice.readLine()).contains("369");
+            alice.send("WHOWAS erin");
+            // readUntil first to skip past any still-unread registration-burst lines; readLine
+            // thereafter for a precise check (no silent skipping) confirming exactly two 314 lines
+            // are sent, not just one — omitting the count is not the same as requesting a count of
+            // one.
+            assertThat(alice.readUntil("314", Duration.ofSeconds(5))).contains("314");
+            assertThat(alice.readLine()).contains("314");
+            assertThat(alice.readLine()).contains("369");
+        }
     }
-  }
 }

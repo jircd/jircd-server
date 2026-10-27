@@ -48,152 +48,154 @@ import org.slf4j.LoggerFactory;
  */
 final class CapabilityFaults implements FaultReporter {
 
-  // Deliberately the public FaultReporter's name, not this package-private class's: it is the
-  // logger operators configure for capability faults, as it was before #102.
-  private static final Logger LOG = LoggerFactory.getLogger(FaultReporter.class); // NOSONAR S3416
+    // Deliberately the public FaultReporter's name, not this package-private class's: it is the
+    // logger operators configure for capability faults, as it was before #102.
+    private static final Logger LOG = LoggerFactory.getLogger(FaultReporter.class); // NOSONAR S3416
 
-  /** The fault that opened an incident. */
-  record Fault(HookKind kind, FaultCategory category) {}
+    /** The fault that opened an incident. */
+    record Fault(HookKind kind, FaultCategory category) {}
 
-  /**
-   * One open incident, for one published instance of a provider: {@code instance} is the descriptor
-   * that was current when it opened. Compared by identity, so a re-enabled instance's fault never
-   * matches an incident its predecessor left open.
-   */
-  private static final class Incident {
-    final Object instance;
-    final Fault fault;
+    /**
+     * One open incident, for one published instance of a provider: {@code instance} is the
+     * descriptor that was current when it opened. Compared by identity, so a re-enabled instance's
+     * fault never matches an incident its predecessor left open.
+     */
+    private static final class Incident {
+        final Object instance;
+        final Fault fault;
 
-    Incident(Object instance, Fault fault) {
-      this.instance = instance;
-      this.fault = fault;
+        Incident(Object instance, Fault fault) {
+            this.instance = instance;
+            this.fault = fault;
+        }
     }
-  }
 
-  private final Executor withdrawals;
-  private final Function<String, Object> published;
-  private final BiConsumer<String, Fault> withdraw;
-  private final Map<String, Incident> pending = new ConcurrentHashMap<>();
-  private final WarningThrottle throttle =
-      new WarningThrottle(TimeUnit.SECONDS.toNanos(10), 256, System::nanoTime);
+    private final Executor withdrawals;
+    private final Function<String, Object> published;
+    private final BiConsumer<String, Fault> withdraw;
+    private final Map<String, Incident> pending = new ConcurrentHashMap<>();
+    private final WarningThrottle throttle =
+            new WarningThrottle(TimeUnit.SECONDS.toNanos(10), 256, System::nanoTime);
 
-  /**
-   * @param published the descriptor currently published for a provider id, or {@code null}; its
-   *     identity tells one enabled instance of a provider from the next
-   * @param withdraw withdraws a provider as FAILED for the fault; runs on {@code withdrawals}
-   */
-  CapabilityFaults(
-      Executor withdrawals,
-      Function<String, Object> published,
-      BiConsumer<String, Fault> withdraw) {
-    this.withdrawals = Objects.requireNonNull(withdrawals);
-    this.published = Objects.requireNonNull(published);
-    this.withdraw = Objects.requireNonNull(withdraw);
-  }
-
-  /**
-   * Opens an incident unless one is already open for the instance published now. A fault is the
-   * provider's, whichever instance the faulting work captured, so it is charged to the instance
-   * published when the incident is recorded: the lookup and the decision are one step, and no
-   * re-enable can slip between them. An incident left open by an earlier instance (a re-enable
-   * happened before its withdrawal finished) does not count, so the current instance's fault opens
-   * its own and can never be lost, and a late report never replaces the current one's incident.
-   */
-  @Override
-  public void report(String providerId, HookKind kind, FaultCategory category) {
-    Fault fault = new Fault(kind, category);
-    if (category.providerFault()) {
-      Incident open =
-          pending.compute(providerId, (id, existing) -> chooseIncident(id, existing, fault));
-      // Only an incident opened by this report carries this report's fault.
-      if (open != null && open.fault == fault) {
-        schedule(providerId, open);
-        return;
-      }
+    /**
+     * @param published the descriptor currently published for a provider id, or {@code null}; its
+     *     identity tells one enabled instance of a provider from the next
+     * @param withdraw withdraws a provider as FAILED for the fault; runs on {@code withdrawals}
+     */
+    CapabilityFaults(
+            Executor withdrawals,
+            Function<String, Object> published,
+            BiConsumer<String, Fault> withdraw) {
+        this.withdrawals = Objects.requireNonNull(withdrawals);
+        this.published = Objects.requireNonNull(published);
+        this.withdraw = Objects.requireNonNull(withdraw);
     }
-    dropped(providerId, fault);
-  }
 
-  /**
-   * The marker to keep: none while nothing is published, the existing one if the published instance
-   * already has its incident open, otherwise a new incident for it.
-   */
-  private Incident chooseIncident(String providerId, Incident existing, Fault fault) {
-    Object instance = published.apply(providerId);
-    if (instance == null) return existing;
-    if (existing != null && existing.instance == instance) return existing;
-    return new Incident(instance, fault);
-  }
-
-  /**
-   * Ends only {@code incident}: a newer instance's incident for the same id stays open. If the
-   * executor refuses or fails, the incident ends unscheduled, so the provider's next fault tries
-   * again; the withdrawal is never run on the faulting thread instead.
-   */
-  private void schedule(String providerId, Incident incident) {
-    boolean handedOff = false;
-    try {
-      withdrawals.execute(
-          () -> {
-            try {
-              withdraw.accept(providerId, incident.fault);
-            } finally {
-              pending.remove(providerId, incident);
+    /**
+     * Opens an incident unless one is already open for the instance published now. A fault is the
+     * provider's, whichever instance the faulting work captured, so it is charged to the instance
+     * published when the incident is recorded: the lookup and the decision are one step, and no
+     * re-enable can slip between them. An incident left open by an earlier instance (a re-enable
+     * happened before its withdrawal finished) does not count, so the current instance's fault
+     * opens its own and can never be lost, and a late report never replaces the current one's
+     * incident.
+     */
+    @Override
+    public void report(String providerId, HookKind kind, FaultCategory category) {
+        Fault fault = new Fault(kind, category);
+        if (category.providerFault()) {
+            Incident open =
+                    pending.compute(
+                            providerId, (id, existing) -> chooseIncident(id, existing, fault));
+            // Only an incident opened by this report carries this report's fault.
+            if (open != null && open.fault == fault) {
+                schedule(providerId, open);
+                return;
             }
-          });
-      handedOff = true;
-    } catch (RuntimeException e) {
-      Fault fault = incident.fault;
-      LOG.warn(
-          "Capability provider '{}' hook {} faulted ({}) but its withdrawal could not be scheduled"
-              + " ({}); its next fault tries again",
-          providerId,
-          fault.kind(),
-          fault.category(),
-          e.getClass().getSimpleName());
-    } finally {
-      if (!handedOff) pending.remove(providerId, incident);
+        }
+        dropped(providerId, fault);
     }
-  }
 
-  /** A result dropped without starting an incident; throttled per provider. */
-  void dropped(String providerId, Fault fault) {
-    long suppressed = throttle.admit(providerId + "/fault");
-    if (suppressed >= 0) {
-      LOG.warn(
-          "Capability provider '{}' hook {} result dropped ({}); {} similar suppressed",
-          providerId,
-          fault.kind(),
-          fault.category(),
-          suppressed);
+    /**
+     * The marker to keep: none while nothing is published, the existing one if the published
+     * instance already has its incident open, otherwise a new incident for it.
+     */
+    private Incident chooseIncident(String providerId, Incident existing, Fault fault) {
+        Object instance = published.apply(providerId);
+        if (instance == null) return existing;
+        if (existing != null && existing.instance == instance) return existing;
+        return new Incident(instance, fault);
     }
-  }
 
-  /**
-   * The failure transition, logged once per incident. It also opens the provider's throttle window,
-   * so late faults from work captured before the withdrawal stay quiet for a while.
-   */
-  void failed(String providerId, Fault fault, List<String> dependents) {
-    throttle.admit(providerId + "/fault");
-    LOG.warn(
-        "Capability provider '{}' FAILED: hook {} result dropped ({}); withdrawn{}. Enable it again"
-            + " once fixed",
-        providerId,
-        fault.kind(),
-        fault.category(),
-        dependents.isEmpty() ? "" : " with its dependents " + dependents);
-  }
-
-  /** A stop that threw after a fault's withdrawal; only the exception's type is logged. */
-  void stopFailed(String providerId, Throwable failure) {
-    long suppressed = throttle.admit(providerId + "/cleanup");
-    if (suppressed >= 0) {
-      LOG.warn(
-          "Capability provider '{}' failed to stop after it was withdrawn ({}); a later disable"
-              + " retries the cleanup; {} similar suppressed",
-          providerId,
-          failure.getClass().getSimpleName(),
-          suppressed);
+    /**
+     * Ends only {@code incident}: a newer instance's incident for the same id stays open. If the
+     * executor refuses or fails, the incident ends unscheduled, so the provider's next fault tries
+     * again; the withdrawal is never run on the faulting thread instead.
+     */
+    private void schedule(String providerId, Incident incident) {
+        boolean handedOff = false;
+        try {
+            withdrawals.execute(
+                    () -> {
+                        try {
+                            withdraw.accept(providerId, incident.fault);
+                        } finally {
+                            pending.remove(providerId, incident);
+                        }
+                    });
+            handedOff = true;
+        } catch (RuntimeException e) {
+            Fault fault = incident.fault;
+            LOG.warn(
+                    "Capability provider '{}' hook {} faulted ({}) but its withdrawal could not be scheduled"
+                            + " ({}); its next fault tries again",
+                    providerId,
+                    fault.kind(),
+                    fault.category(),
+                    e.getClass().getSimpleName());
+        } finally {
+            if (!handedOff) pending.remove(providerId, incident);
+        }
     }
-  }
+
+    /** A result dropped without starting an incident; throttled per provider. */
+    void dropped(String providerId, Fault fault) {
+        long suppressed = throttle.admit(providerId + "/fault");
+        if (suppressed >= 0) {
+            LOG.warn(
+                    "Capability provider '{}' hook {} result dropped ({}); {} similar suppressed",
+                    providerId,
+                    fault.kind(),
+                    fault.category(),
+                    suppressed);
+        }
+    }
+
+    /**
+     * The failure transition, logged once per incident. It also opens the provider's throttle
+     * window, so late faults from work captured before the withdrawal stay quiet for a while.
+     */
+    void failed(String providerId, Fault fault, List<String> dependents) {
+        throttle.admit(providerId + "/fault");
+        LOG.warn(
+                "Capability provider '{}' FAILED: hook {} result dropped ({}); withdrawn{}. Enable it again"
+                        + " once fixed",
+                providerId,
+                fault.kind(),
+                fault.category(),
+                dependents.isEmpty() ? "" : " with its dependents " + dependents);
+    }
+
+    /** A stop that threw after a fault's withdrawal; only the exception's type is logged. */
+    void stopFailed(String providerId, Throwable failure) {
+        long suppressed = throttle.admit(providerId + "/cleanup");
+        if (suppressed >= 0) {
+            LOG.warn(
+                    "Capability provider '{}' failed to stop after it was withdrawn ({}); a later disable"
+                            + " retries the cleanup; {} similar suppressed",
+                    providerId,
+                    failure.getClass().getSimpleName(),
+                    suppressed);
+        }
+    }
 }

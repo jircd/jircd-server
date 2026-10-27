@@ -23,5 +23,5 @@ package net.jircd.core.extension;
 @FunctionalInterface
 public interface HostnameDisplayExtension {
 
-  String display(String realHostname);
+    String display(String realHostname);
 }

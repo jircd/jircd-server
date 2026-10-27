@@ -24,45 +24,45 @@ import org.slf4j.LoggerFactory;
  */
 public final class SecurityEventLog {
 
-  private static final Logger LOG = LoggerFactory.getLogger(SecurityEventLog.class);
+    private static final Logger LOG = LoggerFactory.getLogger(SecurityEventLog.class);
 
-  private SecurityEventLog() {}
+    private SecurityEventLog() {}
 
-  /** Records a rejection on its worker, outside the listener's admission lock. */
-  public static void connectionLimit(
-      String remoteAddress, String limit, String bucket, int appliedLimit) {
-    LOG.info(
-        "security-event=connection-limit remoteAddress={} limit={} bucket={} limitApplied={}",
-        remoteAddress,
-        limit,
-        bucket,
-        appliedLimit);
-  }
+    /** Records a rejection on its worker, outside the listener's admission lock. */
+    public static void connectionLimit(
+            String remoteAddress, String limit, String bucket, int appliedLimit) {
+        LOG.info(
+                "security-event=connection-limit remoteAddress={} limit={} bucket={} limitApplied={}",
+                remoteAddress,
+                limit,
+                bucket,
+                appliedLimit);
+    }
 
-  /** Summarizes rejections dropped because every rejection worker is occupied. */
-  public static void connectionLimitSuppressed(long count) {
-    LOG.info("security-event=connection-limit-suppressed count={}", count);
-  }
+    /** Summarizes rejections dropped because every rejection worker is occupied. */
+    public static void connectionLimitSuppressed(long count) {
+        LOG.info("security-event=connection-limit-suppressed count={}", count);
+    }
 
-  public static void failedAuthentication(String connectionId, String username, String reason) {
-    LOG.info(
-        "security-event=failed-authentication connection={} username={} reason={}",
-        connectionId,
-        username,
-        reason);
-  }
+    public static void failedAuthentication(String connectionId, String username, String reason) {
+        LOG.info(
+                "security-event=failed-authentication connection={} username={} reason={}",
+                connectionId,
+                username,
+                reason);
+    }
 
-  public static void rejectedModerationAction(
-      String connectionId, String action, String target, String reason) {
-    LOG.info(
-        "security-event=rejected-moderation-action connection={} action={} target={} reason={}",
-        connectionId,
-        action,
-        target,
-        reason);
-  }
+    public static void rejectedModerationAction(
+            String connectionId, String action, String target, String reason) {
+        LOG.info(
+                "security-event=rejected-moderation-action connection={} action={} target={} reason={}",
+                connectionId,
+                action,
+                target,
+                reason);
+    }
 
-  public static void connectionDisconnectedForAbuse(String connectionId, String reason) {
-    LOG.info("security-event=abuse-disconnect connection={} reason={}", connectionId, reason);
-  }
+    public static void connectionDisconnectedForAbuse(String connectionId, String reason) {
+        LOG.info("security-event=abuse-disconnect connection={} reason={}", connectionId, reason);
+    }
 }

@@ -29,25 +29,26 @@ import net.jircd.protocol.CapabilityName;
  */
 public final class MultiPrefixExtension extends AbstractCapabilityExtension {
 
-  public static final String CAPABILITY_ID = CapabilityName.MULTI_PREFIX;
+    public static final String CAPABILITY_ID = CapabilityName.MULTI_PREFIX;
 
-  /**
-   * The most statuses a member can hold, one byte each: the operator and voice symbols of {@code
-   * PREFIX=(ov)@+}. Core reserves this width in the reply budget of every entry the slot decorates.
-   */
-  static final long MAX_STATUS_BYTES = 2;
+    /**
+     * The most statuses a member can hold, one byte each: the operator and voice symbols of {@code
+     * PREFIX=(ov)@+}. Core reserves this width in the reply budget of every entry the slot
+     * decorates.
+     */
+    static final long MAX_STATUS_BYTES = 2;
 
-  public MultiPrefixExtension() {
-    super(CAPABILITY_ID);
-  }
+    public MultiPrefixExtension() {
+        super(CAPABILITY_ID);
+    }
 
-  @Override
-  public void register(CapabilityRegistrar registrar) {
-    registrar.onMemberStatus(limits -> MAX_STATUS_BYTES, MultiPrefixExtension::allStatuses);
-  }
+    @Override
+    public void register(CapabilityRegistrar registrar) {
+        registrar.onMemberStatus(limits -> MAX_STATUS_BYTES, MultiPrefixExtension::allStatuses);
+    }
 
-  /** Every held status, highest first, exactly as core ordered them. */
-  static String allStatuses(MemberSnapshot member) {
-    return String.join("", member.heldStatuses());
-  }
+    /** Every held status, highest first, exactly as core ordered them. */
+    static String allStatuses(MemberSnapshot member) {
+        return String.join("", member.heldStatuses());
+    }
 }

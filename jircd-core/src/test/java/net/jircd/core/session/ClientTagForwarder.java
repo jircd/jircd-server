@@ -26,26 +26,26 @@ import net.jircd.core.extension.capability.InboundTagResult;
  * client-only tag to recipients that negotiated {@code message-tags}.
  */
 final class ClientTagForwarder extends AbstractCapabilityExtension {
-  ClientTagForwarder() {
-    super("message-tags");
-  }
+    ClientTagForwarder() {
+        super("message-tags");
+    }
 
-  @Override
-  public void register(CapabilityRegistrar registrar) {
-    registrar.onInboundTags(
-        (tags, context) -> {
-          Map<String, String> forwarded = new LinkedHashMap<>();
-          tags.tags()
-              .forEach(
-                  (key, value) -> {
-                    if (key.startsWith("+")) forwarded.put(key, value);
-                  });
-          return new InboundTagResult(forwarded, Map.of());
-        });
-  }
+    @Override
+    public void register(CapabilityRegistrar registrar) {
+        registrar.onInboundTags(
+                (tags, context) -> {
+                    Map<String, String> forwarded = new LinkedHashMap<>();
+                    tags.tags()
+                            .forEach(
+                                    (key, value) -> {
+                                        if (key.startsWith("+")) forwarded.put(key, value);
+                                    });
+                    return new InboundTagResult(forwarded, Map.of());
+                });
+    }
 
-  static void enableIn(net.jircd.core.extension.ExtensionRegistry registry) {
-    registry.register(new ClientTagForwarder());
-    registry.enable("message-tags");
-  }
+    static void enableIn(net.jircd.core.extension.ExtensionRegistry registry) {
+        registry.register(new ClientTagForwarder());
+        registry.enable("message-tags");
+    }
 }

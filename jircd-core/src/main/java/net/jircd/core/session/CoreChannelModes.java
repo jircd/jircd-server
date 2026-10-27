@@ -28,90 +28,113 @@ import java.util.Set;
  */
 public final class CoreChannelModes {
 
-  public static final ChannelMode MEMBERS_ONLY =
-      new ChannelMode(
-          "members-only", 'n', ChannelMode.Kind.BOOLEAN, Set.of(GateAction.SEND), ChannelMode.CORE);
-  public static final ChannelMode MODERATED =
-      new ChannelMode(
-          "moderated", 'm', ChannelMode.Kind.BOOLEAN, Set.of(GateAction.SEND), ChannelMode.CORE);
-  public static final ChannelMode PRIVATE =
-      new ChannelMode(
-          "private", 'p', ChannelMode.Kind.BOOLEAN, Set.of(GateAction.DISCOVER), ChannelMode.CORE);
-  public static final ChannelMode SECRET =
-      new ChannelMode(
-          "secret", 's', ChannelMode.Kind.BOOLEAN, Set.of(GateAction.DISCOVER), ChannelMode.CORE);
-  public static final ChannelMode INVITE_ONLY =
-      new ChannelMode(
-          "invite-only", 'i', ChannelMode.Kind.BOOLEAN, Set.of(GateAction.JOIN), ChannelMode.CORE);
-  public static final ChannelMode BAN_MASK =
-      new ChannelMode(
-          "ban-mask",
-          'b',
-          ChannelMode.Kind.LIST,
-          Set.of(GateAction.SEND, GateAction.JOIN),
-          ChannelMode.CORE);
-  public static final ChannelMode BAN_EXCEPTION =
-      new ChannelMode("ban-exception", 'e', ChannelMode.Kind.LIST, Set.of(), ChannelMode.CORE);
-  public static final ChannelMode INVITE_EXCEPTION =
-      new ChannelMode("invite-exception", 'I', ChannelMode.Kind.LIST, Set.of(), ChannelMode.CORE);
-  public static final ChannelMode OPERATOR =
-      new ChannelMode("operator", 'o', ChannelMode.Kind.MEMBER, Set.of(), ChannelMode.CORE);
-  public static final ChannelMode VOICE =
-      new ChannelMode("voice", 'v', ChannelMode.Kind.MEMBER, Set.of(), ChannelMode.CORE);
+    public static final ChannelMode MEMBERS_ONLY =
+            new ChannelMode(
+                    "members-only",
+                    'n',
+                    ChannelMode.Kind.BOOLEAN,
+                    Set.of(GateAction.SEND),
+                    ChannelMode.CORE);
+    public static final ChannelMode MODERATED =
+            new ChannelMode(
+                    "moderated",
+                    'm',
+                    ChannelMode.Kind.BOOLEAN,
+                    Set.of(GateAction.SEND),
+                    ChannelMode.CORE);
+    public static final ChannelMode PRIVATE =
+            new ChannelMode(
+                    "private",
+                    'p',
+                    ChannelMode.Kind.BOOLEAN,
+                    Set.of(GateAction.DISCOVER),
+                    ChannelMode.CORE);
+    public static final ChannelMode SECRET =
+            new ChannelMode(
+                    "secret",
+                    's',
+                    ChannelMode.Kind.BOOLEAN,
+                    Set.of(GateAction.DISCOVER),
+                    ChannelMode.CORE);
+    public static final ChannelMode INVITE_ONLY =
+            new ChannelMode(
+                    "invite-only",
+                    'i',
+                    ChannelMode.Kind.BOOLEAN,
+                    Set.of(GateAction.JOIN),
+                    ChannelMode.CORE);
+    public static final ChannelMode BAN_MASK =
+            new ChannelMode(
+                    "ban-mask",
+                    'b',
+                    ChannelMode.Kind.LIST,
+                    Set.of(GateAction.SEND, GateAction.JOIN),
+                    ChannelMode.CORE);
+    public static final ChannelMode BAN_EXCEPTION =
+            new ChannelMode(
+                    "ban-exception", 'e', ChannelMode.Kind.LIST, Set.of(), ChannelMode.CORE);
+    public static final ChannelMode INVITE_EXCEPTION =
+            new ChannelMode(
+                    "invite-exception", 'I', ChannelMode.Kind.LIST, Set.of(), ChannelMode.CORE);
+    public static final ChannelMode OPERATOR =
+            new ChannelMode("operator", 'o', ChannelMode.Kind.MEMBER, Set.of(), ChannelMode.CORE);
+    public static final ChannelMode VOICE =
+            new ChannelMode("voice", 'v', ChannelMode.Kind.MEMBER, Set.of(), ChannelMode.CORE);
 
-  /**
-   * 006-complete-core-protocol FR-001 — state lives in {@code Channel.memberLimit}, not {@code
-   * activeModes} (data-model.md).
-   */
-  public static final ChannelMode USER_LIMIT =
-      new ChannelMode(
-          "user-limit",
-          'l',
-          ChannelMode.Kind.VALUE_SET_ONLY,
-          Set.of(GateAction.JOIN),
-          ChannelMode.CORE);
+    /**
+     * 006-complete-core-protocol FR-001 — state lives in {@code Channel.memberLimit}, not {@code
+     * activeModes} (data-model.md).
+     */
+    public static final ChannelMode USER_LIMIT =
+            new ChannelMode(
+                    "user-limit",
+                    'l',
+                    ChannelMode.Kind.VALUE_SET_ONLY,
+                    Set.of(GateAction.JOIN),
+                    ChannelMode.CORE);
 
-  /**
-   * 006-complete-core-protocol FR-004 — state lives in {@code Channel.key}, not {@code activeModes}
-   * (data-model.md).
-   */
-  public static final ChannelMode CHANNEL_KEY =
-      new ChannelMode(
-          "channel-key",
-          'k',
-          ChannelMode.Kind.VALUE_ALWAYS,
-          Set.of(GateAction.JOIN),
-          ChannelMode.CORE);
+    /**
+     * 006-complete-core-protocol FR-004 — state lives in {@code Channel.key}, not {@code
+     * activeModes} (data-model.md).
+     */
+    public static final ChannelMode CHANNEL_KEY =
+            new ChannelMode(
+                    "channel-key",
+                    'k',
+                    ChannelMode.Kind.VALUE_ALWAYS,
+                    Set.of(GateAction.JOIN),
+                    ChannelMode.CORE);
 
-  /**
-   * 006-complete-core-protocol FR-007 through FR-009 — {@code gates} is empty because topic-setting
-   * isn't one of {@link GateAction}'s three modeled actions ({@code SEND}/{@code JOIN}/{@code
-   * DISCOVER} — {@code DISCOVER} covers {@code TOPIC}-*viewing*, not *setting*); consulted directly
-   * by {@code TopicCommandHandler}, the same way {@code operator}/{@code voice} privilege checks
-   * already go straight to {@code Channel.operators()} rather than through a gate abstraction
-   * (research.md "Story 2").
-   */
-  public static final ChannelMode TOPIC_LOCK =
-      new ChannelMode("topic-lock", 't', ChannelMode.Kind.BOOLEAN, Set.of(), ChannelMode.CORE);
+    /**
+     * 006-complete-core-protocol FR-007 through FR-009 — {@code gates} is empty because
+     * topic-setting isn't one of {@link GateAction}'s three modeled actions ({@code SEND}/{@code
+     * JOIN}/{@code DISCOVER} — {@code DISCOVER} covers {@code TOPIC}-*viewing*, not *setting*);
+     * consulted directly by {@code TopicCommandHandler}, the same way {@code operator}/{@code
+     * voice} privilege checks already go straight to {@code Channel.operators()} rather than
+     * through a gate abstraction (research.md "Story 2").
+     */
+    public static final ChannelMode TOPIC_LOCK =
+            new ChannelMode(
+                    "topic-lock", 't', ChannelMode.Kind.BOOLEAN, Set.of(), ChannelMode.CORE);
 
-  /** Order matters for {@code CHANMODES}/{@code PREFIX} formatting (SupportedFeatures). */
-  public static final Set<ChannelMode> ALL =
-      Collections.unmodifiableSet(
-          new LinkedHashSet<>(
-              Set.of(
-                  BAN_MASK,
-                  BAN_EXCEPTION,
-                  INVITE_EXCEPTION,
-                  INVITE_ONLY,
-                  MODERATED,
-                  MEMBERS_ONLY,
-                  PRIVATE,
-                  SECRET,
-                  OPERATOR,
-                  VOICE,
-                  USER_LIMIT,
-                  CHANNEL_KEY,
-                  TOPIC_LOCK)));
+    /** Order matters for {@code CHANMODES}/{@code PREFIX} formatting (SupportedFeatures). */
+    public static final Set<ChannelMode> ALL =
+            Collections.unmodifiableSet(
+                    new LinkedHashSet<>(
+                            Set.of(
+                                    BAN_MASK,
+                                    BAN_EXCEPTION,
+                                    INVITE_EXCEPTION,
+                                    INVITE_ONLY,
+                                    MODERATED,
+                                    MEMBERS_ONLY,
+                                    PRIVATE,
+                                    SECRET,
+                                    OPERATOR,
+                                    VOICE,
+                                    USER_LIMIT,
+                                    CHANNEL_KEY,
+                                    TOPIC_LOCK)));
 
-  private CoreChannelModes() {}
+    private CoreChannelModes() {}
 }

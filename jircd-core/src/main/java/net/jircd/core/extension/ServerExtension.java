@@ -26,27 +26,27 @@ import net.jircd.core.session.UserMode;
  */
 public interface ServerExtension extends Extension {
 
-  /**
-   * The named point this extension supplies a value/decision for (e.g. {@code cloak} claims {@code
-   * hostname-display}; a future {@code gline} would claim {@code connection-admission}, FR-066), or
-   * {@code null} if this extension makes no such claim (data-model.md {@code Extension
-   * .extensionPoint}).
-   */
-  default String extensionPoint() {
-    return null;
-  }
+    /**
+     * The named point this extension supplies a value/decision for (e.g. {@code cloak} claims
+     * {@code hostname-display}; a future {@code gline} would claim {@code connection-admission},
+     * FR-066), or {@code null} if this extension makes no such claim (data-model.md {@code
+     * Extension .extensionPoint}).
+     */
+    default String extensionPoint() {
+        return null;
+    }
 
-  /**
-   * {@code BOOLEAN}-kind channel-mode flags this extension contributes. Empty by default. LIST
-   * contributions are rejected by {@link ExtensionRegistry#register} because only core list modes
-   * have storage and command handling.
-   */
-  default Set<ChannelMode> contributedChannelModes() {
-    return Set.of();
-  }
+    /**
+     * {@code BOOLEAN}-kind channel-mode flags this extension contributes. Empty by default. LIST
+     * contributions are rejected by {@link ExtensionRegistry#register} because only core list modes
+     * have storage and command handling.
+     */
+    default Set<ChannelMode> contributedChannelModes() {
+        return Set.of();
+    }
 
-  /** User-mode flags this extension contributes. Empty by default. */
-  default Set<UserMode> contributedUserModes() {
-    return Set.of();
-  }
+    /** User-mode flags this extension contributes. Empty by default. */
+    default Set<UserMode> contributedUserModes() {
+        return Set.of();
+    }
 }

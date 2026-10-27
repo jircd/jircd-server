@@ -22,5 +22,5 @@ package net.jircd.core.extension.capability;
 @FunctionalInterface
 public interface ReplyBound {
 
-  long maxBytes(ReplyLimits limits);
+    long maxBytes(ReplyLimits limits);
 }

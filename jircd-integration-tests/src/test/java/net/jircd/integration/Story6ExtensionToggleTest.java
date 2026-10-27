@@ -22,22 +22,22 @@ import org.junit.jupiter.api.Test;
 
 class Story6ExtensionToggleTest {
 
-  @Test
-  void extensionEnableAndDisableTakeEffectImmediatelyWithoutTouchingTheFile() throws Exception {
-    try (TestServer server = TestServer.start(TestServer.adminEnabledYaml());
-        RawIrcClient root = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void extensionEnableAndDisableTakeEffectImmediatelyWithoutTouchingTheFile() throws Exception {
+        try (TestServer server = TestServer.start(TestServer.adminEnabledYaml());
+                RawIrcClient root = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      root.registerAndAwaitWelcome("root", "root");
-      root.send("OPER " + TestServer.ADMIN_USERNAME + " :" + TestServer.ADMIN_PASSWORD);
-      root.readUntil("381", Duration.ofSeconds(5));
+            root.registerAndAwaitWelcome("root", "root");
+            root.send("OPER " + TestServer.ADMIN_USERNAME + " :" + TestServer.ADMIN_PASSWORD);
+            root.readUntil("381", Duration.ofSeconds(5));
 
-      root.send("EXTENSION ENABLE message-tags");
-      assertThat(root.readUntil("NOTICE", Duration.ofSeconds(5)))
-          .contains("message-tags is now enabled");
+            root.send("EXTENSION ENABLE message-tags");
+            assertThat(root.readUntil("NOTICE", Duration.ofSeconds(5)))
+                    .contains("message-tags is now enabled");
 
-      root.send("EXTENSION DISABLE message-tags");
-      assertThat(root.readUntil("NOTICE", Duration.ofSeconds(5)))
-          .contains("message-tags is now disabled");
+            root.send("EXTENSION DISABLE message-tags");
+            assertThat(root.readUntil("NOTICE", Duration.ofSeconds(5)))
+                    .contains("message-tags is now disabled");
+        }
     }
-  }
 }

@@ -24,41 +24,42 @@ import org.junit.jupiter.api.Test;
 
 final class PassCommandHandlerTest {
 
-  private final PassCommandHandler handler = new PassCommandHandler(() -> "server");
+    private final PassCommandHandler handler = new PassCommandHandler(() -> "server");
 
-  @Test
-  void beforeRegistrationItIsAcceptedSilently() throws Exception {
-    ClientSession session = HandlerHarness.unregistered("c1");
+    @Test
+    void beforeRegistrationItIsAcceptedSilently() throws Exception {
+        ClientSession session = HandlerHarness.unregistered("c1");
 
-    assertThat(HandlerHarness.run(handler, session, "PASS secret")).isEmpty();
-  }
+        assertThat(HandlerHarness.run(handler, session, "PASS secret")).isEmpty();
+    }
 
-  @Test
-  void afterRegistrationItIsAlreadyRegistered() throws Exception {
-    ClientSession alice = new HandlerHarness().register("alice");
+    @Test
+    void afterRegistrationItIsAlreadyRegistered() throws Exception {
+        ClientSession alice = new HandlerHarness().register("alice");
 
-    List<Message> replies = HandlerHarness.run(handler, alice, "PASS secret");
+        List<Message> replies = HandlerHarness.run(handler, alice, "PASS secret");
 
-    assertThat(replies).hasSize(1);
-    assertThat(replies.getFirst().rawCommand()).isEqualTo("462");
-    assertThat(replies.getFirst().params()).containsExactly("alice", "You may not reregister");
-  }
+        assertThat(replies).hasSize(1);
+        assertThat(replies.getFirst().rawCommand()).isEqualTo("462");
+        assertThat(replies.getFirst().params()).containsExactly("alice", "You may not reregister");
+    }
 
-  @Test
-  void anEmptyParameterCountsAsMissing() throws Exception {
-    ClientSession session = HandlerHarness.unregistered("c1");
+    @Test
+    void anEmptyParameterCountsAsMissing() throws Exception {
+        ClientSession session = HandlerHarness.unregistered("c1");
 
-    assertThat(HandlerHarness.codes(HandlerHarness.run(handler, session, "PASS :")))
-        .containsExactly("461");
-  }
+        assertThat(HandlerHarness.codes(HandlerHarness.run(handler, session, "PASS :")))
+                .containsExactly("461");
+    }
 
-  @Test
-  void withoutAParameterItNeedsMoreParams() throws Exception {
-    ClientSession session = HandlerHarness.unregistered("c1");
+    @Test
+    void withoutAParameterItNeedsMoreParams() throws Exception {
+        ClientSession session = HandlerHarness.unregistered("c1");
 
-    List<Message> replies = HandlerHarness.run(handler, session, "PASS");
+        List<Message> replies = HandlerHarness.run(handler, session, "PASS");
 
-    assertThat(replies.getFirst().rawCommand()).isEqualTo("461");
-    assertThat(replies.getFirst().params()).containsExactly("*", "PASS", "Not enough parameters");
-  }
+        assertThat(replies.getFirst().rawCommand()).isEqualTo("461");
+        assertThat(replies.getFirst().params())
+                .containsExactly("*", "PASS", "Not enough parameters");
+    }
 }

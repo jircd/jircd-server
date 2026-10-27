@@ -27,19 +27,19 @@ import java.nio.charset.StandardCharsets;
  */
 public final class Utf8Validator {
 
-  private Utf8Validator() {}
+    private Utf8Validator() {}
 
-  public static boolean isValidUtf8(byte[] bytes) {
-    var decoder =
-        StandardCharsets.UTF_8
-            .newDecoder()
-            .onMalformedInput(CodingErrorAction.REPORT)
-            .onUnmappableCharacter(CodingErrorAction.REPORT);
-    try {
-      decoder.decode(ByteBuffer.wrap(bytes));
-      return true;
-    } catch (CharacterCodingException e) {
-      return false;
+    public static boolean isValidUtf8(byte[] bytes) {
+        var decoder =
+                StandardCharsets.UTF_8
+                        .newDecoder()
+                        .onMalformedInput(CodingErrorAction.REPORT)
+                        .onUnmappableCharacter(CodingErrorAction.REPORT);
+        try {
+            decoder.decode(ByteBuffer.wrap(bytes));
+            return true;
+        } catch (CharacterCodingException e) {
+            return false;
+        }
     }
-  }
 }

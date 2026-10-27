@@ -28,71 +28,75 @@ import java.util.Set;
  */
 public final class ReplyLayout {
 
-  /** Core's highest-status default is at most one byte. */
-  static final long CORE_STATUS_BYTES = 1;
+    /** Core's highest-status default is at most one byte. */
+    static final long CORE_STATUS_BYTES = 1;
 
-  /** One 353 member token: {@code S + 2N + C + 13 + P + I}. */
-  public static final ReplyLayout NAMES_MEMBER =
-      new ReplyLayout(
-          "353 (NAMES)",
-          Set.of(ReplySlot.STATUS, ReplySlot.IDENTITY),
-          (l, slots) ->
-              Math.addExact(
-                  Math.addExact(
-                      l.serverBytes() + 2L * l.nicknameMax() + l.channelMax() + 13, status(slots)),
-                  slots.getOrDefault(ReplySlot.IDENTITY, 0L)));
+    /** One 353 member token: {@code S + 2N + C + 13 + P + I}. */
+    public static final ReplyLayout NAMES_MEMBER =
+            new ReplyLayout(
+                    "353 (NAMES)",
+                    Set.of(ReplySlot.STATUS, ReplySlot.IDENTITY),
+                    (l, slots) ->
+                            Math.addExact(
+                                    Math.addExact(
+                                            l.serverBytes()
+                                                    + 2L * l.nicknameMax()
+                                                    + l.channelMax()
+                                                    + 13,
+                                            status(slots)),
+                                    slots.getOrDefault(ReplySlot.IDENTITY, 0L)));
 
-  /** The closing 366: {@code S + N + C + 29}. */
-  public static final ReplyLayout NAMES_END =
-      new ReplyLayout(
-          "366 (ENDOFNAMES)",
-          Set.of(),
-          (l, slots) -> (long) l.serverBytes() + l.nicknameMax() + l.channelMax() + 29);
+    /** The closing 366: {@code S + N + C + 29}. */
+    public static final ReplyLayout NAMES_END =
+            new ReplyLayout(
+                    "366 (ENDOFNAMES)",
+                    Set.of(),
+                    (l, slots) -> (long) l.serverBytes() + l.nicknameMax() + l.channelMax() + 29);
 
-  /** A channel 352: {@code 2S + 2N + C + U + H + 18 + F} where {@code F = 2 + P}. */
-  public static final ReplyLayout WHO_ENTRY =
-      new ReplyLayout(
-          "352 (WHO)",
-          Set.of(ReplySlot.STATUS),
-          (l, slots) ->
-              2L * l.serverBytes()
-                  + 2L * l.nicknameMax()
-                  + l.channelMax()
-                  + l.identMax()
-                  + l.hostMax()
-                  + 18
-                  + 2
-                  + status(slots));
+    /** A channel 352: {@code 2S + 2N + C + U + H + 18 + F} where {@code F = 2 + P}. */
+    public static final ReplyLayout WHO_ENTRY =
+            new ReplyLayout(
+                    "352 (WHO)",
+                    Set.of(ReplySlot.STATUS),
+                    (l, slots) ->
+                            2L * l.serverBytes()
+                                    + 2L * l.nicknameMax()
+                                    + l.channelMax()
+                                    + l.identMax()
+                                    + l.hostMax()
+                                    + 18
+                                    + 2
+                                    + status(slots));
 
-  @FunctionalInterface
-  private interface Formula {
-    long bytes(ReplyLimits limits, Map<ReplySlot, Long> slotBytes);
-  }
+    @FunctionalInterface
+    private interface Formula {
+        long bytes(ReplyLimits limits, Map<ReplySlot, Long> slotBytes);
+    }
 
-  private final String name;
-  private final Set<ReplySlot> slots;
-  private final Formula formula;
+    private final String name;
+    private final Set<ReplySlot> slots;
+    private final Formula formula;
 
-  private ReplyLayout(String name, Set<ReplySlot> slots, Formula formula) {
-    this.name = name;
-    this.slots = slots;
-    this.formula = formula;
-  }
+    private ReplyLayout(String name, Set<ReplySlot> slots, Formula formula) {
+        this.name = name;
+        this.slots = slots;
+        this.formula = formula;
+    }
 
-  private static long status(Map<ReplySlot, Long> slots) {
-    return Math.max(CORE_STATUS_BYTES, slots.getOrDefault(ReplySlot.STATUS, 0L));
-  }
+    private static long status(Map<ReplySlot, Long> slots) {
+        return Math.max(CORE_STATUS_BYTES, slots.getOrDefault(ReplySlot.STATUS, 0L));
+    }
 
-  public String name() {
-    return name;
-  }
+    public String name() {
+        return name;
+    }
 
-  public Set<ReplySlot> slots() {
-    return slots;
-  }
+    public Set<ReplySlot> slots() {
+        return slots;
+    }
 
-  /** Worst-case bytes including CRLF given each slot's reserved bytes. */
-  public long worstCaseBytes(ReplyLimits limits, Map<ReplySlot, Long> slotBytes) {
-    return formula.bytes(limits, slotBytes);
-  }
+    /** Worst-case bytes including CRLF given each slot's reserved bytes. */
+    public long worstCaseBytes(ReplyLimits limits, Map<ReplySlot, Long> slotBytes) {
+        return formula.bytes(limits, slotBytes);
+    }
 }

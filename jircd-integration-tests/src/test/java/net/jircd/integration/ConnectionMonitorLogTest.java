@@ -30,64 +30,66 @@ import org.junit.jupiter.api.Test;
  */
 class ConnectionMonitorLogTest {
 
-  private static final Pattern CONNECTION_TOKEN = Pattern.compile("connection=(\\S+)");
+    private static final Pattern CONNECTION_TOKEN = Pattern.compile("connection=(\\S+)");
 
-  static String extractToken(String logLine) {
-    Matcher matcher = CONNECTION_TOKEN.matcher(logLine);
-    if (!matcher.find()) {
-      throw new AssertionError("No connection= token found in: " + logLine);
+    static String extractToken(String logLine) {
+        Matcher matcher = CONNECTION_TOKEN.matcher(logLine);
+        if (!matcher.find()) {
+            throw new AssertionError("No connection= token found in: " + logLine);
+        }
+        return matcher.group(1);
     }
-    return matcher.group(1);
-  }
 
-  @Test
-  void connectAndDisconnectProduceMatchingLogEntries() throws Exception {
-    try (LogCapture capture = new LogCapture(ConnectionMonitorLog.class);
-        TestServer server = TestServer.start()) {
+    @Test
+    void connectAndDisconnectProduceMatchingLogEntries() throws Exception {
+        try (LogCapture capture = new LogCapture(ConnectionMonitorLog.class);
+                TestServer server = TestServer.start()) {
 
-      String connectedMessage;
-      try (RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
-        alice.registerAndAwaitWelcome("alice", "alice");
+            String connectedMessage;
+            try (RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+                alice.registerAndAwaitWelcome("alice", "alice");
 
-        connectedMessage =
-            capture.awaitMessage(
-                message -> message.startsWith("connection-event=connected"), Duration.ofSeconds(5));
-      }
+                connectedMessage =
+                        capture.awaitMessage(
+                                message -> message.startsWith("connection-event=connected"),
+                                Duration.ofSeconds(5));
+            }
 
-      String disconnectedMessage =
-          capture.awaitMessage(
-              message -> message.startsWith("connection-event=disconnected"),
-              Duration.ofSeconds(5));
+            String disconnectedMessage =
+                    capture.awaitMessage(
+                            message -> message.startsWith("connection-event=disconnected"),
+                            Duration.ofSeconds(5));
 
-      String connectedToken = extractToken(connectedMessage);
-      String disconnectedToken = extractToken(disconnectedMessage);
-      assertThat(connectedToken).isEqualTo(disconnectedToken);
-      assertThat(connectedToken).doesNotMatch("^c\\d+$");
-      assertThat(connectedMessage).contains("remoteAddress=");
-      assertThat(disconnectedMessage).contains("durationMs=").contains("reason=");
+            String connectedToken = extractToken(connectedMessage);
+            String disconnectedToken = extractToken(disconnectedMessage);
+            assertThat(connectedToken).isEqualTo(disconnectedToken);
+            assertThat(connectedToken).doesNotMatch("^c\\d+$");
+            assertThat(connectedMessage).contains("remoteAddress=");
+            assertThat(disconnectedMessage).contains("durationMs=").contains("reason=");
+        }
     }
-  }
 
-  @Test
-  void sendqOverflowLineFollowsContractAndTotalGrowsByOnePerCall() throws Exception {
-    Pattern line =
-        Pattern.compile(
-            "connection-event=sendq-overflow connection=conn-x limitBytes=16384 queuedBytes=(\\d+)"
-                + " overflowTotal=(\\d+)");
-    try (LogCapture capture = new LogCapture(ConnectionMonitorLog.class)) {
-      ConnectionMonitorLog.sendqOverflow("conn-x", 16384, 16900L);
-      ConnectionMonitorLog.sendqOverflow("conn-x", 16384, 17000L);
-      var entries =
-          capture.messages().stream()
-              .filter(m -> m.startsWith("connection-event=sendq-overflow"))
-              .toList();
-      assertThat(entries).hasSize(2);
-      Matcher first = line.matcher(entries.get(0));
-      Matcher second = line.matcher(entries.get(1));
-      assertThat(first.matches()).as(entries.get(0)).isTrue();
-      assertThat(second.matches()).as(entries.get(1)).isTrue();
-      assertThat(first.group(1)).isEqualTo("16900");
-      assertThat(Long.parseLong(second.group(2))).isEqualTo(Long.parseLong(first.group(2)) + 1);
+    @Test
+    void sendqOverflowLineFollowsContractAndTotalGrowsByOnePerCall() throws Exception {
+        Pattern line =
+                Pattern.compile(
+                        "connection-event=sendq-overflow connection=conn-x limitBytes=16384 queuedBytes=(\\d+)"
+                                + " overflowTotal=(\\d+)");
+        try (LogCapture capture = new LogCapture(ConnectionMonitorLog.class)) {
+            ConnectionMonitorLog.sendqOverflow("conn-x", 16384, 16900L);
+            ConnectionMonitorLog.sendqOverflow("conn-x", 16384, 17000L);
+            var entries =
+                    capture.messages().stream()
+                            .filter(m -> m.startsWith("connection-event=sendq-overflow"))
+                            .toList();
+            assertThat(entries).hasSize(2);
+            Matcher first = line.matcher(entries.get(0));
+            Matcher second = line.matcher(entries.get(1));
+            assertThat(first.matches()).as(entries.get(0)).isTrue();
+            assertThat(second.matches()).as(entries.get(1)).isTrue();
+            assertThat(first.group(1)).isEqualTo("16900");
+            assertThat(Long.parseLong(second.group(2)))
+                    .isEqualTo(Long.parseLong(first.group(2)) + 1);
+        }
     }
-  }
 }

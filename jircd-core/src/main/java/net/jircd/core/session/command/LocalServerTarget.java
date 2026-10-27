@@ -26,15 +26,16 @@ import net.jircd.protocol.NumericReply;
  */
 final class LocalServerTarget {
 
-  private LocalServerTarget() {}
+    private LocalServerTarget() {}
 
-  /** Whether {@code target} names this server; otherwise sends {@code 402} and returns false. */
-  static boolean accepts(ClientSession session, Supplier<String> serverName, String target) {
-    String server = serverName.get();
-    if (CaseMapping.fold(server).equals(CaseMapping.fold(target))) {
-      return true;
+    /** Whether {@code target} names this server; otherwise sends {@code 402} and returns false. */
+    static boolean accepts(ClientSession session, Supplier<String> serverName, String target) {
+        String server = serverName.get();
+        if (CaseMapping.fold(server).equals(CaseMapping.fold(target))) {
+            return true;
+        }
+        Replies.sendEchoing(
+                session, server, NumericReply.ERR_NOSUCHSERVER, target, "No such server");
+        return false;
     }
-    Replies.sendEchoing(session, server, NumericReply.ERR_NOSUCHSERVER, target, "No such server");
-    return false;
-  }
 }

@@ -27,51 +27,51 @@ import org.junit.jupiter.api.Test;
  */
 class BareNamesTest {
 
-  @Test
-  void bareNamesListsVisibleChannelsAndExcludesASecretOneTheRequesterIsntIn() throws Exception {
-    try (TestServer server = TestServer.start();
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
-        RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void bareNamesListsVisibleChannelsAndExcludesASecretOneTheRequesterIsntIn() throws Exception {
+        try (TestServer server = TestServer.start();
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
+                RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      alice.registerAndAwaitWelcome("alice", "alice");
-      alice.send("JOIN #pub");
-      alice.readUntil("353", Duration.ofSeconds(5));
+            alice.registerAndAwaitWelcome("alice", "alice");
+            alice.send("JOIN #pub");
+            alice.readUntil("353", Duration.ofSeconds(5));
 
-      bob.registerAndAwaitWelcome("bob", "bob");
-      bob.send("JOIN #priv");
-      bob.readUntil("353", Duration.ofSeconds(5));
-      bob.send("MODE #priv +s");
-      bob.readUntil("MODE #priv +s", Duration.ofSeconds(5));
+            bob.registerAndAwaitWelcome("bob", "bob");
+            bob.send("JOIN #priv");
+            bob.readUntil("353", Duration.ofSeconds(5));
+            bob.send("MODE #priv +s");
+            bob.readUntil("MODE #priv +s", Duration.ofSeconds(5));
 
-      alice.send("NAMES");
-      // Only #pub is visible to alice, so exactly one 353 line (for #pub, never #priv) is
-      // expected before the single closing 366 targeted at "*".
-      String namreply = alice.readUntil("353", Duration.ofSeconds(5));
-      assertThat(namreply).contains("#pub").contains("alice").doesNotContain("#priv");
+            alice.send("NAMES");
+            // Only #pub is visible to alice, so exactly one 353 line (for #pub, never #priv) is
+            // expected before the single closing 366 targeted at "*".
+            String namreply = alice.readUntil("353", Duration.ofSeconds(5));
+            assertThat(namreply).contains("#pub").contains("alice").doesNotContain("#priv");
 
-      String end = alice.readUntil("366", Duration.ofSeconds(5));
-      assertThat(end).contains(" * ");
+            String end = alice.readUntil("366", Duration.ofSeconds(5));
+            assertThat(end).contains(" * ");
+        }
     }
-  }
 
-  @Test
-  void bareNamesIncludesASecretChannelForOneOfItsOwnMembers() throws Exception {
-    try (TestServer server = TestServer.start();
-        RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void bareNamesIncludesASecretChannelForOneOfItsOwnMembers() throws Exception {
+        try (TestServer server = TestServer.start();
+                RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      bob.registerAndAwaitWelcome("bob", "bob");
-      bob.send("JOIN #priv");
-      bob.readUntil("353", Duration.ofSeconds(5));
-      bob.send("MODE #priv +s");
-      bob.readUntil("MODE #priv +s", Duration.ofSeconds(5));
+            bob.registerAndAwaitWelcome("bob", "bob");
+            bob.send("JOIN #priv");
+            bob.readUntil("353", Duration.ofSeconds(5));
+            bob.send("MODE #priv +s");
+            bob.readUntil("MODE #priv +s", Duration.ofSeconds(5));
 
-      // bob IS a member of #priv, so the same visibility rule that hides it from a non-member
-      // (ChannelVisibility.isHiddenFrom) must still include it for bob himself.
-      bob.send("NAMES");
-      String namreply = bob.readUntil("353", Duration.ofSeconds(5));
-      assertThat(namreply).contains("#priv").contains("bob");
+            // bob IS a member of #priv, so the same visibility rule that hides it from a non-member
+            // (ChannelVisibility.isHiddenFrom) must still include it for bob himself.
+            bob.send("NAMES");
+            String namreply = bob.readUntil("353", Duration.ofSeconds(5));
+            assertThat(namreply).contains("#priv").contains("bob");
 
-      assertThat(bob.readUntil("366", Duration.ofSeconds(5))).contains(" * ");
+            assertThat(bob.readUntil("366", Duration.ofSeconds(5))).contains(" * ");
+        }
     }
-  }
 }

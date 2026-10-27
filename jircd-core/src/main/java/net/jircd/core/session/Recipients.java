@@ -27,37 +27,37 @@ import net.jircd.protocol.Message;
  * <p>Must never be called while holding a registry or channel monitor.
  */
 public final class Recipients {
-  private Recipients() {}
+    private Recipients() {}
 
-  /** Returns shared-channel neighbors, optionally including self and filtering recipients. */
-  public static Set<ClientSession> sharedChannelNeighbors(
-      ClientSession session, boolean includeSelf, Predicate<ClientSession> filter) {
-    Set<ClientSession> recipients = new LinkedHashSet<>();
-    if (includeSelf && filter.test(session)) {
-      recipients.add(session);
-    }
-    for (Channel channel : session.channelMemberships()) {
-      for (ClientSession member : channel.members()) {
-        if (member != session && filter.test(member)) {
-          recipients.add(member);
+    /** Returns shared-channel neighbors, optionally including self and filtering recipients. */
+    public static Set<ClientSession> sharedChannelNeighbors(
+            ClientSession session, boolean includeSelf, Predicate<ClientSession> filter) {
+        Set<ClientSession> recipients = new LinkedHashSet<>();
+        if (includeSelf && filter.test(session)) {
+            recipients.add(session);
         }
-      }
+        for (Channel channel : session.channelMemberships()) {
+            for (ClientSession member : channel.members()) {
+                if (member != session && filter.test(member)) {
+                    recipients.add(member);
+                }
+            }
+        }
+        return recipients;
     }
-    return recipients;
-  }
 
-  /** Delivers to recipients with an attached writer. */
-  public static void deliver(Collection<ClientSession> recipients, Message message) {
-    if (recipients.isEmpty()) return;
-    // Raw recipients share one immutable wire message and therefore one byte charge.
-    long bytes = WireBytes.raw(message);
-    for (ClientSession recipient : recipients) {
-      // Borrowed reference to the recipient's own writer, closed by its connection lifecycle.
-      @SuppressWarnings("PMD.CloseResource")
-      SessionWriter writer = recipient.writer();
-      if (writer != null) {
-        writer.enqueueRaw(message, bytes);
-      }
+    /** Delivers to recipients with an attached writer. */
+    public static void deliver(Collection<ClientSession> recipients, Message message) {
+        if (recipients.isEmpty()) return;
+        // Raw recipients share one immutable wire message and therefore one byte charge.
+        long bytes = WireBytes.raw(message);
+        for (ClientSession recipient : recipients) {
+            // Borrowed reference to the recipient's own writer, closed by its connection lifecycle.
+            @SuppressWarnings("PMD.CloseResource")
+            SessionWriter writer = recipient.writer();
+            if (writer != null) {
+                writer.enqueueRaw(message, bytes);
+            }
+        }
     }
-  }
 }

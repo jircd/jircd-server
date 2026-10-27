@@ -22,34 +22,34 @@ import org.junit.jupiter.api.Test;
 
 class Story6WhohostTest {
 
-  @Test
-  void whohostReturnsTargetsRealHostname() throws Exception {
-    try (TestServer server = TestServer.start(TestServer.adminEnabledYaml());
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
-        RawIrcClient root = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void whohostReturnsTargetsRealHostname() throws Exception {
+        try (TestServer server = TestServer.start(TestServer.adminEnabledYaml());
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
+                RawIrcClient root = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      alice.registerAndAwaitWelcome("alice", "alice");
-      root.registerAndAwaitWelcome("root", "root");
-      root.send("OPER " + TestServer.ADMIN_USERNAME + " :" + TestServer.ADMIN_PASSWORD);
-      root.readUntil("381", Duration.ofSeconds(5));
+            alice.registerAndAwaitWelcome("alice", "alice");
+            root.registerAndAwaitWelcome("root", "root");
+            root.send("OPER " + TestServer.ADMIN_USERNAME + " :" + TestServer.ADMIN_PASSWORD);
+            root.readUntil("381", Duration.ofSeconds(5));
 
-      root.send("WHOHOST alice");
-      assertThat(root.readUntil("NOTICE", Duration.ofSeconds(5)))
-          .contains("alice is connecting from");
+            root.send("WHOHOST alice");
+            assertThat(root.readUntil("NOTICE", Duration.ofSeconds(5)))
+                    .contains("alice is connecting from");
+        }
     }
-  }
 
-  @Test
-  void whohostForUnknownNicknameReportsNoSuchNick() throws Exception {
-    try (TestServer server = TestServer.start(TestServer.adminEnabledYaml());
-        RawIrcClient root = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void whohostForUnknownNicknameReportsNoSuchNick() throws Exception {
+        try (TestServer server = TestServer.start(TestServer.adminEnabledYaml());
+                RawIrcClient root = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      root.registerAndAwaitWelcome("root", "root");
-      root.send("OPER " + TestServer.ADMIN_USERNAME + " :" + TestServer.ADMIN_PASSWORD);
-      root.readUntil("381", Duration.ofSeconds(5));
+            root.registerAndAwaitWelcome("root", "root");
+            root.send("OPER " + TestServer.ADMIN_USERNAME + " :" + TestServer.ADMIN_PASSWORD);
+            root.readUntil("381", Duration.ofSeconds(5));
 
-      root.send("WHOHOST nonexistent");
-      assertThat(root.readUntil("401", Duration.ofSeconds(5))).contains("401");
+            root.send("WHOHOST nonexistent");
+            assertThat(root.readUntil("401", Duration.ofSeconds(5))).contains("401");
+        }
     }
-  }
 }

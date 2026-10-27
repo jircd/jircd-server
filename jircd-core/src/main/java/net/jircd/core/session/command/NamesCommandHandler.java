@@ -38,51 +38,53 @@ import net.jircd.protocol.NumericReply;
  */
 public final class NamesCommandHandler implements CommandHandler {
 
-  private final ChannelRegistry channelRegistry;
-  private final ExtensionRegistry extensionRegistry;
-  private final Supplier<String> serverName;
+    private final ChannelRegistry channelRegistry;
+    private final ExtensionRegistry extensionRegistry;
+    private final Supplier<String> serverName;
 
-  public NamesCommandHandler(
-      ChannelRegistry channelRegistry,
-      ExtensionRegistry extensionRegistry,
-      Supplier<String> serverName) {
-    this.channelRegistry = channelRegistry;
-    this.extensionRegistry = extensionRegistry;
-    this.serverName = serverName;
-  }
+    public NamesCommandHandler(
+            ChannelRegistry channelRegistry,
+            ExtensionRegistry extensionRegistry,
+            Supplier<String> serverName) {
+        this.channelRegistry = channelRegistry;
+        this.extensionRegistry = extensionRegistry;
+        this.serverName = serverName;
+    }
 
-  @Override
-  public void handle(ClientSession session, Message message) {
-    if (message.params().isEmpty()) {
-      for (var channel : channelRegistry.all()) {
-        if (!ChannelVisibility.isHiddenFrom(channel, session, extensionRegistry)) {
-          JoinCommandHandler.sendNamesLine(extensionRegistry, session, channel, serverName.get());
+    @Override
+    public void handle(ClientSession session, Message message) {
+        if (message.params().isEmpty()) {
+            for (var channel : channelRegistry.all()) {
+                if (!ChannelVisibility.isHiddenFrom(channel, session, extensionRegistry)) {
+                    JoinCommandHandler.sendNamesLine(
+                            extensionRegistry, session, channel, serverName.get());
+                }
+            }
+            Replies.sendFitted(
+                    session,
+                    serverName.get(),
+                    NumericReply.RPL_ENDOFNAMES,
+                    List.of("*"),
+                    "End of /NAMES list");
+            return;
         }
-      }
-      Replies.sendFitted(
-          session,
-          serverName.get(),
-          NumericReply.RPL_ENDOFNAMES,
-          List.of("*"),
-          "End of /NAMES list");
-      return;
+        String requestedName = message.params().getFirst();
+        var found = channelRegistry.lookup(requestedName);
+        if (found.isEmpty()
+                || ChannelVisibility.isHiddenFrom(found.get(), session, extensionRegistry)) {
+            // 006-complete-core-protocol Polish — "There is no error reply for bad channel names"
+            // (RFC1459 §4.2.5/RFC2812 §3.2.5); an invalid or nonexistent single channel gets only
+            // the closing RPL_ENDOFNAMES, the same as it would if it existed but had zero visible
+            // members — never an error, unlike most other channel-targeted commands.
+            Replies.sendFitted(
+                    session,
+                    serverName.get(),
+                    NumericReply.RPL_ENDOFNAMES,
+                    List.of(requestedName),
+                    "End of /NAMES list");
+            return;
+        }
+        JoinCommandHandler.sendNamesReply(
+                extensionRegistry, session, found.get(), serverName.get());
     }
-    String requestedName = message.params().getFirst();
-    var found = channelRegistry.lookup(requestedName);
-    if (found.isEmpty()
-        || ChannelVisibility.isHiddenFrom(found.get(), session, extensionRegistry)) {
-      // 006-complete-core-protocol Polish — "There is no error reply for bad channel names"
-      // (RFC1459 §4.2.5/RFC2812 §3.2.5); an invalid or nonexistent single channel gets only the
-      // closing RPL_ENDOFNAMES, the same as it would if it existed but had zero visible members —
-      // never an error, unlike most other channel-targeted commands.
-      Replies.sendFitted(
-          session,
-          serverName.get(),
-          NumericReply.RPL_ENDOFNAMES,
-          List.of(requestedName),
-          "End of /NAMES list");
-      return;
-    }
-    JoinCommandHandler.sendNamesReply(extensionRegistry, session, found.get(), serverName.get());
-  }
 }

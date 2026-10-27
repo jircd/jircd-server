@@ -28,36 +28,37 @@ import org.junit.jupiter.api.Test;
  */
 class PingTokenConsistencyTest {
 
-  @Test
-  void pingPayloadMatchesTheMonitoringLogToken() throws Exception {
-    try (LogCapture capture = new LogCapture(ConnectionMonitorLog.class);
-        TestServer server = TestServer.start("keepAliveFrequencySeconds: 2\n");
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void pingPayloadMatchesTheMonitoringLogToken() throws Exception {
+        try (LogCapture capture = new LogCapture(ConnectionMonitorLog.class);
+                TestServer server = TestServer.start("keepAliveFrequencySeconds: 2\n");
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      alice.registerAndAwaitWelcome("alice", "alice");
+            alice.registerAndAwaitWelcome("alice", "alice");
 
-      String connectedMessage =
-          capture.awaitMessage(
-              message -> message.startsWith("connection-event=connected"), Duration.ofSeconds(5));
-      String loggedToken = ConnectionMonitorLogTest.extractToken(connectedMessage);
+            String connectedMessage =
+                    capture.awaitMessage(
+                            message -> message.startsWith("connection-event=connected"),
+                            Duration.ofSeconds(5));
+            String loggedToken = ConnectionMonitorLogTest.extractToken(connectedMessage);
 
-      String ping = alice.readUntil("PING", Duration.ofSeconds(10));
-      String pingToken = ping.substring(ping.indexOf("PING") + 5).replace(":", "").trim();
+            String ping = alice.readUntil("PING", Duration.ofSeconds(10));
+            String pingToken = ping.substring(ping.indexOf("PING") + 5).replace(":", "").trim();
 
-      assertThat(pingToken).isEqualTo(loggedToken);
+            assertThat(pingToken).isEqualTo(loggedToken);
+        }
     }
-  }
 
-  @Test
-  void configuredFrequencyChangesHowSoonThePingArrives() throws Exception {
-    try (TestServer server = TestServer.start("keepAliveFrequencySeconds: 2\n");
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void configuredFrequencyChangesHowSoonThePingArrives() throws Exception {
+        try (TestServer server = TestServer.start("keepAliveFrequencySeconds: 2\n");
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      alice.registerAndAwaitWelcome("alice", "alice");
+            alice.registerAndAwaitWelcome("alice", "alice");
 
-      // Well under the 120s default and the old hardcoded 30s constant — only reachable if the
-      // configured value is actually being honored, not silently ignored.
-      assertThat(alice.readUntil("PING", Duration.ofSeconds(10))).contains("PING");
+            // Well under the 120s default and the old hardcoded 30s constant — only reachable if
+            // the configured value is actually being honored, not silently ignored.
+            assertThat(alice.readUntil("PING", Duration.ofSeconds(10))).contains("PING");
+        }
     }
-  }
 }

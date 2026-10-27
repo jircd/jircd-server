@@ -28,42 +28,43 @@ import net.jircd.protocol.MessageSerializer;
  * callback or mutable state reaches the queue.
  */
 public final class FrameSequence {
-  private final List<String> lines;
-  private final long bytes;
+    private final List<String> lines;
+    private final long bytes;
 
-  private FrameSequence(List<String> lines, long bytes) {
-    this.lines = lines;
-    this.bytes = bytes;
-  }
-
-  /**
-   * Serializes {@code frames} now, so any size or syntax violation surfaces before admission.
-   *
-   * @throws IllegalArgumentException if {@code frames} is empty or a frame is not valid IRC syntax
-   * @throws MessageSerializer.MessageTooLongException if any frame cannot be represented
-   */
-  public static FrameSequence of(List<Message> frames) {
-    if (frames.isEmpty()) {
-      throw new IllegalArgumentException("A frame sequence needs at least one frame");
+    private FrameSequence(List<String> lines, long bytes) {
+        this.lines = lines;
+        this.bytes = bytes;
     }
-    List<String> lines = new ArrayList<>(frames.size());
-    long total = 0;
-    for (Message frame : frames) {
-      FrameSyntax.validate(frame);
-      String line = MessageSerializer.serializeText(frame);
-      total = Math.addExact(total, (long) line.getBytes(StandardCharsets.UTF_8).length + 2);
-      lines.add(line);
+
+    /**
+     * Serializes {@code frames} now, so any size or syntax violation surfaces before admission.
+     *
+     * @throws IllegalArgumentException if {@code frames} is empty or a frame is not valid IRC
+     *     syntax
+     * @throws MessageSerializer.MessageTooLongException if any frame cannot be represented
+     */
+    public static FrameSequence of(List<Message> frames) {
+        if (frames.isEmpty()) {
+            throw new IllegalArgumentException("A frame sequence needs at least one frame");
+        }
+        List<String> lines = new ArrayList<>(frames.size());
+        long total = 0;
+        for (Message frame : frames) {
+            FrameSyntax.validate(frame);
+            String line = MessageSerializer.serializeText(frame);
+            total = Math.addExact(total, (long) line.getBytes(StandardCharsets.UTF_8).length + 2);
+            lines.add(line);
+        }
+        return new FrameSequence(List.copyOf(lines), total);
     }
-    return new FrameSequence(List.copyOf(lines), total);
-  }
 
-  /** The serialized lines without line terminators. */
-  public List<String> lines() {
-    return lines;
-  }
+    /** The serialized lines without line terminators. */
+    public List<String> lines() {
+        return lines;
+    }
 
-  /** Exact bytes on the wire: tags, command, parameters and CRLF of every line. */
-  public long bytes() {
-    return bytes;
-  }
+    /** Exact bytes on the wire: tags, command, parameters and CRLF of every line. */
+    public long bytes() {
+        return bytes;
+    }
 }

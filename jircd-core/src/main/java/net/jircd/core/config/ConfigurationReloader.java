@@ -33,119 +33,120 @@ import net.jircd.core.extension.ExtensionRegistry;
  */
 public final class ConfigurationReloader {
 
-  /**
-   * A reload that validated and was applied, with each extension whose reconciliation failed and
-   * why. A provider whose start fails ends FAILED without undoing the rest of the reload.
-   */
-  public record ReloadOutcome(ServerConfiguration configuration, Map<String, String> failures) {
-    public ReloadOutcome {
-      failures = Map.copyOf(failures);
+    /**
+     * A reload that validated and was applied, with each extension whose reconciliation failed and
+     * why. A provider whose start fails ends FAILED without undoing the rest of the reload.
+     */
+    public record ReloadOutcome(ServerConfiguration configuration, Map<String, String> failures) {
+        public ReloadOutcome {
+            failures = Map.copyOf(failures);
+        }
     }
-  }
 
-  private final Path configPath;
-  private final ConfigurationLoader loader;
-  private final ExtensionRegistry extensionRegistry;
-  private final String runningServerName;
-  private volatile ServerConfiguration current;
+    private final Path configPath;
+    private final ConfigurationLoader loader;
+    private final ExtensionRegistry extensionRegistry;
+    private final String runningServerName;
+    private volatile ServerConfiguration current;
 
-  public ConfigurationReloader(
-      Path configPath,
-      ConfigurationLoader loader,
-      ExtensionRegistry extensionRegistry,
-      ServerConfiguration initial) {
-    this.configPath = configPath;
-    this.loader = loader;
-    this.extensionRegistry = extensionRegistry;
-    this.current = initial;
-    this.runningServerName = initial.serverName();
-  }
-
-  public ServerConfiguration current() {
-    return current;
-  }
-
-  public Path configPath() {
-    return configPath;
-  }
-
-  /**
-   * Re-reads and re-validates the configuration file, reconciling extension state on success.
-   * Serialized, so validation, reconciliation, publication of {@link #current()} and the advertised
-   * lengths happen as one ordered operation per reload. Listener settings (including backlog) are
-   * validated and published here, but sockets are only bound at application startup; applying
-   * listener changes requires a server restart.
-   *
-   * @throws IllegalStateException if called from inside a provider lifecycle callback ({@code
-   *     start}, {@code stop}, {@code register}), which would wait on the lifecycle lock its own
-   *     thread holds
-   */
-  public ServerConfiguration reload() throws ConfigurationException, IOException {
-    return reloadWithOutcome().configuration();
-  }
-
-  /**
-   * As {@link #reload()}, also reporting each extension whose reconciliation failed.
-   *
-   * @throws IllegalStateException if called from inside a provider lifecycle callback
-   */
-  public ReloadOutcome reloadWithOutcome() throws ConfigurationException, IOException {
-    // Checked before the reload monitor is taken, so a callback never queues behind a reload that
-    // is itself waiting for the lifecycle lock the callback holds.
-    extensionRegistry.requireNoLifecycleCallback();
-    return reloadSerialized();
-  }
-
-  /**
-   * The whole desired configuration is validated before anything changes: the file, the reply
-   * budgets, and the candidate provider graph (hard dependencies present and acyclic, offers and
-   * owned slots unique). A validation failure changes no configuration, negotiation or
-   * notification. A valid reload is then one lifecycle operation that no {@code EXTENSION} toggle
-   * interleaves with: providers to enable start first, prerequisites first, then a single
-   * publication swaps the capability snapshot together with the new reply limits, the advertised
-   * lengths and {@link #current()}, and only then are withdrawn providers stopped. Enable never
-   * restores an earlier negotiation.
-   */
-  private synchronized ReloadOutcome reloadSerialized() throws ConfigurationException, IOException {
-    ServerConfiguration reloaded;
-    try (InputStream in = new FileInputStream(configPath.toFile())) {
-      reloaded = loader.load(in);
+    public ConfigurationReloader(
+            Path configPath,
+            ConfigurationLoader loader,
+            ExtensionRegistry extensionRegistry,
+            ServerConfiguration initial) {
+        this.configPath = configPath;
+        this.loader = loader;
+        this.extensionRegistry = extensionRegistry;
+        this.current = initial;
+        this.runningServerName = initial.serverName();
     }
-    loader.checkReplyBudgets(
-        runningServerName, reloaded.nicknameMaxLength(), reloaded.channelNameMaxLength());
-    ExtensionRegistry.DesiredState desired =
-        new ExtensionRegistry.DesiredState(
-            reloaded.capabilityStates(),
-            reloaded.serverExtensionStates(),
-            reloaded.nicknameMaxLength(),
-            reloaded.channelNameMaxLength(),
-            reloaded.topicMaxLength(),
-            reloaded.maxModesPerCommand(),
-            changedEntries(current.capabilityStates(), reloaded.capabilityStates()));
-    Map<String, String> failures;
-    try {
-      failures = extensionRegistry.applyDesiredState(desired, () -> this.current = reloaded);
-    } catch (ExtensionRegistry.InvalidDesiredStateException e) {
-      throw new ConfigurationException(e.getMessage());
-    }
-    return new ReloadOutcome(reloaded, failures);
-  }
 
-  /**
-   * The ids whose entry differs between the last applied and the reloaded section: a changed value,
-   * an added entry or a removed one. Only these may retry a FAILED provider.
-   */
-  private static Set<String> changedEntries(
-      Map<String, Boolean> applied, Map<String, Boolean> reloaded) {
-    Set<String> changed = new HashSet<>();
-    for (Map.Entry<String, Boolean> entry : applied.entrySet()) {
-      if (!Objects.equals(entry.getValue(), reloaded.get(entry.getKey()))) {
-        changed.add(entry.getKey());
-      }
+    public ServerConfiguration current() {
+        return current;
     }
-    for (String id : reloaded.keySet()) {
-      if (!applied.containsKey(id)) changed.add(id);
+
+    public Path configPath() {
+        return configPath;
     }
-    return changed;
-  }
+
+    /**
+     * Re-reads and re-validates the configuration file, reconciling extension state on success.
+     * Serialized, so validation, reconciliation, publication of {@link #current()} and the
+     * advertised lengths happen as one ordered operation per reload. Listener settings (including
+     * backlog) are validated and published here, but sockets are only bound at application startup;
+     * applying listener changes requires a server restart.
+     *
+     * @throws IllegalStateException if called from inside a provider lifecycle callback ({@code
+     *     start}, {@code stop}, {@code register}), which would wait on the lifecycle lock its own
+     *     thread holds
+     */
+    public ServerConfiguration reload() throws ConfigurationException, IOException {
+        return reloadWithOutcome().configuration();
+    }
+
+    /**
+     * As {@link #reload()}, also reporting each extension whose reconciliation failed.
+     *
+     * @throws IllegalStateException if called from inside a provider lifecycle callback
+     */
+    public ReloadOutcome reloadWithOutcome() throws ConfigurationException, IOException {
+        // Checked before the reload monitor is taken, so a callback never queues behind a reload
+        // that is itself waiting for the lifecycle lock the callback holds.
+        extensionRegistry.requireNoLifecycleCallback();
+        return reloadSerialized();
+    }
+
+    /**
+     * The whole desired configuration is validated before anything changes: the file, the reply
+     * budgets, and the candidate provider graph (hard dependencies present and acyclic, offers and
+     * owned slots unique). A validation failure changes no configuration, negotiation or
+     * notification. A valid reload is then one lifecycle operation that no {@code EXTENSION} toggle
+     * interleaves with: providers to enable start first, prerequisites first, then a single
+     * publication swaps the capability snapshot together with the new reply limits, the advertised
+     * lengths and {@link #current()}, and only then are withdrawn providers stopped. Enable never
+     * restores an earlier negotiation.
+     */
+    private synchronized ReloadOutcome reloadSerialized()
+            throws ConfigurationException, IOException {
+        ServerConfiguration reloaded;
+        try (InputStream in = new FileInputStream(configPath.toFile())) {
+            reloaded = loader.load(in);
+        }
+        loader.checkReplyBudgets(
+                runningServerName, reloaded.nicknameMaxLength(), reloaded.channelNameMaxLength());
+        ExtensionRegistry.DesiredState desired =
+                new ExtensionRegistry.DesiredState(
+                        reloaded.capabilityStates(),
+                        reloaded.serverExtensionStates(),
+                        reloaded.nicknameMaxLength(),
+                        reloaded.channelNameMaxLength(),
+                        reloaded.topicMaxLength(),
+                        reloaded.maxModesPerCommand(),
+                        changedEntries(current.capabilityStates(), reloaded.capabilityStates()));
+        Map<String, String> failures;
+        try {
+            failures = extensionRegistry.applyDesiredState(desired, () -> this.current = reloaded);
+        } catch (ExtensionRegistry.InvalidDesiredStateException e) {
+            throw new ConfigurationException(e.getMessage());
+        }
+        return new ReloadOutcome(reloaded, failures);
+    }
+
+    /**
+     * The ids whose entry differs between the last applied and the reloaded section: a changed
+     * value, an added entry or a removed one. Only these may retry a FAILED provider.
+     */
+    private static Set<String> changedEntries(
+            Map<String, Boolean> applied, Map<String, Boolean> reloaded) {
+        Set<String> changed = new HashSet<>();
+        for (Map.Entry<String, Boolean> entry : applied.entrySet()) {
+            if (!Objects.equals(entry.getValue(), reloaded.get(entry.getKey()))) {
+                changed.add(entry.getKey());
+            }
+        }
+        for (String id : reloaded.keySet()) {
+            if (!applied.containsKey(id)) changed.add(id);
+        }
+        return changed;
+    }
 }

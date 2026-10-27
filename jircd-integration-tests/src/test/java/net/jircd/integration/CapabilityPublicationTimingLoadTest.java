@@ -35,14 +35,14 @@ import org.junit.jupiter.api.Test;
 @Tag("load")
 class CapabilityPublicationTimingLoadTest {
 
-  private static final int SESSIONS = 1000;
-  private static final int WARMUP = 5;
-  private static final int CYCLES = 40;
-  private static final Duration TIMEOUT = Duration.ofSeconds(10);
+    private static final int SESSIONS = 1000;
+    private static final int WARMUP = 5;
+    private static final int CYCLES = 40;
+    private static final Duration TIMEOUT = Duration.ofSeconds(10);
 
-  /** The per-connection rate limit is raised: over-rate commands are dropped, not delayed. */
-  private static final String YAML =
-      """
+    /** The per-connection rate limit is raised: over-rate commands are dropped, not delayed. */
+    private static final String YAML =
+            """
       maxConnections: 10000
       maxConnectionsPerIp: 10000
       rateLimit:
@@ -52,84 +52,87 @@ class CapabilityPublicationTimingLoadTest {
         multi-prefix: enabled
       """;
 
-  private record Sample(String label, long[] sortedNanos) {
-    double p50Ms() {
-      return sortedNanos[sortedNanos.length / 2] / 1e6;
-    }
-
-    double p99Ms() {
-      return sortedNanos[(int) Math.ceil(sortedNanos.length * 0.99) - 1] / 1e6;
-    }
-
-    double maxMs() {
-      return sortedNanos[sortedNanos.length - 1] / 1e6;
-    }
-
-    void print() {
-      System.out.printf(
-          "CapabilityPublicationTimingLoadTest: %s sessions=%d cycles=%d p50Ms=%.3f p99Ms=%.3f"
-              + " maxMs=%.3f%n",
-          label, SESSIONS, sortedNanos.length, p50Ms(), p99Ms(), maxMs());
-    }
-  }
-
-  /** Disables then re-enables, re-requesting on every client so each disable prunes them all. */
-  // The clients belong to the caller, which closes them; this only writes to and reads from them.
-  @SuppressWarnings("PMD.CloseResource")
-  private static Sample[] measure(
-      String label, ExtensionRegistry registry, List<RawIrcClient> clients) throws Exception {
-    List<Long> disables = new ArrayList<>();
-    List<Long> enables = new ArrayList<>();
-    for (int cycle = 0; cycle < WARMUP + CYCLES; cycle++) {
-      long start = System.nanoTime();
-      registry.disable("multi-prefix");
-      long disabled = System.nanoTime();
-      registry.enable("multi-prefix");
-      long enabled = System.nanoTime();
-      if (cycle >= WARMUP) {
-        disables.add(disabled - start);
-        enables.add(enabled - disabled);
-      }
-      for (RawIrcClient client : clients) client.send("CAP REQ :multi-prefix");
-      // Every request is answered before the next disable, so each one prunes every session.
-      for (RawIrcClient client : clients) client.readUntil("ACK", TIMEOUT);
-    }
-    return new Sample[] {
-      new Sample(
-          label + " disable", disables.stream().mapToLong(Long::longValue).sorted().toArray()),
-      new Sample(label + " enable", enables.stream().mapToLong(Long::longValue).sorted().toArray())
-    };
-  }
-
-  // Every client is closed in the finally loop, not in the scope that opened it.
-  @SuppressWarnings("PMD.CloseResource")
-  @Test
-  void publicationAndPruneAtOneThousandSessionsStayWithinTheBudget() throws Exception {
-    try (TestServer server = TestServer.start(YAML)) {
-      ExtensionRegistry registry = server.application.extensionRegistry();
-      List<RawIrcClient> clients = new ArrayList<>();
-      try {
-        for (int i = 0; i < SESSIONS; i++) {
-          RawIrcClient client = RawIrcClient.connectPlaintext(server.plaintextPort());
-          clients.add(client);
-          client.send("CAP REQ :multi-prefix");
-          client.send("CAP END");
-          client.registerAndAwaitWelcome("s" + i, "s" + i);
+    private record Sample(String label, long[] sortedNanos) {
+        double p50Ms() {
+            return sortedNanos[sortedNanos.length / 2] / 1e6;
         }
 
-        Sample[] quiet = measure("no-notify", registry, clients);
-        for (RawIrcClient client : clients) {
-          client.send("CAP LS 302");
-          client.readUntil(" LS ", TIMEOUT);
+        double p99Ms() {
+            return sortedNanos[(int) Math.ceil(sortedNanos.length * 0.99) - 1] / 1e6;
         }
-        Sample[] notified = measure("notify-302", registry, clients);
 
-        for (Sample sample : quiet) sample.print();
-        for (Sample sample : notified) sample.print();
-        assertThat(quiet[0].p99Ms()).isLessThanOrEqualTo(100.0);
-      } finally {
-        for (RawIrcClient client : clients) client.close();
-      }
+        double maxMs() {
+            return sortedNanos[sortedNanos.length - 1] / 1e6;
+        }
+
+        void print() {
+            System.out.printf(
+                    "CapabilityPublicationTimingLoadTest: %s sessions=%d cycles=%d p50Ms=%.3f p99Ms=%.3f"
+                            + " maxMs=%.3f%n",
+                    label, SESSIONS, sortedNanos.length, p50Ms(), p99Ms(), maxMs());
+        }
     }
-  }
+
+    /** Disables then re-enables, re-requesting on every client so each disable prunes them all. */
+    // The clients belong to the caller, which closes them; this only writes to and reads from them.
+    @SuppressWarnings("PMD.CloseResource")
+    private static Sample[] measure(
+            String label, ExtensionRegistry registry, List<RawIrcClient> clients) throws Exception {
+        List<Long> disables = new ArrayList<>();
+        List<Long> enables = new ArrayList<>();
+        for (int cycle = 0; cycle < WARMUP + CYCLES; cycle++) {
+            long start = System.nanoTime();
+            registry.disable("multi-prefix");
+            long disabled = System.nanoTime();
+            registry.enable("multi-prefix");
+            long enabled = System.nanoTime();
+            if (cycle >= WARMUP) {
+                disables.add(disabled - start);
+                enables.add(enabled - disabled);
+            }
+            for (RawIrcClient client : clients) client.send("CAP REQ :multi-prefix");
+            // Every request is answered before the next disable, so each one prunes every session.
+            for (RawIrcClient client : clients) client.readUntil("ACK", TIMEOUT);
+        }
+        return new Sample[] {
+            new Sample(
+                    label + " disable",
+                    disables.stream().mapToLong(Long::longValue).sorted().toArray()),
+            new Sample(
+                    label + " enable",
+                    enables.stream().mapToLong(Long::longValue).sorted().toArray())
+        };
+    }
+
+    // Every client is closed in the finally loop, not in the scope that opened it.
+    @SuppressWarnings("PMD.CloseResource")
+    @Test
+    void publicationAndPruneAtOneThousandSessionsStayWithinTheBudget() throws Exception {
+        try (TestServer server = TestServer.start(YAML)) {
+            ExtensionRegistry registry = server.application.extensionRegistry();
+            List<RawIrcClient> clients = new ArrayList<>();
+            try {
+                for (int i = 0; i < SESSIONS; i++) {
+                    RawIrcClient client = RawIrcClient.connectPlaintext(server.plaintextPort());
+                    clients.add(client);
+                    client.send("CAP REQ :multi-prefix");
+                    client.send("CAP END");
+                    client.registerAndAwaitWelcome("s" + i, "s" + i);
+                }
+
+                Sample[] quiet = measure("no-notify", registry, clients);
+                for (RawIrcClient client : clients) {
+                    client.send("CAP LS 302");
+                    client.readUntil(" LS ", TIMEOUT);
+                }
+                Sample[] notified = measure("notify-302", registry, clients);
+
+                for (Sample sample : quiet) sample.print();
+                for (Sample sample : notified) sample.print();
+                assertThat(quiet[0].p99Ms()).isLessThanOrEqualTo(100.0);
+            } finally {
+                for (RawIrcClient client : clients) client.close();
+            }
+        }
+    }
 }

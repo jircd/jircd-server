@@ -27,26 +27,26 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public final class UserStatistics {
 
-  private final AtomicInteger registered = new AtomicInteger();
-  private final AtomicInteger peak = new AtomicInteger();
+    private final AtomicInteger registered = new AtomicInteger();
+    private final AtomicInteger peak = new AtomicInteger();
 
-  /** Currently registered users. */
-  public int registeredCount() {
-    return registered.get();
-  }
+    /** Currently registered users. */
+    public int registeredCount() {
+        return registered.get();
+    }
 
-  /** Call once for the session that won the transition to {@code REGISTERED}. */
-  public void userRegistered() {
-    peak.accumulateAndGet(registered.incrementAndGet(), Math::max);
-  }
+    /** Call once for the session that won the transition to {@code REGISTERED}. */
+    public void userRegistered() {
+        peak.accumulateAndGet(registered.incrementAndGet(), Math::max);
+    }
 
-  /** Call once for a session that was {@code REGISTERED} when it claimed {@code CLOSING}. */
-  public void userLeft() {
-    registered.decrementAndGet();
-  }
+    /** Call once for a session that was {@code REGISTERED} when it claimed {@code CLOSING}. */
+    public void userLeft() {
+        registered.decrementAndGet();
+    }
 
-  /** The most registered users seen at once; never decreases. */
-  public int peak() {
-    return peak.get();
-  }
+    /** The most registered users seen at once; never decreases. */
+    public int peak() {
+        return peak.get();
+    }
 }

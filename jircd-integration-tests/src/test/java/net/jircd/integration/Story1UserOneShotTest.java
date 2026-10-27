@@ -22,26 +22,26 @@ import org.junit.jupiter.api.Test;
 
 class Story1UserOneShotTest {
 
-  @Test
-  void userAfterRegistrationIsRejected() throws Exception {
-    try (TestServer server = TestServer.start();
-        RawIrcClient client = RawIrcClient.connectPlaintext(server.plaintextPort())) {
-      client.registerAndAwaitWelcome("alice", "alice");
+    @Test
+    void userAfterRegistrationIsRejected() throws Exception {
+        try (TestServer server = TestServer.start();
+                RawIrcClient client = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+            client.registerAndAwaitWelcome("alice", "alice");
 
-      client.send("USER alice2 0 * :Someone else");
-      String reply = client.readUntil("462", Duration.ofSeconds(5));
-      assertThat(reply).contains("462");
+            client.send("USER alice2 0 * :Someone else");
+            String reply = client.readUntil("462", Duration.ofSeconds(5));
+            assertThat(reply).contains("462");
+        }
     }
-  }
 
-  @Test
-  void secondUserBeforeRegistrationCompletesIsAlsoRejected() throws Exception {
-    try (TestServer server = TestServer.start();
-        RawIrcClient client = RawIrcClient.connectPlaintext(server.plaintextPort())) {
-      client.send("USER first 0 * :First");
-      client.send("USER second 0 * :Second");
-      String reply = client.readUntil("462", Duration.ofSeconds(5));
-      assertThat(reply).contains("462");
+    @Test
+    void secondUserBeforeRegistrationCompletesIsAlsoRejected() throws Exception {
+        try (TestServer server = TestServer.start();
+                RawIrcClient client = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+            client.send("USER first 0 * :First");
+            client.send("USER second 0 * :Second");
+            String reply = client.readUntil("462", Duration.ofSeconds(5));
+            assertThat(reply).contains("462");
+        }
     }
-  }
 }

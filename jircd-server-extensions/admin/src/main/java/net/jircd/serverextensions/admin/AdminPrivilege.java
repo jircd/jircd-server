@@ -32,50 +32,50 @@ import net.jircd.protocol.NumericReply;
  */
 final class AdminPrivilege {
 
-  private AdminPrivilege() {}
+    private AdminPrivilege() {}
 
-  static boolean isAuthorized(ClientSession session, ExtensionRegistry extensionRegistry) {
-    return session.isAdministrator()
-        && extensionRegistry.stateOf(AdminExtension.ID) == Extension.State.ENABLED;
-  }
-
-  /**
-   * Rejects with {@code 481 ERR_NOPRIVILEGES} and returns {@code true} unless {@code session} is
-   * authorized; returns {@code false} without side effects otherwise.
-   */
-  static boolean rejectUnlessAuthorized(
-      ClientSession session, ExtensionRegistry extensionRegistry, String serverName) {
-    if (isAuthorized(session, extensionRegistry)) {
-      return false;
+    static boolean isAuthorized(ClientSession session, ExtensionRegistry extensionRegistry) {
+        return session.isAdministrator()
+                && extensionRegistry.stateOf(AdminExtension.ID) == Extension.State.ENABLED;
     }
-    Replies.sendFitted(
-        session,
-        serverName,
-        NumericReply.ERR_NOPRIVILEGES,
-        List.of(),
-        "Permission Denied- You're not an IRC operator");
-    return true;
-  }
 
-  /**
-   * Rejects with {@code 461 ERR_NEEDMOREPARAMS} and returns {@code true} if {@code params} has
-   * fewer than {@code minParams} elements; returns {@code false} without side effects otherwise.
-   */
-  static boolean rejectIfTooFewParams(
-      ClientSession session,
-      String serverName,
-      String commandName,
-      List<String> params,
-      int minParams) {
-    if (params.size() >= minParams) {
-      return false;
+    /**
+     * Rejects with {@code 481 ERR_NOPRIVILEGES} and returns {@code true} unless {@code session} is
+     * authorized; returns {@code false} without side effects otherwise.
+     */
+    static boolean rejectUnlessAuthorized(
+            ClientSession session, ExtensionRegistry extensionRegistry, String serverName) {
+        if (isAuthorized(session, extensionRegistry)) {
+            return false;
+        }
+        Replies.sendFitted(
+                session,
+                serverName,
+                NumericReply.ERR_NOPRIVILEGES,
+                List.of(),
+                "Permission Denied- You're not an IRC operator");
+        return true;
     }
-    Replies.sendFitted(
-        session,
-        serverName,
-        NumericReply.ERR_NEEDMOREPARAMS,
-        List.of(commandName),
-        "Not enough parameters");
-    return true;
-  }
+
+    /**
+     * Rejects with {@code 461 ERR_NEEDMOREPARAMS} and returns {@code true} if {@code params} has
+     * fewer than {@code minParams} elements; returns {@code false} without side effects otherwise.
+     */
+    static boolean rejectIfTooFewParams(
+            ClientSession session,
+            String serverName,
+            String commandName,
+            List<String> params,
+            int minParams) {
+        if (params.size() >= minParams) {
+            return false;
+        }
+        Replies.sendFitted(
+                session,
+                serverName,
+                NumericReply.ERR_NEEDMOREPARAMS,
+                List.of(commandName),
+                "Not enough parameters");
+        return true;
+    }
 }

@@ -28,24 +28,24 @@ import org.junit.jupiter.api.Test;
  */
 class Story6OperUserModeTest {
 
-  @Test
-  void operSetsOperatorUsermodeAndSelfRevocationClearsIt() throws Exception {
-    try (TestServer server = TestServer.start(TestServer.adminEnabledYaml());
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void operSetsOperatorUsermodeAndSelfRevocationClearsIt() throws Exception {
+        try (TestServer server = TestServer.start(TestServer.adminEnabledYaml());
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      alice.registerAndAwaitWelcome("alice", "alice");
+            alice.registerAndAwaitWelcome("alice", "alice");
 
-      alice.send("OPER " + TestServer.ADMIN_USERNAME + " :" + TestServer.ADMIN_PASSWORD);
-      alice.readUntil("381", Duration.ofSeconds(5));
+            alice.send("OPER " + TestServer.ADMIN_USERNAME + " :" + TestServer.ADMIN_PASSWORD);
+            alice.readUntil("381", Duration.ofSeconds(5));
 
-      alice.send("WHOHOST alice");
-      assertThat(alice.readUntil("NOTICE", Duration.ofSeconds(5))).contains("alice");
+            alice.send("WHOHOST alice");
+            assertThat(alice.readUntil("NOTICE", Duration.ofSeconds(5))).contains("alice");
 
-      alice.send("MODE alice -o");
-      alice.readUntil("MODE alice -o", Duration.ofSeconds(5));
+            alice.send("MODE alice -o");
+            alice.readUntil("MODE alice -o", Duration.ofSeconds(5));
 
-      alice.send("WHOHOST alice");
-      assertThat(alice.readUntil("481", Duration.ofSeconds(5))).contains("481");
+            alice.send("WHOHOST alice");
+            assertThat(alice.readUntil("481", Duration.ofSeconds(5))).contains("481");
+        }
     }
-  }
 }

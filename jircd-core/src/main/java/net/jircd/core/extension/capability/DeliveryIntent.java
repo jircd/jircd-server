@@ -22,8 +22,8 @@ import java.util.UUID;
 /** A core-authorized delivery of one logical envelope, with the roles core already assigned. */
 public record DeliveryIntent(UUID envelopeId, Set<DeliveryRole> roles) {
 
-  public DeliveryIntent {
-    Objects.requireNonNull(envelopeId);
-    roles = Set.copyOf(roles);
-  }
+    public DeliveryIntent {
+        Objects.requireNonNull(envelopeId);
+        roles = Set.copyOf(roles);
+    }
 }

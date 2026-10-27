@@ -22,35 +22,35 @@ import org.junit.jupiter.api.Test;
 
 class Story5BanMuteTest {
 
-  @Test
-  void banMasksMuteAMemberWithoutRemovingThem() throws Exception {
-    try (TestServer server = TestServer.start();
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
-        RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void banMasksMuteAMemberWithoutRemovingThem() throws Exception {
+        try (TestServer server = TestServer.start();
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
+                RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      alice.registerAndAwaitWelcome("alice", "alice"); // operator
-      bob.registerAndAwaitWelcome("bob", "bob");
+            alice.registerAndAwaitWelcome("alice", "alice"); // operator
+            bob.registerAndAwaitWelcome("bob", "bob");
 
-      alice.send("JOIN #lobby");
-      alice.readUntil("353", Duration.ofSeconds(5));
-      bob.send("JOIN #lobby");
-      bob.readUntil("353", Duration.ofSeconds(5));
-      alice.readUntil("JOIN #lobby", Duration.ofSeconds(5));
+            alice.send("JOIN #lobby");
+            alice.readUntil("353", Duration.ofSeconds(5));
+            bob.send("JOIN #lobby");
+            bob.readUntil("353", Duration.ofSeconds(5));
+            alice.readUntil("JOIN #lobby", Duration.ofSeconds(5));
 
-      // non-operator can't ban
-      bob.send("MODE #lobby +b bob");
-      assertThat(bob.readUntil("482", Duration.ofSeconds(5))).contains("482");
+            // non-operator can't ban
+            bob.send("MODE #lobby +b bob");
+            assertThat(bob.readUntil("482", Duration.ofSeconds(5))).contains("482");
 
-      // partial mask (bare nickname) is normalized and still mutes bob
-      alice.send("MODE #lobby +b bob");
-      alice.readUntil("MODE #lobby +b bob", Duration.ofSeconds(5));
+            // partial mask (bare nickname) is normalized and still mutes bob
+            alice.send("MODE #lobby +b bob");
+            alice.readUntil("MODE #lobby +b bob", Duration.ofSeconds(5));
 
-      bob.send("PRIVMSG #lobby :can you hear me");
-      assertThat(bob.readUntil("404", Duration.ofSeconds(5))).contains("404");
+            bob.send("PRIVMSG #lobby :can you hear me");
+            assertThat(bob.readUntil("404", Duration.ofSeconds(5))).contains("404");
 
-      alice.send("NAMES #lobby");
-      String names = alice.readUntil("353", Duration.ofSeconds(5));
-      assertThat(names).contains("bob");
+            alice.send("NAMES #lobby");
+            String names = alice.readUntil("353", Duration.ofSeconds(5));
+            assertThat(names).contains("bob");
+        }
     }
-  }
 }

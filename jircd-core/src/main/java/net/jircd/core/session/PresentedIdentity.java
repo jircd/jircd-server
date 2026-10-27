@@ -40,83 +40,85 @@ import org.slf4j.LoggerFactory;
  */
 public final class PresentedIdentity {
 
-  private static final Logger LOG = LoggerFactory.getLogger(PresentedIdentity.class);
+    private static final Logger LOG = LoggerFactory.getLogger(PresentedIdentity.class);
 
-  private static final long WARN_INTERVAL_NANOS = 60_000_000_000L;
+    private static final long WARN_INTERVAL_NANOS = 60_000_000_000L;
 
-  /** Nanotime of the last over-long warning; zero until the first one. */
-  private static final AtomicLong LAST_WARNED = new AtomicLong();
+    /** Nanotime of the last over-long warning; zero until the first one. */
+    private static final AtomicLong LAST_WARNED = new AtomicLong();
 
-  private static final AtomicReference<LongSupplier> NANO_CLOCK =
-      new AtomicReference<>(System::nanoTime);
+    private static final AtomicReference<LongSupplier> NANO_CLOCK =
+            new AtomicReference<>(System::nanoTime);
 
-  private PresentedIdentity() {}
+    private PresentedIdentity() {}
 
-  public static String displayHostname(ClientSession session, ExtensionRegistry extensionRegistry) {
-    for (Extension extension : extensionRegistry.enabled()) {
-      if (extension instanceof ServerExtension serverExtension
-          && "hostname-display".equals(serverExtension.extensionPoint())
-          && extension instanceof HostnameDisplayExtension cloak) {
-        return bounded(cloak.display(session.realHostname()), extension.id());
-      }
+    public static String displayHostname(
+            ClientSession session, ExtensionRegistry extensionRegistry) {
+        for (Extension extension : extensionRegistry.enabled()) {
+            if (extension instanceof ServerExtension serverExtension
+                    && "hostname-display".equals(serverExtension.extensionPoint())
+                    && extension instanceof HostnameDisplayExtension cloak) {
+                return bounded(cloak.display(session.realHostname()), extension.id());
+            }
+        }
+        return session.realHostname();
     }
-    return session.realHostname();
-  }
 
-  public static String presentedForm(ClientSession session, ExtensionRegistry extensionRegistry) {
-    return Hostmask.format(
-        session.nickname(), session.ident(), displayHostname(session, extensionRegistry));
-  }
+    public static String presentedForm(ClientSession session, ExtensionRegistry extensionRegistry) {
+        return Hostmask.format(
+                session.nickname(), session.ident(), displayHostname(session, extensionRegistry));
+    }
 
-  /**
-   * Cuts {@code host} to the byte cap on a code-point boundary, warning at most once a minute. One
-   * pass counts each code point's UTF-8 bytes without encoding, and stops at the first one past the
-   * cap, so a huge value costs work proportional to the cap.
-   */
-  private static String bounded(String host, String extensionId) {
-    if (host == null) {
-      return null;
+    /**
+     * Cuts {@code host} to the byte cap on a code-point boundary, warning at most once a minute.
+     * One pass counts each code point's UTF-8 bytes without encoding, and stops at the first one
+     * past the cap, so a huge value costs work proportional to the cap.
+     */
+    private static String bounded(String host, String extensionId) {
+        if (host == null) {
+            return null;
+        }
+        int cap = ServerConfiguration.PRESENTED_HOST_MAX_BYTES;
+        int used = 0;
+        int end = 0;
+        while (end < host.length()) {
+            int codePoint = host.codePointAt(end);
+            int bytes = utf8Bytes(codePoint);
+            if (used + bytes > cap) {
+                warnOverlong(extensionId);
+                return host.substring(0, end);
+            }
+            used += bytes;
+            end += Character.charCount(codePoint);
+        }
+        return host;
     }
-    int cap = ServerConfiguration.PRESENTED_HOST_MAX_BYTES;
-    int used = 0;
-    int end = 0;
-    while (end < host.length()) {
-      int codePoint = host.codePointAt(end);
-      int bytes = utf8Bytes(codePoint);
-      if (used + bytes > cap) {
-        warnOverlong(extensionId);
-        return host.substring(0, end);
-      }
-      used += bytes;
-      end += Character.charCount(codePoint);
-    }
-    return host;
-  }
 
-  private static int utf8Bytes(int codePoint) {
-    if (codePoint < 0x80) {
-      return 1;
+    private static int utf8Bytes(int codePoint) {
+        if (codePoint < 0x80) {
+            return 1;
+        }
+        if (codePoint < 0x800) {
+            return 2;
+        }
+        return codePoint < 0x10000 ? 3 : 4;
     }
-    if (codePoint < 0x800) {
-      return 2;
-    }
-    return codePoint < 0x10000 ? 3 : 4;
-  }
 
-  private static void warnOverlong(String extensionId) {
-    long now = NANO_CLOCK.get().getAsLong();
-    long last = LAST_WARNED.get();
-    if ((last == 0 || now - last >= WARN_INTERVAL_NANOS) && LAST_WARNED.compareAndSet(last, now)) {
-      LOG.warn(
-          "Extension {} presented a hostname over {} bytes; truncating it",
-          extensionId,
-          ServerConfiguration.PRESENTED_HOST_MAX_BYTES);
+    private static void warnOverlong(String extensionId) {
+        long now = NANO_CLOCK.get().getAsLong();
+        long last = LAST_WARNED.get();
+        if ((last == 0 || now - last >= WARN_INTERVAL_NANOS)
+                && LAST_WARNED.compareAndSet(last, now)) {
+            LOG.warn(
+                    "Extension {} presented a hostname over {} bytes; truncating it",
+                    extensionId,
+                    ServerConfiguration.PRESENTED_HOST_MAX_BYTES);
+        }
     }
-  }
 
-  /** Swaps the throttle's clock and restarts its window; tests only. */
-  static void useClockForTest(LongSupplier clock) {
-    NANO_CLOCK.set(clock);
-    LAST_WARNED.set(0);
-  }
+    /** Swaps the throttle's clock and restarts its window; tests only. */
+    static void useClockForTest(LongSupplier clock) {
+        NANO_CLOCK.set(clock);
+        LAST_WARNED.set(0);
+    }
 }

@@ -23,23 +23,23 @@ import org.junit.jupiter.api.Test;
 /** {@code KICK}/channel-{@code MODE} are core, never gated by FR-011 toggling (FR-036). */
 class Story5AlwaysAvailableTest {
 
-  @Test
-  void kickWorksImmediatelyAfterStartupWithNoConfiguration() throws Exception {
-    try (TestServer server = TestServer.start(); // no capabilities/server-extensions configured
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
-        RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void kickWorksImmediatelyAfterStartupWithNoConfiguration() throws Exception {
+        try (TestServer server = TestServer.start(); // no capabilities/server-extensions configured
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
+                RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      alice.registerAndAwaitWelcome("alice", "alice");
-      bob.registerAndAwaitWelcome("bob", "bob");
+            alice.registerAndAwaitWelcome("alice", "alice");
+            bob.registerAndAwaitWelcome("bob", "bob");
 
-      alice.send("JOIN #lobby");
-      alice.readUntil("353", Duration.ofSeconds(5));
-      bob.send("JOIN #lobby");
-      bob.readUntil("353", Duration.ofSeconds(5));
+            alice.send("JOIN #lobby");
+            alice.readUntil("353", Duration.ofSeconds(5));
+            bob.send("JOIN #lobby");
+            bob.readUntil("353", Duration.ofSeconds(5));
 
-      alice.send("KICK #lobby bob");
-      String kicked = bob.readUntil("KICK #lobby bob", Duration.ofSeconds(5));
-      assertThat(kicked).contains("KICK #lobby bob");
+            alice.send("KICK #lobby bob");
+            String kicked = bob.readUntil("KICK #lobby bob", Duration.ofSeconds(5));
+            assertThat(kicked).contains("KICK #lobby bob");
+        }
     }
-  }
 }

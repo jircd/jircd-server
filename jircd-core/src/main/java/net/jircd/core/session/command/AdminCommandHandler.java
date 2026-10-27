@@ -29,46 +29,46 @@ import net.jircd.protocol.NumericReply;
  */
 public final class AdminCommandHandler implements CommandHandler {
 
-  private static final String UNSET = "-";
+    private static final String UNSET = "-";
 
-  private final Supplier<String> serverName;
-  private final Supplier<AdminContact> contact;
+    private final Supplier<String> serverName;
+    private final Supplier<AdminContact> contact;
 
-  public AdminCommandHandler(Supplier<String> serverName, Supplier<AdminContact> contact) {
-    this.serverName = serverName;
-    this.contact = contact;
-  }
-
-  @Override
-  public void handle(ClientSession session, Message message) {
-    if (!message.params().isEmpty()
-        && !LocalServerTarget.accepts(session, serverName, message.params().getFirst())) {
-      return;
+    public AdminCommandHandler(Supplier<String> serverName, Supplier<AdminContact> contact) {
+        this.serverName = serverName;
+        this.contact = contact;
     }
-    String server = serverName.get();
-    AdminContact admin = contact.get();
-    if (admin.isEmpty()) {
-      Replies.sendFitted(
-          session,
-          server,
-          NumericReply.ERR_NOADMININFO,
-          List.of(server),
-          "No administrative info available");
-      return;
-    }
-    Replies.sendFitted(
-        session,
-        server,
-        NumericReply.RPL_ADMINME,
-        List.of(server),
-        "Administrative info about " + server);
-    line(session, server, NumericReply.RPL_ADMINLOC1, admin.name());
-    line(session, server, NumericReply.RPL_ADMINLOC2, admin.location());
-    line(session, server, NumericReply.RPL_ADMINEMAIL, admin.email());
-  }
 
-  private static void line(
-      ClientSession session, String server, NumericReply numeric, String text) {
-    Replies.sendFitted(session, server, numeric, List.of(), text == null ? UNSET : text);
-  }
+    @Override
+    public void handle(ClientSession session, Message message) {
+        if (!message.params().isEmpty()
+                && !LocalServerTarget.accepts(session, serverName, message.params().getFirst())) {
+            return;
+        }
+        String server = serverName.get();
+        AdminContact admin = contact.get();
+        if (admin.isEmpty()) {
+            Replies.sendFitted(
+                    session,
+                    server,
+                    NumericReply.ERR_NOADMININFO,
+                    List.of(server),
+                    "No administrative info available");
+            return;
+        }
+        Replies.sendFitted(
+                session,
+                server,
+                NumericReply.RPL_ADMINME,
+                List.of(server),
+                "Administrative info about " + server);
+        line(session, server, NumericReply.RPL_ADMINLOC1, admin.name());
+        line(session, server, NumericReply.RPL_ADMINLOC2, admin.location());
+        line(session, server, NumericReply.RPL_ADMINEMAIL, admin.email());
+    }
+
+    private static void line(
+            ClientSession session, String server, NumericReply numeric, String text) {
+        Replies.sendFitted(session, server, numeric, List.of(), text == null ? UNSET : text);
+    }
 }

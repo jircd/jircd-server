@@ -22,36 +22,36 @@ import org.junit.jupiter.api.Test;
 
 class Story5NamesPrefixTest {
 
-  @Test
-  void namesPrefixesOperatorAtVoicePlusAndPlainMemberNeither() throws Exception {
-    try (TestServer server = TestServer.start();
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
-        RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort());
-        RawIrcClient carol = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void namesPrefixesOperatorAtVoicePlusAndPlainMemberNeither() throws Exception {
+        try (TestServer server = TestServer.start();
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
+                RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort());
+                RawIrcClient carol = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      alice.registerAndAwaitWelcome("alice", "alice"); // operator
-      bob.registerAndAwaitWelcome("bob", "bob");
-      carol.registerAndAwaitWelcome("carol", "carol");
+            alice.registerAndAwaitWelcome("alice", "alice"); // operator
+            bob.registerAndAwaitWelcome("bob", "bob");
+            carol.registerAndAwaitWelcome("carol", "carol");
 
-      alice.send("JOIN #lobby");
-      alice.readUntil("353", Duration.ofSeconds(5));
-      bob.send("JOIN #lobby");
-      bob.readUntil("353", Duration.ofSeconds(5));
-      carol.send("JOIN #lobby");
-      carol.readUntil("353", Duration.ofSeconds(5));
-      alice.readUntil("JOIN #lobby", Duration.ofSeconds(5));
-      alice.readUntil("JOIN #lobby", Duration.ofSeconds(5));
+            alice.send("JOIN #lobby");
+            alice.readUntil("353", Duration.ofSeconds(5));
+            bob.send("JOIN #lobby");
+            bob.readUntil("353", Duration.ofSeconds(5));
+            carol.send("JOIN #lobby");
+            carol.readUntil("353", Duration.ofSeconds(5));
+            alice.readUntil("JOIN #lobby", Duration.ofSeconds(5));
+            alice.readUntil("JOIN #lobby", Duration.ofSeconds(5));
 
-      alice.send("MODE #lobby +v bob");
-      alice.readUntil("MODE #lobby +v bob", Duration.ofSeconds(5));
+            alice.send("MODE #lobby +v bob");
+            alice.readUntil("MODE #lobby +v bob", Duration.ofSeconds(5));
 
-      carol.send("NAMES #lobby");
-      String names = carol.readUntil("353", Duration.ofSeconds(5));
-      assertThat(names).contains("@alice");
-      assertThat(names).contains("+bob");
-      assertThat(names).doesNotContain("@bob");
-      assertThat(names).contains("carol");
-      assertThat(names).doesNotContain("@carol").doesNotContain("+carol");
+            carol.send("NAMES #lobby");
+            String names = carol.readUntil("353", Duration.ofSeconds(5));
+            assertThat(names).contains("@alice");
+            assertThat(names).contains("+bob");
+            assertThat(names).doesNotContain("@bob");
+            assertThat(names).contains("carol");
+            assertThat(names).doesNotContain("@carol").doesNotContain("+carol");
+        }
     }
-  }
 }

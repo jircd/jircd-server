@@ -22,31 +22,32 @@ import java.util.Map;
  * attributes. Core never interprets the attributes.
  */
 public record RequestContext(long requestId, Map<String, String> attributes) {
-  public static final int MAX_ATTRIBUTES = 8;
-  public static final int MAX_ATTRIBUTE_BYTES = 256;
+    public static final int MAX_ATTRIBUTES = 8;
+    public static final int MAX_ATTRIBUTE_BYTES = 256;
 
-  public RequestContext {
-    attributes = Map.copyOf(attributes);
-    if (!validAttributes(attributes)) {
-      throw new IllegalArgumentException("request attributes exceed their bounds");
+    public RequestContext {
+        attributes = Map.copyOf(attributes);
+        if (!validAttributes(attributes)) {
+            throw new IllegalArgumentException("request attributes exceed their bounds");
+        }
     }
-  }
 
-  public static RequestContext of(long requestId, Map<String, String> attributes) {
-    return new RequestContext(requestId, attributes);
-  }
-
-  /** Whether {@code attributes} is a bounded set of {@code provider/key} entries. */
-  static boolean validAttributes(Map<String, String> attributes) {
-    if (attributes.size() > MAX_ATTRIBUTES) return false;
-    for (var entry : attributes.entrySet()) {
-      String key = entry.getKey();
-      String value = entry.getValue();
-      if (key == null || value == null || key.indexOf('/') <= 0 || !Tokens.isSafe(key)) {
-        return false;
-      }
-      if (net.jircd.protocol.MessageSerializer.utf8Bytes(value) > MAX_ATTRIBUTE_BYTES) return false;
+    public static RequestContext of(long requestId, Map<String, String> attributes) {
+        return new RequestContext(requestId, attributes);
     }
-    return true;
-  }
+
+    /** Whether {@code attributes} is a bounded set of {@code provider/key} entries. */
+    static boolean validAttributes(Map<String, String> attributes) {
+        if (attributes.size() > MAX_ATTRIBUTES) return false;
+        for (var entry : attributes.entrySet()) {
+            String key = entry.getKey();
+            String value = entry.getValue();
+            if (key == null || value == null || key.indexOf('/') <= 0 || !Tokens.isSafe(key)) {
+                return false;
+            }
+            if (net.jircd.protocol.MessageSerializer.utf8Bytes(value) > MAX_ATTRIBUTE_BYTES)
+                return false;
+        }
+        return true;
+    }
 }

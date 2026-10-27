@@ -27,29 +27,29 @@ import org.junit.jupiter.api.Test;
  */
 class Story5BanJoinTest {
 
-  @Test
-  void banMaskBlocksJoinAndRemovingItRestoresAccess() throws Exception {
-    try (TestServer server = TestServer.start();
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
-        RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void banMaskBlocksJoinAndRemovingItRestoresAccess() throws Exception {
+        try (TestServer server = TestServer.start();
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
+                RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      alice.registerAndAwaitWelcome("alice", "alice"); // operator
-      bob.registerAndAwaitWelcome("bob", "bob");
+            alice.registerAndAwaitWelcome("alice", "alice"); // operator
+            bob.registerAndAwaitWelcome("bob", "bob");
 
-      alice.send("JOIN #lobby");
-      alice.readUntil("353", Duration.ofSeconds(5));
+            alice.send("JOIN #lobby");
+            alice.readUntil("353", Duration.ofSeconds(5));
 
-      alice.send("MODE #lobby +b bob!*@*");
-      alice.readUntil("MODE #lobby +b bob", Duration.ofSeconds(5));
+            alice.send("MODE #lobby +b bob!*@*");
+            alice.readUntil("MODE #lobby +b bob", Duration.ofSeconds(5));
 
-      bob.send("JOIN #lobby");
-      assertThat(bob.readUntil("474", Duration.ofSeconds(5))).contains("474");
+            bob.send("JOIN #lobby");
+            assertThat(bob.readUntil("474", Duration.ofSeconds(5))).contains("474");
 
-      alice.send("MODE #lobby -b bob!*@*");
-      alice.readUntil("MODE #lobby -b bob", Duration.ofSeconds(5));
+            alice.send("MODE #lobby -b bob!*@*");
+            alice.readUntil("MODE #lobby -b bob", Duration.ofSeconds(5));
 
-      bob.send("JOIN #lobby");
-      assertThat(bob.readUntil("353", Duration.ofSeconds(5))).contains("353");
+            bob.send("JOIN #lobby");
+            assertThat(bob.readUntil("353", Duration.ofSeconds(5))).contains("353");
+        }
     }
-  }
 }

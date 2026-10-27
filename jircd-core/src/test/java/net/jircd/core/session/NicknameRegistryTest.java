@@ -26,50 +26,55 @@ import org.junit.jupiter.api.Test;
 
 class NicknameRegistryTest {
 
-  private ClientSession newSession(String id) {
-    return new ClientSession(id, "host.example", RateLimitBucket.withDefaults());
-  }
-
-  @Test
-  void concurrentClaimOfSameNicknameHasExactlyOneWinner() throws Exception {
-    NicknameRegistry registry = new NicknameRegistry();
-    int contenders = 50;
-    try (ExecutorService pool = Executors.newVirtualThreadPerTaskExecutor()) {
-      var sessions = IntStream.range(0, contenders).mapToObj(i -> newSession("c" + i)).toList();
-      var futures =
-          sessions.stream()
-              .map(session -> (Future<Boolean>) pool.submit(() -> registry.claim("Alice", session)))
-              .toList();
-      AtomicInteger winners = new AtomicInteger();
-      for (Future<Boolean> future : futures) {
-        if (future.get()) {
-          winners.incrementAndGet();
-        }
-      }
-      assertThat(winners.get()).isEqualTo(1);
+    private ClientSession newSession(String id) {
+        return new ClientSession(id, "host.example", RateLimitBucket.withDefaults());
     }
-  }
 
-  @Test
-  void nicknameUniquenessIsCaseInsensitive() {
-    NicknameRegistry registry = new NicknameRegistry();
-    ClientSession first = newSession("a");
-    ClientSession second = newSession("b");
+    @Test
+    void concurrentClaimOfSameNicknameHasExactlyOneWinner() throws Exception {
+        NicknameRegistry registry = new NicknameRegistry();
+        int contenders = 50;
+        try (ExecutorService pool = Executors.newVirtualThreadPerTaskExecutor()) {
+            var sessions =
+                    IntStream.range(0, contenders).mapToObj(i -> newSession("c" + i)).toList();
+            var futures =
+                    sessions.stream()
+                            .map(
+                                    session ->
+                                            (Future<Boolean>)
+                                                    pool.submit(
+                                                            () -> registry.claim("Alice", session)))
+                            .toList();
+            AtomicInteger winners = new AtomicInteger();
+            for (Future<Boolean> future : futures) {
+                if (future.get()) {
+                    winners.incrementAndGet();
+                }
+            }
+            assertThat(winners.get()).isEqualTo(1);
+        }
+    }
 
-    assertThat(registry.claim("Alice", first)).isTrue();
-    assertThat(registry.claim("alice", second)).isFalse();
-    assertThat(registry.claim("ALICE", second)).isFalse();
-  }
+    @Test
+    void nicknameUniquenessIsCaseInsensitive() {
+        NicknameRegistry registry = new NicknameRegistry();
+        ClientSession first = newSession("a");
+        ClientSession second = newSession("b");
 
-  @Test
-  void lookupByAnyCasingResolvesToOriginallyRegisteredCasing() {
-    NicknameRegistry registry = new NicknameRegistry();
-    ClientSession session = newSession("a");
-    session.setNickname("Alice");
-    registry.claim("Alice", session);
+        assertThat(registry.claim("Alice", first)).isTrue();
+        assertThat(registry.claim("alice", second)).isFalse();
+        assertThat(registry.claim("ALICE", second)).isFalse();
+    }
 
-    assertThat(registry.lookup("alice")).contains(session);
-    assertThat(registry.lookup("ALICE")).contains(session);
-    assertThat(registry.lookup("alice").get().nickname()).isEqualTo("Alice");
-  }
+    @Test
+    void lookupByAnyCasingResolvesToOriginallyRegisteredCasing() {
+        NicknameRegistry registry = new NicknameRegistry();
+        ClientSession session = newSession("a");
+        session.setNickname("Alice");
+        registry.claim("Alice", session);
+
+        assertThat(registry.lookup("alice")).contains(session);
+        assertThat(registry.lookup("ALICE")).contains(session);
+        assertThat(registry.lookup("alice").get().nickname()).isEqualTo("Alice");
+    }
 }

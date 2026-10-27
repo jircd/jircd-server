@@ -22,24 +22,24 @@ import org.junit.jupiter.params.provider.CsvSource;
 
 class NickMaskTest {
 
-  @ParameterizedTest
-  @CsvSource({
-    "Nick!User@Host,nICK!uSER@hOST",
-    "N[ck!u\\ser@h^st,n{ck!u|ser@h~st",
-    "N]ck!u@host,n}ck!*@host"
-  })
-  void matchingUsesIrcCaseMapping(String identity, String mask) {
-    assertThat(NickMask.matches(identity, mask)).isTrue();
-  }
+    @ParameterizedTest
+    @CsvSource({
+        "Nick!User@Host,nICK!uSER@hOST",
+        "N[ck!u\\ser@h^st,n{ck!u|ser@h~st",
+        "N]ck!u@host,n}ck!*@host"
+    })
+    void matchingUsesIrcCaseMapping(String identity, String mask) {
+        assertThat(NickMask.matches(identity, mask)).isTrue();
+    }
 
-  @ParameterizedTest
-  @CsvSource({
-    "Nick!User@Host,Other!User@Host",
-    "N(ck!User@Host,N[ck!User@Host",
-    "Nick!User@Host,Ni?!User@Host",
-    "Nick!User@Host,*!User@Elsewhere"
-  })
-  void matchingRejectsDifferentIdentities(String identity, String mask) {
-    assertThat(NickMask.matches(identity, mask)).isFalse();
-  }
+    @ParameterizedTest
+    @CsvSource({
+        "Nick!User@Host,Other!User@Host",
+        "N(ck!User@Host,N[ck!User@Host",
+        "Nick!User@Host,Ni?!User@Host",
+        "Nick!User@Host,*!User@Elsewhere"
+    })
+    void matchingRejectsDifferentIdentities(String identity, String mask) {
+        assertThat(NickMask.matches(identity, mask)).isFalse();
+    }
 }

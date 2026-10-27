@@ -28,28 +28,28 @@ import net.jircd.protocol.NumericReply;
  */
 public final class PassCommandHandler implements CommandHandler {
 
-  private final Supplier<String> serverName;
+    private final Supplier<String> serverName;
 
-  public PassCommandHandler(Supplier<String> serverName) {
-    this.serverName = serverName;
-  }
-
-  @Override
-  public void handle(ClientSession session, Message message) {
-    if (message.params().isEmpty() || message.params().getFirst().isEmpty()) {
-      Replies.sendFitted(
-          session,
-          serverName.get(),
-          NumericReply.ERR_NEEDMOREPARAMS,
-          List.of("PASS"),
-          "Not enough parameters");
-    } else if (session.lifecycle().isRegistered()) {
-      Replies.sendFitted(
-          session,
-          serverName.get(),
-          NumericReply.ERR_ALREADYREGISTRED,
-          List.of(),
-          "You may not reregister");
+    public PassCommandHandler(Supplier<String> serverName) {
+        this.serverName = serverName;
     }
-  }
+
+    @Override
+    public void handle(ClientSession session, Message message) {
+        if (message.params().isEmpty() || message.params().getFirst().isEmpty()) {
+            Replies.sendFitted(
+                    session,
+                    serverName.get(),
+                    NumericReply.ERR_NEEDMOREPARAMS,
+                    List.of("PASS"),
+                    "Not enough parameters");
+        } else if (session.lifecycle().isRegistered()) {
+            Replies.sendFitted(
+                    session,
+                    serverName.get(),
+                    NumericReply.ERR_ALREADYREGISTRED,
+                    List.of(),
+                    "You may not reregister");
+        }
+    }
 }

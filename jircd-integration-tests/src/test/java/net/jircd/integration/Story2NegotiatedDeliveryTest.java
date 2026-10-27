@@ -22,36 +22,36 @@ import org.junit.jupiter.api.Test;
 
 class Story2NegotiatedDeliveryTest {
 
-  @Test
-  void negotiatingConnectionGetsTaggedEchoWhilePlainConnectionGetsUntagged() throws Exception {
-    try (TestServer server = TestServer.start(TestServer.ALL_CAPABILITIES_ENABLED_YAML);
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
-        RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void negotiatingConnectionGetsTaggedEchoWhilePlainConnectionGetsUntagged() throws Exception {
+        try (TestServer server = TestServer.start(TestServer.ALL_CAPABILITIES_ENABLED_YAML);
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
+                RawIrcClient bob = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      alice.send("CAP REQ :server-time echo-message");
-      alice.readUntil("CAP * ACK", Duration.ofSeconds(5));
-      alice.send("CAP END");
-      alice.registerAndAwaitWelcome("alice", "alice");
+            alice.send("CAP REQ :server-time echo-message");
+            alice.readUntil("CAP * ACK", Duration.ofSeconds(5));
+            alice.send("CAP END");
+            alice.registerAndAwaitWelcome("alice", "alice");
 
-      bob.registerAndAwaitWelcome("bob", "bob");
+            bob.registerAndAwaitWelcome("bob", "bob");
 
-      alice.send("JOIN #lobby");
-      alice.readUntil("353", Duration.ofSeconds(5));
-      bob.send("JOIN #lobby");
-      bob.readUntil("353", Duration.ofSeconds(5));
+            alice.send("JOIN #lobby");
+            alice.readUntil("353", Duration.ofSeconds(5));
+            bob.send("JOIN #lobby");
+            bob.readUntil("353", Duration.ofSeconds(5));
 
-      alice.send("PRIVMSG #lobby :hi there");
+            alice.send("PRIVMSG #lobby :hi there");
 
-      String aliceEcho = alice.readUntil("PRIVMSG #lobby", Duration.ofSeconds(5));
-      assertThat(aliceEcho).startsWith("@");
-      assertThat(aliceEcho).contains("time=");
-      assertThat(aliceEcho).contains(":alice!alice@");
-      assertThat(aliceEcho).contains("PRIVMSG #lobby :hi there");
+            String aliceEcho = alice.readUntil("PRIVMSG #lobby", Duration.ofSeconds(5));
+            assertThat(aliceEcho).startsWith("@");
+            assertThat(aliceEcho).contains("time=");
+            assertThat(aliceEcho).contains(":alice!alice@");
+            assertThat(aliceEcho).contains("PRIVMSG #lobby :hi there");
 
-      String bobReceived = bob.readUntil("PRIVMSG #lobby", Duration.ofSeconds(5));
-      assertThat(bobReceived).doesNotStartWith("@");
-      assertThat(bobReceived).contains(":alice!alice@");
-      assertThat(bobReceived).contains("PRIVMSG #lobby :hi there");
+            String bobReceived = bob.readUntil("PRIVMSG #lobby", Duration.ofSeconds(5));
+            assertThat(bobReceived).doesNotStartWith("@");
+            assertThat(bobReceived).contains(":alice!alice@");
+            assertThat(bobReceived).contains("PRIVMSG #lobby :hi there");
+        }
     }
-  }
 }

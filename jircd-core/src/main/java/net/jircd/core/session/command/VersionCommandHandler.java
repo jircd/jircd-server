@@ -30,26 +30,28 @@ import net.jircd.protocol.NumericReply;
  */
 public final class VersionCommandHandler implements CommandHandler {
 
-  private final Supplier<String> serverName;
-  private final String serverVersion;
-  private final ExtensionRegistry extensionRegistry;
+    private final Supplier<String> serverName;
+    private final String serverVersion;
+    private final ExtensionRegistry extensionRegistry;
 
-  public VersionCommandHandler(
-      Supplier<String> serverName, String serverVersion, ExtensionRegistry extensionRegistry) {
-    this.serverName = serverName;
-    this.serverVersion = serverVersion;
-    this.extensionRegistry = extensionRegistry;
-  }
+    public VersionCommandHandler(
+            Supplier<String> serverName,
+            String serverVersion,
+            ExtensionRegistry extensionRegistry) {
+        this.serverName = serverName;
+        this.serverVersion = serverVersion;
+        this.extensionRegistry = extensionRegistry;
+    }
 
-  @Override
-  public void handle(ClientSession session, Message message) {
-    String server = serverName.get();
-    Replies.sendFitted(
-        session,
-        server,
-        NumericReply.RPL_VERSION,
-        List.of(serverVersion, server),
-        "jircd IRC server");
-    RegistrationCompletion.sendIsupport(session, server, extensionRegistry);
-  }
+    @Override
+    public void handle(ClientSession session, Message message) {
+        String server = serverName.get();
+        Replies.sendFitted(
+                session,
+                server,
+                NumericReply.RPL_VERSION,
+                List.of(serverVersion, server),
+                "jircd IRC server");
+        RegistrationCompletion.sendIsupport(session, server, extensionRegistry);
+    }
 }

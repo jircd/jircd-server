@@ -41,286 +41,294 @@ import net.jircd.protocol.CapabilityNegotiationGrammar;
  */
 public final class ClientSession {
 
-  private final String connectionId;
-  private final ConnectionLifecycle lifecycle = new ConnectionLifecycle();
-  private final AtomicReference<Set<String>> negotiatedCapabilities =
-      new AtomicReference<>(Set.of());
-  private final AtomicInteger highestCapVersion = new AtomicInteger();
-  private final Set<Channel> channelMemberships = ConcurrentHashMap.newKeySet();
-  private final Set<Channel> channelMembershipsView =
-      Collections.unmodifiableSet(channelMemberships);
-  private final Set<UserMode> userModes = ConcurrentHashMap.newKeySet();
-  private final Set<UserMode> userModesView = Collections.unmodifiableSet(userModes);
-  private final RateLimitBucket rateLimitBucket;
-  private final String realHostname;
-  private final Instant connectedAt = Instant.now();
+    private final String connectionId;
+    private final ConnectionLifecycle lifecycle = new ConnectionLifecycle();
+    private final AtomicReference<Set<String>> negotiatedCapabilities =
+            new AtomicReference<>(Set.of());
+    private final AtomicInteger highestCapVersion = new AtomicInteger();
+    private final Set<Channel> channelMemberships = ConcurrentHashMap.newKeySet();
+    private final Set<Channel> channelMembershipsView =
+            Collections.unmodifiableSet(channelMemberships);
+    private final Set<UserMode> userModes = ConcurrentHashMap.newKeySet();
+    private final Set<UserMode> userModesView = Collections.unmodifiableSet(userModes);
+    private final RateLimitBucket rateLimitBucket;
+    private final String realHostname;
+    private final Instant connectedAt = Instant.now();
 
-  private volatile SessionWriter writer;
-  private volatile LivenessMonitor livenessMonitor;
-  private volatile boolean negotiatingCapabilities;
-  private volatile String nickname;
-  private volatile String ident;
-  private volatile String realname;
-  private volatile String awayReason;
-  private final AtomicBoolean administratorPrivilege = new AtomicBoolean(false);
-  private final boolean tls;
-  private final InetAddress sourceAddress;
-  private final AtomicInteger fallbackOperFailures = new AtomicInteger();
-  private final AtomicReference<Instant> lastLivenessAt = new AtomicReference<>(Instant.now());
+    private volatile SessionWriter writer;
+    private volatile LivenessMonitor livenessMonitor;
+    private volatile boolean negotiatingCapabilities;
+    private volatile String nickname;
+    private volatile String ident;
+    private volatile String realname;
+    private volatile String awayReason;
+    private final AtomicBoolean administratorPrivilege = new AtomicBoolean(false);
+    private final boolean tls;
+    private final InetAddress sourceAddress;
+    private final AtomicInteger fallbackOperFailures = new AtomicInteger();
+    private final AtomicReference<Instant> lastLivenessAt = new AtomicReference<>(Instant.now());
 
-  public ClientSession(String connectionId, String realHostname, RateLimitBucket rateLimitBucket) {
-    this(connectionId, realHostname, rateLimitBucket, false);
-  }
-
-  /** Transport security is fixed by the accepted socket, never by a client command. */
-  public ClientSession(
-      String connectionId, String realHostname, RateLimitBucket rateLimitBucket, boolean tls) {
-    this(connectionId, realHostname, rateLimitBucket, tls, null);
-  }
-
-  /** The socket's source address is independent of the display hostname; null means unavailable. */
-  public ClientSession(
-      String connectionId,
-      String realHostname,
-      RateLimitBucket rateLimitBucket,
-      boolean tls,
-      InetAddress sourceAddress) {
-    this.sourceAddress = sourceAddress;
-    this.tls = tls;
-    this.connectionId = connectionId;
-    this.realHostname = realHostname;
-    this.rateLimitBucket = rateLimitBucket;
-  }
-
-  /**
-   * The accepted socket's address, or null when unavailable; never parsed from a display string.
-   */
-  public InetAddress sourceAddress() {
-    return sourceAddress;
-  }
-
-  /** Counts credential failures when the shared OPER source tracker is full. */
-  public int incrementFallbackOperFailures() {
-    return fallbackOperFailures.incrementAndGet();
-  }
-
-  /** A successful OPER clears the per-session capacity fallback counter. */
-  public void resetFallbackOperFailures() {
-    fallbackOperFailures.set(0);
-  }
-
-  public String connectionId() {
-    return connectionId;
-  }
-
-  public Instant connectedAt() {
-    return connectedAt;
-  }
-
-  public ConnectionLifecycle lifecycle() {
-    return lifecycle;
-  }
-
-  public SessionWriter writer() {
-    return writer;
-  }
-
-  public void attachWriter(SessionWriter writer) {
-    this.writer = writer;
-  }
-
-  public LivenessMonitor livenessMonitor() {
-    return livenessMonitor;
-  }
-
-  public void attachLivenessMonitor(LivenessMonitor livenessMonitor) {
-    this.livenessMonitor = livenessMonitor;
-  }
-
-  public String realHostname() {
-    return realHostname;
-  }
-
-  public String nickname() {
-    return nickname;
-  }
-
-  public void setNickname(String nickname) {
-    this.nickname = nickname;
-  }
-
-  public String ident() {
-    return ident;
-  }
-
-  /**
-   * Also the source-of-truth signal for the one-shot USER restriction: absent means USER hasn't
-   * been processed yet.
-   */
-  public boolean hasProcessedUser() {
-    return ident != null;
-  }
-
-  public void setIdent(String ident) {
-    this.ident = ident;
-  }
-
-  public String realname() {
-    return realname;
-  }
-
-  public void setRealname(String realname) {
-    this.realname = realname;
-  }
-
-  /**
-   * Non-{@code null} while away, holding the reason; {@code null} otherwise. Presence, not a
-   * separate boolean, is the away/not-away signal — the same pattern {@link #ident} already uses as
-   * its own registration-state signal.
-   */
-  public String awayReason() {
-    return awayReason;
-  }
-
-  public boolean isAway() {
-    return awayReason != null;
-  }
-
-  /** {@code null} clears away status; any other value sets/replaces the reason. */
-  public void setAwayReason(String awayReason) {
-    this.awayReason = awayReason;
-  }
-
-  /**
-   * The capabilities this client explicitly negotiated: an immutable snapshot, never a live view.
-   * Implicit notification support from {@code CAP LS 302} is not in it; see {@link
-   * #notificationEligible()}.
-   */
-  public Set<String> negotiatedCapabilities() {
-    return negotiatedCapabilities.get();
-  }
-
-  /**
-   * Replaces the whole negotiated set in one step, so a concurrent reader sees either the old set
-   * or the new one, never a half-applied {@code CAP REQ}. Server code changes negotiation only
-   * under the capability runtime's administrative mutex (CAP and runtime pruning), so a request
-   * cannot bring back a name a concurrent disable has just pruned.
-   */
-  public void replaceNegotiatedCapabilities(java.util.Collection<String> capabilities) {
-    negotiatedCapabilities.set(Set.copyOf(capabilities));
-  }
-
-  /** The highest {@code CAP LS} version this connection has indicated; {@code 0} for none. */
-  public int highestCapVersion() {
-    return highestCapVersion.get();
-  }
-
-  /**
-   * Remembers {@code version} if it is higher than any indicated before: once 302 or later, a later
-   * lower or omitted version cannot take notification support away.
-   */
-  public void recordCapVersion(int version) {
-    highestCapVersion.accumulateAndGet(version, Math::max);
-  }
-
-  /**
-   * Whether this client gets {@code CAP NEW}/{@code DEL}: implied by {@code CAP LS 302} or later,
-   * or negotiated explicitly with {@code cap-notify}. Derived, never set on its own.
-   */
-  public boolean notificationEligible() {
-    return highestCapVersion.get() >= CapabilityNegotiationGrammar.NOTIFY_VERSION
-        || negotiatedCapabilities.get().contains(CapabilityName.CAP_NOTIFY);
-  }
-
-  public boolean isNegotiatingCapabilities() {
-    return negotiatingCapabilities;
-  }
-
-  public void setNegotiating(boolean negotiating) {
-    this.negotiatingCapabilities = negotiating;
-  }
-
-  /** Returns a live, unmodifiable view of memberships owned by registry transitions. */
-  public Set<Channel> channelMemberships() {
-    return channelMembershipsView;
-  }
-
-  // Called by registry transitions while holding the registry and corresponding channel monitors.
-  void addMembership(Channel channel) {
-    channelMemberships.add(channel);
-  }
-
-  void removeMembership(Channel channel) {
-    channelMemberships.remove(channel);
-  }
-
-  /** Returns a live, unmodifiable view of user modes. */
-  public Set<UserMode> userModes() {
-    return userModesView;
-  }
-
-  /**
-   * Sets a non-operator mode; caller permissions are checked by the command handler.
-   *
-   * @throws IllegalArgumentException for OPERATOR, which requires grantAdministratorPrivilege
-   */
-  public void setUserMode(UserMode mode) {
-    if (UserMode.OPERATOR.equals(mode)) {
-      throw new IllegalArgumentException("Operator mode requires grantAdministratorPrivilege");
+    public ClientSession(
+            String connectionId, String realHostname, RateLimitBucket rateLimitBucket) {
+        this(connectionId, realHostname, rateLimitBucket, false);
     }
-    userModes.add(mode);
-  }
 
-  /**
-   * Clears a non-operator mode; clearing an inactive mode is a no-op.
-   *
-   * @throws IllegalArgumentException for OPERATOR, which requires revokeAdministratorPrivilege
-   */
-  public void clearUserMode(UserMode mode) {
-    if (UserMode.OPERATOR.equals(mode)) {
-      throw new IllegalArgumentException("Operator mode requires revokeAdministratorPrivilege");
+    /** Transport security is fixed by the accepted socket, never by a client command. */
+    public ClientSession(
+            String connectionId,
+            String realHostname,
+            RateLimitBucket rateLimitBucket,
+            boolean tls) {
+        this(connectionId, realHostname, rateLimitBucket, tls, null);
     }
-    userModes.remove(mode);
-  }
 
-  public RateLimitBucket rateLimitBucket() {
-    return rateLimitBucket;
-  }
+    /**
+     * The socket's source address is independent of the display hostname; null means unavailable.
+     */
+    public ClientSession(
+            String connectionId,
+            String realHostname,
+            RateLimitBucket rateLimitBucket,
+            boolean tls,
+            InetAddress sourceAddress) {
+        this.sourceAddress = sourceAddress;
+        this.tls = tls;
+        this.connectionId = connectionId;
+        this.realHostname = realHostname;
+        this.rateLimitBucket = rateLimitBucket;
+    }
 
-  public boolean isAdministrator() {
-    return administratorPrivilege.get();
-  }
+    /**
+     * The accepted socket's address, or null when unavailable; never parsed from a display string.
+     */
+    public InetAddress sourceAddress() {
+        return sourceAddress;
+    }
 
-  /** Grants administrator privilege and adds the operator user mode in the same act. */
-  public void grantAdministratorPrivilege() {
-    administratorPrivilege.set(true);
-    userModes.add(UserMode.OPERATOR);
-  }
+    /** Counts credential failures when the shared OPER source tracker is full. */
+    public int incrementFallbackOperFailures() {
+        return fallbackOperFailures.incrementAndGet();
+    }
 
-  /** Revokes administrator privilege and removes the operator user mode in the same act. */
-  public void revokeAdministratorPrivilege() {
-    administratorPrivilege.set(false);
-    userModes.remove(UserMode.OPERATOR);
-  }
+    /** A successful OPER clears the per-session capacity fallback counter. */
+    public void resetFallbackOperFailures() {
+        fallbackOperFailures.set(0);
+    }
 
-  /** Whether this session was accepted on a TLS socket. */
-  public boolean isTls() {
-    return tls;
-  }
+    public String connectionId() {
+        return connectionId;
+    }
 
-  public Instant lastLivenessAt() {
-    return lastLivenessAt.get();
-  }
+    public Instant connectedAt() {
+        return connectedAt;
+    }
 
-  public void markAlive() {
-    lastLivenessAt.set(Instant.now());
-  }
+    public ConnectionLifecycle lifecycle() {
+        return lifecycle;
+    }
 
-  /**
-   * Same as {@link #markAlive()}, but against a caller-supplied instant (e.g. an injected clock in
-   * tests).
-   */
-  public void markAliveAt(Instant instant) {
-    lastLivenessAt.set(instant);
-  }
+    public SessionWriter writer() {
+        return writer;
+    }
+
+    public void attachWriter(SessionWriter writer) {
+        this.writer = writer;
+    }
+
+    public LivenessMonitor livenessMonitor() {
+        return livenessMonitor;
+    }
+
+    public void attachLivenessMonitor(LivenessMonitor livenessMonitor) {
+        this.livenessMonitor = livenessMonitor;
+    }
+
+    public String realHostname() {
+        return realHostname;
+    }
+
+    public String nickname() {
+        return nickname;
+    }
+
+    public void setNickname(String nickname) {
+        this.nickname = nickname;
+    }
+
+    public String ident() {
+        return ident;
+    }
+
+    /**
+     * Also the source-of-truth signal for the one-shot USER restriction: absent means USER hasn't
+     * been processed yet.
+     */
+    public boolean hasProcessedUser() {
+        return ident != null;
+    }
+
+    public void setIdent(String ident) {
+        this.ident = ident;
+    }
+
+    public String realname() {
+        return realname;
+    }
+
+    public void setRealname(String realname) {
+        this.realname = realname;
+    }
+
+    /**
+     * Non-{@code null} while away, holding the reason; {@code null} otherwise. Presence, not a
+     * separate boolean, is the away/not-away signal — the same pattern {@link #ident} already uses
+     * as its own registration-state signal.
+     */
+    public String awayReason() {
+        return awayReason;
+    }
+
+    public boolean isAway() {
+        return awayReason != null;
+    }
+
+    /** {@code null} clears away status; any other value sets/replaces the reason. */
+    public void setAwayReason(String awayReason) {
+        this.awayReason = awayReason;
+    }
+
+    /**
+     * The capabilities this client explicitly negotiated: an immutable snapshot, never a live view.
+     * Implicit notification support from {@code CAP LS 302} is not in it; see {@link
+     * #notificationEligible()}.
+     */
+    public Set<String> negotiatedCapabilities() {
+        return negotiatedCapabilities.get();
+    }
+
+    /**
+     * Replaces the whole negotiated set in one step, so a concurrent reader sees either the old set
+     * or the new one, never a half-applied {@code CAP REQ}. Server code changes negotiation only
+     * under the capability runtime's administrative mutex (CAP and runtime pruning), so a request
+     * cannot bring back a name a concurrent disable has just pruned.
+     */
+    public void replaceNegotiatedCapabilities(java.util.Collection<String> capabilities) {
+        negotiatedCapabilities.set(Set.copyOf(capabilities));
+    }
+
+    /** The highest {@code CAP LS} version this connection has indicated; {@code 0} for none. */
+    public int highestCapVersion() {
+        return highestCapVersion.get();
+    }
+
+    /**
+     * Remembers {@code version} if it is higher than any indicated before: once 302 or later, a
+     * later lower or omitted version cannot take notification support away.
+     */
+    public void recordCapVersion(int version) {
+        highestCapVersion.accumulateAndGet(version, Math::max);
+    }
+
+    /**
+     * Whether this client gets {@code CAP NEW}/{@code DEL}: implied by {@code CAP LS 302} or later,
+     * or negotiated explicitly with {@code cap-notify}. Derived, never set on its own.
+     */
+    public boolean notificationEligible() {
+        return highestCapVersion.get() >= CapabilityNegotiationGrammar.NOTIFY_VERSION
+                || negotiatedCapabilities.get().contains(CapabilityName.CAP_NOTIFY);
+    }
+
+    public boolean isNegotiatingCapabilities() {
+        return negotiatingCapabilities;
+    }
+
+    public void setNegotiating(boolean negotiating) {
+        this.negotiatingCapabilities = negotiating;
+    }
+
+    /** Returns a live, unmodifiable view of memberships owned by registry transitions. */
+    public Set<Channel> channelMemberships() {
+        return channelMembershipsView;
+    }
+
+    // Called by registry transitions while holding the registry and corresponding channel monitors.
+    void addMembership(Channel channel) {
+        channelMemberships.add(channel);
+    }
+
+    void removeMembership(Channel channel) {
+        channelMemberships.remove(channel);
+    }
+
+    /** Returns a live, unmodifiable view of user modes. */
+    public Set<UserMode> userModes() {
+        return userModesView;
+    }
+
+    /**
+     * Sets a non-operator mode; caller permissions are checked by the command handler.
+     *
+     * @throws IllegalArgumentException for OPERATOR, which requires grantAdministratorPrivilege
+     */
+    public void setUserMode(UserMode mode) {
+        if (UserMode.OPERATOR.equals(mode)) {
+            throw new IllegalArgumentException(
+                    "Operator mode requires grantAdministratorPrivilege");
+        }
+        userModes.add(mode);
+    }
+
+    /**
+     * Clears a non-operator mode; clearing an inactive mode is a no-op.
+     *
+     * @throws IllegalArgumentException for OPERATOR, which requires revokeAdministratorPrivilege
+     */
+    public void clearUserMode(UserMode mode) {
+        if (UserMode.OPERATOR.equals(mode)) {
+            throw new IllegalArgumentException(
+                    "Operator mode requires revokeAdministratorPrivilege");
+        }
+        userModes.remove(mode);
+    }
+
+    public RateLimitBucket rateLimitBucket() {
+        return rateLimitBucket;
+    }
+
+    public boolean isAdministrator() {
+        return administratorPrivilege.get();
+    }
+
+    /** Grants administrator privilege and adds the operator user mode in the same act. */
+    public void grantAdministratorPrivilege() {
+        administratorPrivilege.set(true);
+        userModes.add(UserMode.OPERATOR);
+    }
+
+    /** Revokes administrator privilege and removes the operator user mode in the same act. */
+    public void revokeAdministratorPrivilege() {
+        administratorPrivilege.set(false);
+        userModes.remove(UserMode.OPERATOR);
+    }
+
+    /** Whether this session was accepted on a TLS socket. */
+    public boolean isTls() {
+        return tls;
+    }
+
+    public Instant lastLivenessAt() {
+        return lastLivenessAt.get();
+    }
+
+    public void markAlive() {
+        lastLivenessAt.set(Instant.now());
+    }
+
+    /**
+     * Same as {@link #markAlive()}, but against a caller-supplied instant (e.g. an injected clock
+     * in tests).
+     */
+    public void markAliveAt(Instant instant) {
+        lastLivenessAt.set(instant);
+    }
 }

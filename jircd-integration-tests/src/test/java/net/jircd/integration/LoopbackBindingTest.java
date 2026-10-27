@@ -35,71 +35,72 @@ import org.junit.jupiter.api.Test;
  */
 class LoopbackBindingTest {
 
-  private static final Duration ACCEPT_TIMEOUT = Duration.ofSeconds(3);
+    private static final Duration ACCEPT_TIMEOUT = Duration.ofSeconds(3);
 
-  /**
-   * The failure #38 reports, made deterministic: the port is chosen to collide instead of waiting
-   * for the OS to hand one out. On macOS the wildcard bind succeeds and the client never reaches
-   * the server; platforms that refuse the bind cannot hit #38 this way.
-   */
-  @Test
-  void wildcardListenerLosesLoopbackClientsToALoopbackListenerOnTheSamePort() throws Exception {
-    try (ServerSocket otherProcess = new ServerSocket(0, 50, loopback())) {
-      int port = otherProcess.getLocalPort();
-      TestServer server;
-      try {
-        // A later top-level 'listeners' key replaces TestServer.baseYaml()'s own.
-        server = TestServer.start("listeners:\n  - port: " + port + "\n    tls: false\n");
-      } catch (BindException _) {
-        assumeTrue(false, "this platform refuses a wildcard bind over a loopback listener");
-        return;
-      }
-      try (server;
-          RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
-          Socket taken = acceptOrSkip(otherProcess)) {
-        assertThat(taken.getPort()).isEqualTo(alice.localPort());
-        taken.close();
-        assertThatThrownBy(() -> alice.registerAndAwaitWelcome("alice", "alice"))
-            .isInstanceOf(IOException.class);
-      }
+    /**
+     * The failure #38 reports, made deterministic: the port is chosen to collide instead of waiting
+     * for the OS to hand one out. On macOS the wildcard bind succeeds and the client never reaches
+     * the server; platforms that refuse the bind cannot hit #38 this way.
+     */
+    @Test
+    void wildcardListenerLosesLoopbackClientsToALoopbackListenerOnTheSamePort() throws Exception {
+        try (ServerSocket otherProcess = new ServerSocket(0, 50, loopback())) {
+            int port = otherProcess.getLocalPort();
+            TestServer server;
+            try {
+                // A later top-level 'listeners' key replaces TestServer.baseYaml()'s own.
+                server = TestServer.start("listeners:\n  - port: " + port + "\n    tls: false\n");
+            } catch (BindException _) {
+                assumeTrue(false, "this platform refuses a wildcard bind over a loopback listener");
+                return;
+            }
+            try (server;
+                    RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
+                    Socket taken = acceptOrSkip(otherProcess)) {
+                assertThat(taken.getPort()).isEqualTo(alice.localPort());
+                taken.close();
+                assertThatThrownBy(() -> alice.registerAndAwaitWelcome("alice", "alice"))
+                        .isInstanceOf(IOException.class);
+            }
+        }
     }
-  }
 
-  @Test
-  void testServerListensOnlyOnLoopback() throws Exception {
-    try (TestServer server = TestServer.start()) {
-      for (int port : new int[] {server.plaintextPort(), server.tlsPort()}) {
-        InetAddress ipv6Loopback = InetAddress.ofLiteral("::1");
-        assertThatThrownBy(() -> connect(ipv6Loopback, port)).isInstanceOf(IOException.class);
-      }
-      try (RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
-        alice.registerAndAwaitWelcome("alice", "alice");
-      }
+    @Test
+    void testServerListensOnlyOnLoopback() throws Exception {
+        try (TestServer server = TestServer.start()) {
+            for (int port : new int[] {server.plaintextPort(), server.tlsPort()}) {
+                InetAddress ipv6Loopback = InetAddress.ofLiteral("::1");
+                assertThatThrownBy(() -> connect(ipv6Loopback, port))
+                        .isInstanceOf(IOException.class);
+            }
+            try (RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+                alice.registerAndAwaitWelcome("alice", "alice");
+            }
+        }
     }
-  }
 
-  /**
-   * Some platforms allow both binds but route the client to the wildcard listener. Nothing then
-   * reaches {@code otherProcess}, and #38 cannot happen there.
-   */
-  private static Socket acceptOrSkip(ServerSocket otherProcess) throws IOException {
-    otherProcess.setSoTimeout((int) ACCEPT_TIMEOUT.toMillis());
-    try {
-      return otherProcess.accept();
-    } catch (SocketTimeoutException _) {
-      assumeTrue(false, "this platform routes loopback clients to the wildcard listener");
-      throw new AssertionError("unreachable: the assumption above aborts the test");
+    /**
+     * Some platforms allow both binds but route the client to the wildcard listener. Nothing then
+     * reaches {@code otherProcess}, and #38 cannot happen there.
+     */
+    private static Socket acceptOrSkip(ServerSocket otherProcess) throws IOException {
+        otherProcess.setSoTimeout((int) ACCEPT_TIMEOUT.toMillis());
+        try {
+            return otherProcess.accept();
+        } catch (SocketTimeoutException _) {
+            assumeTrue(false, "this platform routes loopback clients to the wildcard listener");
+            throw new AssertionError("unreachable: the assumption above aborts the test");
+        }
     }
-  }
 
-  /** Opens and closes a connection; only the open is expected to throw. */
-  private static void connect(InetAddress address, int port) throws IOException {
-    try (var _ = new Socket(address, port)) {
-      // Reaching here means the connection opened.
+    /** Opens and closes a connection; only the open is expected to throw. */
+    private static void connect(InetAddress address, int port) throws IOException {
+        try (var _ = new Socket(address, port)) {
+            // Reaching here means the connection opened.
+        }
     }
-  }
 
-  private static InetAddress loopback() {
-    return InetAddress.ofLiteral(TestServer.LOOPBACK);
-  }
+    private static InetAddress loopback() {
+        return InetAddress.ofLiteral(TestServer.LOOPBACK);
+    }
 }

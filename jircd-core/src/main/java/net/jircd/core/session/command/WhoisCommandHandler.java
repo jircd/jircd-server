@@ -35,93 +35,93 @@ import net.jircd.protocol.NumericReply;
  */
 public final class WhoisCommandHandler implements CommandHandler {
 
-  private final NicknameRegistry nicknameRegistry;
-  private final ExtensionRegistry extensionRegistry;
-  private final Supplier<String> serverName;
+    private final NicknameRegistry nicknameRegistry;
+    private final ExtensionRegistry extensionRegistry;
+    private final Supplier<String> serverName;
 
-  public WhoisCommandHandler(
-      NicknameRegistry nicknameRegistry,
-      ExtensionRegistry extensionRegistry,
-      Supplier<String> serverName) {
-    this.nicknameRegistry = nicknameRegistry;
-    this.extensionRegistry = extensionRegistry;
-    this.serverName = serverName;
-  }
+    public WhoisCommandHandler(
+            NicknameRegistry nicknameRegistry,
+            ExtensionRegistry extensionRegistry,
+            Supplier<String> serverName) {
+        this.nicknameRegistry = nicknameRegistry;
+        this.extensionRegistry = extensionRegistry;
+        this.serverName = serverName;
+    }
 
-  @Override
-  public void handle(ClientSession session, Message message) {
-    ClientSession target;
-    if (message.params().isEmpty()) {
-      target = session;
-    } else {
-      // The optional RFC 2812 two-parameter form is WHOIS <target-server> <nickname> — the
-      // nickname is always the last parameter regardless of whether one or two were given. The
-      // leading server-name parameter, if present, is accepted but not used to route anywhere
-      // (this server has no federation to route to, FR-021).
-      String targetNickname = message.params().getLast();
-      var found = nicknameRegistry.lookup(targetNickname);
-      if (found.isEmpty()) {
+    @Override
+    public void handle(ClientSession session, Message message) {
+        ClientSession target;
+        if (message.params().isEmpty()) {
+            target = session;
+        } else {
+            // The optional RFC 2812 two-parameter form is WHOIS <target-server> <nickname> — the
+            // nickname is always the last parameter regardless of whether one or two were given.
+            // The leading server-name parameter, if present, is accepted but not used to route
+            // anywhere (this server has no federation to route to, FR-021).
+            String targetNickname = message.params().getLast();
+            var found = nicknameRegistry.lookup(targetNickname);
+            if (found.isEmpty()) {
+                Replies.sendFitted(
+                        session,
+                        serverName.get(),
+                        NumericReply.ERR_NOSUCHNICK,
+                        List.of(targetNickname),
+                        "No such nick/channel");
+                // 005-fix-batch-conformance FR-020 — RFC requires WHOIS's reply sequence to always
+                // close with 318, success or not; this path used to skip it.
+                Replies.sendFitted(
+                        session,
+                        serverName.get(),
+                        NumericReply.RPL_ENDOFWHOIS,
+                        List.of(targetNickname),
+                        "End of /WHOIS list");
+                return;
+            }
+            target = found.get();
+        }
+
+        String hostname =
+                target == session || session.isAdministrator()
+                        ? target.realHostname()
+                        : PresentedIdentity.displayHostname(target, extensionRegistry);
+
         Replies.sendFitted(
-            session,
-            serverName.get(),
-            NumericReply.ERR_NOSUCHNICK,
-            List.of(targetNickname),
-            "No such nick/channel");
-        // 005-fix-batch-conformance FR-020 — RFC requires WHOIS's reply sequence to always
-        // close with 318, success or not; this path used to skip it.
+                session,
+                serverName.get(),
+                NumericReply.RPL_WHOISUSER,
+                List.of(target.nickname(), target.ident(), hostname, "*"),
+                target.realname());
+
         Replies.sendFitted(
-            session,
-            serverName.get(),
-            NumericReply.RPL_ENDOFWHOIS,
-            List.of(targetNickname),
-            "End of /WHOIS list");
-        return;
-      }
-      target = found.get();
+                session,
+                serverName.get(),
+                NumericReply.RPL_WHOISSERVER,
+                List.of(target.nickname(), serverName.get()),
+                "jircd IRC server");
+
+        if (target.isAway()) {
+            Replies.sendFitted(
+                    session,
+                    serverName.get(),
+                    NumericReply.RPL_AWAY,
+                    List.of(target.nickname()),
+                    target.awayReason());
+        }
+
+        if (target.userModes().contains(UserMode.OPERATOR)) {
+            Replies.sendFitted(
+                    session,
+                    serverName.get(),
+                    NumericReply.RPL_WHOISOPERATOR,
+                    List.of(target.nickname()),
+                    "is an IRC operator");
+        }
+
+        Replies.sendFitted(
+                session,
+                serverName.get(),
+                NumericReply.RPL_ENDOFWHOIS,
+                List.of(target.nickname()),
+                "End of /WHOIS list");
     }
-
-    String hostname =
-        target == session || session.isAdministrator()
-            ? target.realHostname()
-            : PresentedIdentity.displayHostname(target, extensionRegistry);
-
-    Replies.sendFitted(
-        session,
-        serverName.get(),
-        NumericReply.RPL_WHOISUSER,
-        List.of(target.nickname(), target.ident(), hostname, "*"),
-        target.realname());
-
-    Replies.sendFitted(
-        session,
-        serverName.get(),
-        NumericReply.RPL_WHOISSERVER,
-        List.of(target.nickname(), serverName.get()),
-        "jircd IRC server");
-
-    if (target.isAway()) {
-      Replies.sendFitted(
-          session,
-          serverName.get(),
-          NumericReply.RPL_AWAY,
-          List.of(target.nickname()),
-          target.awayReason());
-    }
-
-    if (target.userModes().contains(UserMode.OPERATOR)) {
-      Replies.sendFitted(
-          session,
-          serverName.get(),
-          NumericReply.RPL_WHOISOPERATOR,
-          List.of(target.nickname()),
-          "is an IRC operator");
-    }
-
-    Replies.sendFitted(
-        session,
-        serverName.get(),
-        NumericReply.RPL_ENDOFWHOIS,
-        List.of(target.nickname()),
-        "End of /WHOIS list");
-  }
 }

@@ -38,38 +38,39 @@ import org.junit.jupiter.api.Test;
  */
 class NickAfterCloseTest {
 
-  @Test
-  void nickClaimedAfterCleanupHasRunIsRolledBackAndNeverWelcomed() throws Exception {
-    NicknameRegistry nicknames = new NicknameRegistry();
-    ExtensionRegistry extensions = new ExtensionRegistry();
-    DisconnectCleanup cleanup =
-        new DisconnectCleanup(
-            nicknames, new ChannelRegistry(), new WhowasHistory(() -> 10), extensions);
-    NickCommandHandler handler =
-        new NickCommandHandler(
-            nicknames,
-            () -> "server",
-            () -> 30,
-            new RegistrationCompletion(
-                () -> "server",
-                "test",
-                java.time.Instant.now(),
-                extensions,
-                new net.jircd.core.session.UserStatistics()),
-            extensions);
-    ClientSession session = new ClientSession("c1", "host.example", RateLimitBucket.withDefaults());
-    session.setIdent("user"); // USER already processed: the NICK would complete registration
-    ByteArrayOutputStream out = new ByteArrayOutputStream();
-    @SuppressWarnings("PMD.CloseResource")
-    SessionWriter writer = new SessionWriter(session, out, TagRenderer.NONE);
-    session.attachWriter(writer);
+    @Test
+    void nickClaimedAfterCleanupHasRunIsRolledBackAndNeverWelcomed() throws Exception {
+        NicknameRegistry nicknames = new NicknameRegistry();
+        ExtensionRegistry extensions = new ExtensionRegistry();
+        DisconnectCleanup cleanup =
+                new DisconnectCleanup(
+                        nicknames, new ChannelRegistry(), new WhowasHistory(() -> 10), extensions);
+        NickCommandHandler handler =
+                new NickCommandHandler(
+                        nicknames,
+                        () -> "server",
+                        () -> 30,
+                        new RegistrationCompletion(
+                                () -> "server",
+                                "test",
+                                java.time.Instant.now(),
+                                extensions,
+                                new net.jircd.core.session.UserStatistics()),
+                        extensions);
+        ClientSession session =
+                new ClientSession("c1", "host.example", RateLimitBucket.withDefaults());
+        session.setIdent("user"); // USER already processed: the NICK would complete registration
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        @SuppressWarnings("PMD.CloseResource")
+        SessionWriter writer = new SessionWriter(session, out, TagRenderer.NONE);
+        session.attachWriter(writer);
 
-    cleanup.cleanup(session, "Registration timeout"); // the whole disconnect precedes the claim
-    handler.handle(session, MessageParser.parse("NICK ghost"));
-    writer.close();
+        cleanup.cleanup(session, "Registration timeout"); // the whole disconnect precedes the claim
+        handler.handle(session, MessageParser.parse("NICK ghost"));
+        writer.close();
 
-    assertThat(nicknames.lookup("ghost")).isEmpty();
-    assertThat(session.lifecycle().isRegistered()).isFalse();
-    assertThat(out.toString(StandardCharsets.UTF_8)).doesNotContain(" 001 ");
-  }
+        assertThat(nicknames.lookup("ghost")).isEmpty();
+        assertThat(session.lifecycle().isRegistered()).isFalse();
+        assertThat(out.toString(StandardCharsets.UTF_8)).doesNotContain(" 001 ");
+    }
 }

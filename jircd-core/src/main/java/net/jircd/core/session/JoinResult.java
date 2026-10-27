@@ -28,13 +28,13 @@ import java.util.Set;
  * are unformatted: the NAMES tokens are rendered for the requester afterwards.
  */
 public record JoinResult(
-    Channel channel,
-    Set<ClientSession> recipients,
-    boolean grantedOperator,
-    boolean alreadyMember,
-    List<MemberFacts> members) {
-  public JoinResult {
-    recipients = Collections.unmodifiableSet(new LinkedHashSet<>(recipients));
-    members = List.copyOf(members);
-  }
+        Channel channel,
+        Set<ClientSession> recipients,
+        boolean grantedOperator,
+        boolean alreadyMember,
+        List<MemberFacts> members) {
+    public JoinResult {
+        recipients = Collections.unmodifiableSet(new LinkedHashSet<>(recipients));
+        members = List.copyOf(members);
+    }
 }

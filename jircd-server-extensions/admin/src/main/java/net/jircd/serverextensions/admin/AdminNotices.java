@@ -28,19 +28,18 @@ import net.jircd.protocol.Message;
  */
 final class AdminNotices {
 
-  private AdminNotices() {}
+    private AdminNotices() {}
 
-  static void send(ClientSession session, String serverName, String text) {
-    if (session.writer() != null) {
-      session
-          .writer()
-          .enqueueRaw(
-              new Message(
-                  Map.of(),
-                  serverName,
-                  Command.NOTICE,
-                  "NOTICE",
-                  List.of(Replies.target(session), text)));
+    static void send(ClientSession session, String serverName, String text) {
+        if (session.writer() != null) {
+            session.writer()
+                    .enqueueRaw(
+                            new Message(
+                                    Map.of(),
+                                    serverName,
+                                    Command.NOTICE,
+                                    "NOTICE",
+                                    List.of(Replies.target(session), text)));
+        }
     }
-  }
 }

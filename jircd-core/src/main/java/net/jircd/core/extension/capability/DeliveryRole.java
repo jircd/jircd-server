@@ -17,7 +17,7 @@ package net.jircd.core.extension.capability;
 
 /** Why a recipient receives a logical message. */
 public enum DeliveryRole {
-  ORDINARY_TARGET,
-  SENDER_COPY,
-  REQUEST_REPLY
+    ORDINARY_TARGET,
+    SENDER_COPY,
+    REQUEST_REPLY
 }

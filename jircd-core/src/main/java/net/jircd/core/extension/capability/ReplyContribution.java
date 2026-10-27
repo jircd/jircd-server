@@ -20,30 +20,31 @@ import java.util.Objects;
 /** One provider's declared decoration of one reply slot. */
 public record ReplyContribution(String providerId, ReplySlot slot, ReplyBound bound) {
 
-  public ReplyContribution {
-    Objects.requireNonNull(providerId);
-    Objects.requireNonNull(slot);
-    Objects.requireNonNull(bound);
-  }
+    public ReplyContribution {
+        Objects.requireNonNull(providerId);
+        Objects.requireNonNull(slot);
+        Objects.requireNonNull(bound);
+    }
 
-  /** The bound evaluated against {@code limits}, rejecting anything outside 0..512. */
-  long evaluate(ReplyLimits limits) {
-    long bytes;
-    try {
-      bytes = bound.maxBytes(limits);
-    } catch (RuntimeException | LinkageError e) {
-      throw new IllegalArgumentException(
-          "Provider '" + providerId + "' reply bound for slot " + slot.name() + " failed", e);
+    /** The bound evaluated against {@code limits}, rejecting anything outside 0..512. */
+    long evaluate(ReplyLimits limits) {
+        long bytes;
+        try {
+            bytes = bound.maxBytes(limits);
+        } catch (RuntimeException | LinkageError e) {
+            throw new IllegalArgumentException(
+                    "Provider '" + providerId + "' reply bound for slot " + slot.name() + " failed",
+                    e);
+        }
+        if (bytes < 0 || bytes > net.jircd.protocol.MessageSerializer.MAX_COMMAND_BYTES) {
+            throw new IllegalArgumentException(
+                    "Provider '"
+                            + providerId
+                            + "' reply bound for slot "
+                            + slot.name()
+                            + " must be 0..512 bytes, got "
+                            + bytes);
+        }
+        return bytes;
     }
-    if (bytes < 0 || bytes > net.jircd.protocol.MessageSerializer.MAX_COMMAND_BYTES) {
-      throw new IllegalArgumentException(
-          "Provider '"
-              + providerId
-              + "' reply bound for slot "
-              + slot.name()
-              + " must be 0..512 bytes, got "
-              + bytes);
-    }
-    return bytes;
-  }
 }

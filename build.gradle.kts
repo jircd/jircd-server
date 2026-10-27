@@ -99,7 +99,7 @@ subprojects {
 
     configure<com.diffplug.gradle.spotless.SpotlessExtension> {
         java {
-            googleJavaFormat()
+            googleJavaFormat().aosp()
             licenseHeaderFile(rootProject.file("gradle/license-header.txt"))
             target("src/*/java/**/*.java")
         }

@@ -31,140 +31,152 @@ import org.slf4j.LoggerFactory;
  */
 public final class DisconnectCleanup {
 
-  private static final Logger LOG = LoggerFactory.getLogger(DisconnectCleanup.class);
+    private static final Logger LOG = LoggerFactory.getLogger(DisconnectCleanup.class);
 
-  private final NicknameRegistry nicknameRegistry;
-  private final ChannelRegistry channelRegistry;
-  private final WhowasHistory whowasHistory;
-  private final ExtensionRegistry extensionRegistry;
-  private final UserStatistics userStatistics;
-  private final Runnable afterClaim;
+    private final NicknameRegistry nicknameRegistry;
+    private final ChannelRegistry channelRegistry;
+    private final WhowasHistory whowasHistory;
+    private final ExtensionRegistry extensionRegistry;
+    private final UserStatistics userStatistics;
+    private final Runnable afterClaim;
 
-  public DisconnectCleanup(
-      NicknameRegistry nicknameRegistry,
-      ChannelRegistry channelRegistry,
-      WhowasHistory whowasHistory,
-      ExtensionRegistry extensionRegistry) {
-    this(nicknameRegistry, channelRegistry, whowasHistory, extensionRegistry, new UserStatistics());
-  }
-
-  public DisconnectCleanup(
-      NicknameRegistry nicknameRegistry,
-      ChannelRegistry channelRegistry,
-      WhowasHistory whowasHistory,
-      ExtensionRegistry extensionRegistry,
-      UserStatistics userStatistics) {
-    this(
-        nicknameRegistry,
-        channelRegistry,
-        whowasHistory,
-        extensionRegistry,
-        userStatistics,
-        () -> {});
-  }
-
-  /**
-   * Test-only seam: {@code afterClaim} runs once the call has claimed CLOSING, before any channel
-   * membership is removed. Not a production extension point; a hook that throws leaves CLOSING
-   * claimed with the memberships in place, and the guard prevents a retry.
-   */
-  DisconnectCleanup(
-      NicknameRegistry nicknameRegistry,
-      ChannelRegistry channelRegistry,
-      WhowasHistory whowasHistory,
-      ExtensionRegistry extensionRegistry,
-      Runnable afterClaim) {
-    this(
-        nicknameRegistry,
-        channelRegistry,
-        whowasHistory,
-        extensionRegistry,
-        new UserStatistics(),
-        afterClaim);
-  }
-
-  private DisconnectCleanup(
-      NicknameRegistry nicknameRegistry,
-      ChannelRegistry channelRegistry,
-      WhowasHistory whowasHistory,
-      ExtensionRegistry extensionRegistry,
-      UserStatistics userStatistics,
-      Runnable afterClaim) {
-    this.userStatistics = userStatistics;
-    this.nicknameRegistry = nicknameRegistry;
-    this.channelRegistry = channelRegistry;
-    this.whowasHistory = whowasHistory;
-    this.extensionRegistry = extensionRegistry;
-    this.afterClaim = afterClaim;
-  }
-
-  public void cleanup(ClientSession session, String reason) {
-    // Idempotency guard: two disconnect triggers can race for the same session (a client-sent
-    // QUIT racing an abrupt TCP-level close of the same socket is the concrete case that
-    // surfaced this — an OS-level RST can hit the read loop's IOException path before the QUIT
-    // line's own cleanup call has finished, or vice versa). Whichever call actually claims the
-    // CLOSING transition proceeds; every other call for this session is a no-op — otherwise a
-    // WHOWAS entry (among other things) could be recorded twice for one logical disconnect.
-    ConnectionLifecycle.State previous = session.lifecycle().claimClosing();
-    if (previous == ConnectionLifecycle.State.CLOSING) {
-      return;
-    }
-    if (previous == ConnectionLifecycle.State.REGISTERED) {
-      userStatistics.userLeft();
-    }
-    cleanupClaimed(session, reason);
-  }
-
-  /**
-   * Runs the cleanup for a session whose caller has already claimed CLOSING itself (for example
-   * {@link ConnectionLifecycle#closeIfUnregistered()}), so that nothing can complete registration
-   * between the claim and the final lines it queued.
-   */
-  public void cleanupClaimed(ClientSession session, String reason) {
-    afterClaim.run();
-    ConnectionMonitorLog.disconnected(
-        session.connectionId(),
-        java.time.Duration.between(session.connectedAt(), java.time.Instant.now()),
-        reason);
-    Set<ClientSession> neighbors = channelRegistry.leaveAll(session);
-
-    if (session.nickname() != null && session.ident() != null && session.realHostname() != null) {
-      String prefix = PresentedIdentity.presentedForm(session, extensionRegistry);
-      Message quit =
-          new Message(java.util.Map.of(), prefix, Command.QUIT, "QUIT", java.util.List.of(reason));
-      Recipients.deliver(neighbors, quit);
-      extensionRegistry.committedEvents().quit(session, prefix, reason, neighbors);
-      // One WHOWAS entry per disconnection, regardless of
-      // cause (QUIT, KILL, keep-alive timeout) — this is the single point every cause funnels
-      // through, so no cause-specific recording is needed anywhere else. presentedHostname is a
-      // snapshot of whatever cloak was displaying for this session right now, not a live
-      // recomputation against cloak's state whenever WHOWAS is later queried (research.md
-      // "Cloak extension boundary" — the same live-vs-cached distinction that section already
-      // establishes for a still-connected session doesn't apply here; there's no "live" state
-      // left to check once this session is gone).
-      whowasHistory.record(
-          new WhowasEntry(
-              session.nickname(),
-              session.ident(),
-              session.realHostname(),
-              PresentedIdentity.displayHostname(session, extensionRegistry),
-              session.realname(),
-              java.time.Instant.now()));
+    public DisconnectCleanup(
+            NicknameRegistry nicknameRegistry,
+            ChannelRegistry channelRegistry,
+            WhowasHistory whowasHistory,
+            ExtensionRegistry extensionRegistry) {
+        this(
+                nicknameRegistry,
+                channelRegistry,
+                whowasHistory,
+                extensionRegistry,
+                new UserStatistics());
     }
 
-    if (session.nickname() != null) {
-      nicknameRegistry.release(session.nickname(), session);
+    public DisconnectCleanup(
+            NicknameRegistry nicknameRegistry,
+            ChannelRegistry channelRegistry,
+            WhowasHistory whowasHistory,
+            ExtensionRegistry extensionRegistry,
+            UserStatistics userStatistics) {
+        this(
+                nicknameRegistry,
+                channelRegistry,
+                whowasHistory,
+                extensionRegistry,
+                userStatistics,
+                () -> {});
     }
 
-    // The CLOSING transition already happened at the top of this method (the idempotency guard)
-    // — nothing left to do here but close the writer.
-    // This session's own writer — this is exactly where it gets closed; PMD's
-    // CloseResource heuristic doesn't credit a conditional close() here.
-    @SuppressWarnings("PMD.CloseResource")
-    SessionWriter writer = session.writer();
-    if (writer != null) {
-      writer.close();
+    /**
+     * Test-only seam: {@code afterClaim} runs once the call has claimed CLOSING, before any channel
+     * membership is removed. Not a production extension point; a hook that throws leaves CLOSING
+     * claimed with the memberships in place, and the guard prevents a retry.
+     */
+    DisconnectCleanup(
+            NicknameRegistry nicknameRegistry,
+            ChannelRegistry channelRegistry,
+            WhowasHistory whowasHistory,
+            ExtensionRegistry extensionRegistry,
+            Runnable afterClaim) {
+        this(
+                nicknameRegistry,
+                channelRegistry,
+                whowasHistory,
+                extensionRegistry,
+                new UserStatistics(),
+                afterClaim);
     }
-    LOG.debug("Cleaned up connection {} ({})", session.connectionId(), reason);
-  }
+
+    private DisconnectCleanup(
+            NicknameRegistry nicknameRegistry,
+            ChannelRegistry channelRegistry,
+            WhowasHistory whowasHistory,
+            ExtensionRegistry extensionRegistry,
+            UserStatistics userStatistics,
+            Runnable afterClaim) {
+        this.userStatistics = userStatistics;
+        this.nicknameRegistry = nicknameRegistry;
+        this.channelRegistry = channelRegistry;
+        this.whowasHistory = whowasHistory;
+        this.extensionRegistry = extensionRegistry;
+        this.afterClaim = afterClaim;
+    }
+
+    public void cleanup(ClientSession session, String reason) {
+        // Idempotency guard: two disconnect triggers can race for the same session (a client-sent
+        // QUIT racing an abrupt TCP-level close of the same socket is the concrete case that
+        // surfaced this — an OS-level RST can hit the read loop's IOException path before the QUIT
+        // line's own cleanup call has finished, or vice versa). Whichever call actually claims the
+        // CLOSING transition proceeds; every other call for this session is a no-op — otherwise a
+        // WHOWAS entry (among other things) could be recorded twice for one logical disconnect.
+        ConnectionLifecycle.State previous = session.lifecycle().claimClosing();
+        if (previous == ConnectionLifecycle.State.CLOSING) {
+            return;
+        }
+        if (previous == ConnectionLifecycle.State.REGISTERED) {
+            userStatistics.userLeft();
+        }
+        cleanupClaimed(session, reason);
+    }
+
+    /**
+     * Runs the cleanup for a session whose caller has already claimed CLOSING itself (for example
+     * {@link ConnectionLifecycle#closeIfUnregistered()}), so that nothing can complete registration
+     * between the claim and the final lines it queued.
+     */
+    public void cleanupClaimed(ClientSession session, String reason) {
+        afterClaim.run();
+        ConnectionMonitorLog.disconnected(
+                session.connectionId(),
+                java.time.Duration.between(session.connectedAt(), java.time.Instant.now()),
+                reason);
+        Set<ClientSession> neighbors = channelRegistry.leaveAll(session);
+
+        if (session.nickname() != null
+                && session.ident() != null
+                && session.realHostname() != null) {
+            String prefix = PresentedIdentity.presentedForm(session, extensionRegistry);
+            Message quit =
+                    new Message(
+                            java.util.Map.of(),
+                            prefix,
+                            Command.QUIT,
+                            "QUIT",
+                            java.util.List.of(reason));
+            Recipients.deliver(neighbors, quit);
+            extensionRegistry.committedEvents().quit(session, prefix, reason, neighbors);
+            // One WHOWAS entry per disconnection, regardless of cause (QUIT, KILL, keep-alive
+            // timeout) — this is the single point every cause funnels through, so no cause-specific
+            // recording is needed anywhere else. presentedHostname is a snapshot of whatever cloak
+            // was displaying for this session right now, not a live recomputation against cloak's
+            // state whenever WHOWAS is later queried (research.md "Cloak extension boundary" — the
+            // same live-vs-cached distinction that section already establishes for a
+            // still-connected session doesn't apply here; there's no "live" state left to check
+            // once this session is gone).
+            whowasHistory.record(
+                    new WhowasEntry(
+                            session.nickname(),
+                            session.ident(),
+                            session.realHostname(),
+                            PresentedIdentity.displayHostname(session, extensionRegistry),
+                            session.realname(),
+                            java.time.Instant.now()));
+        }
+
+        if (session.nickname() != null) {
+            nicknameRegistry.release(session.nickname(), session);
+        }
+
+        // The CLOSING transition already happened at the top of this method (the idempotency guard)
+        // — nothing left to do here but close the writer.
+        // This session's own writer — this is exactly where it gets closed; PMD's
+        // CloseResource heuristic doesn't credit a conditional close() here.
+        @SuppressWarnings("PMD.CloseResource")
+        SessionWriter writer = session.writer();
+        if (writer != null) {
+            writer.close();
+        }
+        LOG.debug("Cleaned up connection {} ({})", session.connectionId(), reason);
+    }
 }

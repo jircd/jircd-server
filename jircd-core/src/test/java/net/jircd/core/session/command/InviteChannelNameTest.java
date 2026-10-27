@@ -32,61 +32,65 @@ import org.junit.jupiter.api.Test;
 /** An INVITE to a nonexistent channel validates the name as JOIN does before sending anything. */
 class InviteChannelNameTest {
 
-  private final ByteArrayOutputStream inviterOut = new ByteArrayOutputStream();
-  private final ByteArrayOutputStream targetOut = new ByteArrayOutputStream();
-  private final ClientSession inviter = session("inviter", inviterOut);
-  private final ClientSession target = session("target", targetOut);
-  private final NicknameRegistry nicknames = new NicknameRegistry();
-  private final InviteCommandHandler handler =
-      new InviteCommandHandler(
-          new ChannelRegistry(),
-          nicknames,
-          new ExtensionRegistry(),
-          () -> "irc.example.net",
-          () -> 50);
+    private final ByteArrayOutputStream inviterOut = new ByteArrayOutputStream();
+    private final ByteArrayOutputStream targetOut = new ByteArrayOutputStream();
+    private final ClientSession inviter = session("inviter", inviterOut);
+    private final ClientSession target = session("target", targetOut);
+    private final NicknameRegistry nicknames = new NicknameRegistry();
+    private final InviteCommandHandler handler =
+            new InviteCommandHandler(
+                    new ChannelRegistry(),
+                    nicknames,
+                    new ExtensionRegistry(),
+                    () -> "irc.example.net",
+                    () -> 50);
 
-  private static ClientSession session(String nick, ByteArrayOutputStream sink) {
-    ClientSession session = new ClientSession(nick, "203.0.113.7", RateLimitBucket.withDefaults());
-    session.setNickname(nick);
-    session.setIdent("ident");
-    session.attachWriter(new SessionWriter(session, sink, TagRenderer.NONE));
-    return session;
-  }
-
-  private String invite(String channel, ByteArrayOutputStream out) throws Exception {
-    nicknames.claim("inviter", inviter);
-    nicknames.claim("target", target);
-    handler.handle(inviter, MessageParser.parse("INVITE target " + channel));
-    inviter.writer().close();
-    target.writer().close();
-    return out.toString(StandardCharsets.UTF_8);
-  }
-
-  @Test
-  void anOverlongNameGets476AndNothingIsSentToTheTarget() throws Exception {
-    String reply = invite("#" + "c".repeat(450), inviterOut);
-
-    assertThat(reply)
-        .contains(" 476 inviter ")
-        .contains("Bad Channel Mask")
-        .doesNotContain(" 341 ");
-    for (String line : reply.split("\r\n")) {
-      assertThat(line.getBytes(StandardCharsets.UTF_8).length + 2).isLessThanOrEqualTo(512);
+    private static ClientSession session(String nick, ByteArrayOutputStream sink) {
+        ClientSession session =
+                new ClientSession(nick, "203.0.113.7", RateLimitBucket.withDefaults());
+        session.setNickname(nick);
+        session.setIdent("ident");
+        session.attachWriter(new SessionWriter(session, sink, TagRenderer.NONE));
+        return session;
     }
-    assertThat(targetOut.size()).isZero();
-  }
 
-  @Test
-  void aNameWithoutAChannelPrefixGets476() throws Exception {
-    assertThat(invite("nochannel", inviterOut)).contains(" 476 inviter ").doesNotContain(" 341 ");
-    assertThat(targetOut.size()).isZero();
-  }
+    private String invite(String channel, ByteArrayOutputStream out) throws Exception {
+        nicknames.claim("inviter", inviter);
+        nicknames.claim("target", target);
+        handler.handle(inviter, MessageParser.parse("INVITE target " + channel));
+        inviter.writer().close();
+        target.writer().close();
+        return out.toString(StandardCharsets.UTF_8);
+    }
 
-  @Test
-  void aValidNameAtTheLimitStillInvites() throws Exception {
-    String channel = "#" + "c".repeat(49);
+    @Test
+    void anOverlongNameGets476AndNothingIsSentToTheTarget() throws Exception {
+        String reply = invite("#" + "c".repeat(450), inviterOut);
 
-    assertThat(invite(channel, inviterOut)).contains(" 341 inviter target " + channel);
-    assertThat(targetOut.toString(StandardCharsets.UTF_8)).contains(" INVITE target " + channel);
-  }
+        assertThat(reply)
+                .contains(" 476 inviter ")
+                .contains("Bad Channel Mask")
+                .doesNotContain(" 341 ");
+        for (String line : reply.split("\r\n")) {
+            assertThat(line.getBytes(StandardCharsets.UTF_8).length + 2).isLessThanOrEqualTo(512);
+        }
+        assertThat(targetOut.size()).isZero();
+    }
+
+    @Test
+    void aNameWithoutAChannelPrefixGets476() throws Exception {
+        assertThat(invite("nochannel", inviterOut))
+                .contains(" 476 inviter ")
+                .doesNotContain(" 341 ");
+        assertThat(targetOut.size()).isZero();
+    }
+
+    @Test
+    void aValidNameAtTheLimitStillInvites() throws Exception {
+        String channel = "#" + "c".repeat(49);
+
+        assertThat(invite(channel, inviterOut)).contains(" 341 inviter target " + channel);
+        assertThat(targetOut.toString(StandardCharsets.UTF_8))
+                .contains(" INVITE target " + channel);
+    }
 }

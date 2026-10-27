@@ -30,56 +30,56 @@ import net.jircd.protocol.NumericReply;
  */
 public final class UserCommandHandler implements CommandHandler {
 
-  private final java.util.function.Supplier<String> serverName;
-  private final RegistrationCompletion registrationCompletion;
+    private final java.util.function.Supplier<String> serverName;
+    private final RegistrationCompletion registrationCompletion;
 
-  public UserCommandHandler(
-      java.util.function.Supplier<String> serverName,
-      RegistrationCompletion registrationCompletion) {
-    this.serverName = serverName;
-    this.registrationCompletion = registrationCompletion;
-  }
-
-  @Override
-  public void handle(ClientSession session, Message message) {
-    if (session.hasProcessedUser()) {
-      Replies.sendFitted(
-          session,
-          serverName.get(),
-          NumericReply.ERR_ALREADYREGISTRED,
-          List.of(),
-          "Unauthorized command (already registered)");
-      return;
-    }
-    if (message.params().size() < 4) {
-      Replies.sendFitted(
-          session,
-          serverName.get(),
-          NumericReply.ERR_NEEDMOREPARAMS,
-          List.of("USER"),
-          "Not enough parameters");
-      return;
+    public UserCommandHandler(
+            java.util.function.Supplier<String> serverName,
+            RegistrationCompletion registrationCompletion) {
+        this.serverName = serverName;
+        this.registrationCompletion = registrationCompletion;
     }
 
-    String username = message.params().getFirst();
-    String realname = message.params().get(3);
-    if (realname.isEmpty()) {
-      Replies.sendFitted(
-          session,
-          serverName.get(),
-          NumericReply.ERR_NEEDMOREPARAMS,
-          List.of("USER"),
-          "Not enough parameters");
-      return;
-    }
+    @Override
+    public void handle(ClientSession session, Message message) {
+        if (session.hasProcessedUser()) {
+            Replies.sendFitted(
+                    session,
+                    serverName.get(),
+                    NumericReply.ERR_ALREADYREGISTRED,
+                    List.of(),
+                    "Unauthorized command (already registered)");
+            return;
+        }
+        if (message.params().size() < 4) {
+            Replies.sendFitted(
+                    session,
+                    serverName.get(),
+                    NumericReply.ERR_NEEDMOREPARAMS,
+                    List.of("USER"),
+                    "Not enough parameters");
+            return;
+        }
 
-    String ident = Hostmask.isValidUsernameContent(username) ? username : "user";
-    if (ident.length() > ServerConfiguration.IDENT_MAX_CHARS) {
-      ident = ident.substring(0, ServerConfiguration.IDENT_MAX_CHARS);
-    }
-    session.setIdent(ident);
-    session.setRealname(realname);
+        String username = message.params().getFirst();
+        String realname = message.params().get(3);
+        if (realname.isEmpty()) {
+            Replies.sendFitted(
+                    session,
+                    serverName.get(),
+                    NumericReply.ERR_NEEDMOREPARAMS,
+                    List.of("USER"),
+                    "Not enough parameters");
+            return;
+        }
 
-    registrationCompletion.tryComplete(session);
-  }
+        String ident = Hostmask.isValidUsernameContent(username) ? username : "user";
+        if (ident.length() > ServerConfiguration.IDENT_MAX_CHARS) {
+            ident = ident.substring(0, ServerConfiguration.IDENT_MAX_CHARS);
+        }
+        session.setIdent(ident);
+        session.setRealname(realname);
+
+        registrationCompletion.tryComplete(session);
+    }
 }

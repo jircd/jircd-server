@@ -25,18 +25,19 @@ import net.jircd.core.extension.ExtensionRegistry;
  */
 public final class ChannelVisibility {
 
-  private ChannelVisibility() {}
+    private ChannelVisibility() {}
 
-  public static boolean isHiddenFrom(
-      Channel channel, ClientSession session, ExtensionRegistry extensionRegistry) {
-    if (session.isAdministrator() || channel.members().contains(session)) {
-      return false;
+    public static boolean isHiddenFrom(
+            Channel channel, ClientSession session, ExtensionRegistry extensionRegistry) {
+        if (session.isAdministrator() || channel.members().contains(session)) {
+            return false;
+        }
+        for (ChannelMode mode : extensionRegistry.recognizedChannelModes(CoreChannelModes.ALL)) {
+            if (mode.gates().contains(GateAction.DISCOVER)
+                    && channel.activeModes().contains(mode)) {
+                return true;
+            }
+        }
+        return false;
     }
-    for (ChannelMode mode : extensionRegistry.recognizedChannelModes(CoreChannelModes.ALL)) {
-      if (mode.gates().contains(GateAction.DISCOVER) && channel.activeModes().contains(mode)) {
-        return true;
-      }
-    }
-    return false;
-  }
 }

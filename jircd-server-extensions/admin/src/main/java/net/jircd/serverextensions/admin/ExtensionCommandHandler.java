@@ -36,79 +36,82 @@ import net.jircd.protocol.NumericReply;
  */
 public final class ExtensionCommandHandler implements CommandHandler {
 
-  private final ExtensionRegistry extensionRegistry;
-  private final Supplier<String> serverName;
+    private final ExtensionRegistry extensionRegistry;
+    private final Supplier<String> serverName;
 
-  public ExtensionCommandHandler(ExtensionRegistry extensionRegistry, Supplier<String> serverName) {
-    this.extensionRegistry = extensionRegistry;
-    this.serverName = serverName;
-  }
-
-  @Override
-  public void handle(ClientSession session, Message message) {
-    if (!AdminPrivilege.isAuthorized(session, extensionRegistry)) {
-      Replies.sendFitted(
-          session,
-          serverName.get(),
-          NumericReply.ERR_NOPRIVILEGES,
-          List.of(),
-          "Permission Denied- You're not an IRC operator");
-      return;
-    }
-    if (message.params().size() < 2) {
-      Replies.sendFitted(
-          session,
-          serverName.get(),
-          NumericReply.ERR_NEEDMOREPARAMS,
-          List.of("EXTENSION"),
-          "Not enough parameters");
-      return;
-    }
-    String action = message.params().getFirst().toUpperCase(Locale.ROOT);
-    String extensionId = message.params().get(1);
-
-    if (extensionRegistry.find(extensionId).isEmpty()) {
-      Replies.sendFitted(
-          session,
-          serverName.get(),
-          NumericReply.ERR_UNKNOWNCOMMAND,
-          List.of(extensionId),
-          "No such extension");
-      return;
+    public ExtensionCommandHandler(
+            ExtensionRegistry extensionRegistry, Supplier<String> serverName) {
+        this.extensionRegistry = extensionRegistry;
+        this.serverName = serverName;
     }
 
-    try {
-      switch (action) {
-        case "ENABLE" -> {
-          extensionRegistry.enable(extensionId);
-          reportOutcome(session, extensionId);
-        }
-        case "DISABLE" -> {
-          extensionRegistry.disable(extensionId);
-          reportOutcome(session, extensionId);
-        }
-        default ->
+    @Override
+    public void handle(ClientSession session, Message message) {
+        if (!AdminPrivilege.isAuthorized(session, extensionRegistry)) {
             Replies.sendFitted(
-                session,
-                serverName.get(),
-                NumericReply.ERR_UNKNOWNCOMMAND,
-                List.of("EXTENSION"),
-                "Unknown action — use ENABLE or DISABLE");
-      }
-    } catch (RuntimeException e) {
-      AdminNotices.send(
-          session, serverName.get(), "Failed to toggle " + extensionId + ": " + e.getMessage());
-    }
-  }
+                    session,
+                    serverName.get(),
+                    NumericReply.ERR_NOPRIVILEGES,
+                    List.of(),
+                    "Permission Denied- You're not an IRC operator");
+            return;
+        }
+        if (message.params().size() < 2) {
+            Replies.sendFitted(
+                    session,
+                    serverName.get(),
+                    NumericReply.ERR_NEEDMOREPARAMS,
+                    List.of("EXTENSION"),
+                    "Not enough parameters");
+            return;
+        }
+        String action = message.params().getFirst().toUpperCase(Locale.ROOT);
+        String extensionId = message.params().get(1);
 
-  /**
-   * Reports the state the toggle actually left, not the one requested. A repeated toggle is a no-op
-   * that reports the unchanged state and sends no capability notification.
-   */
-  private void reportOutcome(ClientSession session, String extensionId) {
-    Extension.State state = extensionRegistry.stateOf(extensionId);
-    // Known here: the id was found before the toggle, and registrations are never removed.
-    String outcome = state == null ? "unknown" : state.name().toLowerCase(Locale.ROOT);
-    AdminNotices.send(session, serverName.get(), extensionId + " is now " + outcome);
-  }
+        if (extensionRegistry.find(extensionId).isEmpty()) {
+            Replies.sendFitted(
+                    session,
+                    serverName.get(),
+                    NumericReply.ERR_UNKNOWNCOMMAND,
+                    List.of(extensionId),
+                    "No such extension");
+            return;
+        }
+
+        try {
+            switch (action) {
+                case "ENABLE" -> {
+                    extensionRegistry.enable(extensionId);
+                    reportOutcome(session, extensionId);
+                }
+                case "DISABLE" -> {
+                    extensionRegistry.disable(extensionId);
+                    reportOutcome(session, extensionId);
+                }
+                default ->
+                        Replies.sendFitted(
+                                session,
+                                serverName.get(),
+                                NumericReply.ERR_UNKNOWNCOMMAND,
+                                List.of("EXTENSION"),
+                                "Unknown action — use ENABLE or DISABLE");
+            }
+        } catch (RuntimeException e) {
+            AdminNotices.send(
+                    session,
+                    serverName.get(),
+                    "Failed to toggle " + extensionId + ": " + e.getMessage());
+        }
+    }
+
+    /**
+     * Reports the state the toggle actually left, not the one requested. A repeated toggle is a
+     * no-op that reports the unchanged state and sends no capability notification.
+     */
+    private void reportOutcome(ClientSession session, String extensionId) {
+        Extension.State state = extensionRegistry.stateOf(extensionId);
+        // Known here: the id was found before the toggle, and registrations are never removed.
+        String outcome = state == null ? "unknown" : state.name().toLowerCase(Locale.ROOT);
+        AdminNotices.send(session, serverName.get(), extensionId + " is now " + outcome);
+    }
 }

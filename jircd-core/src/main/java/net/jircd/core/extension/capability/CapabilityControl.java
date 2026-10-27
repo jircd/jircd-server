@@ -26,24 +26,24 @@ import net.jircd.core.session.ClientSession;
  */
 public final class CapabilityControl {
 
-  private final CapabilityRuntime runtime;
+    private final CapabilityRuntime runtime;
 
-  CapabilityControl(CapabilityRuntime runtime) {
-    this.runtime = runtime;
-  }
+    CapabilityControl(CapabilityRuntime runtime) {
+        this.runtime = runtime;
+    }
 
-  /** Runs {@code action} under the administrative mutex. */
-  public void runUnderControl(Runnable action) {
-    runtime.runUnderControl(action);
-  }
+    /** Runs {@code action} under the administrative mutex. */
+    public void runUnderControl(Runnable action) {
+        runtime.runUnderControl(action);
+    }
 
-  /** Computes {@code action} under the administrative mutex. */
-  public <T> T underControl(Supplier<T> action) {
-    return runtime.underControl(action);
-  }
+    /** Computes {@code action} under the administrative mutex. */
+    public <T> T underControl(Supplier<T> action) {
+        return runtime.underControl(action);
+    }
 
-  /** The current snapshot and {@code session}'s negotiation, captured together. */
-  public CapabilityRuntime.CapturedView capture(ClientSession session) {
-    return runtime.capture(session);
-  }
+    /** The current snapshot and {@code session}'s negotiation, captured together. */
+    public CapabilityRuntime.CapturedView capture(ClientSession session) {
+        return runtime.capture(session);
+    }
 }

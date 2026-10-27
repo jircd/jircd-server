@@ -26,33 +26,33 @@ import org.junit.jupiter.api.Test;
  */
 class LusersCompletenessTest {
 
-  @Test
-  void lusersReportsZeroOperatorsAndClosesWithLuserme() throws Exception {
-    try (TestServer server = TestServer.start();
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void lusersReportsZeroOperatorsAndClosesWithLuserme() throws Exception {
+        try (TestServer server = TestServer.start();
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      alice.registerAndAwaitWelcome("alice", "alice");
+            alice.registerAndAwaitWelcome("alice", "alice");
 
-      alice.send("LUSERS");
-      assertThat(alice.readUntil("252", Duration.ofSeconds(5))).contains("0");
-      assertThat(alice.readUntil("255", Duration.ofSeconds(5))).contains("255");
+            alice.send("LUSERS");
+            assertThat(alice.readUntil("252", Duration.ofSeconds(5))).contains("0");
+            assertThat(alice.readUntil("255", Duration.ofSeconds(5))).contains("255");
+        }
     }
-  }
 
-  @Test
-  void lusersReportsOneOperatorOnceOneHasAuthenticated() throws Exception {
-    try (TestServer server = TestServer.start(TestServer.adminEnabledYaml());
-        RawIrcClient admin = RawIrcClient.connectPlaintext(server.plaintextPort());
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void lusersReportsOneOperatorOnceOneHasAuthenticated() throws Exception {
+        try (TestServer server = TestServer.start(TestServer.adminEnabledYaml());
+                RawIrcClient admin = RawIrcClient.connectPlaintext(server.plaintextPort());
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      admin.registerAndAwaitWelcome("admin", "admin");
-      admin.send("OPER " + TestServer.ADMIN_USERNAME + " :" + TestServer.ADMIN_PASSWORD);
-      admin.readUntil("381", Duration.ofSeconds(5));
-      alice.registerAndAwaitWelcome("alice", "alice");
+            admin.registerAndAwaitWelcome("admin", "admin");
+            admin.send("OPER " + TestServer.ADMIN_USERNAME + " :" + TestServer.ADMIN_PASSWORD);
+            admin.readUntil("381", Duration.ofSeconds(5));
+            alice.registerAndAwaitWelcome("alice", "alice");
 
-      alice.send("LUSERS");
-      assertThat(alice.readUntil("252", Duration.ofSeconds(5))).contains("1");
-      assertThat(alice.readUntil("255", Duration.ofSeconds(5))).contains("255");
+            alice.send("LUSERS");
+            assertThat(alice.readUntil("252", Duration.ofSeconds(5))).contains("1");
+            assertThat(alice.readUntil("255", Duration.ofSeconds(5))).contains("255");
+        }
     }
-  }
 }

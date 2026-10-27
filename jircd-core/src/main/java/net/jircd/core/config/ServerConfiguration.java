@@ -34,210 +34,222 @@ import java.util.Map;
  * contact lines; when all three are {@code null}, {@code ADMIN} answers {@code 423}.
  */
 public record ServerConfiguration(
-    Map<String, Boolean> capabilityStates,
-    Map<String, Boolean> serverExtensionStates,
-    List<Listener> listeners,
-    RateLimit rateLimit,
-    List<AdministratorCredential> administratorCredentials,
-    String serverName,
-    int nicknameMaxLength,
-    int channelNameMaxLength,
-    int topicMaxLength,
-    boolean whoMaskEnabled,
-    int maxModesPerCommand,
-    int operFailureThreshold,
-    int operLockoutSeconds,
-    boolean operRequireTls,
-    int whowasHistorySize,
-    int keepAliveFrequencySeconds,
-    int sendqLimitBytes,
-    int maxConnections,
-    int maxConnectionsPerIp,
-    int ipv6ConnectionLimitPrefix,
-    List<ConnectionLimitPolicy.AddressOverride> connectionLimitOverrides,
-    int registrationTimeoutSeconds,
-    String motdPath,
-    String adminName,
-    String adminLocation,
-    String adminEmail) {
+        Map<String, Boolean> capabilityStates,
+        Map<String, Boolean> serverExtensionStates,
+        List<Listener> listeners,
+        RateLimit rateLimit,
+        List<AdministratorCredential> administratorCredentials,
+        String serverName,
+        int nicknameMaxLength,
+        int channelNameMaxLength,
+        int topicMaxLength,
+        boolean whoMaskEnabled,
+        int maxModesPerCommand,
+        int operFailureThreshold,
+        int operLockoutSeconds,
+        boolean operRequireTls,
+        int whowasHistorySize,
+        int keepAliveFrequencySeconds,
+        int sendqLimitBytes,
+        int maxConnections,
+        int maxConnectionsPerIp,
+        int ipv6ConnectionLimitPrefix,
+        List<ConnectionLimitPolicy.AddressOverride> connectionLimitOverrides,
+        int registrationTimeoutSeconds,
+        String motdPath,
+        String adminName,
+        String adminLocation,
+        String adminEmail) {
 
-  public ServerConfiguration {
-    connectionLimitOverrides = List.copyOf(connectionLimitOverrides);
-  }
-
-  /**
-   * {@code certPath}/{@code keyPath} (a PEM certificate/chain and its PEM private key) and {@code
-   * keystorePath}/{@code keystorePassword} (a PKCS12 keystore) are two mutually exclusive ways to
-   * supply a certificate for a {@code tls: true} listener (004-fix-tls-certificate FR-001, FR-002,
-   * FR-005) — at most one form may be set, and a {@code tls: true} listener MUST have exactly one
-   * of them set (validated at load time, {@code ConfigurationLoader}). Ignored for a {@code tls:
-   * false} listener.
-   *
-   * <p>{@code bindAddress} is the one local address the listener binds; {@code null} binds the
-   * wildcard address (every local address). {@code backlog} is the requested positive accept queue
-   * capacity, capped by the operating system; changes take effect after a server restart.
-   */
-  public record Listener(
-      int port,
-      boolean tls,
-      InetAddress bindAddress,
-      String certPath,
-      String keyPath,
-      String keystorePath,
-      String keystorePassword,
-      int backlog) {
-
-    public Listener {
-      if (backlog <= 0) {
-        throw new IllegalArgumentException("backlog must be a positive integer, got: " + backlog);
-      }
+    public ServerConfiguration {
+        connectionLimitOverrides = List.copyOf(connectionLimitOverrides);
     }
 
-    public Listener(
-        int port,
-        boolean tls,
-        InetAddress bindAddress,
-        String certPath,
-        String keyPath,
-        String keystorePath,
-        String keystorePassword) {
-      this(
-          port,
-          tls,
-          bindAddress,
-          certPath,
-          keyPath,
-          keystorePath,
-          keystorePassword,
-          DEFAULT_LISTENER_BACKLOG);
+    /**
+     * {@code certPath}/{@code keyPath} (a PEM certificate/chain and its PEM private key) and {@code
+     * keystorePath}/{@code keystorePassword} (a PKCS12 keystore) are two mutually exclusive ways to
+     * supply a certificate for a {@code tls: true} listener (004-fix-tls-certificate FR-001,
+     * FR-002, FR-005) — at most one form may be set, and a {@code tls: true} listener MUST have
+     * exactly one of them set (validated at load time, {@code ConfigurationLoader}). Ignored for a
+     * {@code tls: false} listener.
+     *
+     * <p>{@code bindAddress} is the one local address the listener binds; {@code null} binds the
+     * wildcard address (every local address). {@code backlog} is the requested positive accept
+     * queue capacity, capped by the operating system; changes take effect after a server restart.
+     */
+    public record Listener(
+            int port,
+            boolean tls,
+            InetAddress bindAddress,
+            String certPath,
+            String keyPath,
+            String keystorePath,
+            String keystorePassword,
+            int backlog) {
+
+        public Listener {
+            if (backlog <= 0) {
+                throw new IllegalArgumentException(
+                        "backlog must be a positive integer, got: " + backlog);
+            }
+        }
+
+        public Listener(
+                int port,
+                boolean tls,
+                InetAddress bindAddress,
+                String certPath,
+                String keyPath,
+                String keystorePath,
+                String keystorePassword) {
+            this(
+                    port,
+                    tls,
+                    bindAddress,
+                    certPath,
+                    keyPath,
+                    keystorePath,
+                    keystorePassword,
+                    DEFAULT_LISTENER_BACKLOG);
+        }
+
+        public Listener(int port, boolean tls) {
+            this(port, tls, null, null, null, null, null);
+        }
+
+        /** Whether this listener accepts on every local address, explicitly or by omission. */
+        public boolean bindsWildcard() {
+            return bindAddress == null || bindAddress.isAnyLocalAddress();
+        }
     }
 
-    public Listener(int port, boolean tls) {
-      this(port, tls, null, null, null, null, null);
+    /** Admission limits, read together from one configuration snapshot for each new connection. */
+    public record ConnectionLimits(
+            int maxConnections,
+            int maxConnectionsPerIp,
+            int ipv6ConnectionLimitPrefix,
+            List<ConnectionLimitPolicy.AddressOverride> overrides) {
+        public ConnectionLimits {
+            if (maxConnections <= 0)
+                throw new IllegalArgumentException("maxConnections must be positive");
+            if (maxConnectionsPerIp <= 0)
+                throw new IllegalArgumentException("maxConnectionsPerIp must be positive");
+            if (ipv6ConnectionLimitPrefix < 1 || ipv6ConnectionLimitPrefix > 128)
+                throw new IllegalArgumentException(
+                        "ipv6ConnectionLimitPrefix must be between 1 and 128");
+            overrides = List.copyOf(java.util.Objects.requireNonNull(overrides, "overrides"));
+        }
+
+        public ConnectionLimits(int maxConnections, int maxConnectionsPerIp) {
+            this(
+                    maxConnections,
+                    maxConnectionsPerIp,
+                    DEFAULT_IPV6_CONNECTION_LIMIT_PREFIX,
+                    List.of());
+        }
     }
 
-    /** Whether this listener accepts on every local address, explicitly or by omission. */
-    public boolean bindsWildcard() {
-      return bindAddress == null || bindAddress.isAnyLocalAddress();
-    }
-  }
+    /** Default time a connection has to complete registration before it is disconnected. */
+    public static final int DEFAULT_REGISTRATION_TIMEOUT_SECONDS = 60;
 
-  /** Admission limits, read together from one configuration snapshot for each new connection. */
-  public record ConnectionLimits(
-      int maxConnections,
-      int maxConnectionsPerIp,
-      int ipv6ConnectionLimitPrefix,
-      List<ConnectionLimitPolicy.AddressOverride> overrides) {
-    public ConnectionLimits {
-      if (maxConnections <= 0)
-        throw new IllegalArgumentException("maxConnections must be positive");
-      if (maxConnectionsPerIp <= 0)
-        throw new IllegalArgumentException("maxConnectionsPerIp must be positive");
-      if (ipv6ConnectionLimitPrefix < 1 || ipv6ConnectionLimitPrefix > 128)
-        throw new IllegalArgumentException("ipv6ConnectionLimitPrefix must be between 1 and 128");
-      overrides = List.copyOf(java.util.Objects.requireNonNull(overrides, "overrides"));
+    /** Upper bound for {@code registrationTimeoutSeconds}, one hour. */
+    public static final int REGISTRATION_TIMEOUT_CEILING_SECONDS = 3600;
+
+    /** Default IPv6 counting prefix; /128 restores per-address counting. */
+    public static final int DEFAULT_IPV6_CONNECTION_LIMIT_PREFIX = 64;
+
+    /** The {@code ADMIN} contact lines; each may be {@code null}. */
+    public record AdminContact(String name, String location, String email) {
+        public boolean isEmpty() {
+            return name == null && location == null && email == null;
+        }
     }
 
-    public ConnectionLimits(int maxConnections, int maxConnectionsPerIp) {
-      this(maxConnections, maxConnectionsPerIp, DEFAULT_IPV6_CONNECTION_LIMIT_PREFIX, List.of());
+    public AdminContact adminContact() {
+        return new AdminContact(adminName, adminLocation, adminEmail);
     }
-  }
 
-  /** Default time a connection has to complete registration before it is disconnected. */
-  public static final int DEFAULT_REGISTRATION_TIMEOUT_SECONDS = 60;
-
-  /** Upper bound for {@code registrationTimeoutSeconds}, one hour. */
-  public static final int REGISTRATION_TIMEOUT_CEILING_SECONDS = 3600;
-
-  /** Default IPv6 counting prefix; /128 restores per-address counting. */
-  public static final int DEFAULT_IPV6_CONNECTION_LIMIT_PREFIX = 64;
-
-  /** The {@code ADMIN} contact lines; each may be {@code null}. */
-  public record AdminContact(String name, String location, String email) {
-    public boolean isEmpty() {
-      return name == null && location == null && email == null;
+    /** Limits shared by every listener; reloading affects new connections only. */
+    public ConnectionLimits connectionLimits() {
+        return new ConnectionLimits(
+                maxConnections,
+                maxConnectionsPerIp,
+                ipv6ConnectionLimitPrefix,
+                connectionLimitOverrides);
     }
-  }
 
-  public AdminContact adminContact() {
-    return new AdminContact(adminName, adminLocation, adminEmail);
-  }
+    /**
+     * Default maximum number of live connections across all listeners, including unregistered ones.
+     */
+    public static final int DEFAULT_MAX_CONNECTIONS = 10000;
 
-  /** Limits shared by every listener; reloading affects new connections only. */
-  public ConnectionLimits connectionLimits() {
-    return new ConnectionLimits(
-        maxConnections, maxConnectionsPerIp, ipv6ConnectionLimitPrefix, connectionLimitOverrides);
-  }
+    /** Default maximum number of live connections from one source IP across all listeners. */
+    public static final int DEFAULT_MAX_CONNECTIONS_PER_IP = 20;
 
-  /**
-   * Default maximum number of live connections across all listeners, including unregistered ones.
-   */
-  public static final int DEFAULT_MAX_CONNECTIONS = 10000;
+    public record RateLimit(int bucketSize, double refillRatePerSecond) {}
 
-  /** Default maximum number of live connections from one source IP across all listeners. */
-  public static final int DEFAULT_MAX_CONNECTIONS_PER_IP = 20;
+    public record AdministratorCredential(String username, String hashedPassword) {}
 
-  public record RateLimit(int bucketSize, double refillRatePerSecond) {}
+    /** Default requested accept queue capacity for each plaintext or TLS listener. */
+    public static final int DEFAULT_LISTENER_BACKLOG = 1024;
 
-  public record AdministratorCredential(String username, String hashedPassword) {}
+    /** Default outbound queue budget per connection, in bytes. */
+    public static final int DEFAULT_SENDQ_LIMIT_BYTES = 524288;
 
-  /** Default requested accept queue capacity for each plaintext or TLS listener. */
-  public static final int DEFAULT_LISTENER_BACKLOG = 1024;
+    /** Minimum outbound queue budget, large enough for one maximum-size protocol line. */
+    public static final int MIN_SENDQ_LIMIT_BYTES = 16384;
 
-  /** Default outbound queue budget per connection, in bytes. */
-  public static final int DEFAULT_SENDQ_LIMIT_BYTES = 524288;
+    /** Maximum administrator-configurable outbound queue budget per connection, in bytes. */
+    public static final int SENDQ_LIMIT_CEILING_BYTES = 2097152;
 
-  /** Minimum outbound queue budget, large enough for one maximum-size protocol line. */
-  public static final int MIN_SENDQ_LIMIT_BYTES = 16384;
+    public static final int DEFAULT_NICKNAME_MAX_LENGTH = 9;
+    public static final int DEFAULT_CHANNEL_NAME_MAX_LENGTH = 50;
+    public static final int DEFAULT_TOPIC_MAX_LENGTH = 390;
+    public static final int DEFAULT_MAX_MODES_PER_COMMAND = 6;
+    public static final int DEFAULT_OPER_FAILURE_THRESHOLD = 5;
 
-  /** Maximum administrator-configurable outbound queue budget per connection, in bytes. */
-  public static final int SENDQ_LIMIT_CEILING_BYTES = 2097152;
+    /** Fixed failure-counting and lockout window, starting at the first failure. */
+    public static final int DEFAULT_OPER_LOCKOUT_SECONDS = 300;
 
-  public static final int DEFAULT_NICKNAME_MAX_LENGTH = 9;
-  public static final int DEFAULT_CHANNEL_NAME_MAX_LENGTH = 50;
-  public static final int DEFAULT_TOPIC_MAX_LENGTH = 390;
-  public static final int DEFAULT_MAX_MODES_PER_COMMAND = 6;
-  public static final int DEFAULT_OPER_FAILURE_THRESHOLD = 5;
+    public static final int OPER_LOCKOUT_SECONDS_CEILING = 86400;
+    public static final int LENGTH_CEILING = 400;
 
-  /** Fixed failure-counting and lockout window, starting at the first failure. */
-  public static final int DEFAULT_OPER_LOCKOUT_SECONDS = 300;
+    /** Characters of the {@code USER} username kept as the ident; longer ones are truncated. */
+    public static final int IDENT_MAX_CHARS = 9;
 
-  public static final int OPER_LOCKOUT_SECONDS_CEILING = 86400;
-  public static final int LENGTH_CEILING = 400;
+    /** A UTF-16 unit takes at most 3 UTF-8 bytes (a surrogate pair is 4 bytes for 2 units). */
+    public static final int IDENT_MAX_BYTES = IDENT_MAX_CHARS * 3;
 
-  /** Characters of the {@code USER} username kept as the ident; longer ones are truncated. */
-  public static final int IDENT_MAX_CHARS = 9;
+    /**
+     * UTF-8 byte cap on a presented hostname. RFC 2812 §2.3.1 limits a {@code host} to 63
+     * characters; the longest built-in value is an IPv6 literal (45 bytes), and a {@code
+     * hostname-display} extension's output is cut to this bound. It is a fixed term in the hostmask
+     * reply budget so that no accepted configuration can push a nick!user@host reply past 512
+     * bytes.
+     */
+    public static final int PRESENTED_HOST_MAX_BYTES = 63;
 
-  /** A UTF-16 unit takes at most 3 UTF-8 bytes (a surrogate pair is 4 bytes for 2 units). */
-  public static final int IDENT_MAX_BYTES = IDENT_MAX_CHARS * 3;
+    public static final int MAX_MODES_CEILING = 20;
+    public static final int OPER_FAILURE_THRESHOLD_CEILING = 20;
 
-  /**
-   * UTF-8 byte cap on a presented hostname. RFC 2812 §2.3.1 limits a {@code host} to 63 characters;
-   * the longest built-in value is an IPv6 literal (45 bytes), and a {@code hostname-display}
-   * extension's output is cut to this bound. It is a fixed term in the hostmask reply budget so
-   * that no accepted configuration can push a nick!user@host reply past 512 bytes.
-   */
-  public static final int PRESENTED_HOST_MAX_BYTES = 63;
+    /** 002-extended-irc-commands contracts/server-configuration-extensions.md. */
+    public static final int DEFAULT_WHOWAS_HISTORY_SIZE = 100;
 
-  public static final int MAX_MODES_CEILING = 20;
-  public static final int OPER_FAILURE_THRESHOLD_CEILING = 20;
+    public static final int WHOWAS_HISTORY_SIZE_CEILING = 10_000;
 
-  /** 002-extended-irc-commands contracts/server-configuration-extensions.md. */
-  public static final int DEFAULT_WHOWAS_HISTORY_SIZE = 100;
+    /**
+     * The server-initiated keep-alive's idle interval (009-connection-monitoring-log) — how long a
+     * connection may sit idle before the server probes it with a PING. Previously a hardcoded,
+     * deliberately-non-configurable 30-second constant in {@code ConnectionHandler}.
+     */
+    public static final int DEFAULT_KEEP_ALIVE_FREQUENCY_SECONDS = 120;
 
-  public static final int WHOWAS_HISTORY_SIZE_CEILING = 10_000;
+    public static final int KEEP_ALIVE_FREQUENCY_CEILING_SECONDS = 3600;
 
-  /**
-   * The server-initiated keep-alive's idle interval (009-connection-monitoring-log) — how long a
-   * connection may sit idle before the server probes it with a PING. Previously a hardcoded,
-   * deliberately-non-configurable 30-second constant in {@code ConnectionHandler}.
-   */
-  public static final int DEFAULT_KEEP_ALIVE_FREQUENCY_SECONDS = 120;
+    /**
+     * The single source of truth for {@link RateLimit}'s default — never redefine this elsewhere.
+     */
+    public static final int DEFAULT_RATE_LIMIT_BUCKET_SIZE = 20;
 
-  public static final int KEEP_ALIVE_FREQUENCY_CEILING_SECONDS = 3600;
-
-  /** The single source of truth for {@link RateLimit}'s default — never redefine this elsewhere. */
-  public static final int DEFAULT_RATE_LIMIT_BUCKET_SIZE = 20;
-
-  public static final double DEFAULT_RATE_LIMIT_REFILL_PER_SECOND = 10.0;
+    public static final double DEFAULT_RATE_LIMIT_REFILL_PER_SECOND = 10.0;
 }

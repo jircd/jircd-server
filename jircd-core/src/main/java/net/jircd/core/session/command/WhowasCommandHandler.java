@@ -35,59 +35,66 @@ import net.jircd.protocol.NumericReply;
  */
 public final class WhowasCommandHandler implements CommandHandler {
 
-  private final WhowasHistory whowasHistory;
-  private final Supplier<String> serverName;
+    private final WhowasHistory whowasHistory;
+    private final Supplier<String> serverName;
 
-  public WhowasCommandHandler(WhowasHistory whowasHistory, Supplier<String> serverName) {
-    this.whowasHistory = whowasHistory;
-    this.serverName = serverName;
-  }
-
-  @Override
-  public void handle(ClientSession session, Message message) {
-    String server = serverName.get();
-    if (message.params().isEmpty()) {
-      Replies.sendFitted(
-          session, server, NumericReply.ERR_NONICKNAMEGIVEN, List.of(), "No nickname given");
-      return;
+    public WhowasCommandHandler(WhowasHistory whowasHistory, Supplier<String> serverName) {
+        this.whowasHistory = whowasHistory;
+        this.serverName = serverName;
     }
-    String nickname = message.params().getFirst();
-    // An omitted count means "do a full search" (irctest's own non-deprecated
-    // testWhowasMultiple sends no count at all and still expects every retained entry back) — the
-    // same "0" sentinel mostRecentNFor already treats as unbounded.
-    int count = message.params().size() > 1 ? parseCount(message.params().get(1)) : 0;
-    List<WhowasEntry> found = whowasHistory.mostRecentNFor(nickname, count);
-    if (found.isEmpty()) {
-      Replies.sendFitted(
-          session,
-          server,
-          NumericReply.ERR_WASNOSUCHNICK,
-          List.of(nickname),
-          "There was no such nickname");
-    } else {
-      for (WhowasEntry entry : found) {
-        // Same FR-038 resolution WHOIS/WHO already use: real hostname for an administrator, the
-        // snapshotted presented (cloaked, if it was active) value for everyone else — WHOWAS is
-        // not admin-gated like WHOHOST, so it must not leak the real value to an ordinary client.
-        String hostname =
-            session.isAdministrator() ? entry.realHostname() : entry.presentedHostname();
+
+    @Override
+    public void handle(ClientSession session, Message message) {
+        String server = serverName.get();
+        if (message.params().isEmpty()) {
+            Replies.sendFitted(
+                    session,
+                    server,
+                    NumericReply.ERR_NONICKNAMEGIVEN,
+                    List.of(),
+                    "No nickname given");
+            return;
+        }
+        String nickname = message.params().getFirst();
+        // An omitted count means "do a full search" (irctest's own non-deprecated
+        // testWhowasMultiple sends no count at all and still expects every retained entry back) —
+        // the same "0" sentinel mostRecentNFor already treats as unbounded.
+        int count = message.params().size() > 1 ? parseCount(message.params().get(1)) : 0;
+        List<WhowasEntry> found = whowasHistory.mostRecentNFor(nickname, count);
+        if (found.isEmpty()) {
+            Replies.sendFitted(
+                    session,
+                    server,
+                    NumericReply.ERR_WASNOSUCHNICK,
+                    List.of(nickname),
+                    "There was no such nickname");
+        } else {
+            for (WhowasEntry entry : found) {
+                // Same FR-038 resolution WHOIS/WHO already use: real hostname for an administrator,
+                // the snapshotted presented (cloaked, if it was active) value for everyone else —
+                // WHOWAS is not admin-gated like WHOHOST, so it must not leak the real value to an
+                // ordinary client.
+                String hostname =
+                        session.isAdministrator()
+                                ? entry.realHostname()
+                                : entry.presentedHostname();
+                Replies.sendFitted(
+                        session,
+                        server,
+                        NumericReply.RPL_WHOWASUSER,
+                        List.of(entry.nickname(), entry.ident(), hostname, "*"),
+                        entry.realname());
+            }
+        }
         Replies.sendFitted(
-            session,
-            server,
-            NumericReply.RPL_WHOWASUSER,
-            List.of(entry.nickname(), entry.ident(), hostname, "*"),
-            entry.realname());
-      }
+                session, server, NumericReply.RPL_ENDOFWHOWAS, List.of(nickname), "End of WHOWAS");
     }
-    Replies.sendFitted(
-        session, server, NumericReply.RPL_ENDOFWHOWAS, List.of(nickname), "End of WHOWAS");
-  }
 
-  private static int parseCount(String raw) {
-    try {
-      return Integer.parseInt(raw);
-    } catch (NumberFormatException e) {
-      return 0; // a malformed count is treated the same as a non-positive one — full search
+    private static int parseCount(String raw) {
+        try {
+            return Integer.parseInt(raw);
+        } catch (NumberFormatException e) {
+            return 0; // a malformed count is treated the same as a non-positive one — full search
+        }
     }
-  }
 }

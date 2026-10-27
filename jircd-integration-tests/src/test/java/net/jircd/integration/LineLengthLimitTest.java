@@ -29,28 +29,29 @@ import org.junit.jupiter.api.Test;
  */
 class LineLengthLimitTest {
 
-  @Test
-  void lineExceedingTheProtocolLengthBudgetIsRejected() throws Exception {
-    try (TestServer server = TestServer.start();
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void lineExceedingTheProtocolLengthBudgetIsRejected() throws Exception {
+        try (TestServer server = TestServer.start();
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      // 512 (command+params, CR-LF inclusive) + 4096 (message-tags allowance) = 4608 total budget.
-      String oversizedBody = "x".repeat(5000);
-      alice.send("PRIVMSG #lobby :" + oversizedBody);
+            // 512 (command+params, CR-LF inclusive) + 4096 (message-tags allowance) = 4608 total
+            // budget.
+            String oversizedBody = "x".repeat(5000);
+            alice.send("PRIVMSG #lobby :" + oversizedBody);
 
-      assertThat(alice.readUntil("417", Duration.ofSeconds(5))).contains("417");
+            assertThat(alice.readUntil("417", Duration.ofSeconds(5))).contains("417");
+        }
     }
-  }
 
-  @Test
-  void lineWithinTheProtocolLengthBudgetIsUnaffected() throws Exception {
-    try (TestServer server = TestServer.start();
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void lineWithinTheProtocolLengthBudgetIsUnaffected() throws Exception {
+        try (TestServer server = TestServer.start();
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      alice.registerAndAwaitWelcome("alice", "alice");
+            alice.registerAndAwaitWelcome("alice", "alice");
 
-      alice.send("JOIN #lobby");
-      assertThat(alice.readUntil("353", Duration.ofSeconds(5))).contains("353");
+            alice.send("JOIN #lobby");
+            assertThat(alice.readUntil("353", Duration.ofSeconds(5))).contains("353");
+        }
     }
-  }
 }

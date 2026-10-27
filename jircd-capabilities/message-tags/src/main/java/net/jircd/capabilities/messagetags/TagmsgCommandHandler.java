@@ -33,50 +33,50 @@ import net.jircd.protocol.NumericReply;
  */
 final class TagmsgCommandHandler implements CommandHandler {
 
-  private static final String COMMAND_NAME = "TAGMSG";
+    private static final String COMMAND_NAME = "TAGMSG";
 
-  private final Supplier<MessageDelivery> delivery;
-  private final Supplier<String> serverName;
+    private final Supplier<MessageDelivery> delivery;
+    private final Supplier<String> serverName;
 
-  TagmsgCommandHandler(Supplier<MessageDelivery> delivery, Supplier<String> serverName) {
-    this.delivery = delivery;
-    this.serverName = serverName;
-  }
+    TagmsgCommandHandler(Supplier<MessageDelivery> delivery, Supplier<String> serverName) {
+        this.delivery = delivery;
+        this.serverName = serverName;
+    }
 
-  @Override
-  public void handle(ClientSession session, Message message) {
-    if (message.params().isEmpty()) {
-      Replies.sendFitted(
-          session,
-          serverName.get(),
-          NumericReply.ERR_NEEDMOREPARAMS,
-          List.of(COMMAND_NAME),
-          "Not enough parameters");
-      return;
+    @Override
+    public void handle(ClientSession session, Message message) {
+        if (message.params().isEmpty()) {
+            Replies.sendFitted(
+                    session,
+                    serverName.get(),
+                    NumericReply.ERR_NEEDMOREPARAMS,
+                    List.of(COMMAND_NAME),
+                    "Not enough parameters");
+            return;
+        }
+        if (message.tags().isEmpty()) {
+            Replies.sendFitted(
+                    session,
+                    serverName.get(),
+                    NumericReply.ERR_UNKNOWNCOMMAND,
+                    List.of(COMMAND_NAME),
+                    "Malformed message");
+            return;
+        }
+        String target = message.params().getFirst();
+        MessageDelivery shared = delivery.get();
+        MessageDelivery.AuthorizedTarget recipients = shared.authorize(session, target, true);
+        if (recipients.isEmpty()) {
+            return;
+        }
+        shared.deliver(
+                session,
+                COMMAND_NAME,
+                target,
+                null,
+                message.tags(),
+                recipients,
+                // FR-021: nothing to render for a client without message-tags negotiated.
+                recipient -> recipient.negotiatedCapabilities().contains(MessageTagsExtension.ID));
     }
-    if (message.tags().isEmpty()) {
-      Replies.sendFitted(
-          session,
-          serverName.get(),
-          NumericReply.ERR_UNKNOWNCOMMAND,
-          List.of(COMMAND_NAME),
-          "Malformed message");
-      return;
-    }
-    String target = message.params().getFirst();
-    MessageDelivery shared = delivery.get();
-    MessageDelivery.AuthorizedTarget recipients = shared.authorize(session, target, true);
-    if (recipients.isEmpty()) {
-      return;
-    }
-    shared.deliver(
-        session,
-        COMMAND_NAME,
-        target,
-        null,
-        message.tags(),
-        recipients,
-        // FR-021: nothing to render for a client without message-tags negotiated.
-        recipient -> recipient.negotiatedCapabilities().contains(MessageTagsExtension.ID));
-  }
 }

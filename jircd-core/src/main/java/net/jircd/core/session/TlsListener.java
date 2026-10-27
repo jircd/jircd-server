@@ -28,28 +28,30 @@ import net.jircd.core.config.ServerConfiguration;
  */
 public final class TlsListener extends AbstractListener<SSLServerSocket> {
 
-  public TlsListener(ServerConfiguration.Listener listener, ConnectionHandler connectionHandler)
-      throws IOException, GeneralSecurityException {
-    super(
-        openServerSocket(
-            listener, TlsSupport.buildServerContext(listener).getServerSocketFactory()),
-        connectionHandler::accept,
-        "tls-listener");
-  }
+    public TlsListener(ServerConfiguration.Listener listener, ConnectionHandler connectionHandler)
+            throws IOException, GeneralSecurityException {
+        super(
+                openServerSocket(
+                        listener, TlsSupport.buildServerContext(listener).getServerSocketFactory()),
+                connectionHandler::accept,
+                "tls-listener");
+    }
 
-  static SSLServerSocket openServerSocket(
-      ServerConfiguration.Listener listener, SSLServerSocketFactory factory) throws IOException {
-    return (SSLServerSocket)
-        factory.createServerSocket(listener.port(), listener.backlog(), listener.bindAddress());
-  }
+    static SSLServerSocket openServerSocket(
+            ServerConfiguration.Listener listener, SSLServerSocketFactory factory)
+            throws IOException {
+        return (SSLServerSocket)
+                factory.createServerSocket(
+                        listener.port(), listener.backlog(), listener.bindAddress());
+    }
 
-  @Override
-  public int boundPort() {
-    return serverSocket.getLocalPort();
-  }
+    @Override
+    public int boundPort() {
+        return serverSocket.getLocalPort();
+    }
 
-  @Override
-  protected Socket accept() throws IOException {
-    return serverSocket.accept();
-  }
+    @Override
+    protected Socket accept() throws IOException {
+        return serverSocket.accept();
+    }
 }

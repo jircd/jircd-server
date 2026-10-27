@@ -23,35 +23,35 @@ import org.junit.jupiter.api.Test;
 
 /** Repeated SAJOIN still broadcasts JOIN and sends fresh NAMES. */
 class SajoinRepeatTest {
-  @Test
-  void alreadyJoinedAdminBroadcastsAgain() throws Exception {
-    try (TestServer server = TestServer.start(TestServer.adminEnabledYaml());
-        RawIrcClient admin = RawIrcClient.connectPlaintext(server.plaintextPort());
-        RawIrcClient peer = RawIrcClient.connectPlaintext(server.plaintextPort())) {
-      admin.registerAndAwaitWelcome("root", "root");
-      peer.registerAndAwaitWelcome("peer", "peer");
-      admin.send("OPER " + TestServer.ADMIN_USERNAME + " :" + TestServer.ADMIN_PASSWORD);
-      admin.readUntil("381", Duration.ofSeconds(5));
-      peer.send("JOIN #lobby");
-      peer.readUntil("366", Duration.ofSeconds(5));
-      admin.send("SAJOIN #lobby");
-      admin.readUntil("366", Duration.ofSeconds(5));
-      assertThat(peer.readUntil("JOIN #lobby", Duration.ofSeconds(5))).startsWith(":root!");
+    @Test
+    void alreadyJoinedAdminBroadcastsAgain() throws Exception {
+        try (TestServer server = TestServer.start(TestServer.adminEnabledYaml());
+                RawIrcClient admin = RawIrcClient.connectPlaintext(server.plaintextPort());
+                RawIrcClient peer = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+            admin.registerAndAwaitWelcome("root", "root");
+            peer.registerAndAwaitWelcome("peer", "peer");
+            admin.send("OPER " + TestServer.ADMIN_USERNAME + " :" + TestServer.ADMIN_PASSWORD);
+            admin.readUntil("381", Duration.ofSeconds(5));
+            peer.send("JOIN #lobby");
+            peer.readUntil("366", Duration.ofSeconds(5));
+            admin.send("SAJOIN #lobby");
+            admin.readUntil("366", Duration.ofSeconds(5));
+            assertThat(peer.readUntil("JOIN #lobby", Duration.ofSeconds(5))).startsWith(":root!");
 
-      admin.send("SAJOIN #lobby");
-      List<String> replies = admin.readThroughPong(Duration.ofSeconds(5));
-      assertThat(replies.stream().filter(l -> l.contains(" JOIN #lobby")))
-          .singleElement()
-          .asString()
-          .startsWith(":root!");
-      assertThat(replies.stream().filter(l -> l.contains(" 353 "))).hasSize(1);
-      assertThat(replies.stream().filter(l -> l.contains(" 366 "))).hasSize(1);
-      assertThat(
-              peer.readThroughPong(Duration.ofSeconds(5)).stream()
-                  .filter(l -> l.contains(" JOIN #lobby")))
-          .singleElement()
-          .asString()
-          .startsWith(":root!");
+            admin.send("SAJOIN #lobby");
+            List<String> replies = admin.readThroughPong(Duration.ofSeconds(5));
+            assertThat(replies.stream().filter(l -> l.contains(" JOIN #lobby")))
+                    .singleElement()
+                    .asString()
+                    .startsWith(":root!");
+            assertThat(replies.stream().filter(l -> l.contains(" 353 "))).hasSize(1);
+            assertThat(replies.stream().filter(l -> l.contains(" 366 "))).hasSize(1);
+            assertThat(
+                            peer.readThroughPong(Duration.ofSeconds(5)).stream()
+                                    .filter(l -> l.contains(" JOIN #lobby")))
+                    .singleElement()
+                    .asString()
+                    .startsWith(":root!");
+        }
     }
-  }
 }

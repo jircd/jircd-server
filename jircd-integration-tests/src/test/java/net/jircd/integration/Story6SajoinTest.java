@@ -22,32 +22,32 @@ import org.junit.jupiter.api.Test;
 
 class Story6SajoinTest {
 
-  @Test
-  void sajoinBypassesTheJoinGateAndInvalidGrammarIsStillRejected() throws Exception {
-    try (TestServer server = TestServer.start(TestServer.adminEnabledYaml());
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
-        RawIrcClient root = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void sajoinBypassesTheJoinGateAndInvalidGrammarIsStillRejected() throws Exception {
+        try (TestServer server = TestServer.start(TestServer.adminEnabledYaml());
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort());
+                RawIrcClient root = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      alice.registerAndAwaitWelcome("alice", "alice");
-      root.registerAndAwaitWelcome("root", "root");
+            alice.registerAndAwaitWelcome("alice", "alice");
+            root.registerAndAwaitWelcome("root", "root");
 
-      alice.send("JOIN #lobby");
-      alice.readUntil("353", Duration.ofSeconds(5));
+            alice.send("JOIN #lobby");
+            alice.readUntil("353", Duration.ofSeconds(5));
 
-      alice.send("MODE #lobby +b root!*@*");
-      alice.readUntil("MODE #lobby +b root", Duration.ofSeconds(5));
+            alice.send("MODE #lobby +b root!*@*");
+            alice.readUntil("MODE #lobby +b root", Duration.ofSeconds(5));
 
-      root.send("JOIN #lobby");
-      assertThat(root.readUntil("474", Duration.ofSeconds(5))).contains("474");
+            root.send("JOIN #lobby");
+            assertThat(root.readUntil("474", Duration.ofSeconds(5))).contains("474");
 
-      root.send("OPER " + TestServer.ADMIN_USERNAME + " :" + TestServer.ADMIN_PASSWORD);
-      root.readUntil("381", Duration.ofSeconds(5));
+            root.send("OPER " + TestServer.ADMIN_USERNAME + " :" + TestServer.ADMIN_PASSWORD);
+            root.readUntil("381", Duration.ofSeconds(5));
 
-      root.send("SAJOIN #lobby");
-      assertThat(root.readUntil("353", Duration.ofSeconds(5))).contains("353");
+            root.send("SAJOIN #lobby");
+            assertThat(root.readUntil("353", Duration.ofSeconds(5))).contains("353");
 
-      root.send("SAJOIN not-a-valid-channel");
-      assertThat(root.readUntil("476", Duration.ofSeconds(5))).contains("476");
+            root.send("SAJOIN not-a-valid-channel");
+            assertThat(root.readUntil("476", Duration.ofSeconds(5))).contains("476");
+        }
     }
-  }
 }

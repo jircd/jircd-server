@@ -19,13 +19,13 @@ package net.jircd.core.extension.capability;
  * The typed registration points a capability provider can use (see {@link CapabilityRegistrar}).
  */
 public enum HookKind {
-  EVENT,
-  INBOUND_TAGS,
-  RECIPIENTS,
-  OUTBOUND_TAGS,
-  MEMBER_STATUS,
-  NAMES_IDENTITY,
-  REPLY_FIELD,
-  OUTPUT_GROUP,
-  COMMAND
+    EVENT,
+    INBOUND_TAGS,
+    RECIPIENTS,
+    OUTBOUND_TAGS,
+    MEMBER_STATUS,
+    NAMES_IDENTITY,
+    REPLY_FIELD,
+    OUTPUT_GROUP,
+    COMMAND
 }

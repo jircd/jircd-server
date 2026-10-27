@@ -45,108 +45,116 @@ import net.jircd.protocol.NumericReply;
  */
 public final class InviteCommandHandler implements CommandHandler {
 
-  private final ChannelRegistry channelRegistry;
-  private final NicknameRegistry nicknameRegistry;
-  private final ExtensionRegistry extensionRegistry;
-  private final Supplier<String> serverName;
-  private final IntSupplier channelNameMaxLength;
+    private final ChannelRegistry channelRegistry;
+    private final NicknameRegistry nicknameRegistry;
+    private final ExtensionRegistry extensionRegistry;
+    private final Supplier<String> serverName;
+    private final IntSupplier channelNameMaxLength;
 
-  public InviteCommandHandler(
-      ChannelRegistry channelRegistry,
-      NicknameRegistry nicknameRegistry,
-      ExtensionRegistry extensionRegistry,
-      Supplier<String> serverName,
-      IntSupplier channelNameMaxLength) {
-    this.channelNameMaxLength = channelNameMaxLength;
-    this.channelRegistry = channelRegistry;
-    this.nicknameRegistry = nicknameRegistry;
-    this.extensionRegistry = extensionRegistry;
-    this.serverName = serverName;
-  }
-
-  @Override
-  public void handle(ClientSession session, Message message) {
-    if (message.params().size() < 2) {
-      Replies.sendFitted(
-          session,
-          serverName.get(),
-          NumericReply.ERR_NEEDMOREPARAMS,
-          List.of("INVITE"),
-          "Not enough parameters");
-      return;
-    }
-    String targetNickname = message.params().getFirst();
-    String channelName = message.params().get(1);
-
-    // A genuinely nonexistent channel has no membership or
-    // invite-only state to check against, so those checks below are skipped entirely (not
-    // vacuously rejected); an EXISTING channel the inviter isn't a member of is still rejected,
-    // unchanged.
-    var found = channelRegistry.lookup(channelName);
-    if (found.isPresent() && !found.get().members().contains(session)) {
-      Replies.sendFitted(
-          session,
-          serverName.get(),
-          NumericReply.ERR_NOTONCHANNEL,
-          List.of(channelName),
-          "You're not on that channel");
-      return;
-    }
-    if (found.isEmpty() && !ChannelName.isValid(channelName, channelNameMaxLength.getAsInt())) {
-      // The name is echoed in RPL_INVITING and the INVITE itself, so bound it as JOIN does.
-      Replies.sendEchoing(
-          session, serverName.get(), NumericReply.ERR_BADCHANMASK, channelName, "Bad Channel Mask");
-      return;
-    }
-    Channel channel = found.orElse(null);
-
-    var target = nicknameRegistry.lookup(targetNickname);
-    if (target.isEmpty()) {
-      Replies.sendFitted(
-          session,
-          serverName.get(),
-          NumericReply.ERR_NOSUCHNICK,
-          List.of(targetNickname),
-          "No such nick/channel");
-      return;
-    }
-    if (channel != null && channel.members().contains(target.get())) {
-      Replies.sendFitted(
-          session,
-          serverName.get(),
-          NumericReply.ERR_USERONCHANNEL,
-          List.of(targetNickname, channel.name()),
-          "is already on channel");
-      return;
-    }
-    if (channel != null
-        && channel.activeModes().contains(CoreChannelModes.INVITE_ONLY)
-        && !channel.operators().contains(session)) {
-      SecurityEventLog.rejectedModerationAction(
-          session.connectionId(), "INVITE", channelName, "not a channel operator");
-      Replies.sendFitted(
-          session,
-          serverName.get(),
-          NumericReply.ERR_CHANOPRIVSNEEDED,
-          List.of(channel.name()),
-          "You're not channel operator");
-      return;
+    public InviteCommandHandler(
+            ChannelRegistry channelRegistry,
+            NicknameRegistry nicknameRegistry,
+            ExtensionRegistry extensionRegistry,
+            Supplier<String> serverName,
+            IntSupplier channelNameMaxLength) {
+        this.channelNameMaxLength = channelNameMaxLength;
+        this.channelRegistry = channelRegistry;
+        this.nicknameRegistry = nicknameRegistry;
+        this.extensionRegistry = extensionRegistry;
+        this.serverName = serverName;
     }
 
-    if (channel != null) {
-      channel.invite(target.get().nickname());
-    }
-    Replies.send(
-        session, serverName.get(), NumericReply.RPL_INVITING, target.get().nickname(), channelName);
+    @Override
+    public void handle(ClientSession session, Message message) {
+        if (message.params().size() < 2) {
+            Replies.sendFitted(
+                    session,
+                    serverName.get(),
+                    NumericReply.ERR_NEEDMOREPARAMS,
+                    List.of("INVITE"),
+                    "Not enough parameters");
+            return;
+        }
+        String targetNickname = message.params().getFirst();
+        String channelName = message.params().get(1);
 
-    String presentedForm = PresentedIdentity.presentedForm(session, extensionRegistry);
-    Message inviteMessage =
-        new Message(
-            Map.of(),
-            presentedForm,
-            Command.INVITE,
-            "INVITE",
-            List.of(target.get().nickname(), channelName));
-    Replies.sendChecked(target.get(), inviteMessage);
-  }
+        // A genuinely nonexistent channel has no membership or
+        // invite-only state to check against, so those checks below are skipped entirely (not
+        // vacuously rejected); an EXISTING channel the inviter isn't a member of is still rejected,
+        // unchanged.
+        var found = channelRegistry.lookup(channelName);
+        if (found.isPresent() && !found.get().members().contains(session)) {
+            Replies.sendFitted(
+                    session,
+                    serverName.get(),
+                    NumericReply.ERR_NOTONCHANNEL,
+                    List.of(channelName),
+                    "You're not on that channel");
+            return;
+        }
+        if (found.isEmpty() && !ChannelName.isValid(channelName, channelNameMaxLength.getAsInt())) {
+            // The name is echoed in RPL_INVITING and the INVITE itself, so bound it as JOIN does.
+            Replies.sendEchoing(
+                    session,
+                    serverName.get(),
+                    NumericReply.ERR_BADCHANMASK,
+                    channelName,
+                    "Bad Channel Mask");
+            return;
+        }
+        Channel channel = found.orElse(null);
+
+        var target = nicknameRegistry.lookup(targetNickname);
+        if (target.isEmpty()) {
+            Replies.sendFitted(
+                    session,
+                    serverName.get(),
+                    NumericReply.ERR_NOSUCHNICK,
+                    List.of(targetNickname),
+                    "No such nick/channel");
+            return;
+        }
+        if (channel != null && channel.members().contains(target.get())) {
+            Replies.sendFitted(
+                    session,
+                    serverName.get(),
+                    NumericReply.ERR_USERONCHANNEL,
+                    List.of(targetNickname, channel.name()),
+                    "is already on channel");
+            return;
+        }
+        if (channel != null
+                && channel.activeModes().contains(CoreChannelModes.INVITE_ONLY)
+                && !channel.operators().contains(session)) {
+            SecurityEventLog.rejectedModerationAction(
+                    session.connectionId(), "INVITE", channelName, "not a channel operator");
+            Replies.sendFitted(
+                    session,
+                    serverName.get(),
+                    NumericReply.ERR_CHANOPRIVSNEEDED,
+                    List.of(channel.name()),
+                    "You're not channel operator");
+            return;
+        }
+
+        if (channel != null) {
+            channel.invite(target.get().nickname());
+        }
+        Replies.send(
+                session,
+                serverName.get(),
+                NumericReply.RPL_INVITING,
+                target.get().nickname(),
+                channelName);
+
+        String presentedForm = PresentedIdentity.presentedForm(session, extensionRegistry);
+        Message inviteMessage =
+                new Message(
+                        Map.of(),
+                        presentedForm,
+                        Command.INVITE,
+                        "INVITE",
+                        List.of(target.get().nickname(), channelName));
+        Replies.sendChecked(target.get(), inviteMessage);
+    }
 }

@@ -17,10 +17,10 @@ package net.jircd.core.session;
 
 /** Test-only bridge to the writer's package-private queue observation seam. */
 public final class SessionWriterTestAccess {
-  private SessionWriterTestAccess() {}
+    private SessionWriterTestAccess() {}
 
-  /** Returns current queued data bytes without widening the production writer API. */
-  public static long queuedBytes(SessionWriter writer) {
-    return writer.queuedBytes();
-  }
+    /** Returns current queued data bytes without widening the production writer API. */
+    public static long queuedBytes(SessionWriter writer) {
+        return writer.queuedBytes();
+    }
 }

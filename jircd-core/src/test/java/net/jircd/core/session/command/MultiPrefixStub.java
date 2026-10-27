@@ -24,17 +24,17 @@ import net.jircd.core.extension.capability.CapabilityRegistrar;
  * status slot of a requester that negotiated it.
  */
 final class MultiPrefixStub extends AbstractCapabilityExtension {
-  MultiPrefixStub() {
-    super("multi-prefix");
-  }
+    MultiPrefixStub() {
+        super("multi-prefix");
+    }
 
-  @Override
-  public void register(CapabilityRegistrar registrar) {
-    registrar.onMemberStatus(limits -> 2, member -> String.join("", member.heldStatuses()));
-  }
+    @Override
+    public void register(CapabilityRegistrar registrar) {
+        registrar.onMemberStatus(limits -> 2, member -> String.join("", member.heldStatuses()));
+    }
 
-  static void enableIn(ExtensionRegistry registry) {
-    registry.register(new MultiPrefixStub());
-    registry.enable("multi-prefix");
-  }
+    static void enableIn(ExtensionRegistry registry) {
+        registry.register(new MultiPrefixStub());
+        registry.enable("multi-prefix");
+    }
 }

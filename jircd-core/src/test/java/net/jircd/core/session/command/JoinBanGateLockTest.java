@@ -38,91 +38,93 @@ import org.junit.jupiter.api.Test;
 /** The JOIN ban gate's hostname-display extension call runs before any registry monitor. */
 class JoinBanGateLockTest {
 
-  @Test
-  void hostnameDisplayDuringBanGateDoesNotBlockOtherChannelLookups() throws Exception {
-    ChannelRegistry registry = new ChannelRegistry();
-    Channel banned =
-        registry.join("#banned", session("owner"), ignored -> true).orElseThrow().channel();
-    banned.addBan(new BanEntry("*!*@nobody.example", "owner", Instant.EPOCH));
-    Channel quiet =
-        registry.join("#quiet", session("quiet"), ignored -> true).orElseThrow().channel();
-    CountDownLatch displaying = new CountDownLatch(1);
-    CountDownLatch release = new CountDownLatch(1);
-    ExtensionRegistry extensions = new ExtensionRegistry();
-    extensions.register(new PausingHostname(displaying, release));
-    extensions.enable("pausing-hostname");
-    JoinCommandHandler handler =
-        new JoinCommandHandler(registry, extensions, () -> "server", () -> 50);
-    ClientSession joiner = session("joiner");
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      var join =
-          executor.submit(
-              () -> {
-                handler.handle(joiner, MessageParser.parse("JOIN #banned"));
-                return null;
-              });
-      try {
-        assertThat(displaying.await(5, TimeUnit.SECONDS)).isTrue();
-        assertThat(executor.submit(() -> registry.lookup("#quiet")))
-            .succeedsWithin(Duration.ofSeconds(2))
-            .satisfies(found -> assertThat(found).containsSame(quiet));
-      } finally {
-        release.countDown();
-      }
-      join.get(5, TimeUnit.SECONDS);
-    }
-    assertThat(banned.members()).contains(joiner);
-  }
-
-  private static ClientSession session(String nick) {
-    ClientSession session = new ClientSession(nick, "host.example", RateLimitBucket.withDefaults());
-    session.setNickname(nick);
-    session.setIdent(nick);
-    return session;
-  }
-
-  private static final class PausingHostname implements ServerExtension, HostnameDisplayExtension {
-    private final CountDownLatch entered;
-    private final CountDownLatch resume;
-    private final AtomicBoolean first = new AtomicBoolean(true);
-
-    private PausingHostname(CountDownLatch entered, CountDownLatch resume) {
-      this.entered = entered;
-      this.resume = resume;
-    }
-
-    @Override
-    public String id() {
-      return "pausing-hostname";
-    }
-
-    @Override
-    public String extensionPoint() {
-      return "hostname-display";
-    }
-
-    @Override
-    public void start(ServerContext context) {
-      // Stateless test extension: nothing to set up.
-    }
-
-    @Override
-    public void stop() {
-      // Stateless test extension: nothing to release.
-    }
-
-    @Override
-    public String display(String hostname) {
-      if (first.compareAndSet(true, false)) {
-        entered.countDown();
-        try {
-          assertThat(resume.await(5, TimeUnit.SECONDS)).isTrue();
-        } catch (InterruptedException e) {
-          Thread.currentThread().interrupt();
-          throw new IllegalStateException(e);
+    @Test
+    void hostnameDisplayDuringBanGateDoesNotBlockOtherChannelLookups() throws Exception {
+        ChannelRegistry registry = new ChannelRegistry();
+        Channel banned =
+                registry.join("#banned", session("owner"), ignored -> true).orElseThrow().channel();
+        banned.addBan(new BanEntry("*!*@nobody.example", "owner", Instant.EPOCH));
+        Channel quiet =
+                registry.join("#quiet", session("quiet"), ignored -> true).orElseThrow().channel();
+        CountDownLatch displaying = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        ExtensionRegistry extensions = new ExtensionRegistry();
+        extensions.register(new PausingHostname(displaying, release));
+        extensions.enable("pausing-hostname");
+        JoinCommandHandler handler =
+                new JoinCommandHandler(registry, extensions, () -> "server", () -> 50);
+        ClientSession joiner = session("joiner");
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            var join =
+                    executor.submit(
+                            () -> {
+                                handler.handle(joiner, MessageParser.parse("JOIN #banned"));
+                                return null;
+                            });
+            try {
+                assertThat(displaying.await(5, TimeUnit.SECONDS)).isTrue();
+                assertThat(executor.submit(() -> registry.lookup("#quiet")))
+                        .succeedsWithin(Duration.ofSeconds(2))
+                        .satisfies(found -> assertThat(found).containsSame(quiet));
+            } finally {
+                release.countDown();
+            }
+            join.get(5, TimeUnit.SECONDS);
         }
-      }
-      return hostname;
+        assertThat(banned.members()).contains(joiner);
     }
-  }
+
+    private static ClientSession session(String nick) {
+        ClientSession session =
+                new ClientSession(nick, "host.example", RateLimitBucket.withDefaults());
+        session.setNickname(nick);
+        session.setIdent(nick);
+        return session;
+    }
+
+    private static final class PausingHostname
+            implements ServerExtension, HostnameDisplayExtension {
+        private final CountDownLatch entered;
+        private final CountDownLatch resume;
+        private final AtomicBoolean first = new AtomicBoolean(true);
+
+        private PausingHostname(CountDownLatch entered, CountDownLatch resume) {
+            this.entered = entered;
+            this.resume = resume;
+        }
+
+        @Override
+        public String id() {
+            return "pausing-hostname";
+        }
+
+        @Override
+        public String extensionPoint() {
+            return "hostname-display";
+        }
+
+        @Override
+        public void start(ServerContext context) {
+            // Stateless test extension: nothing to set up.
+        }
+
+        @Override
+        public void stop() {
+            // Stateless test extension: nothing to release.
+        }
+
+        @Override
+        public String display(String hostname) {
+            if (first.compareAndSet(true, false)) {
+                entered.countDown();
+                try {
+                    assertThat(resume.await(5, TimeUnit.SECONDS)).isTrue();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException(e);
+                }
+            }
+            return hostname;
+        }
+    }
 }

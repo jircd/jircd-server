@@ -22,30 +22,30 @@ import org.junit.jupiter.api.Test;
 
 class Story7SelfLookupTest {
 
-  @Test
-  void selfLookupReturnsRealHostnameEvenWhileCloakObscuresItFromOthers() throws Exception {
-    try (TestServer server = TestServer.start(TestServer.CLOAK_ENABLED_YAML);
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void selfLookupReturnsRealHostnameEvenWhileCloakObscuresItFromOthers() throws Exception {
+        try (TestServer server = TestServer.start(TestServer.CLOAK_ENABLED_YAML);
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      alice.registerAndAwaitWelcome("alice", "alice");
+            alice.registerAndAwaitWelcome("alice", "alice");
 
-      alice.send("WHOIS alice");
-      String whoisUser = alice.readUntil("311", Duration.ofSeconds(5));
-      assertThat(whoisUser).contains("311").doesNotContain("user-");
-      alice.readUntil("318", Duration.ofSeconds(5));
+            alice.send("WHOIS alice");
+            String whoisUser = alice.readUntil("311", Duration.ofSeconds(5));
+            assertThat(whoisUser).contains("311").doesNotContain("user-");
+            alice.readUntil("318", Duration.ofSeconds(5));
+        }
     }
-  }
 
-  @Test
-  void noArgumentWhoisAlsoTargetsSelf() throws Exception {
-    try (TestServer server = TestServer.start(TestServer.CLOAK_ENABLED_YAML);
-        RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+    @Test
+    void noArgumentWhoisAlsoTargetsSelf() throws Exception {
+        try (TestServer server = TestServer.start(TestServer.CLOAK_ENABLED_YAML);
+                RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
-      alice.registerAndAwaitWelcome("alice", "alice");
+            alice.registerAndAwaitWelcome("alice", "alice");
 
-      alice.send("WHOIS");
-      String whoisUser = alice.readUntil("311", Duration.ofSeconds(5));
-      assertThat(whoisUser).contains("alice").doesNotContain("user-");
+            alice.send("WHOIS");
+            String whoisUser = alice.readUntil("311", Duration.ofSeconds(5));
+            assertThat(whoisUser).contains("alice").doesNotContain("user-");
+        }
     }
-  }
 }

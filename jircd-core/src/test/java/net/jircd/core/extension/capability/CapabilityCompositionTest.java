@@ -70,189 +70,200 @@ import org.junit.jupiter.api.Test;
  */
 class CapabilityCompositionTest {
 
-  /** A made-up capability using events, an identity slot, request context, roles and groups. */
-  private static final class Experimental extends AbstractCapabilityExtension {
-    final AtomicReference<RequestContext> contextSeenByRoles = new AtomicReference<>();
+    /** A made-up capability using events, an identity slot, request context, roles and groups. */
+    private static final class Experimental extends AbstractCapabilityExtension {
+        final AtomicReference<RequestContext> contextSeenByRoles = new AtomicReference<>();
 
-    Experimental() {
-      super("experimental");
+        Experimental() {
+            super("experimental");
+        }
+
+        @Override
+        public void register(CapabilityRegistrar registrar) {
+            // account-notify seam: a committed event answered with a notice to the audience.
+            registrar.onEvent(
+                    EventKind.AWAY_CHANGED,
+                    event ->
+                            List.of(
+                                    new EventIntent(
+                                            new Message(
+                                                    Map.of(),
+                                                    event.subject(),
+                                                    Command.NOTICE,
+                                                    "NOTICE",
+                                                    List.of("x", "seen")),
+                                            event.audience().peers())));
+            // userhost-in-names seam: its own slot, composing with another provider's status slot.
+            registrar.onNamesIdentity(
+                    limits -> 200,
+                    member ->
+                            member.nickname() + "!" + member.ident() + "@" + member.displayHost());
+            // label seam: client tag into bounded context, then a role decision that can see it.
+            registrar.onInboundTags(
+                    (tags, context) ->
+                            new InboundTagResult(
+                                    Map.of(),
+                                    tags.tags().containsKey("label")
+                                            ? Map.of("experimental/label", tags.tags().get("label"))
+                                            : Map.of()));
+            registrar.onRecipients(
+                    (intent, context) -> {
+                        contextSeenByRoles.set(context);
+                        return context.attributes().containsKey("experimental/label")
+                                ? Set.of(DeliveryRole.SENDER_COPY)
+                                : Set.of();
+                    });
+            // chathistory seam: a finite group framed only when its prerequisite is also
+            // negotiated.
+            registrar.onOutputGroup(
+                    Set.of("tags"),
+                    (group, context) -> {
+                        List<Message> frames = new ArrayList<>();
+                        frames.add(
+                                new Message(
+                                        Map.of(),
+                                        null,
+                                        null,
+                                        "BATCH",
+                                        List.of("+h", group.type())));
+                        frames.addAll(group.members());
+                        frames.add(new Message(Map.of(), null, null, "BATCH", List.of("-h")));
+                        return new FramingPlan(frames);
+                    });
+        }
     }
 
-    @Override
-    public void register(CapabilityRegistrar registrar) {
-      // account-notify seam: a committed event answered with a notice to the audience.
-      registrar.onEvent(
-          EventKind.AWAY_CHANGED,
-          event ->
-              List.of(
-                  new EventIntent(
-                      new Message(
-                          Map.of(),
-                          event.subject(),
-                          Command.NOTICE,
-                          "NOTICE",
-                          List.of("x", "seen")),
-                      event.audience().peers())));
-      // userhost-in-names seam: its own slot, composing with another provider's status slot.
-      registrar.onNamesIdentity(
-          limits -> 200,
-          member -> member.nickname() + "!" + member.ident() + "@" + member.displayHost());
-      // label seam: client tag into bounded context, then a role decision that can see it.
-      registrar.onInboundTags(
-          (tags, context) ->
-              new InboundTagResult(
-                  Map.of(),
-                  tags.tags().containsKey("label")
-                      ? Map.of("experimental/label", tags.tags().get("label"))
-                      : Map.of()));
-      registrar.onRecipients(
-          (intent, context) -> {
-            contextSeenByRoles.set(context);
-            return context.attributes().containsKey("experimental/label")
-                ? Set.of(DeliveryRole.SENDER_COPY)
-                : Set.of();
-          });
-      // chathistory seam: a finite group framed only when its prerequisite is also negotiated.
-      registrar.onOutputGroup(
-          Set.of("tags"),
-          (group, context) -> {
-            List<Message> frames = new ArrayList<>();
-            frames.add(new Message(Map.of(), null, null, "BATCH", List.of("+h", group.type())));
-            frames.addAll(group.members());
-            frames.add(new Message(Map.of(), null, null, "BATCH", List.of("-h")));
-            return new FramingPlan(frames);
-          });
-    }
-  }
+    /** The status slot, from a second provider that knows nothing of the first. */
+    private static final class AllStatuses extends AbstractCapabilityExtension {
+        AllStatuses() {
+            super("all-statuses");
+        }
 
-  /** The status slot, from a second provider that knows nothing of the first. */
-  private static final class AllStatuses extends AbstractCapabilityExtension {
-    AllStatuses() {
-      super("all-statuses");
+        @Override
+        public void register(CapabilityRegistrar registrar) {
+            registrar.onMemberStatus(limits -> 2, member -> String.join("", member.heldStatuses()));
+        }
     }
 
-    @Override
-    public void register(CapabilityRegistrar registrar) {
-      registrar.onMemberStatus(limits -> 2, member -> String.join("", member.heldStatuses()));
-    }
-  }
+    private final NicknameRegistry nicknames = new NicknameRegistry();
+    private final ChannelRegistry channels = new ChannelRegistry();
+    private final ExtensionRegistry extensions = new ExtensionRegistry();
+    private final Map<ClientSession, ByteArrayOutputStream> outputs = new HashMap<>();
+    private final List<SessionWriter> writers = new ArrayList<>();
+    private final Experimental experimental = new Experimental();
 
-  private final NicknameRegistry nicknames = new NicknameRegistry();
-  private final ChannelRegistry channels = new ChannelRegistry();
-  private final ExtensionRegistry extensions = new ExtensionRegistry();
-  private final Map<ClientSession, ByteArrayOutputStream> outputs = new HashMap<>();
-  private final List<SessionWriter> writers = new ArrayList<>();
-  private final Experimental experimental = new Experimental();
-
-  CapabilityCompositionTest() {
-    extensions.register(experimental);
-    extensions.enable("experimental");
-    extensions.register(new AllStatuses());
-    extensions.enable("all-statuses");
-  }
-
-  @AfterEach
-  void closeWriters() {
-    writers.forEach(SessionWriter::close);
-  }
-
-  private ClientSession user(String nick, String... negotiated) {
-    ClientSession session = new ClientSession(nick, "host.example", RateLimitBucket.withDefaults());
-    session.setNickname(nick);
-    session.setIdent("ident");
-    session.replaceNegotiatedCapabilities(List.of(negotiated));
-    nicknames.claim(nick, session);
-    ByteArrayOutputStream out = new ByteArrayOutputStream();
-    outputs.put(session, out);
-    @SuppressWarnings("PMD.CloseResource") // closed by closeWriters()
-    SessionWriter writer = new SessionWriter(session, out, new CapabilityTagRenderer(extensions));
-    writers.add(writer);
-    session.attachWriter(writer);
-    return session;
-  }
-
-  private String received(ClientSession session) {
-    writers.forEach(SessionWriter::close);
-    return outputs.get(session).toString(StandardCharsets.UTF_8);
-  }
-
-  @Test
-  void aCommittedEventReachesOnlyPeersThatNegotiatedTheNewCapability() throws Exception {
-    ClientSession alice = user("alice");
-    ClientSession listening = user("listening", "experimental");
-    ClientSession deaf = user("deaf");
-    for (ClientSession member : List.of(alice, listening, deaf)) {
-      channels.join("#c", member, ch -> true);
+    CapabilityCompositionTest() {
+        extensions.register(experimental);
+        extensions.enable("experimental");
+        extensions.register(new AllStatuses());
+        extensions.enable("all-statuses");
     }
 
-    new AwayCommandHandler(() -> "server", extensions)
-        .handle(alice, MessageParser.parse("AWAY :x"));
+    @AfterEach
+    void closeWriters() {
+        writers.forEach(SessionWriter::close);
+    }
 
-    assertThat(received(listening)).contains("NOTICE x seen");
-    assertThat(received(deaf)).doesNotContain("seen");
-  }
+    private ClientSession user(String nick, String... negotiated) {
+        ClientSession session =
+                new ClientSession(nick, "host.example", RateLimitBucket.withDefaults());
+        session.setNickname(nick);
+        session.setIdent("ident");
+        session.replaceNegotiatedCapabilities(List.of(negotiated));
+        nicknames.claim(nick, session);
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        outputs.put(session, out);
+        @SuppressWarnings("PMD.CloseResource") // closed by closeWriters()
+        SessionWriter writer =
+                new SessionWriter(session, out, new CapabilityTagRenderer(extensions));
+        writers.add(writer);
+        session.attachWriter(writer);
+        return session;
+    }
 
-  @Test
-  void anIdentitySlotAndAStatusSlotFromDifferentProvidersCompose() {
-    ClientSession op = user("op");
-    Channel channel = channels.join("#c", op, ch -> true).orElseThrow().channel();
-    channel.grantVoice(op);
-    ClientSession requester = user("requester", "experimental", "all-statuses");
+    private String received(ClientSession session) {
+        writers.forEach(SessionWriter::close);
+        return outputs.get(session).toString(StandardCharsets.UTF_8);
+    }
 
-    assertThat(new MemberReplies(extensions).namesTokens(requester, channel.memberFacts()))
-        .containsExactly("@+op!ident@host.example");
-  }
+    @Test
+    void aCommittedEventReachesOnlyPeersThatNegotiatedTheNewCapability() throws Exception {
+        ClientSession alice = user("alice");
+        ClientSession listening = user("listening", "experimental");
+        ClientSession deaf = user("deaf");
+        for (ClientSession member : List.of(alice, listening, deaf)) {
+            channels.join("#c", member, ch -> true);
+        }
 
-  @Test
-  void aRequestContextCarriesAClientTagToTheRoleDecisionWithinItsBounds() {
-    ClientSession sender = user("sender", "experimental");
-    ClientSession peer = user("peer");
-    MessageDelivery delivery = new MessageDelivery(channels, nicknames, extensions, () -> "server");
+        new AwayCommandHandler(() -> "server", extensions)
+                .handle(alice, MessageParser.parse("AWAY :x"));
 
-    MessageDelivery.Delivery labeled =
-        delivery.deliver(
-            sender,
-            "PRIVMSG",
-            "peer",
-            "hi",
-            Map.of("label", "abc"),
-            delivery.authorize(sender, "peer", true),
-            r -> true);
-    MessageDelivery.Delivery unlabeled =
-        delivery.deliver(
-            sender,
-            "PRIVMSG",
-            "peer",
-            "hi",
-            Map.of(),
-            delivery.authorize(sender, "peer", true),
-            r -> true);
+        assertThat(received(listening)).contains("NOTICE x seen");
+        assertThat(received(deaf)).doesNotContain("seen");
+    }
 
-    assertThat(labeled.context().attributes()).containsEntry("experimental/label", "abc");
-    assertThat(labeled.recipients().get(sender)).containsExactly(DeliveryRole.SENDER_COPY);
-    assertThat(unlabeled.recipients()).doesNotContainKey(sender);
-    // The correlation never travels to the peer's copy of the message.
-    assertThat(received(peer)).doesNotContain("abc");
-  }
+    @Test
+    void anIdentitySlotAndAStatusSlotFromDifferentProvidersCompose() {
+        ClientSession op = user("op");
+        Channel channel = channels.join("#c", op, ch -> true).orElseThrow().channel();
+        channel.grantVoice(op);
+        ClientSession requester = user("requester", "experimental", "all-statuses");
 
-  @Test
-  void aFiniteGroupIsFramedOnlyWhenItsPrerequisiteIsAlsoNegotiated() {
-    ClientSession both = user("both", "experimental", "tags");
-    ClientSession ownerOnly = user("owner-only", "experimental");
-    Message member =
-        new Message(Map.of(), "s!i@h", Command.PRIVMSG, "PRIVMSG", List.of("#c", "page"));
+        assertThat(new MemberReplies(extensions).namesTokens(requester, channel.memberFacts()))
+                .containsExactly("@+op!ident@host.example");
+    }
 
-    both.writer().enqueueGroup("history", List.of(), List.of(member));
-    ownerOnly.writer().enqueueGroup("history", List.of(), List.of(member));
+    @Test
+    void aRequestContextCarriesAClientTagToTheRoleDecisionWithinItsBounds() {
+        ClientSession sender = user("sender", "experimental");
+        ClientSession peer = user("peer");
+        MessageDelivery delivery =
+                new MessageDelivery(channels, nicknames, extensions, () -> "server");
 
-    assertThat(received(both)).contains("BATCH +h history").contains("BATCH -h");
-    assertThat(received(ownerOnly)).doesNotContain("BATCH");
-  }
+        MessageDelivery.Delivery labeled =
+                delivery.deliver(
+                        sender,
+                        "PRIVMSG",
+                        "peer",
+                        "hi",
+                        Map.of("label", "abc"),
+                        delivery.authorize(sender, "peer", true),
+                        r -> true);
+        MessageDelivery.Delivery unlabeled =
+                delivery.deliver(
+                        sender,
+                        "PRIVMSG",
+                        "peer",
+                        "hi",
+                        Map.of(),
+                        delivery.authorize(sender, "peer", true),
+                        r -> true);
 
-  @Test
-  void theMadeUpCapabilityNeededNoChangeToCoreAndOffersOnlyItsOwnName() {
-    assertThat(extensions.offeredCapabilities())
-        .extracting(Capability::name)
-        .containsExactlyInAnyOrder("experimental", "all-statuses");
-  }
+        assertThat(labeled.context().attributes()).containsEntry("experimental/label", "abc");
+        assertThat(labeled.recipients().get(sender)).containsExactly(DeliveryRole.SENDER_COPY);
+        assertThat(unlabeled.recipients()).doesNotContainKey(sender);
+        // The correlation never travels to the peer's copy of the message.
+        assertThat(received(peer)).doesNotContain("abc");
+    }
+
+    @Test
+    void aFiniteGroupIsFramedOnlyWhenItsPrerequisiteIsAlsoNegotiated() {
+        ClientSession both = user("both", "experimental", "tags");
+        ClientSession ownerOnly = user("owner-only", "experimental");
+        Message member =
+                new Message(Map.of(), "s!i@h", Command.PRIVMSG, "PRIVMSG", List.of("#c", "page"));
+
+        both.writer().enqueueGroup("history", List.of(), List.of(member));
+        ownerOnly.writer().enqueueGroup("history", List.of(), List.of(member));
+
+        assertThat(received(both)).contains("BATCH +h history").contains("BATCH -h");
+        assertThat(received(ownerOnly)).doesNotContain("BATCH");
+    }
+
+    @Test
+    void theMadeUpCapabilityNeededNoChangeToCoreAndOffersOnlyItsOwnName() {
+        assertThat(extensions.offeredCapabilities())
+                .extracting(Capability::name)
+                .containsExactlyInAnyOrder("experimental", "all-statuses");
+    }
 }

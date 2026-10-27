@@ -22,10 +22,10 @@ import java.util.Map;
  * provider-scoped context. The default ignores semantic tags.
  */
 public record InboundTagResult(Map<String, String> forwarded, Map<String, String> context) {
-  public static final InboundTagResult NONE = new InboundTagResult(Map.of(), Map.of());
+    public static final InboundTagResult NONE = new InboundTagResult(Map.of(), Map.of());
 
-  public InboundTagResult {
-    forwarded = Map.copyOf(forwarded);
-    context = Map.copyOf(context);
-  }
+    public InboundTagResult {
+        forwarded = Map.copyOf(forwarded);
+        context = Map.copyOf(context);
+    }
 }
