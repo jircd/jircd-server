@@ -486,10 +486,12 @@ administratorCredentials:
   with cleanup owed to a later disable or reload; every remaining withdrawn
   provider is still stopped and recorded. An `Error` other than the contained
   `LinkageError` propagates after those stops. Only the last `Error` propagates;
-  earlier Errors and collected RuntimeExceptions are not attached, but their
-  providers remain `FAILED` with cleanup owed. During reload the new
+  earlier Errors are lost; collected RuntimeExceptions are logged rather than
+  attached. Their providers remain `FAILED` with cleanup owed. During reload the new
   configuration, reply limits and capability snapshot remain published; no
-  failures outcome is returned and server-extension reconciliation is skipped.
+  failures outcome is returned. An Error during capability cleanup skips server
+  reconciliation; an Error during server reconciliation lets every remaining
+  desired server change run before propagating. Collected failures are logged.
   The lifecycle lock and reload monitor are released even on that path.
   A nickname change and the client's own `NICK` line are serialized with
   publication, so a notification always addresses the nickname the client
