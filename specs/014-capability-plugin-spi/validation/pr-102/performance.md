@@ -507,3 +507,68 @@ Delivery stays far under 1 s, and the JOIN-storm budgets hold with a wide margin
 | 1,000 | member | **1,416 → 1,642 (+16.0%)** | 1.573 → 1.569 (-0.3%) | 1.573 → 1.569 (-0.3%) | **61.1 → 50.3 (-17.7%)** | 36.5 → 34.5 (-5.5%) |
 | 1,000 | group | **96,150 → 106,453 (+10.7%)** | **29.163 → 24.531 (-15.9%)** | 35.121 → 33.091 (-5.8%) | 2,104.2 → 2,116.1 (+0.6%) | 298.9 → 289.0 (-3.3%) |
 
+
+## Harness noise reduction and re-run of the A/A control ([#111](https://github.com/jircd/jircd-server/issues/111))
+
+### Diagnosis
+
+The A/A control above was noisy because the harness measured each phase over one pass lasting a few milliseconds, not because of GC or the sockets:
+- **GC is not the cause.** `-Xlog:gc*` on three runs of the old class showed only young pauses of 0.7–3.3 ms, no full GC and no concurrent-cycle stall. (G1, 2 GiB heap, 31–32 pauses per run, all three runs alike.) A 1–3 ms pause does matter when the whole window is 5 ms, which is what a pass over 100 recipients' AWAY items took (2,500 items, about 7 ms; group about 30 ms; the 1,000-recipient NAMES/WHO phase 20 operations, about 13 ms).
+- **Warm-up was missing.** The first phase of a JVM ran cold: with per-round samples, 10-recipient message throughput climbed from 90k to 494k items/s over 12 rounds (p99 179 → 30 ms). The old single pass sampled that ramp at a fixed, but arbitrary, point; the 10-recipient CV of about 2% reflected a consistent cold start, not precision.
+- **Window length scales against us.** Each phase had a fixed item count, so the window shrank relative to a pause as recipients grew in AWAY and group.
+
+### Changes
+
+[CapabilityFanoutLoadTest](../../../../jircd-integration-tests/src/test/java/net/jircd/integration/CapabilityFanoutLoadTest.java) now:
+- runs every phase in rounds: a warm-up of at least 3 rounds and 1 s, then 9 measured rounds, and reports the **median** over the measured rounds (p50, p99, max, throughput, CPU, allocation) in the same `recipients=… phase=…` line, plus `worstMaxMs` and the in-run round CV;
+- prints one `CapabilityFanoutLoadTest.round:` line per round, warm-up included, for diagnosis;
+- sizes the items per round by recipient count (`Load.of`) so each measured window is at least about 50 ms (the run prints `windowMs`; after the round-1 review fixes the medians are 48–300 ms, the 10-recipient member phase being the shortest at about 50 ms);
+- reads the NAMES/WHO replies up to the real `366`/`315` numeric. `readUntil("315")` also stopped at a WHO line that merely contained those digits (a nickname such as `r315`), which left part of the listing queued, understated those latencies, and overflowed the sender's 2 MiB SendQ once a round had 60+ listings; this probably contributed to the 1,000-recipient NAMES/WHO noise;
+- builds group messages and drains the sender's echoes before the timed window, so it times delivery only;
+- keeps every content, order and framing assertion, now across all rounds, and still fails when any delivery, in a warm-up or a measured round, takes 1 s or more; warm-up rounds stay out of the reported statistics.
+
+Statistics are in `FanoutStats` (unit-tested by `FanoutStatsTest`). The `loadTest` run of this class went from about 3 s to 25–30 s on the same machine; the full `./gradlew loadTest` grows by the same amount.
+
+### How to run the A/A control (for later PRs)
+
+```
+scripts/fanout-aa.sh [pairs] [output-dir]      # default 5 pairs; MAX_LOAD (5) and MAX_WAIT (300 s) gate on the load average
+python3 scripts/fanout-aa.py <dir>            # A/A: CV and noise unit per phase and metric
+python3 scripts/fanout-aa.py <dir-a> <dir-b>  # A/B: median difference of b against a, in noise units
+```
+
+`fanout-aa.sh` runs a warm-up and then the pairs B A, A B, … on the current checkout, records the power source and load before every run in `conditions.txt` (runs that started above `MAX_LOAD` are marked `CONTENDED`; redo them), and prints the A/A table. Run it on AC power with no other build running. For an A/B comparison run it on each revision and compare the two directories. Report the noise unit next to every claimed difference; a difference within two units is not a finding.
+
+### Result (AC power, 5 pairs, 2026-10-27, after review round 1)
+
+Raw runs, the load before each run and the full report (all three metrics) are in [raw/aa-111/](raw/aa-111/) (`conditions.txt`, `report.txt`). The harness is the one in this PR. The run used `MAX_LOAD=5`: no run was marked `CONTENDED`, but the 1-minute load was still 4.2–5.0 before every run (4.18, 4.64, 4.77, 4.92, 4.87, 4.93, 5.00, 4.92, 4.69, 4.91, 4.92; the laptop's own background activity plus a Codex agent editing docs; no builds or tests ran alongside). These CVs are therefore measured at that background level and may overstate a fully idle machine. The load rose to 8.5 only after the last run. This replaces the earlier result, which used the pre-review harness (shorter 10-recipient windows and the `readUntil("315")` flaw).
+
+Throughput over the ten runs (item counts per round differ from the old runs, so medians are not comparable with the earlier tables; the CVs are). The noise unit is 0.79 × CV for the median of five runs per side, and the detection limit is two noise units.
+
+| Recipients | Phase | Median items/s | CV | Before (#102 A/A) | Noise unit | Detection limit (2 units) | CV ≤ 5% |
+|---|---|---|---|---|---|---|---|
+| 10 | message | 521,948 | 3.5% | 2.0% (cold start) | 2.8% | 5.6% | yes |
+| 10 | away | 660,987 | 3.3% | 4.3% | 2.6% | 5.2% | yes |
+| 10 | member | 19,862 | 1.5% | 5.6% | 1.2% | 2.4% | yes |
+| 10 | group | 256,189 | 1.9% | 6.9% | 1.5% | 3.0% | yes |
+| 100 | message | 655,077 | 12.0% | 10.2% | 9.8% | 19.6% | **no** |
+| 100 | away | 949,330 | 5.2% | 23.7% | 4.2% | 8.4% | **no** (just over) |
+| 100 | member | 7,479 | 2.2% | 7.4% | 1.7% | 3.4% | yes |
+| 100 | group | 232,955 | 3.1% | 18.0% | 2.4% | 4.8% | yes |
+| 1,000 | message | 666,951 | 8.1% | 12.5% | 6.6% | 13.2% | **no** |
+| 1,000 | away | 897,871 | 7.0% | 6.8% | 5.5% | 11.0% | **no** |
+| 1,000 | member | 1,112 | 4.6% | 19.5% | 3.6% | 7.2% | yes |
+| 1,000 | group | 194,145 | 2.0% | 5.8% | 1.6% | 3.2% | yes |
+
+**Against the goal (CV ≤ 5% in every phase used for a regression decision): met for 8 of 12 phases, not met for 4.** The three phases that drove #102 are now at 5.2% (100 away, from 23.7%), 3.1% (100 group, from 18.0%) and 4.6% (1,000 NAMES/WHO, from 19.5%). The four that still miss are the 100- and 1,000-recipient message phases (12.0% and 8.1%, with a high outlier run at 100 recipients), 1,000-recipient AWAY (7.0%) and 100-recipient AWAY (5.2%). Within-run, those phases' rounds also vary the most, so longer windows alone did not remove it; the cause is not established.
+
+The 10-recipient message CV is now 3.5%, against 2.0% before. The old figure measured a consistent cold start, not precision, so the comparison is not like for like.
+
+p99 and CPU are noisier than throughput (CV 1.7–46%; the 10-recipient AWAY p99 is 46%) and should be read as supporting evidence only; see `report.txt`.
+
+**Detection limit achieved.** With five pairs a throughput difference smaller than two noise units cannot be told from noise:
+- about **2–6%** in the 10-recipient phases, 100-recipient member and group, and 1,000-recipient group and member (limits 2.4–7.2%);
+- **8.4%** in 100-recipient AWAY;
+- **11.0%** in 1,000-recipient AWAY, **13.2%** in 1,000-recipient message and **19.6%** in 100-recipient message.
+
+T061's 10% throughput budget can therefore be decided in 9 of 12 phases (every limit below 10%, including 100-recipient AWAY at 8.4%). For 1,000-recipient AWAY and the 100- and 1,000-recipient message phases it can only be decided above the limits stated here; a result inside them is not evidence of no regression. More pairs would narrow these limits by roughly the square root of the pair count.

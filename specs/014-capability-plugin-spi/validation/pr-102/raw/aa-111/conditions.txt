@@ -1,0 +1,12 @@
+13:49:39 before warmup | Now drawing from 'AC Power' | load1 4.18
+13:50:58 before B-1 | Now drawing from 'AC Power' | load1 4.64
+13:52:43 before A-1 | Now drawing from 'AC Power' | load1 4.77
+13:54:01 before A-2 | Now drawing from 'AC Power' | load1 4.92
+13:55:00 before B-2 | Now drawing from 'AC Power' | load1 4.87
+13:56:14 before B-3 | Now drawing from 'AC Power' | load1 4.93
+13:57:17 before A-3 | Now drawing from 'AC Power' | load1 5.00
+13:58:52 before A-4 | Now drawing from 'AC Power' | load1 4.92
+14:00:07 before B-4 | Now drawing from 'AC Power' | load1 4.69
+14:01:01 before B-5 | Now drawing from 'AC Power' | load1 4.91
+14:02:05 before A-5 | Now drawing from 'AC Power' | load1 4.92
+14:02:33 before after last | Now drawing from 'AC Power' | load1 8.52
