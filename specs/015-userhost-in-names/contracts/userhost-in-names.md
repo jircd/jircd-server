@@ -35,4 +35,4 @@ capabilities:
 
 The new id belongs only under `capabilities`, accepts `enabled`/`disabled`, and defaults to disabled on startup when omitted. Standard runtime controls and REHASH use the existing spec-014 lifecycle. Eligible clients receive NEW/DEL; disabling prunes negotiation and re-enabling requires explicit REQ. Captured output may follow DEL. Unknown/invalid configuration preserves previous state on reload.
 
-Installation reserves larger bounds even when disabled. Document the resulting configuration compatibility change and actionable S/N/C reductions; do not weaken bounds to retain previously accepted unsafe combinations.
+Installation reserves larger NAMES bounds even when disabled. Current WHO bounds are stricter by S+5 bytes, so this does not change effective configuration acceptance today. Document the formulas and actionable S/N/C reductions for unsafe configurations; never weaken bounds.

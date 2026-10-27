@@ -34,7 +34,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Each of the six capability providers, absent from an isolated catalog, takes its offer and its
+ * Each bundled capability provider, absent from an isolated catalog, takes its offer and its
  * behavior with it, and nothing else. The catalog is the ServiceLoader view a server starts with: a
  * class loader that hides one provider class from the {@code CapabilityExtension} service file. No
  * jar or class file is touched or deleted, and the desired configuration enables only providers
@@ -51,7 +51,8 @@ class CapabilityProviderAbsenceTest {
                     "echo-message",
                     "away-notify",
                     "batch",
-                    "multi-prefix");
+                    "multi-prefix",
+                    "userhost-in-names");
 
     @TempDir Path directory;
 
@@ -101,6 +102,7 @@ class CapabilityProviderAbsenceTest {
             case "away-notify" -> "AwayNotifyExtension";
             case "batch" -> "BatchExtension";
             case "multi-prefix" -> "MultiPrefixExtension";
+            case "userhost-in-names" -> "UserhostInNamesExtension";
             default -> throw new IllegalArgumentException(capability);
         };
     }
@@ -158,7 +160,8 @@ class CapabilityProviderAbsenceTest {
     }
 
     @Test
-    void theFullCatalogOffersAllSixAndTheBaselineIsWhatTheAbsenceTestsSubtract() throws Exception {
+    void theFullCatalogOffersAllProvidersAndTheBaselineIsWhatTheAbsenceTestsSubtract()
+            throws Exception {
         try (TestServer server = TestServer.start(yamlWithout("none"));
                 RawIrcClient client = RawIrcClient.connectPlaintext(server.plaintextPort())) {
             assertThat(offered(client))
@@ -318,6 +321,18 @@ class CapabilityProviderAbsenceTest {
                 alice.send("NICK alicia");
                 assertThat(bob.readUntil("NICK", TIMEOUT)).contains("alicia");
             }
+        }
+    }
+
+    @Test
+    void withoutUserhostIdentityStaysBareWhileMultiPrefixStillWorks() throws Exception {
+        try (TestServer server = startWithout("userhost-in-names");
+                RawIrcClient client = registered(server, "alice", "multi-prefix")) {
+            UserhostInNamesTest.names(client, "JOIN #lobby");
+            client.send("MODE #lobby +v alice");
+            client.readUntil("MODE #lobby +v alice", TIMEOUT);
+            assertThat(UserhostInNamesTest.names(client, "NAMES #lobby"))
+                    .containsExactly("@+alice");
         }
     }
 }

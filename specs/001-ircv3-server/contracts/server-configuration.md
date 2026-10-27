@@ -95,6 +95,7 @@ capabilities:            # CapabilityExtension states only (jircd-capabilities/)
   away-notify: enabled   # 011-away-notify-batch
   batch: enabled          # 011-away-notify-batch
   multi-prefix: enabled   # 353/352 list every status prefix a member holds
+  userhost-in-names: enabled # 353 identity nick!ident@displayHost; cloak preserved
 
 server-extensions:      # ServerExtension states only (jircd-server-extensions/) —
   cloak: disabled        # never CAP-negotiated, administrator-only. A
@@ -264,20 +265,31 @@ administratorCredentials:
   and CRLF, limited to 512 UTF-8 bytes. IRCv3 message tags use a separate section:
   at most 8191 wire bytes total, with up to 4094 escaped data bytes from each
   client/server origin. Tags never consume the command-section budget.
+- **userhost-in-names** defaults to disabled when omitted, like other capabilities.
+  When enabled it is offered through CAP; only negotiated requesters receive
+  `nick!ident@displayHost` in targeted/bare NAMES and automatic JOIN/SAJOIN lists.
+  With multi-prefix the composed entry can be `@+nick!ident@displayHost`.
+  The display host preserves cloaking; WHO is unchanged. Existing runtime
+  disable/reload controls withdraw the capability and prune negotiation;
+  re-enabling requires explicit client renegotiation. Complete tokens split
+  between 353 lines, never inside nick, ident or host.
 - **Coupled NAMES byte bounds (issue #54)** also apply at startup and reload.
   Let `S` be the resolved server name's UTF-8 byte length, `N` be
   `nicknameMaxLength`, and `Cmax` be `channelNameMaxLength` used as the channel
-  UTF-8 byte cap. Both `S + 2N + Cmax + 15 <= 512` (353 RPL_NAMREPLY) and
-  `S + N + Cmax + 29 <= 512` (366 RPL_ENDOFNAMES) MUST hold. The first reserves
-  a trailing colon and two member status characters (an operator who is also
-  voiced, listed to a `multi-prefix` client); the two nickname lengths
-  cover the recipient and listed member. The second includes the closing
-  numeric's fixed text. An error names `serverName`, `nicknameMaxLength`, and
-  `channelNameMaxLength`, both computed reply sizes, and the channel byte budget
-  `min(512 - S - 2N - 15, 512 - S - N - 29)`. The limits are rejected, never
-  silently clamped. For example, `test.jircd.local` is 16 bytes: `N=215, Cmax=51`
-  exactly fills the conservative 353 budget; `N=216, Cmax=51` requires 514 bytes
-  and is rejected. The omitted server name is resolved before validation.
+  UTF-8 byte cap. Both `S + 2N + Cmax + 13 + P + I <= 512` (353 RPL_NAMREPLY)
+  and `S + N + Cmax + 29 <= 512` (366 RPL_ENDOFNAMES) MUST hold. `P=2` with
+  installed multi-prefix; `I=U+H+2=92` with installed userhost-in-names, using
+  the 27-byte ident and 63-byte display-host maxima. Without identity decoration
+  I=0, and core alone reserves P=1. All installed valid descriptors count even
+  when disabled. The first bound reserves a trailing colon and the full composed
+  member token; the second includes the closing numeric's fixed text. An error
+  names the configuration keys, computed sizes and available channel byte budget.
+  Reduce S/N/Cmax rather than clamp the output or truncate identities.
+  With `test.jircd.local` (S=16), N=9 and both providers installed, the 353
+  formula reaches 512 at Cmax=371; the independent WHO bound already limits
+  Cmax to 350 (512 bytes), so the larger NAMES reservation does not newly reject
+  configurations accepted with current WHO validation. The omitted server name
+  is resolved before validation.
   `serverName` remains fixed for the lifetime of the running application;
   reload validates against both the proposed configuration and the running
   prefix before applying extension states or limits. A failed reload keeps

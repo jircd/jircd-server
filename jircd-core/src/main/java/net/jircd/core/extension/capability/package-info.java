@@ -25,7 +25,7 @@
  * provider as {@code FAILED}, with every provider that requires it, through the same publication a
  * disable uses, and stops them without waiting for callbacks still running against an earlier
  * snapshot; nothing recovers it but an explicit enable. Providers must therefore keep their own
- * resources safe for captured callbacks that overlap {@code stop}. All six bundled capabilities
+ * resources safe for captured callbacks that overlap {@code stop}. All bundled capabilities
  * register their behavior here; core keeps only {@code CAP} negotiation and the generic mechanisms
  * the hooks plug into.
  */

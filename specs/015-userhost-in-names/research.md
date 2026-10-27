@@ -22,7 +22,7 @@ All technical unknowns resolved for planning; no user clarification needed.
 
 **Decision**: Declare I=U+H+2 through ReplyLimits, compose with installed status P=2, retain generic packing and validation.
 
-**Rationale**: [spec-014 budgets](../014-capability-plugin-spi/contracts/reply-budgets.md), `ReplyLayout.NAMES_MEMBER`, and `ReplyBudgetCatalog` already support this formula. U=27 and H=63 currently imply I=92. Bounds are serialized UTF-8 bytes beyond nickname. Discovered disabled providers count, so installing the module tightens acceptance of some configurations. Test exact 512-byte fit and overflow with the real catalog, independently of other hostmask checks.
+**Rationale**: [spec-014 budgets](../014-capability-plugin-spi/contracts/reply-budgets.md), `ReplyLayout.NAMES_MEMBER`, and `ReplyBudgetCatalog` already support this formula. U=27 and H=63 currently imply I=92. Bounds are serialized UTF-8 bytes beyond nickname. Discovered disabled providers count, so installing the module increases the NAMES reservation, but the existing WHO bound is stricter by S+5 bytes, so current effective configuration acceptance is unchanged. Test exact 512-byte fit and overflow with the real catalog, independently of other hostmask checks.
 
 **Alternatives considered**: Character lengths undercount multibyte data; identity-only budget tests miss status composition; token truncation violates complete identity semantics.
 

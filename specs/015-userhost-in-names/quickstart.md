@@ -30,10 +30,12 @@ A coordinator must provision an isolated harness Git worktree, carrying the revi
 Build each server revision with `./gradlew :jircd-server:installDist`; set `JIRCD_LAUNCHER` to that worktree's installed launcher and `JIRCD_JAVA_HOME` consistently. In the provisioned harness worktree run:
 
 ```sh
-.venv/bin/python -m pytest -p no:cacheprovider --controller irctest.controllers.jircd -m 'not deprecated and not Ergo and not Sable and not services' --timeout=60 --timeout-method=signal -q -rfEs --junitxml=<per-revision-result.xml>
+RESULTS_DIR=/private/tmp/jircd-117-irctest
+mkdir -p "$RESULTS_DIR"
+.venv/bin/python -m pytest -p no:cacheprovider --controller irctest.controllers.jircd -m 'not deprecated and not Ergo and not Sable and not services' --timeout=60 --timeout-method=signal -q -rfEs --junitxml="$RESULTS_DIR/<revision>.xml"
 ```
 
-Run the three `CapTestCase` targets (`testReqTwo`, `testReqOneThenOne`, `testReqPostRegistration`) first, then full selection on baseline and candidate, sequentially. Save case-level pass/fail/skip deltas, controller patch/hashes and raw output under `validation/irctest.md` and `validation/raw/`. Target cases must pass on candidate; explain all other changes. Inspect and clean up only server processes started by those runs.
+Run the three `CapTestCase` targets (`testReqTwo`, `testReqOneThenOne`, `testReqPostRegistration`) first, then full selection on baseline and candidate, sequentially. Record summarized pass/fail/skip deltas, controller changes and reproduction commands in `validation/irctest.md`; keep original case tables, patches, XML and logs outside the repository. Target cases must pass on candidate; explain all other changes. Inspect and clean up only server processes started by those runs.
 
 ## Performance
 
@@ -44,6 +46,6 @@ Add tagged `UserhostInNamesLoadTest` for 10/100/1,000-member negotiated NAMES, b
 ./gradlew :jircd-integration-tests:loadTest --tests '*Story1DeliveryLatencyLoadTest' --tests '*JoinStormLoadTest' --tests '*CapabilityFanoutLoadTest'
 ```
 
-Measure the repeatable NAMES workload against baseline using a matching test-only workload carried into a baseline worktree (never capability implementation); baseline legitimately uses nickname identities. Record that output-size difference. Use warmup and >=5 matching measured runs per revision with identical member sets/request rates/JVM settings. Preserve raw results, medians/p99/max, throughput and CPU/allocation profiles in `validation/performance.md`. Apply plan budgets, flag >10% regressions, and run full `./gradlew loadTest` because performance budgets are affected.
+Measure the repeatable NAMES workload against baseline using a matching test-only workload carried into a baseline worktree (never capability implementation); baseline legitimately uses nickname identities. Record that output-size difference. Use warmup and >=5 matching measured runs per revision with identical member sets/request rates/JVM settings. Record summarized medians/min/max, p99/max, throughput, CPU/allocation findings and reproduction commands in `validation/performance.md`; keep raw results and profiles outside the repository. Apply plan budgets, flag >10% regressions, and run full `./gradlew loadTest` because performance budgets are affected.
 
 Before a future PR, follow `.github/REVIEW_CHECKLIST.md` and AGENTS.md Sonar/other-vendor review gates. Record real findings and fixes; no PR or commit is part of this planning phase.
