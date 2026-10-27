@@ -341,11 +341,28 @@ behaviour, so removing a module from the classpath removes its offer and its beh
 | `onOutputGroup(prerequisites, hook)` | Framing of a finite group; the group is validated and queued whole, or sent plain when the owner or a prerequisite was not negotiated | `batch` |
 | `command` | Provider-owned command, part of the published snapshot rather than core's command table, so it appears, disappears or moves to another provider exactly when the snapshot does; it can never replace a command core or a server extension handles, and is answered as unknown while no published provider owns it | `message-tags` (`TAGMSG`) |
 
-Hook results are untrusted. An exception, a `null` or an out-of-bounds result is dropped whole,
-reported by provider id, hook and category only, and replaced by the documented default; committed
-core state and other providers are unaffected. Hooks must be pure, nonblocking and thread-safe. Core
+Hook results are untrusted. An exception, a `null` or an out-of-bounds result is dropped whole and
+replaced by the documented default; committed core state and other providers are unaffected. The
+provider is then withdrawn as `FAILED`, with every provider that requires it, through the same
+publication a disable uses (one `CAP DEL`), and stopped off the faulting thread without waiting
+for callbacks still in flight. It stays `FAILED` until an administrator asks for it again: `EXTENSION ENABLE`, or a `REHASH`/`SIGHUP`
+whose `capabilities` entry for that provider changed. A reload that changes anything else leaves it
+`FAILED`. The log
+gets one warning per failure (provider id, hook kind, category; no exception text or client
+content), and repeats are throttled per provider. Valid tags that only overflow one origin
+together drop the later contribution without failing anyone. Hooks must be pure, nonblocking and thread-safe. Core
 applies the owner's enabled state and the declared negotiation prerequisites, so a hook never reads
 a session's capability set.
+
+Planned capabilities map onto these seams without capability-name branches in core; each still
+needs its own domain work:
+
+| Future capability | Seam | Still to build |
+| --- | --- | --- |
+| `account-notify` | an `ACCOUNT_CHANGED` committed event to interested peers | account state and the real event at its commit point |
+| `userhost-in-names` | the NAMES identity slot, composing with the status slot | the `!ident@host` bound and privacy policy |
+| `chathistory` | a provider-owned command and finite groups with batch prerequisites | storage, queries, paging and the history batch type |
+| `labeled-response` | inbound tags, request context, delivery roles and groups | the label wire rules |
 
 Core publishes committed events (`CommittedEvents`) after the state change and with no registry or
 channel monitor held; a kind nobody listens for costs nothing, and a faulty listener never undoes
@@ -362,8 +379,9 @@ prepared after it sees the new state. A batch group picks framed or plain at adm
 current state, so a queued group always keeps its close. Provider `start`/`stop` run outside the
 mutex and must tolerate overlapping callbacks from captured work.
 
-**Status.** Runtime FAILED withdrawal of a provider whose hook faults, and the dedicated load
-measurements, are a later change in the same feature (`specs/014-capability-plugin-spi/`).
+**Status.** Feature 014 is complete: runtime FAILED withdrawal and its diagnostics, and the
+dedicated fan-out and lifecycle load measurements
+(`specs/014-capability-plugin-spi/validation/pr-102/`), landed with #102.
 
 **Migrating code that used the earlier API.** `0.1.0-SNAPSHOT` is unreleased, so these changes
 carry no version bump until the first release.
@@ -384,6 +402,9 @@ carry no version bump until the first release.
 | `CapabilityNegotiationGrammar.ls`, `list` | `lsReplies`, `listReplies` (with 302 continuation lines); `notifications` for `CAP NEW`/`DEL` |
 | A capability provider's command looked up in core's command table (`CommandRegistrar`) | `ExtensionRegistry.capabilityCommand(Command)`; dispatch consults it after core's table. `HookDispatcher.guardedCommand(registration, live, refused)` is gone; the one-argument form wraps faults |
 | `CapabilityRuntime.withdraw` returning a snapshot; `ExtensionRegistry.disable` refusing while a dependent is enabled | `withdraw` returns the withdrawn provider ids; disabling a prerequisite withdraws its hard dependents in the same step |
+| `FaultReporter.logging()` | The registry's own reporter, which withdraws a faulting provider as `FAILED` and logs under the `FaultReporter` logger name. `new ExtensionRegistry(Executor)` chooses where those withdrawals run (tests pass `Runnable::run`); a custom `HookDispatcher` still takes any `FaultReporter` |
+| `ExtensionRegistry.DesiredState` with six components | A seventh, `changedCapabilities`: the entries that differ from the configuration last applied, the only ones that may retry a `FAILED` provider. The six-argument constructor remains and counts every listed entry as changed |
+| A dropped tag contribution that only overflowed the aggregate, reported as `FaultCategory.INVALID_RESULT` | Reported as `FaultCategory.COMPOSITION_LIMIT`, which `providerFault()` says is no provider's fault |
 
 Reply decorations are budgeted by generic layouts (`ReplyLayout`) rather than a per-capability
 width: startup, `REHASH` and runtime enable reserve every installed provider's declared slot bytes

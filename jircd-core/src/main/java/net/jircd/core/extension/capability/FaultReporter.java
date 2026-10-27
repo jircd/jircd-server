@@ -15,35 +15,13 @@
  */
 package net.jircd.core.extension.capability;
 
-import java.util.concurrent.TimeUnit;
-import net.jircd.core.session.WarningThrottle;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 /**
- * Operator-visible report of a dropped hook result. Receives only the provider id, hook kind and a
- * category, so nothing client-controlled or secret can reach the log.
+ * Where a dropped hook result is reported. Receives only the provider id, hook kind and a category,
+ * so nothing client-controlled or secret can reach it. The extension registry's reporter withdraws
+ * a provider at fault as FAILED and logs bounded diagnostics under this interface's logger name.
  */
 @FunctionalInterface
 public interface FaultReporter {
 
   void report(String providerId, HookKind kind, FaultCategory category);
-
-  /** Logs one warning per provider/hook/category per interval, counting the suppressed ones. */
-  static FaultReporter logging() {
-    Logger log = LoggerFactory.getLogger(FaultReporter.class);
-    WarningThrottle throttle =
-        new WarningThrottle(TimeUnit.SECONDS.toNanos(10), 256, System::nanoTime);
-    return (providerId, kind, category) -> {
-      long suppressed = throttle.admit(providerId + '/' + kind + '/' + category);
-      if (suppressed >= 0) {
-        log.warn(
-            "Capability provider '{}' hook {} result dropped ({}); {} similar suppressed",
-            providerId,
-            kind,
-            category,
-            suppressed);
-      }
-    };
-  }
 }

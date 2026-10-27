@@ -21,8 +21,12 @@
  *
  * <p>Every hook result is untrusted and is validated against the bounds declared at registration
  * before it can affect output. A faulty result is dropped, reported by provider id, hook kind and
- * category only, and replaced by the documented default. All six bundled capabilities register
- * their behavior here; core keeps only {@code CAP} negotiation and the generic mechanisms the hooks
- * plug into. Runtime FAILED withdrawal of a faulty provider is delivered later.
+ * category only, and replaced by the documented default. The extension registry then withdraws the
+ * provider as {@code FAILED}, with every provider that requires it, through the same publication a
+ * disable uses, and stops them without waiting for callbacks still running against an earlier
+ * snapshot; nothing recovers it but an explicit enable. Providers must therefore keep their own
+ * resources safe for captured callbacks that overlap {@code stop}. All six bundled capabilities
+ * register their behavior here; core keeps only {@code CAP} negotiation and the generic mechanisms
+ * the hooks plug into.
  */
 package net.jircd.core.extension.capability;

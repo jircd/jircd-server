@@ -1,0 +1,13 @@
+21:54:27 before aaA-warmup | Now drawing from 'AC Power' | load { 2.02 4.34 7.91 }
+21:54:31 before aaB-warmup | Now drawing from 'AC Power' | load { 2.02 4.30 7.88 }
+21:54:36 before aaB-1 | Now drawing from 'AC Power' | load { 3.54 4.58 7.95 }
+21:54:40 before aaA-1 | Now drawing from 'AC Power' | load { 5.10 4.89 8.04 }
+21:54:43 before aaA-2 | Now drawing from 'AC Power' | load { 6.05 5.09 8.09 }
+21:54:47 before aaB-2 | Now drawing from 'AC Power' | load { 6.05 5.09 8.09 }
+21:54:51 before aaB-3 | Now drawing from 'AC Power' | load { 6.05 5.10 8.08 }
+21:54:55 before aaA-3 | Now drawing from 'AC Power' | load { 6.04 5.12 8.07 }
+21:54:59 before aaA-4 | Now drawing from 'AC Power' | load { 7.32 5.40 8.15 }
+21:55:03 before aaB-4 | Now drawing from 'AC Power' | load { 6.98 5.36 8.12 }
+21:55:07 before aaB-5 | Now drawing from 'AC Power' | load { 6.98 5.36 8.12 }
+21:55:11 before aaA-5 | Now drawing from 'AC Power' | load { 7.22 5.43 8.13 }
+21:55:15 after last | Now drawing from 'AC Power' | load { 7.12 5.44 8.12 }

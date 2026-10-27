@@ -706,6 +706,17 @@ after the `DEL`. The provider's `start`/`stop` run outside that mutex and
 must be safe to overlap with such captured work. Core `cap-notify` is not an
 `Extension` and has no state.
 
+`ENABLED` → `FAILED` for a `CapabilityExtension` (#102) also follows a runtime
+hook fault: the faulting provider and every provider that requires it are
+withdrawn in that one publication, then stopped, and all end `FAILED`. A stop
+that throws keeps the cleanup owed (a later disable retries it). `FAILED` →
+`ENABLED` only by an explicit request: `EXTENSION ENABLE`, or a reload whose
+entry for that provider differs from the configuration last applied (a
+reload that changes anything else leaves it `FAILED`). Dependents follow
+the same rule by their own entries. A dependent
+withdrawn because its prerequisite was administratively disabled ends
+`DISABLED`, since nothing failed.
+
 ## ServerConfiguration — *Aggregate Root, Server Extensibility (config) / Administration*
 
 The administrator-controlled settings loaded at startup and re-applied on

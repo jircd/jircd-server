@@ -1,0 +1,12 @@
+CapabilityFanoutLoadTest: recipients=10 phase=message items=2000 p50Ms=30.179 p99Ms=51.485 maxMs=51.765 throughputPerSec=32758 cpuMs=535.1 allocMB=19.8
+CapabilityFanoutLoadTest: recipients=10 phase=away items=200 p50Ms=3.578 p99Ms=5.589 maxMs=5.603 throughputPerSec=29639 cpuMs=46.3 allocMB=1.2
+CapabilityFanoutLoadTest: recipients=10 phase=member items=20 p50Ms=0.407 p99Ms=0.569 maxMs=0.569 throughputPerSec=2837 cpuMs=35.9 allocMB=1.1
+CapabilityFanoutLoadTest: recipients=10 phase=group items=200 p50Ms=0.102 p99Ms=0.206 maxMs=1.025 throughputPerSec=22529 cpuMs=61.1 allocMB=3.3
+CapabilityFanoutLoadTest: recipients=100 phase=message items=20000 p50Ms=49.178 p99Ms=88.318 maxMs=88.883 throughputPerSec=200296 cpuMs=1146.6 allocMB=136.1
+CapabilityFanoutLoadTest: recipients=100 phase=away items=2500 p50Ms=2.495 p99Ms=4.538 maxMs=4.595 throughputPerSec=370723 cpuMs=67.8 allocMB=5.5
+CapabilityFanoutLoadTest: recipients=100 phase=member items=20 p50Ms=0.892 p99Ms=1.466 maxMs=1.466 throughputPerSec=1659 cpuMs=60.7 allocMB=8.1
+CapabilityFanoutLoadTest: recipients=100 phase=group items=2000 p50Ms=0.085 p99Ms=0.191 maxMs=1.031 throughputPerSec=49490 cpuMs=350.3 allocMB=28.4
+CapabilityFanoutLoadTest: recipients=1000 phase=message items=200000 p50Ms=249.814 p99Ms=419.617 maxMs=421.102 throughputPerSec=457053 cpuMs=5201.0 allocMB=1259.3
+CapabilityFanoutLoadTest: recipients=1000 phase=away items=25000 p50Ms=28.687 p99Ms=34.614 maxMs=34.774 throughputPerSec=625435 cpuMs=438.8 allocMB=30.5
+CapabilityFanoutLoadTest: recipients=1000 phase=member items=20 p50Ms=0.827 p99Ms=1.311 maxMs=1.311 throughputPerSec=1564 cpuMs=49.2 allocMB=36.8
+CapabilityFanoutLoadTest: recipients=1000 phase=group items=20000 p50Ms=11.765 p99Ms=24.307 maxMs=33.091 throughputPerSec=94361 cpuMs=2124.1 allocMB=297.2

@@ -42,8 +42,9 @@ import net.jircd.protocol.MessageSerializer;
  * are contained; {@link VirtualMachineError}s are not. The dispatcher holds no locks and keeps no
  * state, so no hook runs under a domain, admin or queue lock taken here.
  *
- * <p>Withdrawing a faulting provider is a lifecycle concern delivered by a later change; until then
- * each dropped result is reported and the next call is attempted afresh.
+ * <p>The dispatcher only reports; what a report does is the reporter's. The extension registry's
+ * withdraws the provider as FAILED, with its hard dependents, outside this call and after the
+ * dropped result has already been replaced by its default, so the call that faulted completes.
  */
 public final class HookDispatcher {
   /** Most delivery intents one event hook may return. */
@@ -417,9 +418,12 @@ public final class HookDispatcher {
         && frame.tags().entrySet().containsAll(member.tags().entrySet());
   }
 
-  /** Reports a tag hook whose contribution was dropped because the aggregate would overflow. */
+  /**
+   * Reports a tag hook whose valid contribution was dropped because the aggregate would overflow
+   * one origin. That is a composition limit, not the provider's fault: it is not withdrawn.
+   */
   public void reportAggregateOverflow(HookRegistration registration) {
-    fault(registration, FaultCategory.INVALID_RESULT);
+    fault(registration, FaultCategory.COMPOSITION_LIMIT);
   }
 
   /** Wraps a provider command handler so its fault is contained and reported. */

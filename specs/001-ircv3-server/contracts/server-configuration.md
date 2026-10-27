@@ -486,5 +486,42 @@ administratorCredentials:
   A nickname change and the client's own `NICK` line are serialized with
   publication, so a notification always addresses the nickname the client
   knows at that point.
-  Complete runtime fault withdrawal (a hook that faults at runtime) is
-  specified with #102.
+- **Runtime capability faults** (014-capability-plugin-spi, #102): a
+  capability hook that throws, returns `null`, or returns an illegal,
+  unauthorized or out-of-bound result (beyond its own declared bound, even
+  if the line would still fit 512 bytes) has that one result replaced by
+  its documented default, so the operation that ran it completes and no
+  committed core state (a JOIN, AWAY, NICK, PART or QUIT) is undone. The
+  provider is then withdrawn as `FAILED` through the same publication a
+  disable uses, together with every provider that requires it: one
+  snapshot swap, the prune from every connected session and one
+  `CAP DEL`. The withdrawal runs off the faulting thread, ordered with
+  `EXTENSION` and reloads; the provider and its dependents are then
+  stopped, dependents first, without waiting for callbacks still running
+  against an earlier snapshot. A stop that throws leaves the provider
+  withdrawn and `FAILED` with the cleanup owed to a later disable; the other
+  stops still run. Nothing recovers automatically. `EXTENSION ENABLE`
+  always retries a `FAILED` provider. A `REHASH` or `SIGHUP` retries one
+  only if the provider's own entry under `capabilities` differs from the
+  configuration last applied: its value changed, or the entry was added or
+  removed. A reload that changes anything else leaves it `FAILED`, even if
+  the file still says `enabled`. The same rule applies to each hard
+  dependent, by its own entry, and to a provider whose start failed. A
+  retry starts the provider afresh and restores no negotiation. A
+  dependent whose entry changed while its prerequisite is still `FAILED`
+  makes the reload invalid (missing prerequisite), so nothing changes. A fault from work captured before a
+  re-enable is still the provider's, and withdraws it again. Valid
+  contributions that only exceed a protocol limit together (two tag
+  providers whose tags do not fit one origin) drop the later one, logged
+  as `COMPOSITION_LIMIT`, and fault no one. The server log gets one warning per failure transition, naming
+  the provider, the hook kind, the reason category and the withdrawn
+  dependents, and never an exception message, stack trace, client content
+  or configuration value; further reports and cleanup warnings for that
+  provider are limited to one per 10 seconds, counting what was
+  suppressed.
+- **Lifecycle cost** (#102 measurements, `specs/014-capability-plugin-spi/validation/pr-102/performance.md`):
+  at 1,000 connected sessions with output and groups flowing, waiting for
+  the administrative mutex plus the snapshot swap and all-session prune
+  stays within a 100 ms p99 budget; `DEL`/`NEW` enqueue, file I/O,
+  provider callbacks and socket drain are measured separately and are not
+  part of it.

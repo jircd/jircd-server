@@ -1,0 +1,42 @@
+# net.jircd.integration.CapabilityFanoutLoadTest.xml tests 3 failures 0
+CapabilityFanoutLoadTest: recipients=10 phase=message items=2000 p50Ms=28.349 p99Ms=46.568 maxMs=46.847 throughputPerSec=25918 cpuMs=583.0 allocMB=46.9
+CapabilityFanoutLoadTest: recipients=10 phase=away items=200 p50Ms=3.221 p99Ms=4.631 maxMs=4.638 throughputPerSec=39903 cpuMs=40.9 allocMB=1.2
+CapabilityFanoutLoadTest: recipients=10 phase=member items=20 p50Ms=0.341 p99Ms=0.471 maxMs=0.471 throughputPerSec=3129 cpuMs=35.8 allocMB=1.1
+CapabilityFanoutLoadTest: recipients=10 phase=group items=200 p50Ms=0.132 p99Ms=0.266 maxMs=1.175 throughputPerSec=22847 cpuMs=65.9 allocMB=3.4
+CapabilityFanoutLoadTest: recipients=10 mixes=[, CAP REQ :message-tags server-time, CAP LS 302|CAP REQ :message-tags server-time echo-message away-notify batch multi-prefix, CAP REQ :multi-prefix away-notify]
+CapabilityFanoutLoadTest: recipients=100 phase=message items=20000 p50Ms=48.040 p99Ms=85.837 maxMs=86.221 throughputPerSec=218357 cpuMs=1142.0 allocMB=136.8
+CapabilityFanoutLoadTest: recipients=100 phase=away items=2500 p50Ms=3.348 p99Ms=4.840 maxMs=4.854 throughputPerSec=477228 cpuMs=66.1 allocMB=3.5
+CapabilityFanoutLoadTest: recipients=100 phase=member items=20 p50Ms=0.610 p99Ms=0.888 maxMs=0.888 throughputPerSec=2197 cpuMs=51.0 allocMB=7.8
+CapabilityFanoutLoadTest: recipients=100 phase=group items=2000 p50Ms=9.821 p99Ms=29.647 maxMs=31.708 throughputPerSec=40385 cpuMs=632.6 allocMB=28.8
+CapabilityFanoutLoadTest: recipients=100 mixes=[, CAP REQ :message-tags server-time, CAP LS 302|CAP REQ :message-tags server-time echo-message away-notify batch multi-prefix, CAP REQ :multi-prefix away-notify]
+CapabilityFanoutLoadTest: recipients=1000 phase=message items=200000 p50Ms=263.017 p99Ms=345.167 maxMs=347.830 throughputPerSec=552043 cpuMs=4559.7 allocMB=1257.2
+CapabilityFanoutLoadTest: recipients=1000 phase=away items=25000 p50Ms=26.521 p99Ms=31.148 maxMs=31.453 throughputPerSec=752736 cpuMs=416.9 allocMB=29.6
+CapabilityFanoutLoadTest: recipients=1000 phase=member items=20 p50Ms=0.680 p99Ms=1.066 maxMs=1.066 throughputPerSec=1540 cpuMs=52.3 allocMB=36.5
+CapabilityFanoutLoadTest: recipients=1000 phase=group items=20000 p50Ms=15.031 p99Ms=32.693 maxMs=42.410 throughputPerSec=131487 cpuMs=1959.3 allocMB=297.0
+CapabilityFanoutLoadTest: recipients=1000 mixes=[, CAP REQ :message-tags server-time, CAP LS 302|CAP REQ :message-tags server-time echo-message away-notify batch multi-prefix, CAP REQ :multi-prefix away-notify]
+# net.jircd.integration.CapabilityLifecycleLoadTest.xml tests 1 failures 0
+CapabilityLifecycleLoadTest: sessions=1000 stage=mutex-wait samples=80 p99Ms=0.002 maxMs=0.002
+CapabilityLifecycleLoadTest: sessions=1000 stage=swap+prune (held) samples=80 p99Ms=1.617 maxMs=1.617
+CapabilityLifecycleLoadTest: sessions=1000 stage=wait+swap+prune (budget) samples=80 p99Ms=1.617 maxMs=1.617
+CapabilityLifecycleLoadTest: sessions=1000 stage=del/new-enqueue samples=80 p99Ms=1.803 maxMs=1.803
+CapabilityLifecycleLoadTest: sessions=1000 stage=extension-change-total samples=60 p99Ms=2.534 maxMs=2.534
+CapabilityLifecycleLoadTest: sessions=1000 stage=rehash-change-total (file I/O, parse, callbacks) samples=20 p99Ms=16.565 maxMs=16.565
+CapabilityLifecycleLoadTest: sessions=1000 stage=del-receipt-after-change-start (includes enqueue and drain) samples=20000 p99Ms=22.220 maxMs=26.580
+CapabilityLifecycleLoadTest: framedGroupsSeen=1195 linesSeen=939180
+# net.jircd.integration.CapabilityPublicationTimingLoadTest.xml tests 1 failures 0
+CapabilityPublicationTimingLoadTest: no-notify disable sessions=1000 cycles=40 p50Ms=0.286 p99Ms=0.414 maxMs=0.414
+CapabilityPublicationTimingLoadTest: no-notify enable sessions=1000 cycles=40 p50Ms=0.082 p99Ms=0.226 maxMs=0.226
+CapabilityPublicationTimingLoadTest: notify-302 disable sessions=1000 cycles=40 p50Ms=1.131 p99Ms=1.776 maxMs=1.776
+CapabilityPublicationTimingLoadTest: notify-302 enable sessions=1000 cycles=40 p50Ms=0.996 p99Ms=5.850 maxMs=5.850
+# net.jircd.integration.ConcurrentConnectionScaleLoadTest.xml tests 1 failures 0
+ConcurrentConnectionScaleLoadTest: messages=20 p50Ms=0.607 p99Ms=0.887 maxMs=0.887
+# net.jircd.integration.ExceptionModesLoadTest.xml tests 1 failures 0
+ExceptionModesLoadTest: joinMs=0.457 messages=20 p50Ms=0.133 maxMs=0.294
+# net.jircd.integration.JoinStormLoadTest.xml tests 1 failures 0
+JoinStormLoadTest: clients=2000 stormMs=2120 quietMessages=18 p50Ms=32.7 p99Ms=106.7 maxMs=106.7
+# net.jircd.integration.KeepAliveLoadTest.xml tests 2 failures 0
+# net.jircd.integration.RateLimitLoadTest.xml tests 1 failures 0
+# net.jircd.integration.SingleWaveJoinStormLoadTest.xml tests 1 failures 0
+SingleWaveJoinStormLoadTest: clients=2000 completed=2000 overflowDisconnects=0 stormMs=1929
+# net.jircd.integration.Story1DeliveryLatencyLoadTest.xml tests 1 failures 0
+Story1DeliveryLatencyLoadTest: messages=50 p50Ms=0.534 p99Ms=0.853 maxMs=0.853
