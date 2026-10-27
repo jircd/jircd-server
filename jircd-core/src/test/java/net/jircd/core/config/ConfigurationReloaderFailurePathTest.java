@@ -28,6 +28,8 @@ import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.FutureTask;
+import java.util.concurrent.TimeUnit;
 import net.jircd.core.extension.AbstractCapabilityExtension;
 import net.jircd.core.extension.CommandRegistrar;
 import net.jircd.core.extension.Extension;
@@ -71,6 +73,7 @@ class ConfigurationReloaderFailurePathTest {
         private final String requires;
         private final Command command;
         volatile boolean stopFails;
+        volatile AssertionError stopError;
         volatile boolean stagingFails;
         volatile boolean startEscapes;
         volatile boolean startFails;
@@ -100,6 +103,7 @@ class ConfigurationReloaderFailurePathTest {
         public void stop() {
             events.add("stop " + id());
             if (stopFails) throw new IllegalStateException("stuck " + id());
+            if (stopError != null) throw stopError;
         }
     }
 
@@ -219,6 +223,83 @@ class ConfigurationReloaderFailurePathTest {
         assertThat(events).containsExactly("stop a");
         assertThat(registry.stateOf("a")).isEqualTo(Extension.State.FAILED);
         assertThat(registry.capabilitySnapshot().providerIds()).isEmpty();
+    }
+
+    @Test
+    void aReloadStopErrorFinishesTheWithdrawalsAndKeepsThePublishedConfiguration()
+            throws Exception {
+        attachContext();
+        register(new Probe("a", null, Command.TAGMSG));
+        Probe b = register(new Probe("b", "a", null));
+        register(new Probe("c", null, Command.TAGMSG));
+        registry.enable("a");
+        registry.enable("b");
+        AssertionError error = new AssertionError("b stop");
+        b.stopError = error;
+        events.clear();
+        ConfigurationReloader reloader =
+                reloader(
+                        "nicknameMaxLength: 31\ncapabilities: {a: disabled, b: disabled, c: enabled}\n");
+        ServerConfiguration previous = reloader.current();
+
+        // An Error is propagated, never returned as a failure map.
+        assertThatThrownBy(reloader::reloadWithOutcome).isSameAs(error);
+        assertThat(registry.stateOf("b")).isEqualTo(Extension.State.FAILED);
+        assertThat(registry.stateOf("a")).isEqualTo(Extension.State.DISABLED);
+        assertThat(registry.stateOf("c")).isEqualTo(Extension.State.ENABLED);
+        assertThat(events).containsExactly("start c", "stop b", "stop a");
+        assertThat(reloader.current()).isNotSameAs(previous);
+        assertThat(reloader.current().nicknameMaxLength()).isEqualTo(31);
+        assertThat(registry.supportedFeatures().nicknameMaxLength()).isEqualTo(31);
+        assertThat(registry.capabilitySnapshot().providerIds()).containsExactly("c");
+        ClientSession session = new ClientSession("c1", "host", RateLimitBucket.withDefaults());
+        registry.capabilityCommand(Command.TAGMSG)
+                .orElseThrow()
+                .handle(session, Message.of(Command.TAGMSG, "#c"));
+        assertThat(events).contains("handled by c").doesNotContain("handled by a");
+
+        // Both the registry lock and reload monitor must be available to another thread.
+        b.stopError = null;
+        b.stopFails = true;
+        var retry = new FutureTask<>(reloader::reloadWithOutcome);
+        Thread.ofPlatform().daemon().start(retry);
+        assertThat(retry.get(5, TimeUnit.SECONDS).failures())
+                .containsExactlyEntriesOf(Map.of("b", "stuck b"));
+        b.stopFails = false;
+        registry.disable("b");
+        assertThat(registry.stateOf("b")).isEqualTo(Extension.State.DISABLED);
+        assertThat(events).filteredOn("stop b"::equals).hasSize(3);
+        assertThat(events).filteredOn("stop a"::equals).hasSize(1);
+    }
+
+    @Test
+    void aReloadCleanupRetryErrorStillFinishesLaterPendingCleanups() throws Exception {
+        Probe a = register(new Probe("a", null, null));
+        Probe b = register(new Probe("b", null, null));
+        registry.enable("a");
+        registry.enable("b");
+        a.stopFails = true;
+        b.stopFails = true;
+        assertThatThrownBy(() -> registry.disable("a")).hasMessage("stuck a");
+        assertThatThrownBy(() -> registry.disable("b")).hasMessage("stuck b");
+        a.stopFails = false;
+        b.stopFails = false;
+        a.stopError = new AssertionError("a cleanup");
+        b.stopError = new AssertionError("b cleanup");
+        events.clear();
+        ConfigurationReloader reloader = reloader("capabilities: {a: disabled, b: disabled}\n");
+
+        assertThatThrownBy(reloader::reloadWithOutcome).isInstanceOf(AssertionError.class);
+        assertThat(registry.stateOf("a")).isEqualTo(Extension.State.FAILED);
+        assertThat(registry.stateOf("b")).isEqualTo(Extension.State.FAILED);
+        assertThat(events).containsExactlyInAnyOrder("stop a", "stop b");
+        a.stopError = null;
+        b.stopError = null;
+        registry.disable("a");
+        registry.disable("b");
+        assertThat(registry.stateOf("a")).isEqualTo(Extension.State.DISABLED);
+        assertThat(registry.stateOf("b")).isEqualTo(Extension.State.DISABLED);
+        assertThat(events).filteredOn("stop a"::equals).hasSize(2);
     }
 
     @Test

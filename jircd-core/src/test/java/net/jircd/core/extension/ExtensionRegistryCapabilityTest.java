@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
@@ -48,6 +49,7 @@ class ExtensionRegistryCapabilityTest {
         final RuntimeException startFailure;
         volatile RuntimeException stopFailure;
         volatile Error startError;
+        volatile AssertionError stopError;
         final AtomicInteger starts = new AtomicInteger();
         final AtomicInteger stops = new AtomicInteger();
 
@@ -73,6 +75,7 @@ class ExtensionRegistryCapabilityTest {
         public void stop() {
             stops.incrementAndGet();
             if (stopFailure != null) throw stopFailure;
+            if (stopError != null) throw stopError;
         }
 
         @Override
@@ -588,9 +591,45 @@ class ExtensionRegistryCapabilityTest {
         assertThat(registry.capabilitySnapshot().providerIds()).isEmpty();
     }
 
+    @Test
+    void aDisableStopErrorRecordsTheDependentAndStillStopsItsPrerequisite() throws Exception {
+        ExtensionRegistry registry = registry("test.jircd.local");
+        Provider base = tagProvider("base", "base-tag");
+        Provider child = new Provider("child", r -> r.requiresProviders("base"), null);
+        registry.register(base);
+        registry.register(child);
+        registry.enable("base");
+        registry.enable("child");
+        AssertionError error = new AssertionError("child stop");
+        child.stopError = error;
+
+        assertThatThrownBy(() -> registry.disable("base")).isSameAs(error);
+        assertThat(registry.stateOf("child")).isEqualTo(Extension.State.FAILED);
+        assertThat(registry.stateOf("base")).isEqualTo(Extension.State.DISABLED);
+        assertThat(child.stops).hasValue(1);
+        assertThat(base.stops).hasValue(1);
+        assertThat(registry.capabilitySnapshot().providerIds()).isEmpty();
+
+        // A different thread must acquire the lifecycle lock and retry the owed cleanup.
+        child.stopError = null;
+        var retry =
+                new FutureTask<>(
+                        () -> {
+                            registry.disable("child");
+                            return null;
+                        });
+        Thread.ofPlatform().daemon().start(retry);
+        retry.get(5, TimeUnit.SECONDS);
+        assertThat(child.stops).hasValue(2);
+        assertThat(base.stops).hasValue(1);
+        assertThat(registry.stateOf("child")).isEqualTo(Extension.State.DISABLED);
+    }
+
     private static final class PointOwner implements ServerExtension {
         private final String id;
         volatile RuntimeException stopFailure;
+        volatile AssertionError stopError;
+        final AtomicInteger stops = new AtomicInteger();
         volatile RuntimeException startFailure;
 
         PointOwner(String id) {
@@ -614,7 +653,9 @@ class ExtensionRegistryCapabilityTest {
 
         @Override
         public void stop() {
+            stops.incrementAndGet();
             if (stopFailure != null) throw stopFailure;
+            if (stopError != null) throw stopError;
         }
     }
 
@@ -632,6 +673,30 @@ class ExtensionRegistryCapabilityTest {
                 .isInstanceOf(ExtensionRegistry.ExtensionPointConflictException.class);
         first.stopFailure = null;
         registry.disable("first");
+        assertThat(registry.stateOf("first")).isEqualTo(Extension.State.DISABLED);
+        registry.enable("second");
+        assertThat(registry.stateOf("second")).isEqualTo(Extension.State.ENABLED);
+    }
+
+    @Test
+    void aStopErrorKeepsTheExtensionPointClaimUntilARetriedDisableSucceeds() {
+        ExtensionRegistry registry = registry("test.jircd.local");
+        PointOwner first = new PointOwner("first");
+        registry.register(first);
+        registry.register(new PointOwner("second"));
+        registry.enable("first");
+        AssertionError error = new AssertionError("stop escaped");
+        first.stopError = error;
+
+        assertThatThrownBy(() -> registry.disable("first")).isSameAs(error);
+        assertThat(registry.stateOf("first")).isEqualTo(Extension.State.FAILED);
+        assertThat(first.stops).hasValue(1);
+        assertThatThrownBy(() -> registry.enable("second"))
+                .isInstanceOf(ExtensionRegistry.ExtensionPointConflictException.class);
+
+        first.stopError = null;
+        registry.disable("first");
+        assertThat(first.stops).hasValue(2);
         assertThat(registry.stateOf("first")).isEqualTo(Extension.State.DISABLED);
         registry.enable("second");
         assertThat(registry.stateOf("second")).isEqualTo(Extension.State.ENABLED);
