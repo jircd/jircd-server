@@ -19,7 +19,7 @@ An earlier pair from the same day was discarded: the machine was suspended while
 | Baseline (main) | 315 | 155 | 4 | 186 | 3m54s |
 | Candidate | 315 | 155 | 4 | 186 | 3m59s |
 
-A case-level comparison of the two JUnit XML reports (classname + test name → pass/fail/skip) finds **no differences**: no new failures, no new skips, no newly passing cases. The per-case lists are byte-identical (sha256 `3f1158da…3de8`): [raw/irctest-baseline-cases.tsv](raw/irctest-baseline-cases.tsv), [raw/irctest-candidate-cases.tsv](raw/irctest-candidate-cases.tsv).
+A case-level comparison of the two JUnit XML reports (classname + test name → pass/fail/skip) finds **no differences**: no new failures, no new skips, no newly passing cases. The per-case lists are byte-identical (sha256 `3f1158da…3de8`).
 
 ## Baseline failures (unchanged, unrelated)
 
