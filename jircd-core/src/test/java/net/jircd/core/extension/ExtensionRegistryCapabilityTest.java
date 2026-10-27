@@ -631,6 +631,7 @@ class ExtensionRegistryCapabilityTest {
         volatile AssertionError stopError;
         final AtomicInteger stops = new AtomicInteger();
         volatile RuntimeException startFailure;
+        volatile boolean pointThrows;
 
         PointOwner(String id) {
             this.id = id;
@@ -643,6 +644,7 @@ class ExtensionRegistryCapabilityTest {
 
         @Override
         public String extensionPoint() {
+            if (pointThrows) throw new AssertionError("point lookup");
             return "shared-point";
         }
 
@@ -657,6 +659,22 @@ class ExtensionRegistryCapabilityTest {
             if (stopFailure != null) throw stopFailure;
             if (stopError != null) throw stopError;
         }
+    }
+
+    @Test
+    void disablingDoesNotCallTheExtensionPointCallbackAgain() {
+        ExtensionRegistry registry = registry("test.jircd.local");
+        PointOwner first = new PointOwner("first");
+        registry.register(first);
+        registry.register(new PointOwner("second"));
+        registry.enable("first");
+        first.pointThrows = true;
+
+        assertThatCode(() -> registry.disable("first")).doesNotThrowAnyException();
+        assertThat(first.stops).hasValue(1);
+        assertThat(registry.stateOf("first")).isEqualTo(Extension.State.DISABLED);
+        registry.enable("second");
+        assertThat(registry.stateOf("second")).isEqualTo(Extension.State.ENABLED);
     }
 
     @Test

@@ -18,6 +18,9 @@ package net.jircd.core.config;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -35,6 +38,7 @@ import net.jircd.core.extension.CommandRegistrar;
 import net.jircd.core.extension.Extension;
 import net.jircd.core.extension.ExtensionRegistry;
 import net.jircd.core.extension.ServerContext;
+import net.jircd.core.extension.ServerExtension;
 import net.jircd.core.extension.SupportedFeatures;
 import net.jircd.core.extension.capability.CapabilityRegistrar;
 import net.jircd.core.session.ClientSession;
@@ -44,6 +48,7 @@ import net.jircd.protocol.Command;
 import net.jircd.protocol.Message;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.slf4j.LoggerFactory;
 
 /**
  * Reload failure paths: a pending cleanup survives a failed re-enable, a command moves from a
@@ -107,6 +112,57 @@ class ConfigurationReloaderFailurePathTest {
         }
     }
 
+    private final class ServerProbe implements ServerExtension {
+        private final String id;
+        boolean stopFails;
+        AssertionError stopError;
+
+        ServerProbe(String id) {
+            this.id = id;
+        }
+
+        @Override
+        public String id() {
+            return id;
+        }
+
+        @Override
+        public void start(ServerContext context) {
+            events.add("start " + id);
+        }
+
+        @Override
+        public void stop() {
+            events.add("stop " + id);
+            if (stopFails) throw new IllegalStateException("stuck " + id);
+            if (stopError != null) throw stopError;
+        }
+    }
+
+    private static List<ILoggingEvent> captureLogs(Runnable action) {
+        Logger logger = (Logger) LoggerFactory.getLogger(ExtensionRegistry.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            action.run();
+            return List.copyOf(appender.list);
+        } finally {
+            logger.detachAppender(appender);
+            appender.stop();
+        }
+    }
+
+    private static void assertFailureLogged(List<ILoggingEvent> logs, String id, String reason) {
+        assertThat(logs)
+                .anySatisfy(
+                        event -> {
+                            assertThat(event.getLevel())
+                                    .isEqualTo(ch.qos.logback.classic.Level.WARN);
+                            assertThat(event.getFormattedMessage()).contains(id, reason);
+                        });
+    }
+
     private void attachContext() {
         CommandRegistrar commands =
                 new CommandRegistrar() {
@@ -144,7 +200,8 @@ class ConfigurationReloaderFailurePathTest {
 
     private ConfigurationReloader reloader(String yaml) throws Exception {
         ConfigurationLoader loader =
-                new ConfigurationLoader(Set.of("a", "b", "c", "fickle"), Set.of());
+                new ConfigurationLoader(
+                        Set.of("a", "b", "c", "fickle"), Set.of("server-a", "server-b"));
         ServerConfiguration initial =
                 loader.load(new ByteArrayInputStream(HEADER.getBytes(StandardCharsets.UTF_8)));
         Path file = directory.resolve("reload.yaml");
@@ -273,6 +330,88 @@ class ConfigurationReloaderFailurePathTest {
     }
 
     @Test
+    void aServerStopErrorDoesNotSkipTheRemainingDesiredChanges() throws Exception {
+        ServerProbe a = new ServerProbe("server-a");
+        ServerProbe b = new ServerProbe("server-b");
+        registry.register(a);
+        registry.register(b);
+        registry.enable(a.id());
+        registry.enable(b.id());
+        a.stopError = new AssertionError("server stop");
+        events.clear();
+        ConfigurationReloader reloader =
+                reloader("server-extensions: {server-a: disabled, server-b: disabled}\n");
+
+        assertThatThrownBy(reloader::reloadWithOutcome).isSameAs(a.stopError);
+        assertThat(registry.stateOf(a.id())).isEqualTo(Extension.State.FAILED);
+        assertThat(registry.stateOf(b.id())).isEqualTo(Extension.State.DISABLED);
+        assertThat(events).containsExactly("stop server-a", "stop server-b");
+        a.stopError = null;
+        registry.disable(a.id());
+        assertThat(registry.stateOf(a.id())).isEqualTo(Extension.State.DISABLED);
+        assertThat(events).filteredOn("stop server-a"::equals).hasSize(2);
+    }
+
+    @Test
+    void aDisableErrorLogsTheOtherCollectedStopFailures() {
+        Probe a = register(new Probe("a", null, null));
+        Probe b = register(new Probe("b", "a", null));
+        registry.enable("a");
+        registry.enable("b");
+        b.stopFails = true;
+        a.stopError = new AssertionError("a stop");
+
+        List<ILoggingEvent> logs =
+                captureLogs(
+                        () ->
+                                assertThatThrownBy(() -> registry.disable("a"))
+                                        .isSameAs(a.stopError));
+        assertFailureLogged(logs, "b", "stuck b");
+        assertThat(registry.stateOf("b")).isEqualTo(Extension.State.FAILED);
+    }
+
+    @Test
+    void aReloadErrorLogsTheOtherCollectedStopFailures() throws Exception {
+        Probe a = register(new Probe("a", null, null));
+        Probe b = register(new Probe("b", "a", null));
+        registry.enable("a");
+        registry.enable("b");
+        b.stopFails = true;
+        a.stopError = new AssertionError("a stop");
+        ConfigurationReloader reloader = reloader("capabilities: {a: disabled, b: disabled}\n");
+
+        List<ILoggingEvent> logs =
+                captureLogs(
+                        () ->
+                                assertThatThrownBy(reloader::reloadWithOutcome)
+                                        .isSameAs(a.stopError));
+        assertFailureLogged(logs, "b", "stuck b");
+        assertThat(registry.stateOf("b")).isEqualTo(Extension.State.FAILED);
+    }
+
+    @Test
+    void aServerReconciliationErrorLogsTheOtherCollectedFailures() throws Exception {
+        ServerProbe a = new ServerProbe("server-a");
+        ServerProbe b = new ServerProbe("server-b");
+        registry.register(a);
+        registry.register(b);
+        registry.enable(a.id());
+        registry.enable(b.id());
+        a.stopError = new AssertionError("server stop");
+        b.stopFails = true;
+        ConfigurationReloader reloader =
+                reloader("server-extensions: {server-a: disabled, server-b: disabled}\n");
+
+        List<ILoggingEvent> logs =
+                captureLogs(
+                        () ->
+                                assertThatThrownBy(reloader::reloadWithOutcome)
+                                        .isSameAs(a.stopError));
+        assertFailureLogged(logs, "server-b", "stuck server-b");
+        assertThat(registry.stateOf(b.id())).isEqualTo(Extension.State.FAILED);
+    }
+
+    @Test
     void aReloadCleanupRetryErrorStillFinishesLaterPendingCleanups() throws Exception {
         Probe a = register(new Probe("a", null, null));
         Probe b = register(new Probe("b", null, null));
@@ -282,6 +421,9 @@ class ConfigurationReloaderFailurePathTest {
         b.stopFails = true;
         assertThatThrownBy(() -> registry.disable("a")).hasMessage("stuck a");
         assertThatThrownBy(() -> registry.disable("b")).hasMessage("stuck b");
+        assertThat(registry.stateOf("a")).isEqualTo(Extension.State.FAILED);
+        assertThat(registry.stateOf("b")).isEqualTo(Extension.State.FAILED);
+        assertThat(registry.capabilitySnapshot().providerIds()).isEmpty();
         a.stopFails = false;
         b.stopFails = false;
         a.stopError = new AssertionError("a cleanup");
