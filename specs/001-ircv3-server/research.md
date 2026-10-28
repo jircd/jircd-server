@@ -87,9 +87,9 @@ a dedicated grammar class — unlike `CAP`, which does get one
 (`CapabilityNegotiationGrammar`, T018). What *does* get its own defined
 grammar is the **nickname format** itself (RFC 2812 §2.3.1: one leading
 letter/`special` character, up to 8 more letters/digits/`special`/`-`,
-9 characters total) and the **username** content rule (any octet except
-NUL/CR/LF/space/`@`, truncated to 9 characters for the `ident` shown in
-the hostmask) — both now spelled out in
+9 characters total) and the **username** content rule (any character except space, `@`, and ISO control
+characters — C0, DEL and C1 — truncated to 9 characters for the `ident`
+shown in the hostmask, never splitting a surrogate pair) — both now spelled out in
 contracts/irc-protocol-commands.md's "Connection Registration Grammar".
 Registration *completion sequencing* (what combination/order of `NICK`,
 `USER`, and optional `CAP` negotiation triggers `001 RPL_WELCOME`) is a
