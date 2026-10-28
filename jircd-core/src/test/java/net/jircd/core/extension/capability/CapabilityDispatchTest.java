@@ -30,6 +30,8 @@ import net.jircd.core.session.RateLimitBucket;
 import net.jircd.protocol.Command;
 import net.jircd.protocol.Message;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class CapabilityDispatchTest {
     private record Fault(String provider, HookKind kind, FaultCategory category) {}
@@ -446,6 +448,19 @@ class CapabilityDispatchTest {
             assertThat(dispatcher.namesIdentity(broken, Set.of("b"), member())).isEqualTo("nick");
         }
         assertThat(faults).hasSize(4);
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {0x80, 0x85, 0x9f})
+    void namesIdentityRejectsC1ControlsAndFallsBackToNickname(int control) {
+        String identity = "nick!id@ho" + (char) control + "st";
+        RuntimeSnapshot snapshot =
+                snapshotOf("uh", r -> r.onNamesIdentity(limits -> 100, m -> identity));
+
+        assertThat(dispatcher.namesIdentity(snapshot, Set.of("uh"), member())).isEqualTo("nick");
+        assertThat(faults)
+                .containsExactly(
+                        new Fault("uh", HookKind.NAMES_IDENTITY, FaultCategory.INVALID_RESULT));
     }
 
     @Test

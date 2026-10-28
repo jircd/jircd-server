@@ -32,8 +32,8 @@ Planned for the first release:
 - Real-time connection registration, channel messaging, and moderation
   (classic first-join-gets-operator model)
 - IRCv3 capability negotiation, with `message-tags`, `server-time`, and
-  `echo-message` as the initial capability set; `away-notify`, `batch` and
-  `multi-prefix` are available too
+  `echo-message` as the initial capability set; `away-notify`, `batch`,
+  `multi-prefix`, and `userhost-in-names` are available too
 - Runtime-toggleable extensions, configurable via file or in-band IRC
   administrative commands
 - Standard `nickname!ident@hostname` identity presentation, with an
@@ -44,7 +44,8 @@ out of scope for the first release — see the spec for the reasoning.
 
 The outgoing command section (prefix, command, parameters, and CRLF) is limited
 to 512 UTF-8 bytes. IRCv3 tags use a separate budget and never consume those bytes.
-NAMES replies split between complete nicknames. Oversized PRIVMSG and NOTICE
+NAMES replies split between complete member tokens, including any negotiated
+status and identity decorations. Oversized PRIVMSG and NOTICE
 text is shortened at a Unicode character boundary after reserving room for
 the sender prefix and target. Other oversized messages are logged and dropped;
 subsequent messages continue to be delivered. Tags have a separate 8191-byte
@@ -61,10 +62,16 @@ reload.
 
 Startup and reload reject unsafe combinations of the resolved server-name byte
 length `S`, nickname limit `N`, and channel byte limit `Cmax`: both
-`S + 2N + Cmax + 15 <= 512` (353, with the two-symbol `multi-prefix` status
-installed) and `S + N + Cmax + 29 <= 512` (366) must hold. Validation names the keys, computed reply sizes, and available channel
-byte budget. Reduce the configured limits or use a shorter server name to migrate
-an incompatible configuration; a failed reload keeps the previous settings.
+`S + 2N + Cmax + 13 + P + I <= 512` (353) and
+`S + N + Cmax + 29 <= 512` (366) must hold. Installed `multi-prefix`
+reserves `P=2`; installed `userhost-in-names` reserves `I=U+H+2=92` bytes beyond
+the nickname with the bundled limits (`U=27` ident bytes, `H=63` display-host
+bytes). These reservations apply even to disabled installed providers. Validation names the
+keys, computed reply sizes, and available channel byte budget. Reduce the
+configured limits or use a shorter server name if validation rejects them;
+a failed reload keeps the previous settings. The existing WHO bound is stricter
+than this combined NAMES bound by `S+5` bytes, so adding this provider does not
+further restrict currently accepted configurations with the bundled providers.
 Replies that carry a nick!user@host are budgeted too, with a username of up to 27
 bytes and a presented host of up to 63 bytes (see the contract below); the widest
 is WHO's 352, `2S + 2N + Cmax + 27 + 63 + 22 <= 512`. A host an extension returns
@@ -328,7 +335,7 @@ through typed registrations instead of core branching on its name. Override
 `CapabilityExtension.register(CapabilityRegistrar)` to stage hooks; nothing is visible until the
 whole descriptor validates and is published, and a failed enable leaves nothing published. Core
 keeps CAP negotiation and the generic mechanisms (authorized delivery, committed events, reply
-layouts and budgets, whole-frame queue admission); all six bundled capabilities now own their
+layouts and budgets, whole-frame queue admission); all seven bundled capabilities own their
 behaviour, so removing a module from the classpath removes its offer and its behaviour together.
 
 | Registration | Purpose | Used by |
@@ -337,7 +344,7 @@ behaviour, so removing a module from the classpath removes its offer and its beh
 | `onInboundTags` | Selects the client-only (`+`) tags to forward and provider-scoped request context; a recipient that negotiated the owner sees the forwarded tags | `message-tags` |
 | `onRecipients` | Asks for a `SENDER_COPY` role for the sender of a permitted `PRIVMSG`/`NOTICE`/`TAGMSG`; core merges roles so a recipient gets the message once | `echo-message` |
 | `onEvent(kind, hook)` | Reacts to a committed `AWAY_CHANGED`, `JOINED`, `PARTED`, `KICKED`, `QUIT` or `NICK_CHANGED` with delivery intents for peers drawn from the event's audience; recipients are narrowed to those that negotiated the capability | `away-notify` |
-| `onMemberStatus`, `onNamesIdentity`, `onReplyField` | Bounded decorations of schema-declared reply slots (the status of a NAMES token or channel WHO entry, the NAMES identity) | `multi-prefix` (status) |
+| `onMemberStatus`, `onNamesIdentity`, `onReplyField` | Bounded decorations of schema-declared reply slots (the status of a NAMES token or channel WHO entry, the NAMES identity) | `multi-prefix` (status), `userhost-in-names` (identity) |
 | `onOutputGroup(prerequisites, hook)` | Framing of a finite group; the group is validated and queued whole, or sent plain when the owner or a prerequisite was not negotiated | `batch` |
 | `command` | Provider-owned command, part of the published snapshot rather than core's command table, so it appears, disappears or moves to another provider exactly when the snapshot does; it can never replace a command core or a server extension handles, and is answered as unknown while no published provider owns it | `message-tags` (`TAGMSG`) |
 
@@ -409,8 +416,15 @@ carry no version bump until the first release.
 Reply decorations are budgeted by generic layouts (`ReplyLayout`) rather than a per-capability
 width: startup, `REHASH` and runtime enable reserve every installed provider's declared slot bytes
 with the same arithmetic. `multi-prefix` declares the two operator and voice symbols of
-`PREFIX=(ov)@+`, so with the module installed (as in every shipped build) the reserved envelope is
-unchanged; a server without it reserves only core's one-byte highest status.
+`PREFIX=(ov)@+`; a server without it reserves only core's one-byte highest status.
+`userhost-in-names` contributes `U+H+2` identity bytes independently, so the
+combined token may be `@+nick!ident@displayHost`. Its hook uses only the already
+permitted display host, including the cloak, never a protected real hostname.
+Enable it under `capabilities: {userhost-in-names: enabled}` (omitted means
+disabled). It applies to targeted/bare NAMES and automatic JOIN/SAJOIN listings
+only after client negotiation, before or after registration. WHO and ordinary
+clients keep their existing behavior. Disabling prunes negotiation through the
+normal lifecycle; re-enabling requires a fresh CAP REQ.
 
 ### Outbound queue (SendQ) policy
 

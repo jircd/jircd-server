@@ -21,6 +21,7 @@ dependencies {
     runtimeOnly(project(":jircd-capabilities:away-notify"))
     runtimeOnly(project(":jircd-capabilities:batch"))
     runtimeOnly(project(":jircd-capabilities:multi-prefix"))
+    runtimeOnly(project(":jircd-capabilities:userhost-in-names"))
     runtimeOnly(project(":jircd-server-extensions:cloak"))
     runtimeOnly(project(":jircd-server-extensions:admin"))
 }

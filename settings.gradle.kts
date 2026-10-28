@@ -16,6 +16,7 @@ include(
     "jircd-capabilities:away-notify",
     "jircd-capabilities:batch",
     "jircd-capabilities:multi-prefix",
+    "jircd-capabilities:userhost-in-names",
     "jircd-server-extensions",
     "jircd-server-extensions:cloak",
     "jircd-server-extensions:admin",

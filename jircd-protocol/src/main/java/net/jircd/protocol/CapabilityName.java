@@ -33,6 +33,9 @@ public final class CapabilityName {
     public static final String BATCH = "batch";
     public static final String MULTI_PREFIX = "multi-prefix";
 
+    /** Negotiates full nick!ident@displayHost identities in NAMES replies. */
+    public static final String USERHOST_IN_NAMES = "userhost-in-names";
+
     /**
      * Core infrastructure, not a provider: always offered in {@code CAP LS}, never a toggleable
      * extension. It opts a pre-302 client in to {@code CAP NEW}/{@code DEL} notifications.
