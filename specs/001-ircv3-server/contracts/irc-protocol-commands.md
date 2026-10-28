@@ -136,7 +136,7 @@ and length are actually legal, independent of parameter count:
   "Edge case: nickname format" note there previously pointed at without
   ever stating.
 - **Username** (the `<user>` parameter of `USER`, RFC 2812 §2.3.1's
-  `user` production): any octet except NUL, CR, LF, space, and `@` — no
+  `user` production): any character except space, `@`, and ISO control characters (C0 including NUL, CR, LF, TAB and \x01, DEL, and C1) — no
   length limit specified by the RFC itself, but this server MUST apply
   the same 9-character limit as `Hostmask`'s `ident` field for display
   consistency (contracts/irc-protocol-commands.md intro; FR-030) — an

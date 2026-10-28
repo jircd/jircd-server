@@ -75,7 +75,12 @@ public final class UserCommandHandler implements CommandHandler {
 
         String ident = Hostmask.isValidUsernameContent(username) ? username : "user";
         if (ident.length() > ServerConfiguration.IDENT_MAX_CHARS) {
-            ident = ident.substring(0, ServerConfiguration.IDENT_MAX_CHARS);
+            int end = ServerConfiguration.IDENT_MAX_CHARS;
+            // Don't cut between a surrogate pair: a lone high surrogate encodes as '?'.
+            if (Character.isHighSurrogate(ident.charAt(end - 1))) {
+                end--;
+            }
+            ident = ident.substring(0, end);
         }
         session.setIdent(ident);
         session.setRealname(realname);

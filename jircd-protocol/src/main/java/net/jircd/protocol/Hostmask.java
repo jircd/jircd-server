@@ -54,8 +54,9 @@ public final class Hostmask {
     }
 
     /**
-     * The {@code <user>} parameter's content rule: any octet except NUL, CR, LF, space, and
-     * {@code @} — no length limit at this layer (truncation to the ident display length is the
+     * The {@code <user>} parameter's content rule: any character except space, {@code @}, and ISO
+     * control characters (C0 including NUL, CR, LF, TAB and the CTCP delimiter {@code 0x01}, DEL,
+     * and C1) — no length limit at this layer (truncation to the ident display length is the
      * caller's concern, e.g. {@code UserCommandHandler}).
      */
     public static boolean isValidUsernameContent(String username) {
@@ -64,7 +65,7 @@ public final class Hostmask {
         }
         for (int i = 0; i < username.length(); i++) {
             char c = username.charAt(i);
-            if (c == '\0' || c == '\r' || c == '\n' || c == ' ' || c == '@') {
+            if (c == ' ' || c == '@' || Character.isISOControl(c)) {
                 return false;
             }
         }
