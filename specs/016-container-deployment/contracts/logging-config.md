@@ -20,8 +20,8 @@ logging:
 - The file is rotated daily and by size: 50 MB per file, 30 days of history, 1 GB in total, gzip-compressed. Archives are named `<file>.<yyyy-MM-dd>.<n>.gz`, in the same directory.
 - A relative `file` is resolved against the server's working directory.
 - The file's directory must already exist and be writable. If the file exists, it must be a regular writable file. Otherwise the configuration is rejected and the message names the path and the reason.
-- On reload, an unchanged destination keeps logging without interruption. A changed `file` opens the new file before the old one is closed. A rejected `logging` section rejects the whole reload, and the previous configuration, logging included, stays in force.
-- If the JVM is started with `-Dlogback.configurationFile=<file>`, this section is ignored. One INFO line at startup says so, and logback is configured entirely by that file.
+- On reload, an unchanged destination keeps logging without interruption. A changed `file` opens the new file before the old one is closed. The switch is not atomic: a line logged at the instant of the switch can be lost or reach only one destination, and lines logged during the overlap may appear in both files. A rejected `logging` section rejects the whole reload, and the previous configuration, logging included, stays in force.
+- If the JVM is started with `-Dlogback.configurationFile=<file>`, this section is ignored and is not validated either (a `file` whose directory is missing does not stop the server). One INFO line at startup says so, and logback is configured entirely by that file.
 
 ## Migration from earlier snapshots
 

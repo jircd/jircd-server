@@ -85,7 +85,7 @@ A maintainer merges a change and the project's CI builds both image variants and
 - The configuration sets a listener port other than the defaults: the image works, and the docs say the published ports must match the configuration.
 - The configuration names a log file whose directory does not exist or is not writable, at startup: startup fails with a message naming the path and the reason. A reload with such a path is rejected, and the previous logging setup stays in effect.
 - The configuration turns console logging off and sets no log file: the configuration is rejected, because the server would otherwise run with no log output at all.
-- A reload changes the log file path or turns console logging on or off: the new setup takes effect without a restart, and no log line is lost or duplicated across the switch.
+- A reload changes the log file path or turns console logging on or off: the new setup takes effect without a restart, and lines logged before and after the switch reach the destinations configured at that time. The switch is not atomic: a line logged at the very instant of the switch can be lost or reach only one destination.
 - The configuration sets the MOTD file: it must point at a mounted file. The docs must say which paths are writable.
 - The operator sends the reload signal while a previous reload is still running: same behaviour as on a host install.
 - The stop signal arrives during startup, before the listeners are bound: the process exits cleanly with no partial state.

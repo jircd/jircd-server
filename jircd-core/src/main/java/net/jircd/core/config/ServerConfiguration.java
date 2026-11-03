@@ -16,6 +16,7 @@
 package net.jircd.core.config;
 
 import java.net.InetAddress;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 
@@ -32,6 +33,8 @@ import java.util.Map;
  * The path is read live from the current configuration, so a reload can point at another file.
  * {@code adminName}, {@code adminLocation} and {@code adminEmail} are the optional {@code ADMIN}
  * contact lines; when all three are {@code null}, {@code ADMIN} answers {@code 423}.
+ *
+ * <p>{@code logging} is where log lines go (spec 016, {@link Logging}); a reload applies it.
  */
 public record ServerConfiguration(
         Map<String, Boolean> capabilityStates,
@@ -59,7 +62,8 @@ public record ServerConfiguration(
         String motdPath,
         String adminName,
         String adminLocation,
-        String adminEmail) {
+        String adminEmail,
+        Logging logging) {
 
     public ServerConfiguration {
         connectionLimitOverrides = List.copyOf(connectionLimitOverrides);
@@ -187,6 +191,18 @@ public record ServerConfiguration(
     public static final int DEFAULT_MAX_CONNECTIONS_PER_IP = 20;
 
     public record RateLimit(int bucketSize, double refillRatePerSecond) {}
+
+    /**
+     * The optional {@code logging} section (spec 016 FR-006): {@code console} sends every log line
+     * to standard output (default on); {@code file}, when not {@code null}, also writes them to
+     * that absolute, normalized path, rotated daily and by size. The loader guarantees at least one
+     * destination and that the file's directory existed and was writable when it was read.
+     */
+    public record Logging(boolean console, Path file) {
+
+        /** No {@code logging} section: standard output only, no log file. */
+        public static final Logging DEFAULT = new Logging(true, null);
+    }
 
     public record AdministratorCredential(String username, String hashedPassword) {}
 

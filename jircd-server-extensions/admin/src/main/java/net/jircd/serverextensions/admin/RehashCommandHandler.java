@@ -77,7 +77,10 @@ public final class RehashCommandHandler implements CommandHandler {
                                             serverName.get(),
                                             "Rehash could not apply " + id + ": " + reason));
         } catch (ConfigurationException e) {
-            AdminNotices.send(session, serverName.get(), "Rehash failed: " + e.getMessage());
+            AdminNotices.send(
+                    session,
+                    serverName.get(),
+                    "Rehash failed: " + e.messageNaming(configurationReloader.configPath()));
         } catch (IOException e) {
             AdminNotices.send(
                     session, serverName.get(), "Rehash failed: could not read configuration file");

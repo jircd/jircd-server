@@ -1,0 +1,41 @@
+# Sample configuration for the jircd container image (spec 016).
+# Copy this file to a directory of your own, outside the repository (for example /srv/jircd), and
+# mount that directory read-only at /etc/jircd:
+#
+#   docker run --read-only -p 6667:6667 -v /srv/jircd:/etc/jircd:ro ghcr.io/jircd/jircd-server
+#
+# Keep your configuration, certificates and private keys in that directory, never in the
+# repository: this folder is excluded from the image build context, and a key committed here would
+# end up in version control. The container runs as uid 65532, so every file in your directory must
+# be readable by that user (mode 644, or 640 with group 65532).
+# The full schema is in specs/001-ircv3-server/contracts/server-configuration.md.
+
+serverName: irc.example.org
+
+listeners:
+  - port: 6667
+    tls: false
+  # TLS: put cert.pem (certificate chain) and key.pem (PKCS#8 private key) next to your copy,
+  # publish -p 6697:6697, and uncomment.
+  # - port: 6697
+  #   tls: true
+  #   certPath: /etc/jircd/cert.pem
+  #   keyPath: /etc/jircd/key.pem
+
+# Logs go to standard output (`docker logs`). To also keep a rotating file, mount a writable
+# volume (for example -v jircd-logs:/var/log/jircd) and uncomment:
+# logging:
+#   console: true
+#   file: /var/log/jircd/jircd.log
+
+# Optional IRCv3 capabilities, all off by default:
+# capabilities:
+#   message-tags: enabled
+#   server-time: enabled
+
+# Operators: enable the admin extension and add an Argon2id or bcrypt hash (never a plain password).
+# server-extensions:
+#   admin: enabled
+# administratorCredentials:
+#   - username: admin
+#     hashedPassword: "$argon2id$v=19$m=...,t=...,p=...$..."

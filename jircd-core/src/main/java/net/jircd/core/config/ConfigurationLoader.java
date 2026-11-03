@@ -19,6 +19,10 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.nio.file.AccessDeniedException;
+import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
+import java.nio.file.Path;
 import java.security.GeneralSecurityException;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -79,6 +83,26 @@ public final class ConfigurationLoader {
             throws ConfigurationException {
         validateReplyBudgets(
                 serverName, nicknameMaxLength, channelNameMaxLength, discoveredReplyCatalog.get());
+    }
+
+    /**
+     * Reads and validates the configuration file at {@code configPath}. A missing file and one this
+     * process may not read are reported apart, by path (spec 016 FR-010): in a container the second
+     * usually means the file is not readable by the image's user.
+     */
+    public ServerConfiguration load(Path configPath) throws ConfigurationException, IOException {
+        InputStream in;
+        try {
+            in = Files.newInputStream(configPath);
+        } catch (NoSuchFileException _) {
+            throw new ConfigurationException("Configuration file not found: " + configPath);
+        } catch (AccessDeniedException _) {
+            throw new ConfigurationException(
+                    "Configuration file not readable by this user: " + configPath);
+        }
+        try (in) {
+            return load(in);
+        }
     }
 
     public ServerConfiguration load(InputStream yamlInput) throws ConfigurationException {
@@ -227,7 +251,8 @@ public final class ConfigurationLoader {
                 optionalText(root, "motdPath"),
                 optionalText(root, "adminName"),
                 optionalText(root, "adminLocation"),
-                optionalText(root, "adminEmail"));
+                optionalText(root, "adminEmail"),
+                LoggingSection.parse(root.get("logging")));
     }
 
     /** An optional string setting; absent, null or blank all mean "not configured". */
@@ -652,7 +677,7 @@ public final class ConfigurationLoader {
     }
 
     // Malformed containers may contain secrets even when their enclosing key is not secret.
-    private static Object redactSecrets(Object value) {
+    static Object redactSecrets(Object value) {
         return redactSecrets(value, new IdentityHashMap<>());
     }
 

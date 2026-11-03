@@ -2,7 +2,7 @@
 
 **Input**: [plan.md](plan.md), [spec.md](spec.md), [research.md](research.md), [data-model.md](data-model.md), [container contract](contracts/container-contract.md), [logging contract](contracts/logging-config.md), [quickstart.md](quickstart.md).
 
-**Execution scope**: Generated for review. No implementation has started. Wait for the user's approval before `/speckit-implement`. Pause for the user's review before every commit.
+**Execution scope**: MVP (T001–T033) implemented and verified on 2026-11-03; stopped for the user's review. Nothing committed beyond the spec documents (`004f55e`). Pause for the user's review before every commit.
 
 **Validation evidence policy**: Keep only Markdown summaries and reproduction commands in `specs/016-container-deployment/validation/`. Raw logs, XML, `docker stats` dumps and per-run files stay outside the repository.
 
@@ -14,19 +14,19 @@
 
 ## Phase 1: Setup (Shared Infrastructure)
 
-- [ ] T001 Record the base revision (`d5a38b2` or a newer `origin/main`, justified), JDK, Docker version and engine architecture (`docker version`), and the test commands in `specs/016-container-deployment/validation/environment.md`. Never open `jircd-server/jircd.yaml`.
-- [ ] T002 Add Testcontainers `2.0.5` (`org.testcontainers:testcontainers`, plus the JUnit integration if used) to `gradle/libs.versions.toml` and as a `testImplementation` of `jircd-integration-tests/build.gradle.kts`.
-- [ ] T003 In root `build.gradle.kts`:
+- [X] T001 Record the base revision (`d5a38b2` or a newer `origin/main`, justified), JDK, Docker version and engine architecture (`docker version`), and the test commands in `specs/016-container-deployment/validation/environment.md`. Never open `jircd-server/jircd.yaml`.
+- [X] T002 Add Testcontainers `2.0.5` (`org.testcontainers:testcontainers`, plus the JUnit integration if used) to `gradle/libs.versions.toml` and as a `testImplementation` of `jircd-integration-tests/build.gradle.kts`.
+- [X] T003 In root `build.gradle.kts`:
   - Exclude the tags `container` and `container-load` from `test`, and keep `loadTest` on `load` only.
   - Register `containerTest` (includeTags `container`) and `containerLoadTest` (includeTags `container-load`) with the same source-set wiring as `loadTest`.
   - Pass `-Djircd.image` through to both, and fail with "set -Djircd.image=<image>" when it is missing.
   - Check that `./gradlew :jircd-integration-tests:test` still selects no container tests.
-- [ ] T004 Regenerate `gradle/verification-metadata.xml` for the new artefacts (`./gradlew --write-verification-metadata sha256 help`), then check that `./gradlew build` passes.
-- [ ] T005 [P] Create `.dockerignore`. It excludes `.git`, `.worktrees`, `**/build`, `.gradle`, `specs`, `.specify`, `.claude`, `.codegraph`, `logs` and **`jircd-server/jircd.yaml`**, so no local credentials can enter the build context.
+- [X] T004 Regenerate `gradle/verification-metadata.xml` for the new artefacts (`./gradlew --write-verification-metadata sha256 help`), then check that `./gradlew build` passes.
+- [X] T005 [P] Create `.dockerignore`. It excludes `.git`, `.worktrees`, `**/build`, `.gradle`, `specs`, `.specify`, `.claude`, `.codegraph`, `logs` and **`jircd-server/jircd.yaml`**, so no local credentials can enter the build context.
 
 ## Phase 2: Foundational (Blocking Prerequisites)
 
-- [ ] T006 Add `jircd-integration-tests/src/test/java/net/jircd/integration/container/JircdContainer.java`, a Testcontainers wrapper that:
+- [X] T006 Add `jircd-integration-tests/src/test/java/net/jircd/integration/container/JircdContainer.java`, a Testcontainers wrapper that:
   - starts the image from `jircd.image` with a **read-only root filesystem** (`HostConfig.withReadonlyRootfs(true)`);
   - bind-mounts a per-test temporary directory read-only at `/etc/jircd`;
   - maps 6667 and 6697;
@@ -34,8 +34,8 @@
   - exposes `plaintextPort()`, `tlsPort()`, `signal(String)` (Docker kill with a signal), `stopWithin(Duration)` (returns the exit code), `exitCode()`, `logs()` and `configuredUser()` (from container inspect).
 
   It must never retry.
-- [ ] T007 Add a fixture helper that writes `jircd.yaml`, a self-signed PEM certificate and key, and an Argon2 OPER credential into the temporary mount directory. Reuse the certificate and Argon2 helpers already used by `TestServer` instead of adding new ones. Files are created world-readable so uid 65532 can read them.
-- [ ] T008 Map FR-001–FR-022 and SC-001–SC-007 to test classes, quickstart steps or CI jobs in `specs/016-container-deployment/validation/coverage-map.md`.
+- [X] T007 Add a fixture helper that writes `jircd.yaml`, a self-signed PEM certificate and key, and an Argon2 OPER credential into the temporary mount directory. Reuse the certificate and Argon2 helpers already used by `TestServer` instead of adding new ones. Files are created world-readable so uid 65532 can read them.
+- [X] T008 Map FR-001–FR-022 and SC-001–SC-007 to test classes, quickstart steps or CI jobs in `specs/016-container-deployment/validation/coverage-map.md`.
 
 **Checkpoint**: Container test plumbing compiles, and `containerTest` runs with zero tests against any image.
 
@@ -47,46 +47,46 @@
 
 ### Tests first
 
-- [ ] T009 [P] [US1] In `jircd-core/src/test/java/net/jircd/core/config/LoggingConfigurationLoaderTest.java`, test parsing and validation of `logging` exactly as in data-model.md:
+- [X] T009 [P] [US1] In `jircd-core/src/test/java/net/jircd/core/config/LoggingConfigurationLoaderTest.java`, test parsing and validation of `logging` exactly as in data-model.md:
   - `console` must be a YAML boolean, default `true`; `file` is optional with no default, and blank strings are rejected.
   - `console: false` with no file is rejected with "logging: console is off and no file is set; the server would produce no log output".
   - A missing directory gives "logging.file directory does not exist: <dir>". A non-writable directory gives "logging.file directory is not writable: <dir>".
   - An existing non-regular or non-writable file is rejected. Unknown keys are rejected. A relative path resolves against the working directory.
-- [ ] T010 [P] [US1] In `jircd-server/src/test/java/net/jircd/server/logging/LoggingSettingsApplierTest.java`, test against a real `LoggerContext`:
+- [X] T010 [P] [US1] In `jircd-server/src/test/java/net/jircd/server/logging/LoggingSettingsApplierTest.java`, test against a real `LoggerContext`:
   - The bootstrap console is in place before settings are applied.
   - Each of the three valid combinations is applied correctly.
   - The file appender uses the rotation in data-model.md ("50 MB per file, 30 days, 1 GB total, gzip, archive name `<file>.%d{yyyy-MM-dd}.%i.gz`") and the fixed pattern.
   - When `logback.configurationFile` is set, the applier leaves appenders alone and logs one INFO line.
-- [ ] T011 [P] [US1] Add `jircd-integration-tests/src/test/java/net/jircd/integration/LoggingConfigurationTest.java`. A server started with `logging.file` in a temporary directory writes connection events to that file and to the console. A server with no `logging` section creates no `logs/` directory in its working directory.
-- [ ] T012 [P] [US1] Add `jircd-integration-tests/src/test/java/net/jircd/integration/ConfigurationFileErrorTest.java`. It drives `JircdServerApplication` startup the same way `main` does: a missing path gives "Configuration file not found: <path>", and a file with no read permission gives "Configuration file not readable by this user: <path>". Skip the permission case with a recorded reason when running as root.
-- [ ] T013 [P] [US1] Add `jircd-integration-tests/src/test/java/net/jircd/integration/container/ContainerContractTest.java` (`@Tag("container")`) covering:
+- [X] T011 [P] [US1] Add `jircd-integration-tests/src/test/java/net/jircd/integration/LoggingConfigurationTest.java`. A server started with `logging.file` in a temporary directory writes connection events to that file and to the console. A server with no `logging` section creates no `logs/` directory in its working directory.
+- [X] T012 [P] [US1] Add `jircd-integration-tests/src/test/java/net/jircd/integration/ConfigurationFileErrorTest.java`. It drives `JircdServerApplication` startup the same way `main` does: a missing path gives "Configuration file not found: <path>", and a file with no read permission gives "Configuration file not readable by this user: <path>". Skip the permission case with a recorded reason when running as root.
+- [X] T013 [P] [US1] Add `jircd-integration-tests/src/test/java/net/jircd/integration/container/ContainerContractTest.java` (`@Tag("container")`) covering:
   - plaintext and TLS registration, JOIN and PRIVMSG between two clients (Story 1, scenarios 1–2);
   - `logs()` containing the startup, connection and security log lines with no error about writing under a read-only root (scenario 4, SC-007);
   - `configuredUser()` is `65532`, and the running process is not uid 0 (scenario 6);
   - with `logging.file` pointed at an extra writable tmpfs mount, the file receives lines (scenario 5).
-- [ ] T014 [P] [US1] Add `jircd-integration-tests/src/test/java/net/jircd/integration/container/ContainerFailureTest.java` (`@Tag("container")`). With no mount, an invalid YAML, a mode-600 file owned by another uid, and a missing TLS certificate path, the container exits with status 1 and its single `Refusing to start:` line matches contracts/container-contract.md.
-- [ ] T015 [US1] Run T009–T012 (behavioural reds after stubs) and record the results in `specs/016-container-deployment/validation/tests.md`. T013–T014 can't run red until the image exists, so record their compile-ready state.
+- [X] T014 [P] [US1] Add `jircd-integration-tests/src/test/java/net/jircd/integration/container/ContainerFailureTest.java` (`@Tag("container")`). With no mount, an invalid YAML, a mode-600 file owned by another uid, and a missing TLS certificate path, the container exits with status 1 and its single `Refusing to start:` line matches contracts/container-contract.md.
+- [X] T015 [US1] Run T009–T012 (behavioural reds after stubs) and record the results in `specs/016-container-deployment/validation/tests.md`. T013–T014 can't run red until the image exists, so record their compile-ready state.
 
 ### Implementation
 
-- [ ] T016 [US1] Add the `Logging(boolean console, Path file)` record to `jircd-core/src/main/java/net/jircd/core/config/ServerConfiguration.java`, documented at the definition. Parse and validate it in `jircd-core/src/main/java/net/jircd/core/config/ConfigurationLoader.java` per data-model.md, so that T009 passes.
-- [ ] T017 [US1] Logback bootstrap:
+- [X] T016 [US1] Add the `Logging(boolean console, Path file)` record to `jircd-core/src/main/java/net/jircd/core/config/ServerConfiguration.java`, documented at the definition. Parse and validate it in `jircd-core/src/main/java/net/jircd/core/config/ConfigurationLoader.java` per data-model.md, so that T009 passes.
+- [X] T017 [US1] Logback bootstrap:
   - Add `jircd-server/src/main/java/net/jircd/server/logging/BootstrapLogbackConfigurator.java`, a logback `Configurator`. When `logback.configurationFile` is set it returns `INVOKE_NEXT_IF_ANY` and records `EXTERNAL`. Otherwise it installs a console appender with the fixed pattern at INFO and returns `DO_NOT_INVOKE_NEXT_IF_ANY`.
   - Register it in `jircd-server/src/main/resources/META-INF/services/ch.qos.logback.classic.spi.Configurator`.
   - Change logback to `implementation` in `jircd-server/build.gradle.kts`.
-- [ ] T018 [US1] Add `jircd-server/src/main/java/net/jircd/server/logging/LoggingSettingsApplier.java`, implementing the data-model.md transitions:
+- [X] T018 [US1] Add `jircd-server/src/main/java/net/jircd/server/logging/LoggingSettingsApplier.java`, implementing the data-model.md transitions:
   - It replaces only the changed appenders; a new file appender is started before it is attached, and the old one is detached and stopped afterwards.
   - If starting the new appender fails, the previous appenders stay and a WARN is logged.
   - In `EXTERNAL` mode it does nothing and logs one INFO line.
 
   This makes T010 pass.
-- [ ] T019 [US1] Startup wiring:
+- [X] T019 [US1] Startup wiring:
   - In `jircd-server/src/main/java/net/jircd/server/JircdServerApplication.java`, apply the logging settings right after the configuration loads.
   - Open the configuration with `Files.newInputStream`, and map `NoSuchFileException` and `AccessDeniedException` to the R8 messages, keeping the `Refusing to start:` prefix and exit status 1.
   - Delete `jircd-server/src/main/resources/logback.xml`.
 
   This makes T011 and T012 pass. Check that `LogCapture`-based tests still pass.
-- [ ] T020 [US1] Create the root `Dockerfile` stages:
+- [X] T020 [US1] Create the root `Dockerfile` stages:
   - **`build`**: `FROM --platform=$BUILDPLATFORM eclipse-temurin:25-jdk@sha256:…`, running `./gradlew :jircd-server:installDist --no-daemon` with a `~/.gradle` cache mount.
   - **`jvm`**: `gcr.io/distroless/java25-debian13:nonroot@sha256:…`:
     - copy `lib/` to `/opt/jircd/lib`, with `WORKDIR /opt/jircd` and `USER 65532:65532`;
@@ -94,8 +94,8 @@
     - `ENTRYPOINT ["java","-XX:MaxRAMPercentage=75","-XX:-UsePerfData","-cp","/opt/jircd/lib/*","net.jircd.server.JircdServerApplication"]` and `CMD ["/etc/jircd/jircd.yaml"]`.
 
   Put a tag comment next to every digest. Make `jvm` the default target, the last stage or one documented with `--target`.
-- [ ] T021 [P] [US1] Add `deploy/container/jircd.yaml`, a sample configuration: a plaintext listener on 6667, `logging` left at its defaults with the file option commented out, a commented TLS listener using `/etc/jircd/cert.pem` and `/etc/jircd/key.pem`, and a commented OPER block pointing to the Argon2 hash instructions. It must contain no secrets.
-- [ ] T022 [US1] Build `jircd:jvm` locally and run `containerTest -Djircd.image=jircd:jvm`, so that T013 and T014 pass. Record the results and the image size in `specs/016-container-deployment/validation/tests.md`.
+- [X] T021 [P] [US1] Add `deploy/container/jircd.yaml`, a sample configuration: a plaintext listener on 6667, `logging` left at its defaults with the file option commented out, a commented TLS listener using `/etc/jircd/cert.pem` and `/etc/jircd/key.pem`, and a commented OPER block pointing to the Argon2 hash instructions. It must contain no secrets.
+- [X] T022 [US1] Build `jircd:jvm` locally and run `containerTest -Djircd.image=jircd:jvm`, so that T013 and T014 pass. Record the results and the image size in `specs/016-container-deployment/validation/tests.md`.
 
 **Checkpoint**: US1 is demonstrable. The JVM image runs per the container contract for startup, logging, user and errors. This is an MVP increment, not permission to merge before the remaining P1 story is done.
 
@@ -107,47 +107,47 @@
 
 ### Tests first
 
-- [ ] T023 [P] [US2] In `jircd-core/src/test/java/net/jircd/core/config/ConfigurationReloaderListenerTest.java`, test that:
+- [X] T023 [P] [US2] In `jircd-core/src/test/java/net/jircd/core/config/ConfigurationReloaderListenerTest.java`, test that:
   - listeners are called once after a successful publication, with the new configuration;
   - they are not called for a rejected reload;
   - a listener that throws is logged and doesn't undo the publication;
   - this holds for reloads from SIGHUP (`SighupReloadHandler.reload`) and from `REHASH` (`ConfigurationReloader.reloadWithOutcome`).
-- [ ] T024 [P] [US2] Extend `jircd-integration-tests/src/test/java/net/jircd/integration/LoggingConfigurationTest.java` with reloads that:
+- [X] T024 [P] [US2] Extend `jircd-integration-tests/src/test/java/net/jircd/integration/LoggingConfigurationTest.java` with reloads that:
   - add a file (it starts receiving lines);
   - change the file path (the new file gets lines after the reload, and the old one gets none);
   - turn console logging off while a file is set;
   - are rejected because of `logging` (both the previous destinations and the previous non-logging settings stay in force).
 
   Each destination's lines must have no gaps or duplicates around the switch.
-- [ ] T025 [P] [US2] Add `jircd-integration-tests/src/test/java/net/jircd/integration/GracefulShutdownTest.java`, run in-process against `TestServer`:
+- [X] T025 [P] [US2] Add `jircd-integration-tests/src/test/java/net/jircd/integration/GracefulShutdownTest.java`, run in-process against `TestServer`:
   - `shutdown("Server shutting down")` with 100 registered clients and some unregistered ones closes the listeners first (new connections are refused);
   - every client receives exactly `ERROR :Closing Link: <host> (Server shutting down)` before EOF;
   - everything finishes within 8 s;
   - a client that doesn't read (full receive buffer) is force-closed at the budget with a WARN naming the count;
   - a second `shutdown` call during draining is a no-op;
   - shutdown before `start()` returns at once.
-- [ ] T026 [P] [US2] Add `jircd-integration-tests/src/test/java/net/jircd/integration/container/ContainerSignalTest.java` (`@Tag("container")`) covering:
+- [X] T026 [P] [US2] Add `jircd-integration-tests/src/test/java/net/jircd/integration/container/ContainerSignalTest.java` (`@Tag("container")`) covering:
   - HUP after editing the mounted config (toggle a capability, add a `logging.file` on a writable tmpfs mount) logs "Configuration reloaded via SIGHUP", and the change takes effect while connected clients stay connected (scenario 1);
   - HUP with an invalid config keeps the old one and logs the WARN (scenario 3);
   - `stopWithin(10 s)` with 100 connected clients returns exit code 0, and every client read `ERROR … (Server shutting down)` before EOF (scenario 2, SC-003);
   - INT behaves like TERM;
   - TERM sent immediately after container start, before the listeners bind, exits 0.
-- [ ] T027 [US2] Run T023–T026 to behavioural red after stubs, and record the results in `specs/016-container-deployment/validation/tests.md`.
+- [X] T027 [US2] Run T023–T026 to behavioural red after stubs, and record the results in `specs/016-container-deployment/validation/tests.md`.
 
 ### Implementation
 
-- [ ] T028 [US2] Add `addReloadListener(Consumer<ServerConfiguration>)` to `jircd-core/src/main/java/net/jircd/core/config/ConfigurationReloader.java`. Listeners are called after a successful publication, outside the reload monitor, each isolated by try/catch with a WARN. This makes T023 pass.
-- [ ] T029 [US2] In `jircd-server/src/main/java/net/jircd/server/JircdServerApplication.java`, register the logging applier as a reload listener, so SIGHUP and `REHASH` both apply the logging changes. Validation stays in the loader, so a rejected `logging` section rejects the whole reload. This makes T024 pass.
-- [ ] T030 [US2] Add `drain(String reason, Duration timeout)` to `jircd-core/src/main/java/net/jircd/core/session/ConnectionHandler.java`:
+- [X] T028 [US2] Add `addReloadListener(Consumer<ServerConfiguration>)` to `jircd-core/src/main/java/net/jircd/core/config/ConfigurationReloader.java`. Listeners are called after a successful publication, outside the reload monitor, each isolated by try/catch with a WARN. This makes T023 pass.
+- [X] T029 [US2] In `jircd-server/src/main/java/net/jircd/server/JircdServerApplication.java`, register the logging applier as a reload listener, so SIGHUP and `REHASH` both apply the logging changes. Validation stays in the loader, so a rejected `logging` section rejects the whole reload. This makes T024 pass.
+- [X] T030 [US2] Add `drain(String reason, Duration timeout)` to `jircd-core/src/main/java/net/jircd/core/session/ConnectionHandler.java`:
   - stop accepting;
   - for every live session, enqueue `ERROR :Closing Link: <realHostname> (<reason>)` using the same format as the SendQ overflow and KILL paths;
   - close each writer so it drains, bounded by the deadline;
   - then close the sockets, force-closing any left at the deadline and returning the count.
 
   Keep `closeConnections` unchanged for `stop()`.
-- [ ] T031 [US2] Add `shutdown(String reason)` to `JircdServerApplication`. It is idempotent: the first call stops accepting, closes the listeners and drains within 8 s, then logs a WARN if anything was force-closed; later calls return at once. If the application never started, it returns at once. This makes T025 pass.
-- [ ] T032 [US2] Add `jircd-server/src/main/java/net/jircd/server/ShutdownSignalHandler.java`. It handles `TERM` and `INT` with `sun.misc.Signal`, calls `shutdown("Server shutting down")`, then `System.exit(0)`, and ignores repeated signals. Install it in `main` before `start()`, keeping `SighupReloadHandler` after it. Document both at the point of definition.
-- [ ] T033 [US2] Rebuild `jircd:jvm` and run `containerTest -Djircd.image=jircd:jvm`, so that T026 passes. Record the results, the measured shutdown time with 100 clients (SC-003) and the full `containerTest` run in `specs/016-container-deployment/validation/tests.md`.
+- [X] T031 [US2] Add `shutdown(String reason)` to `JircdServerApplication`. It is idempotent: the first call stops accepting, closes the listeners and drains within 8 s, then logs a WARN if anything was force-closed; later calls return at once. If the application never started, it returns at once. This makes T025 pass.
+- [X] T032 [US2] Add `jircd-server/src/main/java/net/jircd/server/ShutdownSignalHandler.java`. It handles `TERM` and `INT` with `sun.misc.Signal`, calls `shutdown("Server shutting down")`, then `System.exit(0)`, and ignores repeated signals. Install it in `main` before `start()`, keeping `SighupReloadHandler` after it. Document both at the point of definition.
+- [X] T033 [US2] Rebuild `jircd:jvm` and run `containerTest -Djircd.image=jircd:jvm`, so that T026 passes. Record the results, the measured shutdown time with 100 clients (SC-003) and the full `containerTest` run in `specs/016-container-deployment/validation/tests.md`.
 
 **Checkpoint**: Stories 1 and 2 are complete on the JVM variant. The image is deployable.
 

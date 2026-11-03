@@ -10,7 +10,9 @@ dependencies {
     implementation(project(":jircd-protocol"))
     implementation(project(":jircd-core"))
     implementation(rootProject.libs.slf4j.api)
-    runtimeOnly(rootProject.libs.logback.classic)
+    // Compile-time, not runtimeOnly: jircd-server configures logback itself from the `logging`
+    // YAML section (spec 016) instead of shipping a logback.xml.
+    implementation(rootProject.libs.logback.classic)
 
     // Runtime-only: these are discovered via ServiceLoader (net.jircd.core.extension
     // .CapabilityExtension / .ServerExtension), never referenced by jircd-server's own

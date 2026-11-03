@@ -15,6 +15,8 @@
  */
 package net.jircd.core.config;
 
+import java.nio.file.Path;
+
 /**
  * A specific, actionable configuration validation failure (FR-012, SC-008), naming the offending
  * key/value.
@@ -23,5 +25,16 @@ public class ConfigurationException extends Exception {
 
     public ConfigurationException(String message) {
         super(message);
+    }
+
+    /**
+     * The message with the configuration file's path (spec 016 FR-010), unless it already carries
+     * it: a missing or unreadable file's message names the file itself.
+     */
+    public String messageNaming(Path configPath) {
+        String message = getMessage();
+        return message.contains(configPath.toString())
+                ? message
+                : message + " (configuration file: " + configPath + ")";
     }
 }

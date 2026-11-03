@@ -32,7 +32,9 @@
          </trusted-key>
          <trusted-key id="1D2C7EF8ADA0F794B58C7C63436902AF59EDF60E" group="dev.equo.ide" name="solstice" version="1.8.2"/>
          <trusted-key id="1E046C19ED2873D8C08AF7B8A0632691B78E3422" group="net.sourceforge.pmd"/>
+         <trusted-key id="28118C070CB22A0175A2E8D43D12CA2AC19F3181" group="com.fasterxml.jackson.core" name="jackson-annotations" version="2.20"/>
          <trusted-key id="2DB4F1EF0FA761ECC4EA935C86FDC7E2A11262CB">
+            <trusting group="commons-codec" name="commons-codec" version="1.19.0"/>
             <trusting group="commons-io"/>
             <trusting group="org.apache.commons"/>
          </trusted-key>
@@ -48,11 +50,19 @@
          </trusted-key>
          <trusted-key id="68AF82B99C3C9ADFE5CA661767AB3C2A8FC5C42E" group="com.github.oowekyala.ooxml" name="nice-xml-messages" version="3.1"/>
          <trusted-key id="694621A7227D8D5289699830ABE9F3126BB741C1" group="com.google.guava"/>
+         <trusted-key id="6E7F910017655622A899639EE7D88DB8427DE651">
+            <trusting group="com.github.docker-java"/>
+            <trusting group="org.testcontainers"/>
+         </trusted-key>
          <trusted-key id="6F538074CCEBF35F28AF9B066A0975F8B1127B83" group="org.jetbrains.kotlin"/>
          <trusted-key id="7616EB882DAF57A11477AAF559A252FB1199D873" group="com.google.code.findbugs" name="jsr305" version="3.0.2"/>
          <trusted-key id="7B121B76A7ED6CE6E60AD51784E913A8E3A748C0" group="org.bouncycastle" name="bcprov-jdk18on" version="1.78.1"/>
          <trusted-key id="7C669810892CBD3148FA92995B05CCDE140C2876" group="org.eclipse.jgit"/>
-         <trusted-key id="8756C4F765C9AC3CB6B85D62379CE192D401AB61" group="com.diffplug.durian"/>
+         <trusted-key id="8756C4F765C9AC3CB6B85D62379CE192D401AB61">
+            <trusting group="com.diffplug.durian"/>
+            <trusting group="org.jetbrains" name="annotations" version="17.0.0"/>
+            <trusting group="org.rnorth.duct-tape" name="duct-tape" version="1.0.8"/>
+         </trusted-key>
          <trusted-key id="8FCD23073248F3C28EF9F80380EF47E549604C05" group="jaxen"/>
          <trusted-key id="9E3044071B758EBCB7E45673700E4F39BC05364B">
             <trusting group="org.eclipse.platform" name="org.eclipse.osgi" version="3.24.200"/>
@@ -80,6 +90,7 @@
             <trusting group="org.apache.bcel"/>
             <trusting group="org.apache.commons"/>
          </trusted-key>
+         <trusted-key id="FA7929F83AD44C4590F6CC6815C71C0A4E0B8EDD" group="net.java.dev.jna" name="jna" version="5.18.1"/>
          <trusted-key id="FF6E2C001948C5F2F38B0CC385911F425EC61B51">
             <trusting group="org.apiguardian"/>
             <trusting group="org.opentest4j"/>

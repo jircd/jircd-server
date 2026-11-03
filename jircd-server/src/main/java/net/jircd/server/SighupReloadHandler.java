@@ -15,6 +15,7 @@
  */
 package net.jircd.server;
 
+import net.jircd.core.config.ConfigurationException;
 import net.jircd.core.config.ConfigurationReloader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -54,6 +55,10 @@ public final class SighupReloadHandler {
                                             "Configuration reloaded via SIGHUP, but could not apply {}: {}",
                                             id,
                                             reason));
+        } catch (ConfigurationException e) {
+            LOG.warn(
+                    "SIGHUP reload failed, running configuration left untouched: {}",
+                    e.messageNaming(reloader.configPath()));
         } catch (Exception e) {
             LOG.warn("SIGHUP reload failed, running configuration left untouched", e);
         }

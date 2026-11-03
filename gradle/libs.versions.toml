@@ -10,6 +10,7 @@ spotbugs = "6.5.13"
 pmd = "7.26.0"
 spotbugsTool = "4.10.3"
 sonarqube = "7.5.0.8588"
+testcontainers = "2.0.5"
 
 [libraries]
 slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
@@ -19,6 +20,7 @@ password4j = { module = "com.password4j:password4j", version.ref = "password4j" 
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit" }
 junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
 assertj-core = { module = "org.assertj:assertj-core", version.ref = "assertj" }
+testcontainers = { module = "org.testcontainers:testcontainers", version.ref = "testcontainers" }
 
 [plugins]
 spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }
