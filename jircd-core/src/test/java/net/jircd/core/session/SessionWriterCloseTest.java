@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import net.jircd.protocol.Command;
 import net.jircd.protocol.Message;
 import org.junit.jupiter.api.Test;
@@ -64,6 +65,85 @@ class SessionWriterCloseTest {
     }
 
     @Test
+    void aWriterThatClosesItselfAfterAWriteFailureIsNotReportedAsTruncated() throws Exception {
+        CountDownLatch callbackReturned = new CountDownLatch(1);
+        AtomicInteger truncated = new AtomicInteger();
+        OutputStream failing =
+                new OutputStream() {
+                    @Override
+                    public void write(int value) throws IOException {
+                        throw new IOException("connection reset");
+                    }
+                };
+        try (failing;
+                SessionWriter writer =
+                        new SessionWriter(
+                                new ClientSession(
+                                        "reset", "host.example", RateLimitBucket.withDefaults()),
+                                failing,
+                                TagRenderer.NONE)) {
+            writer.setOnDrainTruncated(truncated::incrementAndGet);
+            // As in production: the failure's cleanup closes the writer from its own thread.
+            writer.setOnWriteFailure(
+                    () -> {
+                        writer.close();
+                        callbackReturned.countDown();
+                    });
+            writer.enqueueRaw(line(0));
+            assertThat(callbackReturned.await(1, TimeUnit.SECONDS)).isTrue();
+        }
+        // No drain timed out: the client went away, nothing was cut off by a deadline.
+        assertThat(truncated).hasValue(0);
+    }
+
+    @Test
+    void aDrainCutOffAtItsDeadlineIsReportedExactlyOnce() throws Exception {
+        AtomicInteger truncated = new AtomicInteger();
+        try (BlockingOutputStream out = new BlockingOutputStream();
+                SessionWriter writer =
+                        new SessionWriter(
+                                new ClientSession(
+                                        "cut", "host.example", RateLimitBucket.withDefaults()),
+                                out,
+                                TagRenderer.NONE)) {
+            writer.setOnDrainTruncated(truncated::incrementAndGet);
+            writer.enqueueRaw(line(0));
+            // The writer is held inside its first write and never released.
+            assertThat(out.firstWriteStarted.await(10, TimeUnit.SECONDS)).isTrue();
+            writer.extendDrainUntil(System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(200));
+
+            writer.close();
+
+            assertThat(out.interrupted.await(10, TimeUnit.SECONDS)).isTrue();
+        }
+        // The try's second close only waits; it must not report the same cut-off again.
+        assertThat(truncated).hasValue(1);
+    }
+
+    @Test
+    void aFinalLineIsTheLastOneWrittenWhateverIsQueuedAfterIt() throws Exception {
+        try (BlockingOutputStream out = new BlockingOutputStream();
+                SessionWriter writer =
+                        new SessionWriter(
+                                new ClientSession(
+                                        "final", "host.example", RateLimitBucket.withDefaults()),
+                                out,
+                                TagRenderer.NONE)) {
+            writer.enqueueRaw(line(0));
+            assertThat(out.firstWriteStarted.await(10, TimeUnit.SECONDS)).isTrue();
+
+            assertThat(writer.enqueueFinal(line(1))).isTrue();
+            // A reply from a command that was already being dispatched arrives too late.
+            writer.enqueueRaw(line(2));
+            assertThat(writer.enqueueFinal(line(3))).isFalse();
+            out.release.countDown();
+            writer.close();
+
+            assertThat(out.lines()).containsExactly(lineText(0), lineText(1));
+        }
+    }
+
+    @Test
     void secondCloseOnAFullQueueWaitsForTheDrainInsteadOfInterrupting() throws Exception {
         try (BlockingOutputStream out = new BlockingOutputStream();
                 SessionWriter writer =
@@ -74,7 +154,7 @@ class SessionWriterCloseTest {
                                 TagRenderer.NONE,
                                 LIMIT_BYTES)) {
             writer.enqueueRaw(line(0));
-            out.firstWriteStarted.await();
+            assertThat(out.firstWriteStarted.await(10, TimeUnit.SECONDS)).isTrue();
             for (int i = 1; i < LINES; i++) {
                 writer.enqueueRaw(line(i));
             }
@@ -92,6 +172,10 @@ class SessionWriterCloseTest {
                     .hasSize(LINES)
                     .endsWith("ERROR " + ("line" + (LINES - 1)).repeat(100).substring(0, 504));
         }
+    }
+
+    private static String lineText(int number) {
+        return "ERROR " + ("line" + number).repeat(101).substring(0, 504);
     }
 
     private static Message line(int number) {

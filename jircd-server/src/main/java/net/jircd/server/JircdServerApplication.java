@@ -27,6 +27,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
 import net.jircd.core.capability.CapabilityNegotiator;
 import net.jircd.core.config.ConfigurationException;
@@ -93,7 +97,16 @@ public final class JircdServerApplication {
     private TlsListener tlsListener;
     private final List<Closeable> ownedListeners = new ArrayList<>();
     private final Consumer<ServerConfiguration.Logging> loggingSink;
+    private final AtomicReference<Consumer<StartPhase>> startPhaseHook =
+            new AtomicReference<>(phase -> {});
     private final Object loggingLock = new Object();
+    private final AtomicBoolean shuttingDown = new AtomicBoolean();
+
+    /**
+     * Held by {@link #start()} and {@link #stop()} for their whole run. A lock rather than the
+     * monitor, so {@link #shutdown} can give up waiting for it when its budget runs out.
+     */
+    private final ReentrantLock lifecycle = new ReentrantLock();
 
     public JircdServerApplication(Path configPath) throws ConfigurationException, IOException {
         this(configPath, socket -> {});
@@ -411,8 +424,26 @@ public final class JircdServerApplication {
                 });
     }
 
-    public synchronized void start() throws IOException, GeneralSecurityException {
-        connectionHandler.startAccepting();
+    public void start() throws IOException, GeneralSecurityException {
+        lifecycle.lock();
+        try {
+            startLocked();
+        } finally {
+            lifecycle.unlock();
+        }
+    }
+
+    private void startLocked() throws IOException, GeneralSecurityException {
+        if (shuttingDown.get()) {
+            // A TERM or INT arrived while this was waiting its turn; do not bring listeners up.
+            return;
+        }
+        startPhaseHook.get().accept(StartPhase.CHECKED_FOR_SHUTDOWN);
+        if (!connectionHandler.startAccepting()) {
+            // Shutdown began after the check above and closed admission for good.
+            return;
+        }
+        startPhaseHook.get().accept(StartPhase.ACCEPTING);
         // No TLS entry in the zero-config default (004-fix-tls-certificate, research.md "The
         // zero-config default listener list") — a TLS listener with no certificate configured now
         // refuses to start, so defaulting to one here would break the simplest possible quickstart.
@@ -433,6 +464,46 @@ public final class JircdServerApplication {
             plaintextListener = previousPlaintextListener;
             tlsListener = previousTlsListener;
             throw failure;
+        }
+        if (shuttingDown.get()) {
+            // Shutdown began while the listeners were coming up. It cannot close them while this
+            // holds the lifecycle, so close the ones this start opened before returning.
+            closeListenersOpenedByThisStart(previousListenerCount);
+            plaintextListener = previousPlaintextListener;
+            tlsListener = previousTlsListener;
+        }
+    }
+
+    private void closeListenersOpenedByThisStart(int previousListenerCount) {
+        try {
+            closeListeners(
+                    ownedListeners.subList(previousListenerCount, ownedListeners.size()),
+                    System.nanoTime() + Duration.ofSeconds(3).toNanos());
+        } catch (IOException | RuntimeException e) {
+            LOG.warn("Closing listeners opened during shutdown failed: {}", e.getMessage());
+        }
+    }
+
+    /** Points inside {@link #start()} a test can pause at (see {@link #onStartPhaseForTesting}). */
+    enum StartPhase {
+        /** Just after the check that shutdown has not begun. */
+        CHECKED_FOR_SHUTDOWN,
+        /** Accepting is on; the listeners are about to be opened. */
+        ACCEPTING
+    }
+
+    /** Test seam: runs at each {@link StartPhase}, on the thread running {@link #start()}. */
+    void onStartPhaseForTesting(Consumer<StartPhase> hook) {
+        startPhaseHook.set(hook);
+    }
+
+    /** Test seam: how many listeners this application currently owns (open). */
+    int ownedListenerCountForTesting() {
+        lifecycle.lock();
+        try {
+            return ownedListeners.size();
+        } finally {
+            lifecycle.unlock();
         }
     }
 
@@ -478,12 +549,112 @@ public final class JircdServerApplication {
         }
     }
 
+    /** The graceful-shutdown budget: inside a container runtime's default 10-second grace. */
+    public static final Duration SHUTDOWN_BUDGET = Duration.ofSeconds(8);
+
+    /** The {@code ERROR} reason clients see when the server shuts down (spec 016 FR-009). */
+    public static final String SHUTDOWN_REASON = "Server shutting down";
+
+    /**
+     * Graceful shutdown on TERM or INT (spec 016 FR-009): stops accepting, closes the listeners,
+     * then tells every connected client {@code ERROR :Closing Link: <host> (<reason>)} and lets its
+     * queued lines drain, all within {@link #SHUTDOWN_BUDGET}. Connections still draining at the
+     * budget are closed anyway and a WARN says how many. Only the first call does anything; before
+     * {@link #start()} it returns at once.
+     */
+    public void shutdown(String reason) {
+        shutdown(reason, SHUTDOWN_BUDGET);
+    }
+
+    /**
+     * As {@link #shutdown(String)}, with a chosen budget (tests).
+     *
+     * @return how many connections were closed before they finished draining
+     */
+    int shutdown(String reason, Duration budget) {
+        if (!shuttingDown.compareAndSet(false, true)) {
+            return 0;
+        }
+        // The budget runs from the signal, not from when the lifecycle lock is free: a start() that
+        // is slow must not push the shutdown past what the container runtime will wait for.
+        long deadline = System.nanoTime() + budget.toNanos();
+        // Irreversible: a start() already past its own shutdown check cannot reopen admission.
+        connectionHandler.closeAdmission();
+        // Normally free. If a slow start() holds it, connections are drained first and the
+        // listeners are closed afterwards, with whatever budget is left.
+        boolean locked = lifecycle.tryLock();
+        try {
+            if (locked) {
+                closeListenersForShutdown(deadline);
+            }
+            int forced = 0;
+            try {
+                forced = connectionHandler.drain(reason, remainingShutdownTime(deadline));
+            } catch (IOException e) {
+                LOG.warn("Some connections had not stopped after shutdown: {}", e.getMessage());
+            }
+            if (!locked) {
+                locked = acquireLifecycle(deadline);
+                if (locked) {
+                    closeListenersForShutdown(deadline);
+                } else {
+                    LOG.warn(
+                            "start() still held the lifecycle when the shutdown budget ran out;"
+                                    + " not waiting to close the listeners");
+                }
+            }
+            if (forced > 0) {
+                LOG.warn(
+                        "Shutdown budget of {} ms ran out; force-closed {} connection(s) that"
+                                + " had not finished sending",
+                        budget.toMillis(),
+                        forced);
+            }
+            LOG.info("jircd stopped");
+            return forced;
+        } finally {
+            if (locked) lifecycle.unlock();
+        }
+    }
+
+    private void closeListenersForShutdown(long deadline) {
+        try {
+            closeListeners(ownedListeners, deadline);
+        } catch (IOException | RuntimeException e) {
+            LOG.warn("Closing the listeners during shutdown failed: {}", e.getMessage());
+        }
+    }
+
+    private boolean acquireLifecycle(long deadline) {
+        try {
+            return lifecycle.tryLock(
+                    remainingShutdownTime(deadline).toNanos(), TimeUnit.NANOSECONDS);
+        } catch (InterruptedException _) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
+    }
+
+    /** Test seam: lets a test hold the lifecycle as a slow {@link #start()} would. */
+    ReentrantLock lifecycleLockForTesting() {
+        return lifecycle;
+    }
+
     /**
      * Stops listeners and accepted connections within one 30-second budget. Connection cleanup is
      * attempted even when a listener fails; additional failures are suppressed on the first
      * failure.
      */
-    public synchronized void stop() throws IOException {
+    public void stop() throws IOException {
+        lifecycle.lock();
+        try {
+            stopLocked();
+        } finally {
+            lifecycle.unlock();
+        }
+    }
+
+    private void stopLocked() throws IOException {
         long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
         connectionHandler.stopAccepting();
         Exception failure = null;
@@ -605,9 +776,12 @@ public final class JircdServerApplication {
 
     public static void main(String[] args) throws InterruptedException {
         Path configPath = Path.of(args.length > 0 ? args[0] : "jircd.yaml");
+        // Before anything else, so TERM/INT during startup also exits cleanly (spec 016 FR-009).
+        ShutdownSignalHandler shutdownSignals = ShutdownSignalHandler.install();
         JircdServerApplication application;
         try {
             application = new JircdServerApplication(configPath);
+            shutdownSignals.attach(application);
             application.start();
         } catch (ConfigurationException e) {
             LOG.error("Refusing to start: {}", e.messageNaming(configPath));

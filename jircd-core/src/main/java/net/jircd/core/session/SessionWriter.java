@@ -75,9 +75,17 @@ public final class SessionWriter implements AutoCloseable {
     private final Thread writerThread;
     private final AtomicBoolean closing = new AtomicBoolean();
     private final AtomicBoolean overflowed = new AtomicBoolean();
+
+    /** Set once a final line is queued ({@link #enqueueFinal}); nothing is queued after it. */
+    private final AtomicBoolean sealed = new AtomicBoolean();
+
     private final CountDownLatch overflowDispatched = new CountDownLatch(1);
     private final AtomicReference<Runnable> onSendqOverflow = new AtomicReference<>(() -> {});
     private final AtomicReference<Runnable> onWriteFailure = new AtomicReference<>(() -> {});
+    private final AtomicReference<Runnable> onDrainTruncated = new AtomicReference<>(() -> {});
+
+    /** Nanotime until which {@link #close} may wait for the drain; null means the default wait. */
+    private final AtomicReference<Long> drainDeadlineNanos = new AtomicReference<>();
 
     /** Creates a writer with the server's default outbound byte budget. */
     public SessionWriter(ClientSession session, OutputStream out, TagRenderer tagRenderer) {
@@ -110,11 +118,28 @@ public final class SessionWriter implements AutoCloseable {
     }
 
     /**
+     * Installs a callback for the case where {@link #close} gave up waiting and interrupted a
+     * writer that had not finished sending, so lines were cut off.
+     */
+    public void setOnDrainTruncated(Runnable onDrainTruncated) {
+        this.onDrainTruncated.set(onDrainTruncated);
+    }
+
+    /**
+     * Lets {@link #close} wait for the drain until {@code deadlineNanos} ({@link System#nanoTime}
+     * scale) instead of its default two seconds, so a shutdown with a longer budget does not cut a
+     * slow client's final lines off early. Call before {@link #close}.
+     */
+    public void extendDrainUntil(long deadlineNanos) {
+        drainDeadlineNanos.set(deadlineNanos);
+    }
+
+    /**
      * Enqueues a fan-out message; capability-dependent tags are rendered per-recipient at drain
      * time.
      */
     public void enqueue(OutboundMessage message) {
-        if (closing.get() || overflowed.get()) return;
+        if (refusing()) return;
         TagRenderer.PreparedTags tags = tagRenderer.prepare(session, message);
         enqueueEntry(new Entry(message.componentBytes() + tags.wireBytes(), message, tags));
     }
@@ -125,20 +150,42 @@ public final class SessionWriter implements AutoCloseable {
      * discarded.
      */
     public void enqueue(PreparedDelivery delivery) {
-        if (closing.get() || overflowed.get()) return;
+        if (refusing()) return;
         enqueueEntry(new Entry(delivery.frames().bytes(), delivery.frames(), null));
+    }
+
+    /**
+     * Enqueues {@code rawMessage} as this session's last line: in the same step, under the enqueue
+     * lock, the writer stops accepting anything else, so a reply that a command still being
+     * dispatched queues afterwards is dropped instead of following it (the shutdown {@code ERROR},
+     * spec 016 FR-009). Like {@link #close}, it reserves no data budget.
+     *
+     * @return whether the line was queued; false if the writer was already closing, overflowed or
+     *     had a final line
+     */
+    public boolean enqueueFinal(Message rawMessage) {
+        synchronized (enqueueLock) {
+            if (refusing()) return false;
+            queue.add(new Entry(0, rawMessage, null));
+            sealed.set(true);
+            return true;
+        }
     }
 
     /** Enqueues a pre-built line, charging its escaped tag and component bytes including CRLF. */
     public void enqueueRaw(Message rawMessage) {
-        if (closing.get() || overflowed.get()) return;
+        if (refusing()) return;
         enqueueRaw(rawMessage, WireBytes.raw(rawMessage));
     }
 
     /** Uses the shared charge computed once by raw broadcast delivery. */
     void enqueueRaw(Message rawMessage, long bytes) {
-        if (closing.get() || overflowed.get()) return;
+        if (refusing()) return;
         enqueueEntry(new Entry(bytes, rawMessage, null));
+    }
+
+    private boolean refusing() {
+        return closing.get() || overflowed.get() || sealed.get();
     }
 
     long queuedBytes() {
@@ -156,7 +203,7 @@ public final class SessionWriter implements AutoCloseable {
 
     private void enqueueEntry(Entry entry) {
         synchronized (enqueueLock) {
-            if (closing.get() || overflowed.get()) return;
+            if (refusing()) return;
             long reserved = queuedBytes.addAndGet(entry.bytes());
             if (reserved <= limitBytes) {
                 queue.add(entry);
@@ -200,7 +247,7 @@ public final class SessionWriter implements AutoCloseable {
     /** As {@link #enqueueGroup(String, List, List)}, for the request {@code context} it answers. */
     public void enqueueGroup(
             String type, List<String> typeParams, List<Message> members, RequestContext context) {
-        if (closing.get() || overflowed.get()) {
+        if (refusing()) {
             return;
         }
         long memberBytes = 0;
@@ -359,8 +406,11 @@ public final class SessionWriter implements AutoCloseable {
         synchronized (enqueueLock) {
             if (!overflowed.get()) queue.add(POISON_PILL);
         }
-        awaitDrain();
+        boolean timedOut = awaitDrain();
         if (writerThread.isAlive()) {
+            // Only a drain that ran out of time cut lines off. A writer closing itself after its
+            // own write failed (the client went away) is alive here too, but nothing timed out.
+            if (timedOut) onDrainTruncated.get().run();
             writerThread.interrupt();
         }
     }
@@ -371,13 +421,22 @@ public final class SessionWriter implements AutoCloseable {
         if (overflowed.get()) overflowDispatched.await();
     }
 
-    private void awaitDrain() {
+    /**
+     * @return whether the wait ended with the writer still running, i.e. it timed out
+     */
+    private boolean awaitDrain() {
         // A failed socket write can invoke cleanup on this writer; joining itself cannot drain it.
-        if (Thread.currentThread() == writerThread) return;
+        if (Thread.currentThread() == writerThread) return false;
         try {
-            writerThread.join(CLOSE_DRAIN_TIMEOUT);
+            Long deadline = drainDeadlineNanos.get();
+            Duration wait =
+                    deadline == null
+                            ? CLOSE_DRAIN_TIMEOUT
+                            : Duration.ofNanos(Math.max(0, deadline - System.nanoTime()));
+            return !writerThread.join(wait);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+            return false;
         }
     }
 }
