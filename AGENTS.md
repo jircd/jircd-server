@@ -30,8 +30,8 @@ PRs get reviewed by SonarCloud (quality gate plus non-gating issues, all of whic
 
 - Keep each PR under Sourcery's review limit of 150,000 diff characters. Sourcery skips a larger PR without reviewing it, and its check still shows "skipped" rather than failing. Measure with `git diff origin/main...HEAD | wc -c`, or against the previous branch in a stack, and aim for about 120,000 to leave room for review fixes.
   - Sourcery's Open Source plan also caps each PR author at 250,000 diff characters per rolling 7 days, with a re-review costing a tenth of the PR's size. Once that budget is used up, Sourcery skips PRs as well. Pace large stacks across weeks, or re-request a review later with `@sourcery-ai review`.
-  - CodeRabbit limits files per review and reviews per hour, not characters. While the repository has fewer than 10 stars, it reviews only on request: comment `@coderabbitai review` on the PR. Generated files under `gradle/` are excluded from its reviews.
-  - Before calling a PR ready, confirm each bot posted an actual review, not just a summary or a "skipped" status.
+  - CodeRabbit limits reviews per hour and files per review, not characters; its review info shows how many reviews remain this hour. On its OSS plan, a repository with fewer than 10 stars gets reviews only on request: if no review appears after a push, comment `@coderabbitai review` on the PR. It skips `gradle/verification-metadata.xml`, `gradle/verification-keyring.keys` and `gradle/wrapper/**`, as configured in `.coderabbit.yaml`.
+  - Before calling a PR ready, confirm each bot posted an actual review, not just a summary or a "skipped" status. A bot isn't expected to review a PR that changes only files it skips.
   - Split larger work into stacked PRs, each based on the previous branch: spec-kit documents first, then one PR per user story or concern. Plan the slices when generating `tasks.md`.
   - Every slice must pass `./gradlew build` on its own.
   - After a slice is squash-merged, rebase the next one with `git rebase --onto origin/main <merged-branch>` and retarget its base to `main`.

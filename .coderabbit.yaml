@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
 # CodeRabbit reviews PRs alongside SonarCloud and Sourcery (see AGENTS.md, "Before opening a PR").
-# While the repository has fewer than 10 stars, CodeRabbit's OSS plan reviews only on request:
+# On the OSS plan, a repository with fewer than 10 stars gets reviews only on request:
 # comment `@coderabbitai review` on the PR.
 language: en-US
 

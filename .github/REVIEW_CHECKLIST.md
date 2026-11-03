@@ -1,6 +1,6 @@
 # Pre-PR review checklist
 
-SonarCloud, Sourcery and CodeRabbit review every PR (CodeRabbit on request while the repository has fewer than 10 stars; SonarCloud only when the PR's workflow has `SONAR_TOKEN`, so not on PRs from forks). This list collects what they have flagged on this repo's merged PRs (#28–#94), so a change can be checked against it before the PR opens. Numbers in brackets are example PRs.
+SonarCloud, Sourcery and CodeRabbit review PRs within their limits: SonarCloud only when the PR's workflow has `SONAR_TOKEN`, so not on PRs from forks; Sourcery not on PRs over 150,000 diff characters or once the author's weekly budget is used up (see AGENTS.md); CodeRabbit up to its hourly review allowance, and only on request while the repository has fewer than 10 stars. This list collects what SonarCloud and Sourcery flagged on this repo's merged PRs (#28–#94), before CodeRabbit was added, so a change can be checked against it before the PR opens. Numbers in brackets are example PRs.
 
 ## SonarCloud rules this repo keeps hitting
 
