@@ -104,7 +104,8 @@ class ExtensionRegistryTest {
                         null,
                         null,
                         null,
-                        null);
+                        null,
+                        ServerConfiguration.Logging.DEFAULT);
         registry.attachContext(
                 new ServerContext(
                         nicknameRegistry,

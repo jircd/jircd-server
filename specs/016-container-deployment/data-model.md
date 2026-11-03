@@ -13,7 +13,7 @@ A new immutable part of `ServerConfiguration`, parsed from the optional top-leve
 
 **Validation**, at startup and on every reload, before anything is published:
 
-1. `logging` is absent or a mapping. Unknown keys are rejected, the same as other sections.
+1. `logging` is absent or a mapping. Unknown keys are rejected: most sections ignore them, but here a misspelled `file` would silently turn file logging off.
 2. `console: false` with no `file` is rejected: "logging: console is off and no file is set; the server would produce no log output".
 3. When `file` is set:
    - Its parent directory must exist, or the message is "logging.file directory does not exist: <dir>".
@@ -41,9 +41,8 @@ Transition rules:
 
 - **From `APPLIED(old)` to `APPLIED(new)`**:
   - The console appender is kept unchanged if `console` is unchanged.
-  - The file appender is kept if `file` is unchanged. Otherwise a new one is started first, then attached, then the old one is detached and stopped.
+  - The file appender is kept if `file` is unchanged. Otherwise a new one is started first, then attached, then the old one is detached and stopped. The swap is not atomic: an event logged at the instant of the switch can be lost (its thread still holds the old appender, which is then stopped) or reach only one destination, and events logged during the overlap reach both files.
   - If starting the new appender fails (for example, the directory was removed between validation and apply), the old appenders stay and a WARN is logged. The new configuration stays published (an intentional partial apply).
-  - The switch is not atomic: a few lines logged around it can be lost or duplicated.
 - **From `BOOTSTRAP` to `APPLIED`**: the same procedure, with the bootstrap console appender treated as `console: true`.
 
 ## Shutdown state (application)

@@ -55,7 +55,9 @@ class Story6RehashTest {
                             + "nicknameMaxLength: 0\n");
 
             root.send("REHASH");
-            assertThat(root.readUntil("NOTICE", Duration.ofSeconds(5))).contains("Rehash failed");
+            assertThat(root.readUntil("NOTICE", Duration.ofSeconds(5)))
+                    .contains("Rehash failed")
+                    .contains(server.configPath.toString());
 
             root.send("WHOHOST root");
             assertThat(root.readUntil("NOTICE", Duration.ofSeconds(5)))

@@ -15,15 +15,18 @@
  */
 package net.jircd.core.config;
 
-import java.io.FileInputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.file.Path;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.Consumer;
 import net.jircd.core.extension.ExtensionRegistry;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * The core, manually-triggered reload operation (research.md "Configuration reload mechanism") —
@@ -45,6 +48,9 @@ public final class ConfigurationReloader {
         }
     }
 
+    private static final Logger LOG = LoggerFactory.getLogger(ConfigurationReloader.class);
+
+    private final List<Consumer<ServerConfiguration>> listeners = new CopyOnWriteArrayList<>();
     private final Path configPath;
     private final ConfigurationLoader loader;
     private final ExtensionRegistry extensionRegistry;
@@ -65,6 +71,16 @@ public final class ConfigurationReloader {
 
     public ServerConfiguration current() {
         return current;
+    }
+
+    /**
+     * Calls {@code listener} with each configuration a reload applied, after it has been published
+     * as {@link #current()}, whichever path reloaded it (SIGHUP or {@code REHASH}). Listeners run
+     * on the reloading thread, outside the reload's lock, in registration order; one that throws is
+     * logged and neither undoes the reload nor stops the others. A rejected reload calls none.
+     */
+    public void addReloadListener(Consumer<ServerConfiguration> listener) {
+        listeners.add(Objects.requireNonNull(listener));
     }
 
     public Path configPath() {
@@ -95,7 +111,19 @@ public final class ConfigurationReloader {
         // Checked before the reload monitor is taken, so a callback never queues behind a reload
         // that is itself waiting for the lifecycle lock the callback holds.
         extensionRegistry.requireNoLifecycleCallback();
-        return reloadSerialized();
+        ReloadOutcome outcome = reloadSerialized();
+        notifyListeners(outcome.configuration());
+        return outcome;
+    }
+
+    private void notifyListeners(ServerConfiguration applied) {
+        for (Consumer<ServerConfiguration> listener : listeners) {
+            try {
+                listener.accept(applied);
+            } catch (RuntimeException e) {
+                LOG.warn("A reload listener failed; the reload itself stands", e);
+            }
+        }
     }
 
     /**
@@ -111,9 +139,7 @@ public final class ConfigurationReloader {
     private synchronized ReloadOutcome reloadSerialized()
             throws ConfigurationException, IOException {
         ServerConfiguration reloaded;
-        try (InputStream in = new FileInputStream(configPath.toFile())) {
-            reloaded = loader.load(in);
-        }
+        reloaded = loader.load(configPath);
         loader.checkReplyBudgets(
                 runningServerName, reloaded.nicknameMaxLength(), reloaded.channelNameMaxLength());
         ExtensionRegistry.DesiredState desired =

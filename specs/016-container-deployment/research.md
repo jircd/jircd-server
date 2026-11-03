@@ -15,7 +15,7 @@ Each section records a decision, why it was made, and what else was considered. 
 
 - Logback runs custom `Configurator` providers before its own `DefaultJoranConfigurator`. The bootstrap is therefore in place before any log line, including a "configuration invalid" error.
 - Programmatic setup avoids Joran's reflective XML processing, which is the part of logback that most needs native-image metadata.
-- Replacing only the changed appenders means a reload that leaves console logging on never drops or doubles console lines.
+- Replacing only the changed appenders means a reload that leaves console logging on keeps writing console lines through its own appender, untouched. The swap of a changed file is not atomic: an event logged at the instant of the switch can be lost or reach only one destination.
 
 **Operator override**: Custom providers run *before* logback's own lookup of `-Dlogback.configurationFile`. So when that property is set, the jircd configurator returns `INVOKE_NEXT_IF_ANY` and does nothing, and the applier logs once that the YAML `logging` section is ignored. This keeps the standard escape hatch from the spec's Assumptions.
 
