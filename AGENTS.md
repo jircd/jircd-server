@@ -28,6 +28,10 @@ IRCv3 server in Java 25 (Gradle toolchain, multi-module). The project rules live
 
 PRs get reviewed by SonarCloud (quality gate plus non-gating issues, all of which get fixed) and Sourcery. Catch what they would flag before the PR exists, so each PR needs at most one follow-up round.
 
+- Keep each PR under Sourcery's review limit of 150,000 diff characters. Sourcery skips a larger PR without reviewing it, and its check still shows "skipped" rather than failing. Measure with `git diff origin/main...HEAD | wc -c`, or against the previous branch in a stack, and aim for about 120,000 to leave room for review fixes.
+  - Split larger work into stacked PRs, each based on the previous branch: spec-kit documents first, then one PR per user story or concern. Plan the slices when generating `tasks.md`.
+  - Every slice must pass `./gradlew build` on its own.
+  - After a slice is squash-merged, rebase the next one with `git rebase --onto origin/main <merged-branch>` and retarget its base to `main`.
 - Check the diff against [`.github/REVIEW_CHECKLIST.md`](.github/REVIEW_CHECKLIST.md): the Sonar rules this repo keeps hitting, and what Sourcery keeps finding (failure and cleanup paths, concurrency and reload, protocol size limits, hostile input, extension boundaries, validation edge cases, rejected requests, tests that pass while the code is wrong, and docs claims).
 - Local Sonar analysis, for maintainers with a SonarCloud token in `systemProp.sonar.token` in `~/.gradle/gradle.properties` (never read or print that file):
   - Run it only on trusted code: our own worktree branches. The build runs the branch's Gradle logic with the token available, so never run it on a fork's or an untrusted branch.
