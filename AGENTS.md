@@ -26,8 +26,15 @@ IRCv3 server in Java 25 (Gradle toolchain, multi-module). The project rules live
 
 ## Before opening a PR
 
-PRs get reviewed by SonarCloud (quality gate plus non-gating issues, all of which get fixed) and Sourcery. Catch what they would flag before the PR exists, so each PR needs at most one follow-up round.
+PRs get reviewed by SonarCloud (quality gate plus non-gating issues, all of which get fixed), Sourcery and CodeRabbit (configured in `.coderabbit.yaml`). Catch what they would flag before the PR exists, so each PR needs at most one follow-up round.
 
+- Keep each PR under Sourcery's review limit of 150,000 diff characters. Sourcery skips a larger PR without reviewing it, and its check still shows "skipped" rather than failing. Measure with `git diff origin/main...HEAD | wc -c`, or against the previous branch in a stack, and aim for about 120,000 to leave room for review fixes.
+  - Sourcery's Open Source plan also caps each PR author at 250,000 diff characters per rolling 7 days, with a re-review costing a tenth of the PR's size. Once that budget is used up, Sourcery skips PRs as well. Pace large stacks across weeks, or re-request a review later with `@sourcery-ai review`.
+  - CodeRabbit limits reviews per hour and files per review, not characters; its review info shows how many reviews remain this hour. On its OSS plan, a repository with fewer than 10 stars gets reviews only on request: if no review appears after a push, comment `@coderabbitai review` on the PR. It skips `gradle/verification-metadata.xml`, `gradle/verification-keyring.keys` and `gradle/wrapper/**`, as configured in `.coderabbit.yaml`.
+  - Before calling a PR ready, confirm each bot posted an actual review, not just a summary or a "skipped" status. A bot isn't expected to review a PR that changes only files it skips.
+  - Split larger work into stacked PRs, each based on the previous branch: spec-kit documents first, then one PR per user story or concern. Plan the slices when generating `tasks.md`.
+  - Every slice must pass `./gradlew build` on its own.
+  - After a slice is squash-merged, rebase the next one with `git rebase --onto origin/main <merged-branch>` and retarget its base to `main`.
 - Check the diff against [`.github/REVIEW_CHECKLIST.md`](.github/REVIEW_CHECKLIST.md): the Sonar rules this repo keeps hitting, and what Sourcery keeps finding (failure and cleanup paths, concurrency and reload, protocol size limits, hostile input, extension boundaries, validation edge cases, rejected requests, tests that pass while the code is wrong, and docs claims).
 - Local Sonar analysis, for maintainers with a SonarCloud token in `systemProp.sonar.token` in `~/.gradle/gradle.properties` (never read or print that file):
   - Run it only on trusted code: our own worktree branches. The build runs the branch's Gradle logic with the token available, so never run it on a fork's or an untrusted branch.
@@ -36,4 +43,4 @@ PRs get reviewed by SonarCloud (quality gate plus non-gating issues, all of whic
   - Contributors without a token skip this step; SonarCloud then reports on the PR (or not at all for a fork's PR).
   - The SonarQube CLI's `sonar analyze` can't stand in: its code analysis returns 403 on this plan, so it only scans secrets.
 - Independent review: an agent from the other vendor (Claude for Codex-written changes, Codex for Claude-written ones) reviews the diff against the same checklist. Fix the real findings before opening the PR.
-- Push once per review round: wait for SonarCloud (when it runs) and Sourcery, batch every fix into one change, then push.
+- Push once per review round: wait for SonarCloud (when it runs), Sourcery and CodeRabbit, batch every fix into one change, then push.
