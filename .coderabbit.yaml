@@ -1,0 +1,43 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# CodeRabbit reviews PRs alongside SonarCloud and Sourcery (see AGENTS.md, "Before opening a PR").
+# While the repository has fewer than 10 stars, CodeRabbit's OSS plan reviews only on request:
+# comment `@coderabbitai review` on the PR.
+language: en-US
+
+reviews:
+  profile: assertive
+  high_level_summary: true
+  poem: false
+  review_status: true
+  auto_review:
+    enabled: true
+    drafts: false
+    # Stacked PRs target the previous branch in the stack, not only main.
+    base_branches:
+      - ".*"
+  # Generated or machine-maintained files: reviewing them spends the per-review file limit.
+  path_filters:
+    - "!gradle/verification-metadata.xml"
+    - "!gradle/verification-keyring.keys"
+    - "!gradle/wrapper/**"
+  path_instructions:
+    - path: "**/*.java"
+      instructions: >-
+        Check the change against .github/REVIEW_CHECKLIST.md: failure and cleanup paths,
+        concurrency and configuration reload, protocol size limits, hostile input,
+        extension boundaries, and tests that would still pass if the code were wrong.
+    - path: "specs/**"
+      instructions: >-
+        Spec-kit documents. Check that claims match the code and tests in the PR,
+        and that spec, plan, tasks and contracts agree with each other.
+
+chat:
+  auto_reply: true
+
+knowledge_base:
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - "AGENTS.md"
+      - ".github/REVIEW_CHECKLIST.md"
+      - ".specify/memory/constitution.md"
