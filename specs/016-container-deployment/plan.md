@@ -81,11 +81,11 @@ The technical decisions are in [research.md](research.md).
 
 | Principle | Assessment |
 |---|---|
-| **I. Code Quality** | Each new class has one job: settings parse/validate, logback applier, bootstrap configurator, shutdown signal handler, graceful drain. Spotless, SpotBugs and PMD apply to all new Java. Removing `logback.xml` takes away a config surface rather than adding one. New dependencies (native build plugin, Testcontainers) are justified by FR-012 and FR-015 and are confined to the build and tests respectively. **PASS** |
+| **I. Code Quality** | Each new class has one job: settings parse/validate, logback applier, bootstrap configurator, shutdown signal handler, graceful drain. Spotless, SpotBugs and PMD apply to all new Java. The change replaces the packaged `logback.xml` with the YAML `logging` section ([contracts/logging-config.md](contracts/logging-config.md)). New dependencies (native build plugin, Testcontainers) are justified by FR-012 and FR-015 and are confined to the build and tests respectively. **PASS** |
 | **II. Testing Standards** | Tests come first for each server change: logging validation and reload (unit), applier swaps (unit with a real `LoggerContext`), graceful shutdown with `ERROR` delivery (in-process integration), config-file errors (integration). The container suite proves the built artefacts. Coverage holds because the logic is also covered in-process (R5). Container tests use bounded waits and fresh containers per class, with no retries. **PASS** |
-| **III. UX Consistency** | Startup errors keep the `Refusing to start:` form. Shutdown uses the existing `ERROR :Closing Link: <host> (reason)` shape. The `logging` section follows the existing YAML validation style. **Breaking change**: no default `logs/jircd.log` on host installs. The project is unreleased (0.1.0-SNAPSHOT, nothing published), so there is no released interface to version. The migration note goes in the README and [contracts/logging-config.md](contracts/logging-config.md). This justification goes in the PR. A manual walkthrough of [quickstart.md](quickstart.md) steps 2–4 is part of done. **PASS (with recorded justification)** |
+| **III. UX Consistency** | Startup errors keep the `Refusing to start:` form. Shutdown uses the existing `ERROR :Closing Link: <host> (reason)` shape. The `logging` section follows the existing YAML validation style. **Breaking change**: no default `logs/jircd.log` on host installs. The project is unreleased (0.1.0-SNAPSHOT, nothing published), so there is no released interface to version. The migration note goes in the README and [contracts/logging-config.md](contracts/logging-config.md). This justification goes in the PR. A manual walkthrough of [quickstart.md](quickstart.md) steps 1–4 is part of done. **PASS (with recorded justification)** |
 | **IV. Performance** | Budgets are declared before implementation: SC-003 (shutdown), SC-004 and SC-005 (native), SC-006 (memory recorded). The hot path is unchanged: the logging applier runs only at startup and reload, and shutdown is not a hot path. The container load scenario is re-runnable weekly. Native regressions beyond 10% are reported (not gating while experimental, FR-016). **PASS** |
-| **Quality Gates / Workflow** | Work is tracked by this spec. A cross-vendor review and local Sonar run before the PR (AGENTS.md). Actions pinned by SHA. **PASS** |
+| **Quality Gates / Workflow** | Work is tracked by this spec. A cross-vendor review, and a local Sonar run when a SonarCloud token is available (AGENTS.md), before the PR. Actions pinned by SHA. **PASS** |
 
 **Post-design re-check (after Phase 1)**: No new violations. The design adds no runtime abstraction beyond what FR-006 and FR-009 require, and the native build is opt-in per Dockerfile target. **PASS**
 
@@ -104,6 +104,7 @@ specs/016-container-deployment/
 │   ├── container-contract.md  # tags, user, paths, signals, exit codes, messages
 │   └── logging-config.md      # `logging` YAML section
 ├── checklists/requirements.md
+├── validation/                # summary-only evidence (environment, tests, coverage, native, CI, walkthrough); no raw logs or per-run files
 └── tasks.md                   # Phase 2 (/speckit-tasks)
 ```
 
@@ -172,7 +173,7 @@ README.md                                    # + "Running in a container" sectio
 3. **JVM image and container contract tests** (FR-001–FR-005, FR-007, FR-008, FR-011): `Dockerfile` `build`/`jvm` stages, `.dockerignore`, sample config, Testcontainers suite, `containerTest` task. This is the MVP: Stories 1 and 2 on the JVM variant.
 4. **Native variant** (FR-012–FR-016): native build plugin, `native-build` and `native` stages, metadata collection task and committed metadata, the same suite against the native image.
 5. **CI and publishing** (FR-017–FR-021): `container.yml`, release tags, Dependabot docker ecosystem, and the weekly container load comparison (SC-004–SC-006).
-6. **Docs** (FR-022): README section, migration note, native caveats, quickstart walkthrough recorded in `validation/` as a summary.
+6. **Docs** (FR-022): README text ships with the layer it describes (logging, shutdown, container); the last step checks it for consistency, adds the native caveats and records the quickstart walkthrough in `validation/` as a summary.
 
 ## Complexity Tracking
 

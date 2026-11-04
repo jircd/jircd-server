@@ -21,6 +21,8 @@ A new immutable part of `ServerConfiguration`, parsed from the optional top-leve
    - If the file already exists, it must be a regular, writable file.
 4. A rejected `logging` section rejects the whole configuration: startup refuses to run, and a reload leaves everything in place (FR-006a, FR-008).
 
+Rules 1–3 do not apply under `EXTERNAL` (see below): with `-Dlogback.configurationFile` set, the section is neither parsed nor validated, so an invalid section is not rejected.
+
 **Fixed, not configurable** (spec Assumptions):
 
 - The pattern `%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n`
@@ -33,14 +35,15 @@ A new immutable part of `ServerConfiguration`, parsed from the optional top-leve
 |---|---|---|
 | `BOOTSTRAP` | The console appender installed by the logback `Configurator` before the YAML is read | Process start |
 | `APPLIED(settings)` | The root appenders match `settings` | After startup config load, and after each successful reload whose `logging` section differs from the current one |
-| `EXTERNAL` | `-Dlogback.configurationFile` was set, so jircd never touches appenders | Process start. It never changes, and the YAML section is ignored and logged once |
+| `EXTERNAL` | `-Dlogback.configurationFile` was set, so jircd never touches appenders | Process start. It never changes, and the YAML section is ignored (not validated either) and logged once |
 
 Transition rules:
 
 - **From `APPLIED(old)` to `APPLIED(new)`**:
   - The console appender is kept unchanged if `console` is unchanged.
   - The file appender is kept if `file` is unchanged. Otherwise a new one is started first, then attached, then the old one is detached and stopped.
-  - If starting the new appender fails (for example, the directory was removed between validation and apply), the old appenders stay and a WARN is logged.
+  - If starting the new appender fails (for example, the directory was removed between validation and apply), the old appenders stay and a WARN is logged. The new configuration stays published (an intentional partial apply).
+  - The switch is not atomic: a few lines logged around it can be lost or duplicated.
 - **From `BOOTSTRAP` to `APPLIED`**: the same procedure, with the bootstrap console appender treated as `console: true`.
 
 ## Shutdown state (application)
@@ -49,6 +52,8 @@ Transition rules:
 |---|---|---|---|
 | `RUNNING` | yes | normal traffic | TERM or INT moves to `DRAINING` |
 | `DRAINING` | no (listeners closed) | `ERROR :Closing Link: <host> (Server shutting down)` enqueued once per live session; each writer is drained and closed | All sessions closed, or the 8 s budget runs out: `EXITED(0)` |
+
+Delivery of the `ERROR` is guaranteed only to clients that can still receive it before the deadline. A client that cannot drain, and a connection whose session is not created before the deadline, is force-closed without the `ERROR` and counted. A session already disconnecting for another reason (QUIT, EOF, KILL, timeout) keeps that disconnect's outcome; shutdown adds no `ERROR` to it. If closing a listener fails, the listener is not retried by shutdown (the process exits right after) and the log says listener cleanup was incomplete.
 | `EXITED(0)` | — | — | Process exits with status 0. If the budget ran out, a WARN names how many connections were force-closed |
 
 - A TERM or INT before `start()` has bound the listeners also leads straight to `EXITED(0)`.

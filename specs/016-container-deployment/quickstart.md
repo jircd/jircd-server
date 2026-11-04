@@ -20,7 +20,7 @@ On Apple Silicon (Docker Desktop's engine is linux/arm64), both targets build fo
 Use the sample at `deploy/container/jircd.yaml` (TLS listener disabled) or your own:
 
 ```bash
-docker run --rm --read-only -p 6667:6667 -p 6697:6697 \
+docker run -d --read-only -p 6667:6667 -p 6697:6697 \
   -v "$PWD/deploy/container:/etc/jircd:ro" --name jircd jircd:jvm
 ```
 
@@ -30,7 +30,7 @@ Expected:
 - An IRC client connecting to `localhost:6667` registers, joins a channel and exchanges messages (spec Story 1, scenario 1).
 - `--read-only` causes no write errors (SC-007).
 
-For TLS: put `cert.pem` and `key.pem` in the mounted directory, point the TLS listener at `/etc/jircd/cert.pem` and `/etc/jircd/key.pem`, and connect a TLS client to `localhost:6697` (Story 1, scenario 2).
+For TLS: put `cert.pem` and `key.pem` in the mounted directory (both must be readable by uid 65532, for example in a temporary directory: `chmod 644 cert.pem; chmod 640 key.pem; sudo chgrp 65532 key.pem`, and the directory and its parents traversable by that uid), point the TLS listener at `/etc/jircd/cert.pem` and `/etc/jircd/key.pem`, and connect a TLS client to `localhost:6697` (Story 1, scenario 2).
 
 ## 3. Reload and stop
 
@@ -38,7 +38,8 @@ For TLS: put `cert.pem` and `key.pem` in the mounted directory, point the TLS li
 # edit deploy/container/jircd.yaml (e.g. change the MOTD path or a capability toggle)
 docker kill -s HUP jircd     # logs "Configuration reloaded via SIGHUP"; clients stay connected
 docker stop jircd            # clients receive ERROR :Closing Link: … (Server shutting down)
-docker inspect jircd --format '{{.State.ExitCode}}'   # 0 (run without --rm to inspect)
+docker inspect jircd --format '{{.State.ExitCode}}'   # 0 (the container was started without --rm)
+docker rm jircd
 ```
 
 Expected: the outcomes of Story 2, scenarios 1–2. Making the file invalid before sending HUP leaves the server running on the old configuration, with a WARN explaining why (scenario 3).
@@ -73,7 +74,7 @@ Then rebuild the native image (step 1) and run step 6 against it.
 ./gradlew :jircd-integration-tests:containerTest -Djircd.image=jircd:native
 ```
 
-Expected: the same test classes pass against both images. They cover registration over plaintext and TLS, messaging, `OPER` with an Argon2 credential, HUP reload, TERM shutdown with 100 clients in under 10 s with every client receiving `ERROR` (SC-003), the startup failure messages, and a read-only root filesystem.
+Expected: the same test classes pass against both images. They cover registration over plaintext and TLS, messaging, `OPER` with an Argon2 credential, HUP reload, TERM shutdown with 100 clients in under 10 s with every client that can still receive output before the deadline receiving `ERROR` (SC-003, FR-009 exceptions), the startup failure messages, and a read-only root filesystem.
 
 ## 7. Native-versus-JVM comparison (weekly CI, or on demand)
 

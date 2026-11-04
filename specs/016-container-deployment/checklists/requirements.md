@@ -6,9 +6,9 @@
 
 ## Content Quality
 
-- [x] No implementation details (languages, frameworks, APIs)
+- [x] No implementation details in the user-value sections (stories, success criteria); build and runtime names appear only in the requirements and assumptions, as operator-facing contract
 - [x] Focused on user value and business needs
-- [x] Written for non-technical stakeholders
+- [ ] Written for non-technical stakeholders (the audience is operators, so the requirements name JVM, GraalVM, YAML and GHCR)
 - [x] All mandatory sections completed
 
 ## Requirement Completeness
@@ -24,7 +24,7 @@
 
 ## Feature Readiness
 
-- [x] All functional requirements have clear acceptance criteria
+- [x] All functional requirements have clear acceptance criteria. FR-011 (memory sized from the container limit): pass when a container started with `--memory` shows a JVM max heap of about 75% of that limit (`-XX:MaxRAMPercentage=75`), recorded in `validation/tests.md`. FR-021 (OCI labels): pass when `docker inspect` of each image shows `source`, `revision`, `version`, `licenses=Apache-2.0`, `title` and a variant-naming `description`
 - [x] User scenarios cover primary flows
 - [x] Feature meets measurable outcomes defined in Success Criteria
 - [x] No implementation details leak into specification

@@ -43,7 +43,7 @@ Each section records a decision, why it was made, and what else was considered. 
 - The `ERROR :Closing Link: … (reason)` shape matches what KILL and SendQ overflow already send.
 - The existing `stop()` closes sockets without notifying clients and stays as it is for tests.
 
-**Open check, verified by the native smoke test**: GraalVM CE native images support `sun.misc.Signal.handle`. If the native smoke test shows TERM is not delivered to the handler, add `--install-exit-handlers` to the native build args. Without a shutdown hook installed it has no side effect.
+**Open check, verified by the native smoke test**: GraalVM CE native images support `sun.misc.Signal.handle`. If the native smoke test shows TERM is not delivered to the handler, add `--install-exit-handlers` to the native build args. How `--install-exit-handlers` interacts with the explicit `sun.misc.Signal` handlers in `native-image-community:25i5` is not established yet; the observed result of the native smoke test is recorded in `validation/native.md` and replaces this note.
 
 **Alternatives considered**:
 
@@ -159,13 +159,13 @@ Details:
 - Add a new `.github/workflows/container.yml`, triggered on pull requests and on pushes to `main`.
   - **`jvm` job** (ubuntu-latest): `docker buildx build --target jvm --load` for amd64, then `./gradlew :jircd-integration-tests:containerTest -Djircd.image=…`. On `main` it then builds amd64 and arm64 and pushes.
   - **`native` job** (ubuntu-latest, amd64 only): the same steps with `--target native`, pushed on `main`.
-- Images go to `ghcr.io/jircd/jircd-server` using `GITHUB_TOKEN`. `packages: write` is granted only to the push steps on `main`.
+- Images go to `ghcr.io/jircd/jircd-server` using `GITHUB_TOKEN`. GitHub Actions scopes permissions to a workflow or job, not a step. Test jobs (pull requests and `main`) are read-only with `persist-credentials: false`; publishing runs in separate main-only jobs with job-level `packages: write`. Each publish job builds and pushes only the immutable sha tags, outside any concurrency group, so every `main` commit gets its tag (a concurrency group keeps only one pending run and cancels an older pending one even with `cancel-in-progress: false`, which could drop a publish before it pushed). Only a separate retag job per variant (`needs` the publish job; concurrency is scoped to a job or workflow, not a step) moves `jvm`, `native` and `latest`, in a `concurrency` group per variant with `cancel-in-progress: false`, retagging from the sha tag; skipping an intermediate commit there is harmless. Before retagging it checks that its commit is still the tip of `main`, skipping the moving tags otherwise. The check is best-effort: it is not atomic with the retag, so a newer commit can land just after it. The transient outcome is a moving tag one commit behind until the next publish moves it.
 - Tags:
   - `jvm-sha-<7>` and `native-sha-<7>` (immutable)
   - `jvm` and `native` (latest passing `main`)
   - `latest` (equals `jvm`)
-- `release.yml` also pushes `X.Y.Z-jvm`, `X.Y.Z-native` and `X.Y.Z` (equal to jvm) when a version tag is created.
-- OCI labels: `org.opencontainers.image.source`, `.revision`, `.licenses=Apache-2.0`, `.version` (FR-021).
+- `release.yml` also pushes `X.Y.Z-jvm`, `X.Y.Z-native` and `X.Y.Z` (equal to jvm) when a version tag is created, from a separate job with job-level `packages: write` (the workflow's current permission is only `contents: write`).
+- OCI labels: `org.opencontainers.image.source`, `.revision`, `.licenses=Apache-2.0`, `.version`, `.title=jircd` and `.description` naming the variant (FR-021).
 - Every third-party action is pinned by commit SHA (repo rule; unpinned actions fail main's Sonar gate).
 - Add `package-ecosystem: docker` to Dependabot for the `Dockerfile`.
 

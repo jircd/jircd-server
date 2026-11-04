@@ -94,16 +94,16 @@
     - `ENTRYPOINT ["java","-XX:MaxRAMPercentage=75","-XX:-UsePerfData","-cp","/opt/jircd/lib/*","net.jircd.server.JircdServerApplication"]` and `CMD ["/etc/jircd/jircd.yaml"]`.
 
   Put a tag comment next to every digest. Make `jvm` the default target, the last stage or one documented with `--target`.
-- [ ] T021 [P] [US1] Add `deploy/container/jircd.yaml`, a sample configuration: a plaintext listener on 6667, `logging` left at its defaults with the file option commented out, a commented TLS listener using `/etc/jircd/cert.pem` and `/etc/jircd/key.pem`, and a commented OPER block pointing to the Argon2 hash instructions. It must contain no secrets.
+- [ ] T021 [P] [US1] Add `deploy/container/jircd.yaml`, a sample configuration: a plaintext listener on 6667, `logging` left at its defaults with the file option commented out, a commented TLS listener using `/etc/jircd/cert.pem` and `/etc/jircd/key.pem`, and a commented OPER block pointing to the Argon2 hash instructions, with `operRequireTls: true` set so OPER passwords never cross the plaintext listener (OPER credentials are enabled only together with a TLS listener, and the sample says so). It must contain no secrets.
 - [ ] T022 [US1] Build `jircd:jvm` locally and run `containerTest -Djircd.image=jircd:jvm`, so that T013 and T014 pass. Record the results and the image size in `specs/016-container-deployment/validation/tests.md`.
 
 **Checkpoint**: US1 is demonstrable. The JVM image runs per the container contract for startup, logging, user and errors. This is an MVP increment, not permission to merge before the remaining P1 story is done.
 
 ## Phase 4: User Story 2 - Reload and stop a containerised server cleanly (Priority: P1)
 
-**Goal**: HUP reloads the configuration, including the logging settings, without disconnecting clients. TERM and INT send `ERROR` to every client and exit 0 within 10 s.
+**Goal**: HUP reloads the configuration, including the logging settings, without disconnecting clients. TERM and INT send `ERROR` to every client that can still receive it before the deadline (forced-close and prior-disconnect exceptions per FR-009) and exit 0 within 10 s.
 
-**Independent Test**: `containerTest -Djircd.image=jircd:jvm` with `ContainerSignalTest`. HUP applies a changed capability and logging setting while clients stay connected. An invalid reload keeps the old configuration. `docker stop` with 100 clients exits 0 in under 10 s, and every client receives the shutdown `ERROR`.
+**Independent Test**: `containerTest -Djircd.image=jircd:jvm` with `ContainerSignalTest`. HUP applies a changed capability and logging setting while clients stay connected. An invalid reload keeps the old configuration. `docker stop` with 100 clients exits 0 in under 10 s, and every client that can still receive output before the deadline receives the shutdown `ERROR`.
 
 ### Tests first
 
@@ -111,40 +111,44 @@
   - listeners are called once after a successful publication, with the new configuration;
   - they are not called for a rejected reload;
   - a listener that throws is logged and doesn't undo the publication;
-  - this holds for reloads from SIGHUP (`SighupReloadHandler.reload`) and from `REHASH` (`ConfigurationReloader.reloadWithOutcome`).
+  - this holds for reloads from SIGHUP (`SighupReloadHandler.reload`) and from `REHASH` (`ConfigurationReloader.reloadWithOutcome`);
+  - two overlapping reloads, with the first one's notification forced to run after the second's, leave listeners on the newer configuration;
+  - a withdrawn provider whose `stop()` throws an `AssertionError` still gets listeners notified, and the error still propagates.
 - [ ] T024 [P] [US2] Extend `jircd-integration-tests/src/test/java/net/jircd/integration/LoggingConfigurationTest.java` with reloads that:
   - add a file (it starts receiving lines);
   - change the file path (the new file gets lines after the reload, and the old one gets none);
   - turn console logging off while a file is set;
   - are rejected because of `logging` (both the previous destinations and the previous non-logging settings stay in force).
 
-  Each destination's lines must have no gaps or duplicates around the switch.
+  Each destination's lines must have no gaps or duplicates outside the switch window: a few lines logged at the instant of the switch may be lost or duplicated (132.3), so assert on lines logged well before and well after it.
 - [ ] T025 [P] [US2] Add `jircd-integration-tests/src/test/java/net/jircd/integration/GracefulShutdownTest.java`, run in-process against `TestServer`:
   - `shutdown("Server shutting down")` with 100 registered clients and some unregistered ones closes the listeners first (new connections are refused);
-  - every client receives exactly `ERROR :Closing Link: <host> (Server shutting down)` before EOF;
+  - every client that can still receive output before the deadline receives exactly `ERROR :Closing Link: <host> (Server shutting down)` before EOF;
   - everything finishes within 8 s;
-  - a client that doesn't read (full receive buffer) is force-closed at the budget with a WARN naming the count;
+  - a client that doesn't read (full receive buffer) is force-closed at the budget, without the `ERROR`, with a WARN naming the count;
+  - a connection whose session is not created before the deadline is force-closed without the `ERROR` and counted the same way;
+  - a session already disconnecting for another reason (QUIT, EOF, KILL, timeout) keeps that disconnect's outcome and gets no shutdown `ERROR`;
   - a second `shutdown` call during draining is a no-op;
   - shutdown before `start()` returns at once.
 - [ ] T026 [P] [US2] Add `jircd-integration-tests/src/test/java/net/jircd/integration/container/ContainerSignalTest.java` (`@Tag("container")`) covering:
   - HUP after editing the mounted config (toggle a capability, add a `logging.file` on a writable tmpfs mount) logs "Configuration reloaded via SIGHUP", and the change takes effect while connected clients stay connected (scenario 1);
   - HUP with an invalid config keeps the old one and logs the WARN (scenario 3);
-  - `stopWithin(10 s)` with 100 connected clients returns exit code 0, and every client read `ERROR … (Server shutting down)` before EOF (scenario 2, SC-003);
+  - `stopWithin(10 s)` with 100 connected clients returns exit code 0, and every client that can still receive output before the deadline read `ERROR … (Server shutting down)` before EOF (scenario 2, SC-003; forced-close exceptions per FR-009);
   - INT behaves like TERM;
   - TERM sent immediately after container start, before the listeners bind, exits 0.
 - [ ] T027 [US2] Run T023–T026 to behavioural red after stubs, and record the results in `specs/016-container-deployment/validation/tests.md`.
 
 ### Implementation
 
-- [ ] T028 [US2] Add `addReloadListener(Consumer<ServerConfiguration>)` to `jircd-core/src/main/java/net/jircd/core/config/ConfigurationReloader.java`. Listeners are called after a successful publication, outside the reload monitor, each isolated by try/catch with a WARN. This makes T023 pass.
+- [ ] T028 [US2] Add `addReloadListener(Consumer<ServerConfiguration>)` to `jircd-core/src/main/java/net/jircd/core/config/ConfigurationReloader.java`. Listeners are called after a successful publication, outside the reload monitor, each isolated by try/catch with a WARN. Delivery is ordered: it runs under a dedicated notification lock and delivers the latest published configuration, and a notification for a configuration older than the last one delivered is skipped, so listeners never end on an older configuration than `current()`. A listener-initiated (reentrant) reload still works, and the outer notification does not then deliver its older configuration. Listeners are still notified when a configuration was published but cleanup of withdrawn providers failed. This makes T023 pass.
 - [ ] T029 [US2] In `jircd-server/src/main/java/net/jircd/server/JircdServerApplication.java`, register the logging applier as a reload listener, so SIGHUP and `REHASH` both apply the logging changes. Validation stays in the loader, so a rejected `logging` section rejects the whole reload. This makes T024 pass.
 - [ ] T030 [US2] Add `drain(String reason, Duration timeout)` to `jircd-core/src/main/java/net/jircd/core/session/ConnectionHandler.java`:
   - stop accepting;
   - for every live session, enqueue `ERROR :Closing Link: <realHostname> (<reason>)` using the same format as the SendQ overflow and KILL paths;
-  - close each writer so it drains, bounded by the deadline;
-  - then close the sockets, force-closing any left at the deadline and returning the count.
+  - close each writer so it drains, bounded by the deadline, then close its read side so idle clients see EOF without waiting for the liveness tick;
+  - then close the sockets, force-closing any left at the deadline and returning the count. Forced-close waiting fits inside the 8 s budget, and the count survives a failure while closing.
 
-  Keep `closeConnections` unchanged for `stop()`.
+  Keep `closeConnections` unchanged for `stop()`. While a graceful shutdown is draining, `stop()` waits for it (bounded by the deadline) instead of closing sockets under it.
 - [ ] T031 [US2] Add `shutdown(String reason)` to `JircdServerApplication`. It is idempotent: the first call stops accepting, closes the listeners and drains within 8 s, then logs a WARN if anything was force-closed; later calls return at once. If the application never started, it returns at once. This makes T025 pass.
 - [ ] T032 [US2] Add `jircd-server/src/main/java/net/jircd/server/ShutdownSignalHandler.java`. It handles `TERM` and `INT` with `sun.misc.Signal`, calls `shutdown("Server shutting down")`, then `System.exit(0)`, and ignores repeated signals. Install it in `main` before `start()`, keeping `SighupReloadHandler` after it. Document both at the point of definition.
 - [ ] T033 [US2] Rebuild `jircd:jvm` and run `containerTest -Djircd.image=jircd:jvm`, so that T026 passes. Record the results, the measured shutdown time with 100 clients (SC-003) and the full `containerTest` run in `specs/016-container-deployment/validation/tests.md`.
@@ -159,9 +163,9 @@
 
 ### Tests first
 
-- [ ] T034 [P] [US3] Extend `ContainerContractTest` with two tests. First, `OPER` with the Argon2 fixture credential succeeds and a wrong password fails exactly as on the JVM image. Second, the `CAP LS 302` capability list and the `005` ISUPPORT tokens are identical to a recorded JVM-image baseline (FR-013, FR-014).
+- [ ] T034 [P] [US3] Extend `ContainerContractTest` with three tests. First, the fixture gains an Argon2 OPER credential (reusing the Argon2 hashing `TestServer` uses), then `OPER` with it succeeds and a wrong password fails exactly as on the JVM image. Second, TLS registration works with a PKCS12 keystore fixture as well as PEM (FR-014, FR-015). Third, the `CAP LS 302` capability list and the `005` ISUPPORT tokens are identical to a recorded JVM-image baseline (FR-013, FR-014).
 - [ ] T035 [P] [US3] Add `jircd-integration-tests/src/test/java/net/jircd/integration/ContainerDeliveryLoadTest.java` (`@Tag("container-load")`), which:
-  - opens 1,000 connections to the container, fanning out like `Story1DeliveryLatencyLoadTest`;
+  - starts the container with a configuration that raises `maxConnectionsPerIp` and `maxConnections` above 1,000 (the default is 20 per source address, and every test client shares one), opens 1,000 connections to it, fanning out like `Story1DeliveryLatencyLoadTest`, and asserts that all 1,000 register;
   - asserts every delivery within 1 s (SC-004);
   - prints p50/p99/max latency, throughput, time from container start to the first accepted connection (SC-005), and resident memory with 100 idle clients from the Docker stats API (SC-006).
 
@@ -194,12 +198,12 @@
 **Independent Test**: A PR runs `container.yml`, building and testing both variants. A deliberately broken native build in a throwaway branch fails the `native` job and names it. A push to `main` publishes `jvm`, `jvm-sha-<7>`, `latest`, `native` and `native-sha-<7>`.
 
 - [ ] T041 [US4] Add OCI labels to both runtime stages of `Dockerfile`, filled from build args: `org.opencontainers.image.source`, `.revision` and `.version`, `.licenses=Apache-2.0`, `.title=jircd`, and a `.description` that names the variant (FR-021).
-- [ ] T042 [US4] Create `.github/workflows/container.yml`, triggered on `pull_request` and on `push` to `main`, with permissions `contents: read` and `packages: write` only on the push steps:
-  - **`jvm` job**: set up buildx, `build --target jvm --load` for amd64, set up JDK 25 and Gradle, then `./gradlew :jircd-integration-tests:containerTest -Djircd.image=…`. On `main` only, log in to GHCR with `GITHUB_TOKEN` and build and push `linux/amd64,linux/arm64`, tagged `jvm`, `jvm-sha-<7>` and `latest`.
-  - **`native` job**: the same on amd64 with `--target native`, pushing `native` and `native-sha-<7>`.
+- [ ] T042 [US4] Create `.github/workflows/container.yml`, triggered on `pull_request` and on `push` to `main`, with workflow permissions `contents: read` only. GitHub Actions scopes permissions to a workflow or a job, never a step, so pull-request builds and tests must not share a job with `packages: write`:
+  - **`jvm` and `native` jobs** (read-only, run on pull requests and on `main`): set up buildx, `build --target <variant> --load` (native on amd64 only), set up JDK 25 and Gradle, then `./gradlew :jircd-integration-tests:containerTest -Djircd.image=…`. Use `persist-credentials: false` on checkout.
+  - **`publish-jvm` and `publish-native` jobs** (`needs` the matching test job, `if: github.ref == 'refs/heads/main'`, `permissions: contents: read, packages: write`): log in to GHCR with `GITHUB_TOKEN`, then build and push `linux/amd64,linux/arm64` tagged only `jvm-sha-<7>` (native: amd64, only `native-sha-<7>`); these jobs never push a moving tag. Pushing the immutable `*-sha-<7>` tags happens in the publish job **outside any concurrency group**, so every `main` commit gets its tag: GitHub Actions keeps only one pending run per concurrency group and cancels an older pending one even with `cancel-in-progress: false`, so a burst of commits could otherwise cancel a publish before it pushed its tag. A separate **retag job per variant** (`retag-jvm`, `retag-native`: `needs` the matching publish job, same `if` and `packages: write`) moves `jvm`, `native` and `latest` from the already pushed SHA tag (no rebuild) and runs in a `concurrency` group per variant with `cancel-in-progress: false`; concurrency is scoped to a job or workflow, not a step, so it has to be its own job. There, skipping an intermediate commit is harmless, because the newest pending run moves the tag. Serialization alone does not stop a slow older run from retagging after a newer one, so before retagging it checks that its commit is still the tip of `main` (`git ls-remote origin refs/heads/main` equals `github.sha`) and otherwise skips the moving tags. The check is best-effort: it is not atomic with the retag, so a newer commit can land just after it. The transient outcome is a moving tag one commit behind until the next publish moves it.
 
   Pin every third-party action by commit SHA with a version comment. Upload test reports on failure.
-- [ ] T043 [P] [US4] Extend `.github/workflows/release.yml` to build and push `X.Y.Z-jvm` and `X.Y.Z` (multi-arch), plus `X.Y.Z-native` (amd64), after the existing release steps. Pin actions by SHA.
+- [ ] T043 [P] [US4] Extend `.github/workflows/release.yml` with a separate publish job (job-level `packages: write`; the existing job keeps only `contents: write`) that builds and pushes `X.Y.Z-jvm` and `X.Y.Z` (multi-arch), plus `X.Y.Z-native` (amd64), after the release steps. Release tags are immutable, so the publish job `needs` per-variant smoke-test jobs that build each image from the release commit and run `containerTest` against it (as the `jvm` and `native` jobs of T042 do), and pushes only after they pass. A variant that fails its smoke test is not published (US4). Pin actions by SHA.
 - [ ] T044 [P] [US4] Add a `container-load` job to `.github/workflows/load-test.yml`. It builds both images on amd64, runs `containerLoadTest` against each, and writes a side-by-side table to `$GITHUB_STEP_SUMMARY`: p50/p99/max, throughput, start-up and memory, plus the native-versus-JVM percentage, flagging anything over 10%. The JVM run gates the job. The native run is `continue-on-error` while the variant is experimental (FR-016).
 - [ ] T045 [P] [US4] Add `package-ecosystem: docker` (directory `/`, weekly, grouped) to `.github/dependabot.yml`, so the digest-pinned base images get update PRs.
 - [ ] T046 [US4] Before opening the PR, check the workflows with `actionlint` if it is available. Otherwise review them by hand against `.github/REVIEW_CHECKLIST.md`. Record what was checked in `specs/016-container-deployment/validation/ci.md`. CI evidence from the PR run is added after it completes.
@@ -208,8 +212,8 @@
 
 ## Phase 7: Polish & Cross-Cutting Concerns
 
-- [ ] T047 Add a "Running in a container" section to `README.md`. It covers pulling the image, building locally (`--target jvm|native`), mounts, ports, the read-only root, uid 65532 and file ownership, reloading and stopping, viewing logs, enabling `logging.file` on a volume, which paths are writable, and the native variant's differences (extensions fixed at build time, Serial GC, experimental status). Add a minimal `docker run` example and an optional Compose snippet (FR-022).
-- [ ] T048 [P] Add the logging migration note from contracts/logging-config.md to `README.md`, and document the `logging` section wherever the configuration schema is documented (`specs/001-ircv3-server/contracts/server-configuration.md`, if that is the maintained schema reference). Fix the README claim that the zero-config `run` starts TLS on 6697: it starts plaintext 6667 only.
+- [ ] T047 Ship the README text with the code layer it describes, not here: the `logging` section in the logging layer (US1), stopping and shutdown in the shutdown layer (US2), and the "Running in a container" section in the image layer. This task is the final consistency check of those sections. The container section covers pulling the image, building locally (`--target jvm|native`), mounts, ports, the read-only root, uid 65532 and file ownership, reloading and stopping, viewing logs, enabling `logging.file` on a volume, which paths are writable, and the native variant's differences (extensions fixed at build time, Serial GC, experimental status). Add a minimal `docker run` example and an optional Compose snippet (FR-022).
+- [ ] T048 [P] The logging migration note from contracts/logging-config.md and the `logging` section ship in the logging layer's README change; here, check they are still correct, and document the `logging` section wherever the configuration schema is documented (`specs/001-ircv3-server/contracts/server-configuration.md`, if that is the maintained schema reference). Fix the README claim that the zero-config `run` starts TLS on 6697: it starts plaintext 6667 only.
 - [ ] T049 Walk through quickstart.md steps 1–4 by hand with a real IRC client against `jircd:jvm` and `jircd:native` (constitution Principle III). Record a summary in `specs/016-container-deployment/validation/walkthrough.md`.
 - [ ] T050 Run `./gradlew build` (tests, Spotless, SpotBugs, PMD, coverage floor 85% line / 75% branch) and the full `containerTest` against both local images. Record the results in `validation/tests.md`.
 - [ ] T051 Check the diff against `.github/REVIEW_CHECKLIST.md`: failure and cleanup paths in drain and the applier, concurrency of reload against shutdown, and hostile configuration input. Then run local Sonar per AGENTS.md and fix every open issue on the branch.
