@@ -72,18 +72,35 @@ public final class RehashCommandHandler implements CommandHandler {
             outcome.failures()
                     .forEach(
                             (id, reason) ->
-                                    AdminNotices.send(
+                                    Replies.sendFittedNotice(
                                             session,
                                             serverName.get(),
                                             "Rehash could not apply " + id + ": " + reason));
         } catch (ConfigurationException e) {
-            AdminNotices.send(
+            reportRejection(session, e);
+        } catch (IOException _) {
+            Replies.sendFittedNotice(
                     session,
                     serverName.get(),
-                    "Rehash failed: " + e.messageNaming(configurationReloader.configPath()));
-        } catch (IOException e) {
-            AdminNotices.send(
-                    session, serverName.get(), "Rehash failed: could not read configuration file");
+                    "Rehash failed: could not read configuration file: "
+                            + configurationReloader.configPath());
         }
+    }
+
+    /**
+     * Reports a rejected reload in one notice. When the reason plus the configuration file's path
+     * do not fit one, the reason and the path go out as separate notices, so a long path never cuts
+     * the reason or is itself cut away.
+     */
+    private void reportRejection(ClientSession session, ConfigurationException e) {
+        String name = serverName.get();
+        String full = "Rehash failed: " + e.messageNaming(configurationReloader.configPath());
+        if (Replies.fitsInNotice(session, name, full)) {
+            Replies.sendFittedNotice(session, name, full);
+            return;
+        }
+        Replies.sendFittedNotice(session, name, "Rehash failed: " + e.getMessage());
+        Replies.sendFittedNotice(
+                session, name, "Configuration file: " + configurationReloader.configPath());
     }
 }

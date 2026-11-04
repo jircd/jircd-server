@@ -19,17 +19,24 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import ch.qos.logback.classic.LoggerContext;
+import ch.qos.logback.classic.spi.Configurator;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.Appender;
 import ch.qos.logback.core.ConsoleAppender;
 import ch.qos.logback.core.rolling.RollingFileAppender;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.PrintStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import net.jircd.core.config.ConfigurationException;
 import net.jircd.core.config.ServerConfiguration;
+import net.jircd.server.logging.BootstrapLogbackConfigurator;
 import net.jircd.server.logging.LoggingSettingsApplier;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -87,11 +94,28 @@ class LoggingConfigurationTest {
         }
     }
 
+    private static TestServer startCapturing(PrintStream capture) throws Exception {
+        System.setOut(capture);
+        return TestServer.start();
+    }
+
     @Test
+    @SuppressWarnings("PMD.CloseResource") // System.out is restored, never closed
     void withoutALoggingSectionTheServerLogsToTheConsoleOnly() throws Exception {
-        try (TestServer server = TestServer.start()) {
+        PrintStream original = System.out;
+        ByteArrayOutputStream captured = new ByteArrayOutputStream();
+        try (PrintStream capture = new PrintStream(captured, true, StandardCharsets.UTF_8);
+                TestServer server = startCapturing(capture)) {
             connectAndRegister(server, "plain");
             assertThat(rootAppenders()).singleElement().isInstanceOf(ConsoleAppender.class);
+            // The appender must actually emit, not merely be attached.
+            Polling.until(
+                    WAIT,
+                    () -> captured.toString(StandardCharsets.UTF_8).contains("connection-event="));
+            assertThat(captured.toString(StandardCharsets.UTF_8))
+                    .contains("connection-event=connected");
+        } finally {
+            System.setOut(original);
         }
     }
 
@@ -123,18 +147,45 @@ class LoggingConfigurationTest {
     void underAnExternalLogbackConfigurationTheServerStartsAndLeavesTheSectionAlone()
             throws Exception {
         Path missing = dir.resolve("absent-dir").resolve("jircd.log");
-        String previous = System.setProperty("logback.configurationFile", "/etc/custom.xml");
-        try (TestServer server = TestServer.start(fileYaml(missing))) {
-            connectAndRegister(server, "external");
+        LoggerContext fresh = new LoggerContext();
+        try (var _ = setLogbackConfigurationFile("/etc/custom.xml");
+                var _ = (AutoCloseable) fresh::stop) {
+            // The section is not validated: a directory that does not exist is no error here.
+            ServerConfiguration loaded =
+                    new net.jircd.core.config.ConfigurationLoader(Set.of(), Set.of())
+                            .load(
+                                    new ByteArrayInputStream(
+                                            fileYaml(missing).getBytes(StandardCharsets.UTF_8)));
+            assertThat(loaded.logging()).isEqualTo(ServerConfiguration.Logging.DEFAULT);
+
+            // A fresh context configured under the property, so nothing left over can satisfy
+            // the assertions: the bootstrap steps aside and the applier changes nothing.
+            fresh.setMDCAdapter(new ch.qos.logback.classic.util.LogbackMDCAdapter());
+            BootstrapLogbackConfigurator bootstrap = new BootstrapLogbackConfigurator();
+            bootstrap.setContext(fresh);
+            assertThat(bootstrap.configure(fresh))
+                    .isEqualTo(Configurator.ExecutionStatus.INVOKE_NEXT_IF_ANY);
+            new LoggingSettingsApplier(fresh).apply(new ServerConfiguration.Logging(true, missing));
+
             assertThat(missing).doesNotExist();
-            assertThat(rootAppenders()).singleElement().isInstanceOf(ConsoleAppender.class);
-        } finally {
+            List<Appender<ILoggingEvent>> appenders = new ArrayList<>();
+            fresh.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME)
+                    .iteratorForAppenders()
+                    .forEachRemaining(appenders::add);
+            assertThat(appenders).isEmpty();
+        }
+    }
+
+    /** Sets {@code logback.configurationFile}; closing restores what was there before. */
+    private static AutoCloseable setLogbackConfigurationFile(String value) {
+        String previous = System.setProperty("logback.configurationFile", value);
+        return () -> {
             if (previous == null) {
                 System.clearProperty("logback.configurationFile");
             } else {
                 System.setProperty("logback.configurationFile", previous);
             }
-        }
+        };
     }
 
     // --- Reload (FR-006b): SIGHUP and REHASH both go through ConfigurationReloader. ---

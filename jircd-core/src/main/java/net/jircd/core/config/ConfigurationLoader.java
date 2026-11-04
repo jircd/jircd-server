@@ -15,6 +15,7 @@
  */
 package net.jircd.core.config;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetAddress;
@@ -95,17 +96,35 @@ public final class ConfigurationLoader {
         try {
             in = Files.newInputStream(configPath);
         } catch (NoSuchFileException _) {
-            throw new ConfigurationException("Configuration file not found: " + configPath);
+            throw new ConfigurationException(ConfigurationException.NOT_FOUND + configPath);
         } catch (AccessDeniedException _) {
-            throw new ConfigurationException(
-                    "Configuration file not readable by this user: " + configPath);
+            throw new ConfigurationException(ConfigurationException.NOT_READABLE + configPath);
+        } catch (IOException e) {
+            throw couldNotRead(configPath, e);
         }
+        byte[] content;
         try (in) {
-            return load(in);
+            // Read here so an I/O failure is told apart from invalid YAML, which wraps it.
+            content = in.readAllBytes();
+        } catch (IOException e) {
+            throw couldNotRead(configPath, e);
         }
+        return load(new ByteArrayInputStream(content), configPath);
+    }
+
+    private static ConfigurationException couldNotRead(Path configPath, IOException cause) {
+        ConfigurationException e =
+                new ConfigurationException(ConfigurationException.COULD_NOT_READ + configPath);
+        e.initCause(cause);
+        return e;
     }
 
     public ServerConfiguration load(InputStream yamlInput) throws ConfigurationException {
+        return load(yamlInput, null);
+    }
+
+    private ServerConfiguration load(InputStream yamlInput, Path configPath)
+            throws ConfigurationException {
         Object rootObj;
         try {
             rootObj = new Yaml().load(yamlInput);
@@ -252,7 +271,7 @@ public final class ConfigurationLoader {
                 optionalText(root, "adminName"),
                 optionalText(root, "adminLocation"),
                 optionalText(root, "adminEmail"),
-                LoggingSection.parse(root.get("logging")));
+                LoggingSection.parse(root, configPath));
     }
 
     /** An optional string setting; absent, null or blank all mean "not configured". */

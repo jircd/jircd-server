@@ -18,7 +18,7 @@ logging:
 | `false` | absent | **Rejected**: "logging: console is off and no file is set; the server would produce no log output" |
 
 - The file is rotated daily and by size: 50 MB per file, 30 days of history, 1 GB in total, gzip-compressed. Archives are named `<file>.<yyyy-MM-dd>.<n>.gz`, in the same directory.
-- A relative `file` is resolved against the server's working directory.
+- A relative `file` is resolved against the server's working directory. The path must not contain `%` (logback reads it as a token in the rolled file name and has no escape for it), must not be a filesystem root, and must not be the configuration file itself (including through a symlink); each is rejected with a message naming the path.
 - The file's directory must already exist and be writable. If the file exists, it must be a regular writable file. Otherwise the configuration is rejected and the message names the path and the reason.
 - On reload, an unchanged destination keeps logging without interruption. A changed `file` opens the new file before the old one is closed. The switch is not atomic: a few lines logged around it can be lost or duplicated. If the new file cannot be opened after validation, the previous appenders stay, a WARN is logged and the new configuration stays published (an intentional partial apply). A rejected `logging` section rejects the whole reload, and the previous configuration, logging included, stays in force.
 - If the JVM is started with `-Dlogback.configurationFile=<file>`, this section is neither applied nor validated (the loader skips the section entirely), so an invalid section is not rejected. One INFO line at startup says so, and logback is configured entirely by that file.

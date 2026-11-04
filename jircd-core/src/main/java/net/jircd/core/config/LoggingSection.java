@@ -15,6 +15,7 @@
  */
 package net.jircd.core.config;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
@@ -40,13 +41,16 @@ final class LoggingSection {
      * this section is ignored (contracts/logging-config.md), so it is not validated either: a path
      * check here would reject a configuration that is never used.
      */
-    static ServerConfiguration.Logging parse(Object raw) throws ConfigurationException {
+    static ServerConfiguration.Logging parse(Map<String, Object> root, Path configPath)
+            throws ConfigurationException {
         if (System.getProperty("logback.configurationFile") != null) {
             return ServerConfiguration.Logging.DEFAULT;
         }
-        if (raw == null) {
+        // An absent section is the default; a present one, null included, must be a mapping.
+        if (!root.containsKey(SECTION)) {
             return ServerConfiguration.Logging.DEFAULT;
         }
+        Object raw = root.get(SECTION);
         if (!(raw instanceof Map<?, ?> map)) {
             throw new ConfigurationException(SECTION + " must be a mapping");
         }
@@ -65,7 +69,7 @@ final class LoggingSection {
             }
         }
         boolean console = !map.containsKey(CONSOLE) || console(map.get(CONSOLE));
-        Path file = map.containsKey(FILE) ? file(map.get(FILE)) : null;
+        Path file = map.containsKey(FILE) ? file(map.get(FILE), configPath) : null;
         if (!console && file == null) {
             throw new ConfigurationException(
                     "logging: console is off and no file is set; the server would produce no"
@@ -86,8 +90,19 @@ final class LoggingSection {
         return bool;
     }
 
+    private static boolean sameFile(Path file, Path configPath) {
+        if (file.equals(configPath.toAbsolutePath().normalize())) {
+            return true;
+        }
+        try {
+            return Files.exists(file) && Files.isSameFile(file, configPath);
+        } catch (IOException _) {
+            return false;
+        }
+    }
+
     /** Absolute and normalized; its directory must exist and be writable right now. */
-    private static Path file(Object value) throws ConfigurationException {
+    private static Path file(Object value, Path configPath) throws ConfigurationException {
         if (!(value instanceof String text) || text.isBlank()) {
             throw new ConfigurationException(
                     SECTION
@@ -103,8 +118,22 @@ final class LoggingSection {
             throw new ConfigurationException(
                     SECTION + "." + FILE + " is not a valid path: " + e.getMessage());
         }
+        if (file.toString().indexOf('%') >= 0) {
+            // Logback reads % in the rolled file name pattern as a token and has no escape for it.
+            throw new ConfigurationException(
+                    SECTION + "." + FILE + " must not contain '%': " + file);
+        }
         Path directory = file.getParent();
-        if (directory == null || !Files.isDirectory(directory)) {
+        if (directory == null || file.getFileName() == null) {
+            throw new ConfigurationException(
+                    SECTION + "." + FILE + " cannot be a filesystem root: " + file);
+        }
+        if (configPath != null && sameFile(file, configPath)) {
+            // Appending log lines to the YAML would corrupt it for the next reload or restart.
+            throw new ConfigurationException(
+                    SECTION + "." + FILE + " must not be the configuration file: " + file);
+        }
+        if (!Files.isDirectory(directory)) {
             throw new ConfigurationException(
                     SECTION + "." + FILE + " directory does not exist: " + directory);
         }

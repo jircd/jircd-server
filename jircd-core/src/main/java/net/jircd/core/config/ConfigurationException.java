@@ -16,12 +16,21 @@
 package net.jircd.core.config;
 
 import java.nio.file.Path;
+import java.util.List;
 
 /**
  * A specific, actionable configuration validation failure (FR-012, SC-008), naming the offending
  * key/value.
  */
 public class ConfigurationException extends Exception {
+
+    /** The loader's own messages, each ending with the file's path. */
+    static final String NOT_FOUND = "Configuration file not found: ";
+
+    static final String NOT_READABLE = "Configuration file not readable by this user: ";
+    static final String COULD_NOT_READ = "Could not read configuration file: ";
+    private static final List<String> FILE_MESSAGES =
+            List.of(NOT_FOUND, NOT_READABLE, COULD_NOT_READ);
 
     public ConfigurationException(String message) {
         super(message);
@@ -33,8 +42,11 @@ public class ConfigurationException extends Exception {
      */
     public String messageNaming(Path configPath) {
         String message = getMessage();
-        return message.contains(configPath.toString())
-                ? message
-                : message + " (configuration file: " + configPath + ")";
+        for (String prefix : FILE_MESSAGES) {
+            if (message.equals(prefix + configPath)) {
+                return message;
+            }
+        }
+        return message + " (configuration file: " + configPath + ")";
     }
 }

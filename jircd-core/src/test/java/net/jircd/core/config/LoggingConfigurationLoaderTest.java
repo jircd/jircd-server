@@ -187,7 +187,8 @@ class LoggingConfigurationLoaderTest {
     @Test
     void aMissingDirectoryIsRejectedWithThePath() {
         Path missing = dir.resolve("nope");
-        assertThatThrownBy(() -> load("logging:\n  file: " + quoted(missing.resolve("j.log"))))
+        String yaml = "logging:\n  file: " + quoted(missing.resolve("j.log"));
+        assertThatThrownBy(() -> load(yaml))
                 .isInstanceOf(ConfigurationException.class)
                 .hasMessage("logging.file directory does not exist: " + missing);
     }
@@ -198,7 +199,8 @@ class LoggingConfigurationLoaderTest {
         Path readOnly = Files.createDirectory(dir.resolve("ro"));
         Files.setPosixFilePermissions(readOnly, PosixFilePermissions.fromString("r-xr-xr-x"));
         try {
-            assertThatThrownBy(() -> load("logging:\n  file: " + quoted(readOnly.resolve("j.log"))))
+            String yaml = "logging:\n  file: " + quoted(readOnly.resolve("j.log"));
+            assertThatThrownBy(() -> load(yaml))
                     .isInstanceOf(ConfigurationException.class)
                     .hasMessage("logging.file directory is not writable: " + readOnly);
         } finally {
@@ -209,7 +211,8 @@ class LoggingConfigurationLoaderTest {
     @Test
     void aDirectoryInPlaceOfTheFileIsRejected() throws Exception {
         Path directory = Files.createDirectory(dir.resolve("jircd.log"));
-        assertThatThrownBy(() -> load("logging:\n  file: " + quoted(directory)))
+        String yaml = "logging:\n  file: " + quoted(directory);
+        assertThatThrownBy(() -> load(yaml))
                 .isInstanceOf(ConfigurationException.class)
                 .hasMessage("logging.file is not a regular file: " + directory);
     }
@@ -219,7 +222,8 @@ class LoggingConfigurationLoaderTest {
         assumeFalse(runningAsRoot(), "root can write to any file");
         Path file = Files.writeString(dir.resolve("jircd.log"), "");
         Files.setPosixFilePermissions(file, PosixFilePermissions.fromString("r--r--r--"));
-        assertThatThrownBy(() -> load("logging:\n  file: " + quoted(file)))
+        String yaml = "logging:\n  file: " + quoted(file);
+        assertThatThrownBy(() -> load(yaml))
                 .isInstanceOf(ConfigurationException.class)
                 .hasMessage("logging.file is not writable: " + file);
     }
@@ -246,5 +250,66 @@ class LoggingConfigurationLoaderTest {
     void aReadableConfigurationFileLoads() throws Exception {
         Path file = Files.writeString(dir.resolve("jircd.yaml"), "serverName: a.example\n");
         assertThat(loader().load(file).serverName()).isEqualTo("a.example");
+    }
+
+    @Test
+    void anExplicitlyNullSectionIsRejectedLikeAnyNonMapping() {
+        assertThatThrownBy(() -> load("logging:\n"))
+                .isInstanceOf(ConfigurationException.class)
+                .hasMessageContaining("logging must be a mapping");
+        assertThatThrownBy(() -> load("logging: ~"))
+                .isInstanceOf(ConfigurationException.class)
+                .hasMessageContaining("logging must be a mapping");
+    }
+
+    @Test
+    void aFilesystemRootCannotBeTheLogFile() {
+        Path root = dir.getRoot();
+        String yaml = "logging:\n  file: " + quoted(root);
+        assertThatThrownBy(() -> load(yaml))
+                .isInstanceOf(ConfigurationException.class)
+                .hasMessageContaining("logging.file")
+                .hasMessageContaining(root.toString())
+                .hasMessageNotContaining("null");
+    }
+
+    @Test
+    void theConfigurationFileItselfCannotBeTheLogFile() throws Exception {
+        Path config = Files.writeString(dir.resolve("jircd.yaml"), "");
+        Files.writeString(config, "logging:\n  file: " + quoted(config) + "\n");
+
+        assertThatThrownBy(() -> loader().load(config))
+                .isInstanceOf(ConfigurationException.class)
+                .hasMessageContaining("logging.file must not be the configuration file");
+    }
+
+    @Test
+    void aSymlinkToTheConfigurationFileCannotBeTheLogFile() throws Exception {
+        Path config = Files.writeString(dir.resolve("jircd.yaml"), "");
+        Path link = Files.createSymbolicLink(dir.resolve("log-link"), config);
+        Files.writeString(config, "logging:\n  file: " + quoted(link) + "\n");
+
+        assertThatThrownBy(() -> loader().load(config))
+                .isInstanceOf(ConfigurationException.class)
+                .hasMessageContaining("logging.file must not be the configuration file");
+    }
+
+    @Test
+    void anUnreadableConfigurationPathIsReportedWithItsPath() throws Exception {
+        // A directory opens but cannot be read: an IOException other than missing or denied.
+        Path directory = Files.createDirectory(dir.resolve("a-directory"));
+
+        assertThatThrownBy(() -> loader().load(directory))
+                .isInstanceOf(ConfigurationException.class)
+                .hasMessage("Could not read configuration file: " + directory);
+    }
+
+    @Test
+    void aPercentSignInTheLogPathIsRejectedBecauseLogbackReadsItAsAToken() {
+        Path file = dir.resolve("100%d.log");
+        String yaml = "logging:\n  file: " + quoted(file);
+        assertThatThrownBy(() -> load(yaml))
+                .isInstanceOf(ConfigurationException.class)
+                .hasMessageContaining("logging.file must not contain '%'");
     }
 }

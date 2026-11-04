@@ -38,4 +38,21 @@ class ConfigurationExceptionTest {
                 new ConfigurationException("Configuration file not found: " + FILE);
         assertThat(e.messageNaming(FILE)).isEqualTo("Configuration file not found: " + FILE);
     }
+
+    @Test
+    void stillNamesAFileCalledLoggingWhenOnlyTheSectionNameMatches() {
+        // A relative path that is just "logging": the section name inside the message used to be
+        // mistaken for the file's path, so the file was never named.
+        Path logging = Path.of("logging");
+        ConfigurationException e = new ConfigurationException("logging must be a mapping");
+        assertThat(e.messageNaming(logging))
+                .isEqualTo("logging must be a mapping (configuration file: logging)");
+    }
+
+    @Test
+    void recognizesTheLoadersCouldNotReadMessage() {
+        ConfigurationException e =
+                new ConfigurationException("Could not read configuration file: " + FILE);
+        assertThat(e.messageNaming(FILE)).isEqualTo("Could not read configuration file: " + FILE);
+    }
 }

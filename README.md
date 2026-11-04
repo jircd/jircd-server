@@ -133,6 +133,33 @@ administration (`OPER`, `REHASH`, etc.), see the full annotated schema in
 For a guided, story-by-story walkthrough of every feature, see
 [`quickstart.md`](specs/001-ircv3-server/quickstart.md).
 
+### Logging
+
+Logs go to standard output by default. The optional top-level `logging` section of the
+configuration file adds a rotating log file or turns the console off, and reloads with `SIGHUP` or
+`REHASH` without a restart:
+
+```yaml
+logging:
+  console: true                    # optional; default true
+  file: /var/log/jircd/jircd.log   # optional; no default; absent = no log file
+```
+
+- With `file` set and `console` left on, lines go to both. `console: false` needs a `file`.
+- The file rotates daily and at 50 MB, keeping 30 days and 1 GB in total, gzip-compressed. The
+  line format and the INFO level are fixed.
+- The file's directory must exist and be writable. The path must not contain `%`, must not be a
+  filesystem root and must not be the configuration file. A relative path resolves against the
+  working directory.
+- A rejected `logging` section rejects the whole reload and keeps the previous configuration.
+  Switching files on a reload is not atomic: a few lines around the switch can be lost or
+  duplicated.
+- With `-Dlogback.configurationFile=<file>`, that file configures logging and the section is
+  neither applied nor validated.
+
+**Migration:** earlier builds always wrote `logs/jircd.log`. Add `logging: {file: logs/jircd.log}`
+to keep that file. See the [`logging` contract](specs/016-container-deployment/contracts/logging-config.md).
+
 ### OPER protection
 
 Failed `OPER` attempts are counted per source across reconnects and usernames.

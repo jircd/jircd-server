@@ -147,4 +147,70 @@ class LifecycleOutcomeReportingTest {
         assertThat(run(handler, root, "EXTENSION ENABLE good"))
                 .containsExactly(":irc.example NOTICE root :good is now enabled");
     }
+
+    @Test
+    void aRehashFailureNoticeFitsTheCommandLimitEvenForAVeryLongConfigurationPath()
+            throws Exception {
+        ClientSession root = administrator();
+        ConfigurationLoader loader =
+                new ConfigurationLoader(Set.of(), Set.of(AdminExtension.ID, "broken", "good"));
+        Path deep = directory;
+        for (int i = 0; i < 4; i++) {
+            deep = deep.resolve("é".repeat(100) + i);
+        }
+        Files.createDirectories(deep);
+        Path file = deep.resolve("reload.yaml");
+        Files.writeString(file, HEADER + "nicknameMaxLength: nope\n");
+        ConfigurationReloader reloader =
+                new ConfigurationReloader(
+                        file,
+                        loader,
+                        registry,
+                        loader.load(
+                                new ByteArrayInputStream(HEADER.getBytes(StandardCharsets.UTF_8))));
+
+        List<String> lines =
+                run(
+                        new RehashCommandHandler(reloader, registry, () -> "irc.example"),
+                        root,
+                        "REHASH");
+
+        assertThat(lines).hasSize(2);
+        assertThat(lines.getFirst())
+                .startsWith(":irc.example NOTICE root :Rehash failed: ")
+                .contains("nicknameMaxLength");
+        assertThat(lines.get(1))
+                .startsWith(":irc.example NOTICE root :Configuration file: ")
+                .contains(directory.toString());
+        assertThat(lines)
+                .allSatisfy(
+                        line ->
+                                assertThat(line.getBytes(StandardCharsets.UTF_8).length + 2)
+                                        .isLessThanOrEqualTo(512));
+    }
+
+    @Test
+    void aRehashThatCannotReadTheFileNamesIt() throws Exception {
+        ClientSession root = administrator();
+        ConfigurationLoader loader =
+                new ConfigurationLoader(Set.of(), Set.of(AdminExtension.ID, "broken", "good"));
+        // A directory opens but cannot be read: an IOException other than missing or denied.
+        Path file = Files.createDirectory(directory.resolve("not-a-file"));
+        ConfigurationReloader reloader =
+                new ConfigurationReloader(
+                        file,
+                        loader,
+                        registry,
+                        loader.load(
+                                new ByteArrayInputStream(HEADER.getBytes(StandardCharsets.UTF_8))));
+
+        List<String> lines =
+                run(
+                        new RehashCommandHandler(reloader, registry, () -> "irc.example"),
+                        root,
+                        "REHASH");
+
+        assertThat(lines).hasSize(1);
+        assertThat(lines.getFirst()).contains("Rehash failed:").contains(file.toString());
+    }
 }

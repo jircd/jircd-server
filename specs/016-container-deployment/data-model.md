@@ -13,12 +13,13 @@ A new immutable part of `ServerConfiguration`, parsed from the optional top-leve
 
 **Validation**, at startup and on every reload, before anything is published:
 
-1. `logging` is absent or a mapping. Unknown keys are rejected: most sections ignore them, but here a misspelled `file` would silently turn file logging off.
+1. `logging` is absent or a mapping (`logging: null`, a present but empty section, is rejected like any other non-mapping). Unknown keys are rejected: most sections ignore them, but here a misspelled `file` would silently turn file logging off.
 2. `console: false` with no `file` is rejected: "logging: console is off and no file is set; the server would produce no log output".
 3. When `file` is set:
    - Its parent directory must exist, or the message is "logging.file directory does not exist: <dir>".
    - The directory must be writable, or the message is "logging.file directory is not writable: <dir>".
    - If the file already exists, it must be a regular, writable file.
+   - It must not contain `%`, be a filesystem root, or be the configuration file itself (symlinks included).
 4. A rejected `logging` section rejects the whole configuration: startup refuses to run, and a reload leaves everything in place (FR-006a, FR-008).
 
 Rules 1–3 do not apply under `EXTERNAL` (see below): with `-Dlogback.configurationFile` set, the section is neither parsed nor validated, so an invalid section is not rejected.
@@ -42,7 +43,7 @@ Transition rules:
 - **From `APPLIED(old)` to `APPLIED(new)`**:
   - The console appender is kept unchanged if `console` is unchanged.
   - The file appender is kept if `file` is unchanged. Otherwise a new one is started first, then attached, then the old one is detached and stopped. The swap is not atomic: an event logged at the instant of the switch can be lost (its thread still holds the old appender, which is then stopped) or reach only one destination, and events logged during the overlap reach both files.
-  - If starting the new appender fails (for example, the directory was removed between validation and apply), the old appenders stay and a WARN is logged. The new configuration stays published (an intentional partial apply).
+  - If starting the new appender fails (for example, the directory was removed between validation and apply), the old appenders stay and a WARN is logged. The new configuration stays published (an intentional partial apply). A later reload, even with identical settings, retries: the applier compares the requested settings with the appenders actually attached, not with the previous configuration.
 - **From `BOOTSTRAP` to `APPLIED`**: the same procedure, with the bootstrap console appender treated as `console: true`.
 
 ## Shutdown state (application)

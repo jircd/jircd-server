@@ -214,12 +214,15 @@ class LoggingSettingsApplierTest {
         LoggingSettingsApplier applier = new LoggingSettingsApplier(context);
         Path file = dir.resolve("jircd.log");
         applier.apply(new Logging(true, file));
+        log("while the file was configured");
 
         applier.apply(Logging.DEFAULT);
         log("console only now");
 
         assertThat(rootAppenders()).singleElement().isInstanceOf(ConsoleAppender.class);
-        assertThat(Files.readString(file)).doesNotContain("console only now");
+        assertThat(Files.readString(file))
+                .contains("while the file was configured")
+                .doesNotContain("console only now");
     }
 
     @Test
@@ -244,6 +247,27 @@ class LoggingSettingsApplierTest {
                             assertThat(e.getLevel()).isEqualTo(Level.WARN);
                             assertThat(e.getFormattedMessage()).contains(gone.toString());
                         });
+    }
+
+    @Test
+    void theSameSettingsRetryAfterAFailedStartOnceTheFileCanBeOpened() throws Exception {
+        bootstrap();
+        LoggingSettingsApplier applier = new LoggingSettingsApplier(context);
+        Path blocker = Files.writeString(dir.resolve("blocker"), "");
+        Path file = blocker.resolve("jircd.log");
+        Logging settings = new Logging(true, file);
+
+        applier.apply(settings);
+        assertThat(rootAppenders()).noneMatch(RollingFileAppender.class::isInstance);
+
+        // The same requested settings now work: the applier compares them with what is attached.
+        Files.delete(blocker);
+        Files.createDirectory(blocker);
+        applier.apply(settings);
+        log("after the retry");
+
+        assertThat(rootAppenders()).anyMatch(RollingFileAppender.class::isInstance);
+        assertThat(Files.readString(file)).contains("after the retry");
     }
 
     @Test

@@ -27,6 +27,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import net.jircd.core.extension.ExtensionRegistry;
@@ -162,5 +163,154 @@ class ConfigurationReloaderListenerTest {
         reloader.reload();
 
         assertThat(otherReloadFinished).isTrue();
+    }
+
+    @Test
+    void anOlderReloadNeverDeliversItsConfigurationAfterANewerOne() throws Exception {
+        CountDownLatch firstInListener = new CountDownLatch(1);
+        CountDownLatch releaseFirst = new CountDownLatch(1);
+        AtomicBoolean firstCall = new AtomicBoolean(true);
+        List<Integer> delivered = new CopyOnWriteArrayList<>();
+        reloader.addReloadListener(
+                applied -> {
+                    if (firstCall.getAndSet(false)) {
+                        firstInListener.countDown();
+                        await(releaseFirst);
+                    }
+                });
+        reloader.addReloadListener(applied -> delivered.add(applied.topicMaxLength()));
+
+        Files.writeString(config, HEADER + "topicMaxLength: 111\n");
+        Thread a = Thread.ofVirtual().start(this::reloadQuietly);
+        assertThat(firstInListener.await(5, TimeUnit.SECONDS)).isTrue();
+        Files.writeString(config, HEADER + "topicMaxLength: 222\n");
+        Thread b = Thread.ofVirtual().start(this::reloadQuietly);
+        b.join(TimeUnit.SECONDS.toMillis(5));
+        releaseFirst.countDown();
+        a.join(TimeUnit.SECONDS.toMillis(5));
+        b.join(TimeUnit.SECONDS.toMillis(5));
+
+        // Whatever the interleaving, the last configuration a listener holds is current().
+        assertThat(reloader.current().topicMaxLength()).isEqualTo(222);
+        assertThat(delivered).isSorted().isNotEmpty().last().isEqualTo(222);
+    }
+
+    @Test
+    void aReloadStartedByAListenerIsNotFollowedByTheOlderConfigurationForLaterListeners()
+            throws Exception {
+        AtomicBoolean nested = new AtomicBoolean(true);
+        List<Integer> later = new CopyOnWriteArrayList<>();
+        reloader.addReloadListener(
+                applied -> {
+                    if (!nested.getAndSet(false)) return;
+                    try {
+                        Files.writeString(config, HEADER + "topicMaxLength: 333\n");
+                        reloader.reload();
+                    } catch (Exception e) {
+                        throw new IllegalStateException(e);
+                    }
+                });
+        reloader.addReloadListener(applied -> later.add(applied.topicMaxLength()));
+        Files.writeString(config, HEADER + "topicMaxLength: 111\n");
+
+        reloader.reload();
+
+        assertThat(later).containsExactly(333);
+        assertThat(reloader.current().topicMaxLength()).isEqualTo(333);
+    }
+
+    private void reloadQuietly() {
+        try {
+            reloader.reload();
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    private static void await(CountDownLatch latch) {
+        try {
+            latch.await(5, TimeUnit.SECONDS);
+        } catch (InterruptedException _) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    @Test
+    void aListenerErrorDoesNotStrandANewerConfigurationPublishedMeanwhile() throws Exception {
+        CountDownLatch inListener = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        AtomicBoolean first = new AtomicBoolean(true);
+        List<Integer> seen = new CopyOnWriteArrayList<>();
+        AssertionError sentinel = new AssertionError("listener sentinel");
+        reloader.addReloadListener(
+                applied -> {
+                    seen.add(applied.topicMaxLength());
+                    if (first.getAndSet(false)) {
+                        inListener.countDown();
+                        await(release);
+                        throw sentinel;
+                    }
+                });
+        Files.writeString(config, HEADER + "topicMaxLength: 111\n");
+        java.util.concurrent.atomic.AtomicReference<Throwable> thrown =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        Thread a =
+                Thread.ofVirtual()
+                        .start(
+                                () -> {
+                                    try {
+                                        reloader.reload();
+                                    } catch (Throwable t) {
+                                        thrown.set(t);
+                                    }
+                                });
+        assertThat(inListener.await(5, TimeUnit.SECONDS)).isTrue();
+        Files.writeString(config, HEADER + "topicMaxLength: 222\n");
+
+        // B publishes while A is delivering, and returns at once: A's thread owes it a delivery.
+        reloader.reload();
+        release.countDown();
+        a.join(TimeUnit.SECONDS.toMillis(5));
+
+        // No third reload: the newest configuration was still delivered after the Error.
+        assertThat(seen).containsExactly(111, 222);
+        assertThat(thrown.get()).isSameAs(sentinel);
+        assertThat(reloader.current().topicMaxLength()).isEqualTo(222);
+    }
+
+    @Test
+    void aListenerErrorDoesNotSkipTheOtherListenersForTheSameConfiguration() throws Exception {
+        List<Integer> later = new CopyOnWriteArrayList<>();
+        AssertionError sentinel = new AssertionError("first listener");
+        reloader.addReloadListener(
+                applied -> {
+                    throw sentinel;
+                });
+        reloader.addReloadListener(applied -> later.add(applied.topicMaxLength()));
+        Files.writeString(config, HEADER + "topicMaxLength: 77\n");
+
+        assertThatThrownBy(reloader::reload).isSameAs(sentinel);
+
+        assertThat(later).containsExactly(77);
+    }
+
+    @Test
+    void theSameErrorThrownByTwoListenersDoesNotAbortDelivery() throws Exception {
+        List<Integer> later = new CopyOnWriteArrayList<>();
+        AssertionError shared = new AssertionError("shared sentinel");
+        reloader.addReloadListener(
+                applied -> {
+                    throw shared;
+                });
+        reloader.addReloadListener(
+                applied -> {
+                    throw shared;
+                });
+        reloader.addReloadListener(applied -> later.add(applied.topicMaxLength()));
+        Files.writeString(config, HEADER + "topicMaxLength: 88\n");
+
+        assertThatThrownBy(reloader::reload).isSameAs(shared);
+
+        assertThat(later).containsExactly(88);
     }
 }
