@@ -8,6 +8,9 @@ jircd-server/jircd.yaml
 # directory (for example /srv/jircd), mounted at run time, never in the build context.
 deploy
 **/*.pem
+**/*.p8
+**/*.pk8
+**/*.der
 **/*.key
 **/*.p12
 **/*.pfx

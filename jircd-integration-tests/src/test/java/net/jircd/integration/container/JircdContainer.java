@@ -228,6 +228,10 @@ final class JircdContainer implements AutoCloseable {
                 client().waitContainerCmd(id)
                         .start()
                         .awaitStatusCode(timeout.toMillis(), TimeUnit.MILLISECONDS);
+        if (status == null) {
+            throw new IllegalStateException(
+                    "Container " + id + " did not exit within " + timeout + " (awaitExit)");
+        }
         return new Stopped(
                 status, Duration.ofNanos(System.nanoTime() - start), container.getLogs());
     }
@@ -293,6 +297,10 @@ final class JircdContainer implements AutoCloseable {
                     client.waitContainerCmd(id)
                             .start()
                             .awaitStatusCode(timeout.toMillis(), TimeUnit.MILLISECONDS);
+            if (status == null) {
+                throw new IllegalStateException(
+                        "Container " + id + " did not exit within " + timeout + " (runCreated)");
+            }
             return new Exited(status, logsOf(client, id));
         } finally {
             client.removeContainerCmd(id).withForce(true).withRemoveVolumes(true).exec();

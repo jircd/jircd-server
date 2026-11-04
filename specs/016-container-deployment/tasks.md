@@ -22,7 +22,7 @@
   - Pass `-Djircd.image` through to both, and fail with "set -Djircd.image=<image>" when it is missing.
   - Check that `./gradlew :jircd-integration-tests:test` still selects no container tests.
 - [X] T004 Regenerate `gradle/verification-metadata.xml` for the new artefacts (`./gradlew --write-verification-metadata sha256 help`), then check that `./gradlew build` passes.
-- [X] T005 [P] Create `.dockerignore`. It excludes `.git`, `.worktrees`, `**/build`, `.gradle`, `specs`, `.specify`, `.claude`, `.codegraph`, `logs` and **`jircd-server/jircd.yaml`**, so no local credentials can enter the build context.
+- [X] T005 [P] Create `.dockerignore`. It excludes `.git`, `.worktrees`, `**/build`, `.gradle`, `specs`, `.specify`, `.claude`, `.codegraph`, `logs` and **`jircd-server/jircd.yaml`** (plus `**/jircd.yaml.local`, `deploy` and key/certificate files such as `*.pem`, `*.key`, `*.p12`, `*.jks`, with public test fixtures under `src/test` re-included). Only these known names are excluded: a credential stored under any other name in the checkout (a root-level `jircd.yaml`, a secret in another YAML file) would still enter the build stage through `COPY . .`, so operators keep configuration and keys outside the build context. The runtime stages copy only the installed distribution (or the native binary), so the build context is not copied wholesale into the final image, but a file that the build packages into an artefact (for example a stray secret under `src/main/resources`) still reaches it.
 
 ## Phase 2: Foundational (Blocking Prerequisites)
 
@@ -30,11 +30,12 @@
   - starts the image from `jircd.image` with a **read-only root filesystem** (`HostConfig.withReadonlyRootfs(true)`);
   - bind-mounts a per-test temporary directory read-only at `/etc/jircd`;
   - maps 6667 and 6697;
-  - waits for the log line `jircd started as`;
+  - its waiting entry points (`start` variants and `startWithConfigVolume`) wait for the log line `jircd started as`;
+  - its run-to-exit entry points (`runToExit`, `runToExitWithRootOwnedConfig`) do not wait for readiness and return the exit code and logs, for containers that exit before they are ready (T014). A TERM sent before the listeners bind is covered in-process only (see T026);
   - exposes `plaintextPort()`, `tlsPort()`, `signal(String)` (Docker kill with a signal), `stopWithin(Duration)` (returns the exit code), `exitCode()`, `logs()` and `configuredUser()` (from container inspect).
 
   It must never retry.
-- [X] T007 Add a fixture helper that writes `jircd.yaml`, a self-signed PEM certificate and key, and an Argon2 OPER credential into the temporary mount directory. Reuse the certificate and Argon2 helpers already used by `TestServer` instead of adding new ones. Files are created world-readable so uid 65532 can read them.
+- [X] T007 Add a fixture helper (`ContainerFixture`) that writes `jircd.yaml` and copies a self-signed PEM certificate and key into the temporary mount directory. It copies the same `tls/test-fullchain.pem` and `tls/test-privkey.pem` test resources `TestServer` uses instead of adding new ones. It makes the mount directory `0755` (traversable by uid 65532) and the files `0644`, so the container user can read them. It writes no OPER credential; the Argon2 one comes with US3 (T034).
 - [X] T008 Map FR-001–FR-022 and SC-001–SC-007 to test classes, quickstart steps or CI jobs in `specs/016-container-deployment/validation/coverage-map.md`.
 
 **Checkpoint**: Container test plumbing compiles, and `containerTest` runs with zero tests against any image.
@@ -62,7 +63,7 @@
 - [X] T013 [P] [US1] Add `jircd-integration-tests/src/test/java/net/jircd/integration/container/ContainerContractTest.java` (`@Tag("container")`) covering:
   - plaintext and TLS registration, JOIN and PRIVMSG between two clients (Story 1, scenarios 1–2);
   - `logs()` containing the startup, connection and security log lines with no error about writing under a read-only root (scenario 4, SC-007);
-  - `configuredUser()` is `65532`, and the running process is not uid 0 (scenario 6);
+  - `configuredUser()` is `65532:65532`, and the running process is not uid 0 (scenario 6);
   - with `logging.file` pointed at an extra writable tmpfs mount, the file receives lines (scenario 5).
 - [X] T014 [P] [US1] Add `jircd-integration-tests/src/test/java/net/jircd/integration/container/ContainerFailureTest.java` (`@Tag("container")`). With no mount, an invalid YAML, a mode-600 file owned by another uid, and a missing TLS certificate path, the container exits with status 1 and its single `Refusing to start:` line matches contracts/container-contract.md.
 - [X] T015 [US1] Run T009–T012 (behavioural reds after stubs) and record the results in `specs/016-container-deployment/validation/tests.md`. T013–T014 can't run red until the image exists, so record their compile-ready state.
@@ -135,7 +136,7 @@
   - HUP with an invalid config keeps the old one and logs the WARN (scenario 3);
   - `stopWithin(10 s)` with 100 connected clients returns exit code 0, and every client that can still receive output before the deadline read `ERROR … (Server shutting down)` before EOF (scenario 2, SC-003; forced-close exceptions per FR-009);
   - INT behaves like TERM;
-  - TERM sent immediately after container start, before the listeners bind, exits 0.
+  - an early TERM (before the listeners bind) is covered in-process only (`ShutdownSignalHandlerTest.aSignalBeforeTheServerExistsStillExitsZero`): the server logs no line between installing the signal handlers and binding the listeners, so a container test could only time the signal against container start, which is a race, not a test (see `validation/tests.md`, review round 4).
 - [X] T027 [US2] Run T023–T026 to behavioural red after stubs, and record the results in `specs/016-container-deployment/validation/tests.md`.
 
 ### Implementation

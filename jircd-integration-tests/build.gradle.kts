@@ -35,6 +35,18 @@ fun registerContainerSuite(name: String, tag: String, heap: String) =
         val image = jircdImage.orNull
         inputs.property("jircd.image", image ?: "")
         if (image != null) systemProperty("jircd.image", image)
+        // A tag with no tests behind it must not report success (it would hide a missing suite).
+        var selected = 0L
+        afterSuite(
+            KotlinClosure2<TestDescriptor, TestResult, Unit>({ suite, result ->
+                if (suite.parent == null) selected = result.testCount
+            })
+        )
+        doLast {
+            if (selected == 0L) {
+                throw GradleException("$name selected no tests tagged \"$tag\"")
+            }
+        }
         doFirst {
             if (image.isNullOrBlank()) {
                 throw GradleException("set -Djircd.image=<image>, e.g. -Djircd.image=jircd:jvm")

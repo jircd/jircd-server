@@ -24,7 +24,6 @@ import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import net.jircd.integration.TestServer;
 
 /**
  * The directory a test mounts read-only at {@code /etc/jircd}: {@code jircd.yaml} plus the test
@@ -95,11 +94,6 @@ final class ContainerFixture {
         Files.createDirectories(dir);
         Files.setPosixFilePermissions(dir, PosixFilePermissions.fromString("rwxrwxrwx"));
         return dir;
-    }
-
-    /** The OPER block with an Argon2id hash of {@link TestServer#ADMIN_PASSWORD}. */
-    static String argon2Admin() {
-        return TestServer.argon2AdminEnabledYaml();
     }
 
     private static void copyResource(String name, Path target) throws IOException {

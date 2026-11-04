@@ -157,3 +157,7 @@ CI run 41699949596 (Linux only) failed `GracefulShutdownTest.everyClientIsToldWh
 Reproduction attempts in a Linux JDK 25 container (`eclipse-temurin:25-jdk`, linux/arm64 under Docker Desktop): 10 runs unlimited and 15 runs with `--cpus=2`, all 25 passed (9 tests each). The race did not show there, and no reliable deterministic reproduction exists (the accept loop is not held by any test seam), so the CI evidence above is the record.
 
 Fix: the test now waits, with `Polling.until` and a 10 s bound, until `ConnectionHandler.unregisteredConnectionCount()` is 3 before it triggers shutdown. The 100 registered clients were already proven accepted by their welcome. The other shutdown tests (in-process and container) wait for a welcome or for the accept hook before they stop the server.
+
+## Review round 4
+
+Early TERM is covered in-process only. `main` installs the signal handlers before it loads the configuration, and the server logs nothing between that point and the "Plaintext listener started" line after the bind, so there is no observable marker a container test could wait for before sending TERM. Sending it right after container start would race the JVM's startup and could land before or after the handlers exist (or after the bind), so it would not pin the behaviour. `ShutdownSignalHandlerTest.aSignalBeforeTheServerExistsStillExitsZero` covers the signal-before-attach case deterministically. T026 was reworded to say so; no container test was added.

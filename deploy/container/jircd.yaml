@@ -2,12 +2,18 @@
 # Copy this file to a directory of your own, outside the repository (for example /srv/jircd), and
 # mount that directory read-only at /etc/jircd:
 #
-#   docker run --read-only -p 6667:6667 -v /srv/jircd:/etc/jircd:ro ghcr.io/jircd/jircd-server
+#   docker run --read-only -p 6667:6667 -v /srv/jircd:/etc/jircd:ro jircd:jvm
+#
+# (jircd:jvm is the image built locally with `docker build --target jvm -t jircd:jvm .`; no
+# registry image is published yet.)
 #
 # Keep your configuration, certificates and private keys in that directory, never in the
 # repository: this folder is excluded from the image build context, and a key committed here would
 # end up in version control. The container runs as uid 65532, so every file in your directory must
-# be readable by that user (mode 644, or 640 with group 65532).
+# be readable by that user: certificates mode 644, the private key mode 640 with group 65532
+# (`chgrp 65532 key.pem; chmod 640 key.pem`), never world-readable. The directory and every
+# ancestor of it must also be traversable (execute permission) by uid or gid 65532.
+# A log volume (see `logging` below) must be writable by uid 65532.
 # The full schema is in specs/001-ircv3-server/contracts/server-configuration.md.
 
 serverName: irc.example.org
@@ -22,8 +28,9 @@ listeners:
   #   certPath: /etc/jircd/cert.pem
   #   keyPath: /etc/jircd/key.pem
 
-# Logs go to standard output (`docker logs`). To also keep a rotating file, mount a writable
-# volume (for example -v jircd-logs:/var/log/jircd) and uncomment:
+# Logs go to standard output (`docker logs`). To also keep a rotating file, mount a volume that
+# uid 65532 can write (a fresh Docker named volume is root-owned: chown it to 65532:65532 first,
+# for example `docker run --rm -v jircd-logs:/v busybox chown 65532:65532 /v`) and uncomment:
 # logging:
 #   console: true
 #   file: /var/log/jircd/jircd.log
@@ -34,6 +41,9 @@ listeners:
 #   server-time: enabled
 
 # Operators: enable the admin extension and add an Argon2id or bcrypt hash (never a plain password).
+# OPER passwords must never cross the plaintext listener: operRequireTls is true below, so enable
+# a TLS listener (above) before using OPER.
+operRequireTls: true
 # server-extensions:
 #   admin: enabled
 # administratorCredentials:

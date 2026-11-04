@@ -174,6 +174,34 @@ to keep that file. See the [`logging` contract](specs/016-container-deployment/c
 - A listener that fails to close during shutdown is logged, not retried: the process exits right
   after.
 
+### Running in a container
+
+There is no published image yet. Build the JVM image from a clean checkout; only a container
+runtime is needed:
+
+```bash
+docker build --target jvm -t jircd:jvm .
+docker run -d --read-only -p 6667:6667 -p 6697:6697 \
+  -v /srv/jircd:/etc/jircd:ro --name jircd jircd:jvm
+```
+
+- The configuration is read from `/etc/jircd/jircd.yaml`; pass another path as the container
+  command to change that. Start from [`deploy/container/jircd.yaml`](deploy/container/jircd.yaml)
+  and keep your copy, certificates and keys in your own directory (here `/srv/jircd`), not in the
+  repository.
+- The server is PID 1 and runs as uid/gid 65532. Mounted files must be readable by that user (a
+  private key: mode 640, group 65532), and the directory and all its ancestors traversable by it.
+- Ports 6667 (plaintext) and 6697 (TLS) are declared; the configured listeners decide what is
+  bound, so publish what you configured.
+- Nothing is written to the container's filesystem by default, so `--read-only` works. Logs go to
+  standard output (`docker logs jircd`). For a log file, mount a volume writable by uid 65532 and
+  set `logging.file` ([Logging](#logging)).
+- Reload with `docker kill -s HUP jircd`; stop with `docker stop jircd` (see
+  [Reloading and stopping](#reloading-and-stopping)). A missing or unreadable configuration exits
+  with status 1 and a `Refusing to start:` line.
+- OPER passwords must not cross the plaintext listener: the sample sets `operRequireTls: true`,
+  so enable a TLS listener before using OPER.
+
 ### OPER protection
 
 Failed `OPER` attempts are counted per source across reconnects and usernames.
