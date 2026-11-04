@@ -160,6 +160,20 @@ logging:
 **Migration:** earlier builds always wrote `logs/jircd.log`. Add `logging: {file: logs/jircd.log}`
 to keep that file. See the [`logging` contract](specs/016-container-deployment/contracts/logging-config.md).
 
+### Reloading and stopping
+
+- `SIGHUP` (or an operator's `REHASH`) re-reads the configuration file. An invalid file is
+  rejected and the running configuration stays.
+- `SIGTERM` and `SIGINT` (`docker stop`, Ctrl-C) shut the server down gracefully: it stops
+  accepting connections, sends every connected client
+  `ERROR :Closing Link: <host> (Server shutting down)`, closes the connections and exits with
+  status 0. This takes at most 8 seconds, inside Docker's default 10-second stop window.
+- A client that stops reading, or whose connection has not yet created its session by the deadline,
+  is closed without the `ERROR`, and a warning says how many. A client already disconnecting for
+  another reason (`QUIT`, end of stream, `KILL`, timeout) keeps that outcome.
+- A listener that fails to close during shutdown is logged, not retried: the process exits right
+  after.
+
 ### OPER protection
 
 Failed `OPER` attempts are counted per source across reconnects and usernames.

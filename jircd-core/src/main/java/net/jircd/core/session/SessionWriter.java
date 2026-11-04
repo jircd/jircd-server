@@ -28,6 +28,8 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Supplier;
 import net.jircd.core.config.ServerConfiguration;
 import net.jircd.core.extension.capability.FramingPlan;
 import net.jircd.core.extension.capability.OutputGroup;
@@ -152,6 +154,23 @@ public final class SessionWriter implements AutoCloseable {
     public void enqueue(PreparedDelivery delivery) {
         if (refusing()) return;
         enqueueEntry(new Entry(delivery.frames().bytes(), delivery.frames(), null));
+    }
+
+    private final ReentrantLock finalLineBarrier = new ReentrantLock();
+
+    /**
+     * Runs {@code claimAndEnqueue}, in which the caller claims the session's CLOSING transition and
+     * queues its final line, with every {@link #close} on this writer held back until it returns.
+     * Without it, a read loop or liveness thread that sees CLOSING right after the claim could
+     * close the writer first, and the final line would be refused.
+     */
+    public <T> T holdingCloseUntilFinalLine(Supplier<T> claimAndEnqueue) {
+        finalLineBarrier.lock();
+        try {
+            return claimAndEnqueue.get();
+        } finally {
+            finalLineBarrier.unlock();
+        }
     }
 
     /**
@@ -399,6 +418,10 @@ public final class SessionWriter implements AutoCloseable {
      */
     @Override
     public void close() {
+        // A claimant that is about to queue the final line holds this; wait for it, so a teardown
+        // that saw CLOSING cannot close the writer before the line is queued.
+        finalLineBarrier.lock();
+        finalLineBarrier.unlock();
         if (!closing.compareAndSet(false, true)) {
             awaitDrain();
             return;
@@ -422,7 +445,8 @@ public final class SessionWriter implements AutoCloseable {
     }
 
     /**
-     * @return whether the wait ended with the writer still running, i.e. it timed out
+     * @return whether the wait ended with the writer cut off: it timed out, or the waiting thread
+     *     was interrupted (the caller then interrupts a writer that may still be draining)
      */
     private boolean awaitDrain() {
         // A failed socket write can invoke cleanup on this writer; joining itself cannot drain it.
@@ -436,7 +460,7 @@ public final class SessionWriter implements AutoCloseable {
             return !writerThread.join(wait);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            return false;
+            return true;
         }
     }
 }

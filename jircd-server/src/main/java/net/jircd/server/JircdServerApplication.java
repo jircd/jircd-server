@@ -27,6 +27,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -101,6 +102,22 @@ public final class JircdServerApplication {
             new AtomicReference<>(phase -> {});
     private final Object loggingLock = new Object();
     private final AtomicBoolean shuttingDown = new AtomicBoolean();
+    // Set by shutdown() before it looks at anything else; read by stop(), which must not close
+    // sockets under a graceful drain. Counted down when the drain has ended.
+    private volatile long shutdownDeadlineNanos;
+    private final CountDownLatch drainFinished = new CountDownLatch(1);
+
+    /** Who closes the connections: decided once, atomically, by whichever gets there first. */
+    private enum ClosureOwner {
+        STOP,
+        SHUTDOWN
+    }
+
+    private final AtomicReference<ClosureOwner> closureOwner = new AtomicReference<>();
+    private final AtomicReference<Runnable> afterStopClaimsClosure =
+            new AtomicReference<>(() -> {});
+    private final AtomicReference<Runnable> beforeStopClosesConnections =
+            new AtomicReference<>(() -> {});
 
     /**
      * Held by {@link #start()} and {@link #stop()} for their whole run. A lock rather than the
@@ -578,26 +595,34 @@ public final class JircdServerApplication {
         // The budget runs from the signal, not from when the lifecycle lock is free: a start() that
         // is slow must not push the shutdown past what the container runtime will wait for.
         long deadline = System.nanoTime() + budget.toNanos();
+        shutdownDeadlineNanos = deadline;
         // Irreversible: a start() already past its own shutdown check cannot reopen admission.
         connectionHandler.closeAdmission();
+        if (!closureOwner.compareAndSet(null, ClosureOwner.SHUTDOWN)) {
+            // stop() got to the connections first and closes them (and the listeners) itself.
+            LOG.info("stop() is already closing the connections; shutdown leaves them to it");
+            return 0;
+        }
         // Normally free. If a slow start() holds it, connections are drained first and the
         // listeners are closed afterwards, with whatever budget is left.
         boolean locked = lifecycle.tryLock();
         try {
+            boolean listenersClosed = true;
             if (locked) {
-                closeListenersForShutdown(deadline);
+                listenersClosed = closeListenersForShutdown(deadline);
             }
-            int forced = 0;
+            int forced;
             try {
                 forced = connectionHandler.drain(reason, remainingShutdownTime(deadline));
-            } catch (IOException e) {
-                LOG.warn("Some connections had not stopped after shutdown: {}", e.getMessage());
+            } finally {
+                drainFinished.countDown();
             }
             if (!locked) {
                 locked = acquireLifecycle(deadline);
                 if (locked) {
-                    closeListenersForShutdown(deadline);
+                    listenersClosed = closeListenersForShutdown(deadline);
                 } else {
+                    listenersClosed = false;
                     LOG.warn(
                             "start() still held the lifecycle when the shutdown budget ran out;"
                                     + " not waiting to close the listeners");
@@ -610,18 +635,26 @@ public final class JircdServerApplication {
                         budget.toMillis(),
                         forced);
             }
-            LOG.info("jircd stopped");
+            if (listenersClosed) {
+                LOG.info("jircd stopped");
+            } else {
+                // Not retried here: the process exits right after a signal-driven shutdown. A
+                // caller that keeps running can call stop(), which retries the retained listeners.
+                LOG.warn("jircd shut down but listener cleanup was incomplete; stop() retries it");
+            }
             return forced;
         } finally {
             if (locked) lifecycle.unlock();
         }
     }
 
-    private void closeListenersForShutdown(long deadline) {
+    private boolean closeListenersForShutdown(long deadline) {
         try {
             closeListeners(ownedListeners, deadline);
+            return true;
         } catch (IOException | RuntimeException e) {
             LOG.warn("Closing the listeners during shutdown failed: {}", e.getMessage());
+            return false;
         }
     }
 
@@ -663,7 +696,14 @@ public final class JircdServerApplication {
         } catch (IOException | RuntimeException listenerFailure) {
             failure = listenerFailure;
         }
+        beforeStopClosesConnections.get().run();
+        // One atomic decision, so there is no gap between checking for a shutdown and closing.
+        ClosureOwner prior = closureOwner.compareAndExchange(null, ClosureOwner.STOP);
+        if (prior == ClosureOwner.SHUTDOWN) {
+            awaitGracefulDrain();
+        }
         try {
+            afterStopClaimsClosure.get().run();
             connectionHandler.closeConnections(remainingShutdownTime(deadline));
         } catch (IOException | RuntimeException connectionFailure) {
             if (failure == null) {
@@ -671,6 +711,10 @@ public final class JircdServerApplication {
             } else if (failure != connectionFailure) {
                 failure.addSuppressed(connectionFailure);
             }
+        } finally {
+            // Ownership lasts only as long as this stop(): the application can be started again,
+            // and a later shutdown must then drain the new connections.
+            if (prior == null) closureOwner.compareAndSet(ClosureOwner.STOP, null);
         }
         if (failure instanceof IOException ioFailure) {
             throw ioFailure;
@@ -678,6 +722,58 @@ public final class JircdServerApplication {
         if (failure instanceof RuntimeException runtimeFailure) {
             throw runtimeFailure;
         }
+    }
+
+    /**
+     * While a graceful shutdown is draining, the connections are its to close: closing them here
+     * would cut off the final {@code ERROR} it is delivering. Waits, bounded by that shutdown's own
+     * deadline, then goes on (a drain that overran has force-closed everything anyway). Only called
+     * once shutdown has won the closure, which also means its deadline is recorded.
+     */
+    private void awaitGracefulDrain() {
+        // Interrupts do not shorten the wait: proceeding early would close sockets under the drain.
+        // The flag is restored afterwards so the caller still sees it.
+        boolean interrupted = false;
+        try {
+            while (true) {
+                long left = shutdownDeadlineNanos - System.nanoTime();
+                if (left <= 0) {
+                    // A drain that finished (even long ago) is not worth a warning: only one still
+                    // running past its deadline means stop() goes on under it.
+                    if (drainFinished.getCount() != 0) {
+                        LOG.warn("stop() went on while the graceful shutdown was still draining");
+                    }
+                    return;
+                }
+                try {
+                    if (drainFinished.await(left, TimeUnit.NANOSECONDS)) return;
+                } catch (InterruptedException _) {
+                    interrupted = true;
+                }
+            }
+        } finally {
+            if (interrupted) Thread.currentThread().interrupt();
+        }
+    }
+
+    /** Test seam: whether the deadline of the (started) graceful shutdown has passed. */
+    boolean shutdownDeadlinePassedForTesting() {
+        return shutdownDeadlineNanos - System.nanoTime() <= 0;
+    }
+
+    /** Test seam: runs in {@link #stop()} just before it closes the connections. */
+    void beforeStopClosesConnectionsForTesting(Runnable hook) {
+        beforeStopClosesConnections.set(hook);
+    }
+
+    /** Test seam: runs in {@link #stop()} once it owns the connections, before it closes them. */
+    void afterStopClaimsClosureForTesting(Runnable hook) {
+        afterStopClaimsClosure.set(hook);
+    }
+
+    /** Test seam: the listeners shutdown and stop close; a test adds one that fails to close. */
+    List<Closeable> ownedListenersForTesting() {
+        return ownedListeners;
     }
 
     private static Duration remainingShutdownTime(long deadline) {

@@ -54,6 +54,7 @@ import net.jircd.protocol.Command;
 import net.jircd.protocol.MalformedMessageException;
 import net.jircd.protocol.Message;
 import net.jircd.protocol.MessageParser;
+import net.jircd.protocol.MessageSerializer;
 import net.jircd.protocol.NumericReply;
 import net.jircd.protocol.Utf8Validator;
 import org.slf4j.Logger;
@@ -169,6 +170,8 @@ public final class ConnectionHandler {
             new AtomicReference<>(UnaryOperator.identity());
     private final AtomicReference<Consumer<ClientSession>> readLoopEndHook =
             new AtomicReference<>(session -> {});
+    private final AtomicReference<Consumer<ClientSession>> afterShutdownClaimHook =
+            new AtomicReference<>(session -> {});
     private final AtomicReference<Consumer<ClientSession>> gracefulCloseHook =
             new AtomicReference<>(session -> {});
 
@@ -187,6 +190,8 @@ public final class ConnectionHandler {
      * a prune.
      */
     private final Set<ClientSession> liveSessions = ConcurrentHashMap.newKeySet();
+
+    private final Map<ClientSession, Socket> sessionSockets = new ConcurrentHashMap<>();
 
     private final Semaphore rejectionSlots = new Semaphore(64);
     private final Map<Thread, Socket> rejections = new ConcurrentHashMap<>();
@@ -561,6 +566,14 @@ public final class ConnectionHandler {
         readLoopEndHook.set(Objects.requireNonNull(hook));
     }
 
+    /**
+     * Test seam: runs after shutdown has claimed a session's CLOSING and before it queues the
+     * {@code ERROR}.
+     */
+    public void afterShutdownClaimForTesting(Consumer<ClientSession> hook) {
+        afterShutdownClaimHook.set(Objects.requireNonNull(hook));
+    }
+
     /** Test seam: runs as a shutdown closer takes a session, before its {@code ERROR} is queued. */
     public void beforeGracefulCloseForTesting(Consumer<ClientSession> hook) {
         gracefulCloseHook.set(Objects.requireNonNull(hook));
@@ -598,8 +611,32 @@ public final class ConnectionHandler {
         awaitConnections(rejections, deadline);
     }
 
-    /** How long sockets closed at the shutdown deadline get for their threads to finish. */
+    /**
+     * How long sockets closed at the shutdown deadline get for their threads to finish. It is
+     * reserved from the end of the budget, not added to it.
+     */
     private static final Duration DRAIN_GRACE = Duration.ofSeconds(1);
+
+    /** Longest shutdown reason echoed to clients, in UTF-8 bytes. */
+    private static final int MAX_REASON_BYTES = 200;
+
+    /**
+     * Makes a caller-supplied shutdown reason safe for one wire line: CR, LF and NUL are removed
+     * and the rest is cut on a code-point boundary so the {@code ERROR} always fits a command.
+     */
+    static String safeReason(String reason) {
+        StringBuilder safe = new StringBuilder();
+        int bytes = 0;
+        String withoutBreaks = reason.replace("\r", "").replace("\n", "").replace("\0", "");
+        for (int cp : withoutBreaks.codePoints().toArray()) {
+            String ch = Character.toString(cp);
+            int size = MessageSerializer.utf8Bytes(ch);
+            if (bytes + size > MAX_REASON_BYTES) break;
+            safe.append(ch);
+            bytes += size;
+        }
+        return safe.toString();
+    }
 
     /**
      * Graceful shutdown of every connection (spec 016 FR-009): stops accepting, then for every live
@@ -608,12 +645,23 @@ public final class ConnectionHandler {
      * still draining when {@code timeout} runs out are closed without waiting, along with every
      * other socket, by {@link #closeConnections}.
      *
+     * <p>The whole call stays inside {@code timeout}: the last part of it (up to one second, a
+     * quarter of a short budget) is reserved for the forced close, so sessions are given the rest.
+     * A connection created but without a session by then is closed without an {@code ERROR}, like a
+     * stalled one, and counted. A session already disconnecting for another reason keeps that
+     * outcome and gets no shutdown {@code ERROR}. If closed connections still have not stopped by
+     * the end, that is logged and the count is returned all the same.
+     *
      * @return how many sessions had not finished draining by the deadline
-     * @throws IOException if closed connections still had not stopped shortly after the deadline
      */
-    public int drain(String reason, Duration timeout) throws IOException {
-        long deadline = System.nanoTime() + timeout.toNanos();
-        DrainState state = new DrainState(reason, deadline);
+    public int drain(String reason, Duration timeout) {
+        long end = System.nanoTime() + timeout.toNanos();
+        Duration grace =
+                timeout.dividedBy(4).compareTo(DRAIN_GRACE) < 0
+                        ? timeout.dividedBy(4)
+                        : DRAIN_GRACE;
+        long deadline = end - grace.toNanos();
+        DrainState state = new DrainState(safeReason(reason), deadline);
         // Before the snapshots: a connection that publishes later finds this and closes itself.
         draining.set(state);
         closeAdmission();
@@ -635,8 +683,17 @@ public final class ConnectionHandler {
         for (Thread connection : owned) {
             if (!finishesBy(connection, deadline)) forcedConnections.add(connection.getName());
         }
-        Duration left = Duration.ofNanos(Math.max(0, deadline - System.nanoTime()));
-        closeConnections(left.plus(DRAIN_GRACE));
+        Duration left = Duration.ofNanos(Math.max(0, end - System.nanoTime()));
+        try {
+            closeConnections(left);
+        } catch (IOException e) {
+            // The count must survive: sessions were force-closed even if their threads linger.
+            LOG.warn(
+                    "{} connection(s) were force-closed at the shutdown deadline and some had not"
+                            + " stopped: {}",
+                    forcedConnections.size(),
+                    e.getMessage());
+        }
         return forcedConnections.size();
     }
 
@@ -654,13 +711,36 @@ public final class ConnectionHandler {
         }
         gracefulCloseHook.get().accept(session);
         writer.extendDrainUntil(state.deadlineNanos());
-        if (!session.lifecycle().isClosing()) {
-            String text = "Closing Link: " + session.realHostname() + " (" + state.reason() + ")";
-            // Final: a reply that a command already being dispatched queues afterwards is dropped,
-            // so the ERROR is the last line the client receives.
-            writer.enqueueFinal(new Message(Map.of(), null, Command.ERROR, "ERROR", List.of(text)));
+        String text = "Closing Link: " + session.realHostname() + " (" + state.reason() + ")";
+        // CLOSING is claimed first, so the read loop dispatches nothing more while the ERROR is
+        // queued. Final: a reply that a command already being dispatched queues afterwards is
+        // dropped, so the ERROR is the last line the client receives. A session another
+        // disconnect (QUIT, EOF, KILL, timeout) claimed first keeps that outcome.
+        // The claim and the enqueue are one step as far as writer.close() is concerned: a reader or
+        // liveness thread that sees CLOSING waits for the ERROR to be queued before it closes.
+        boolean claimed =
+                writer.holdingCloseUntilFinalLine(
+                        () ->
+                                disconnectCleanup.claim(
+                                        session,
+                                        () -> {
+                                            afterShutdownClaimHook.get().accept(session);
+                                            writer.enqueueFinal(
+                                                    new Message(
+                                                            Map.of(),
+                                                            null,
+                                                            Command.ERROR,
+                                                            "ERROR",
+                                                            List.of(text)));
+                                        }));
+        if (claimed) {
+            disconnectCleanup.cleanupClaimed(session, state.reason());
+            // The writer has drained (or hit the deadline): wake the read loop now rather than at
+            // the next liveness tick, so an idle client sees EOF and is not counted as forced.
+            @SuppressWarnings("PMD.CloseResource") // closed here, on purpose
+            Socket socket = sessionSockets.get(session);
+            if (socket != null) closeQuietly(socket);
         }
-        disconnectCleanup.cleanup(session, state.reason());
     }
 
     private static boolean finishesBy(Thread thread, long deadline) {
@@ -718,6 +798,7 @@ public final class ConnectionHandler {
                         socket.getInetAddress());
         CapabilityControl control = extensionRegistry.capabilityControl();
         control.runUnderControl(() -> liveSessions.add(session));
+        sessionSockets.put(session, socket);
         try {
             serveSession(
                     session,
@@ -728,6 +809,7 @@ public final class ConnectionHandler {
                     registrationTimeout,
                     acceptedAt);
         } finally {
+            sessionSockets.remove(session);
             control.runUnderControl(() -> liveSessions.remove(session));
         }
     }

@@ -121,6 +121,31 @@ class SessionWriterCloseTest {
     }
 
     @Test
+    void anInterruptedExternalCloseThatCutsOffALiveWriterReportsTheCutOffOnce() throws Exception {
+        AtomicInteger truncated = new AtomicInteger();
+        try (BlockingOutputStream out = new BlockingOutputStream();
+                SessionWriter writer =
+                        new SessionWriter(
+                                new ClientSession(
+                                        "intr", "host.example", RateLimitBucket.withDefaults()),
+                                out,
+                                TagRenderer.NONE)) {
+            writer.setOnDrainTruncated(truncated::incrementAndGet);
+            writer.enqueueRaw(line(0));
+            assertThat(out.firstWriteStarted.await(10, TimeUnit.SECONDS)).isTrue();
+
+            // The closer is interrupted while the writer is still inside a write.
+            Thread closer = Thread.ofVirtual().unstarted(writer::close);
+            closer.start();
+            closer.interrupt();
+            closer.join(TimeUnit.SECONDS.toMillis(10));
+
+            assertThat(out.interrupted.await(10, TimeUnit.SECONDS)).isTrue();
+        }
+        assertThat(truncated).hasValue(1);
+    }
+
+    @Test
     void aFinalLineIsTheLastOneWrittenWhateverIsQueuedAfterIt() throws Exception {
         try (BlockingOutputStream out = new BlockingOutputStream();
                 SessionWriter writer =

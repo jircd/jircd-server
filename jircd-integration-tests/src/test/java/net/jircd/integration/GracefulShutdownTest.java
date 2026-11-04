@@ -419,4 +419,296 @@ class GracefulShutdownTest {
         assertThat(forced).isZero();
         assertThat(Duration.ofNanos(System.nanoTime() - start)).isLessThan(Duration.ofSeconds(1));
     }
+
+    @Test
+    void aShutdownReasonWithLineBreaksOrExcessLengthStillGivesOneFinalErrorLine() throws Exception {
+        try (TestServer server = TestServer.start();
+                RawIrcClient client = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+            client.registerAndAwaitWelcome("rude", "rude");
+            CompletableFuture<List<String>> received = readToEnd(client);
+
+            JircdServerTestAccess.shutdown(
+                    server.application,
+                    "bye\r\nQUIT :injected\0" + "x".repeat(3000),
+                    PRODUCTION_BUDGET);
+
+            List<String> lines = received.get(10, TimeUnit.SECONDS);
+            assertThat(lines).noneMatch("QUIT :injected"::equals);
+            assertThat(lines.getLast())
+                    .startsWith("ERROR :Closing Link: " + TestServer.LOOPBACK + " (bye")
+                    .endsWith(")")
+                    .doesNotContain("\0");
+            assertThat(lines.getLast().getBytes(java.nio.charset.StandardCharsets.UTF_8))
+                    .hasSizeLessThanOrEqualTo(510);
+        }
+    }
+
+    @Test
+    void stopWaitsForARunningGracefulShutdownInsteadOfClosingSocketsUnderIt() throws Exception {
+        CountDownLatch stopAtHook = new CountDownLatch(1);
+        CountDownLatch stopGo = new CountDownLatch(1);
+        CountDownLatch closerReached = new CountDownLatch(1);
+        CountDownLatch closerGo = new CountDownLatch(1);
+        try (TestServer server = TestServer.start();
+                RawIrcClient client = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+            client.registerAndAwaitWelcome("both", "both");
+            JircdServerTestAccess.beforeStopClosesConnections(
+                    server.application,
+                    () -> {
+                        stopAtHook.countDown();
+                        await(stopGo);
+                    });
+            JircdServerTestAccess.connectionHandler(server.application)
+                    .beforeGracefulCloseForTesting(
+                            closing -> {
+                                closerReached.countDown();
+                                await(closerGo);
+                            });
+            try {
+                // stop() holds the lifecycle and is about to close the connections.
+                CompletableFuture<Void> stop =
+                        CompletableFuture.runAsync(
+                                () -> {
+                                    try {
+                                        server.application.stop();
+                                    } catch (IOException e) {
+                                        throw new java.io.UncheckedIOException(e);
+                                    }
+                                });
+                assertThat(stopAtHook.await(10, TimeUnit.SECONDS)).isTrue();
+                CompletableFuture<Integer> forced = shutdownAsync(server, PRODUCTION_BUDGET);
+                assertThat(closerReached.await(10, TimeUnit.SECONDS)).isTrue();
+                CompletableFuture<List<String>> received = readToEnd(client);
+
+                stopGo.countDown();
+                Polling.pause(Duration.ofMillis(500));
+                // The drain owns the connections: stop() must not have closed them yet.
+                assertThat(stop).isNotDone();
+                closerGo.countDown();
+
+                assertThat(received.get(15, TimeUnit.SECONDS)).last().isEqualTo(EXPECTED_ERROR);
+                stop.get(15, TimeUnit.SECONDS);
+                assertThat(forced.get(15, TimeUnit.SECONDS)).isZero();
+            } finally {
+                stopGo.countDown();
+                closerGo.countDown();
+            }
+        }
+    }
+
+    @Test
+    void forcedClosingStaysInsideTheBudgetAndTheForcedCountSurvivesIt() throws Exception {
+        CountDownLatch release = new CountDownLatch(1);
+        try (TestServer server = TestServer.start();
+                RawIrcClient client = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+            client.registerAndAwaitWelcome("stubborn", "stubborn");
+            // A connection thread that does not stop when its socket is closed.
+            JircdServerTestAccess.connectionHandler(server.application)
+                    .onReadLoopEndForTesting(ended -> await(release));
+            Duration budget = Duration.ofSeconds(1);
+            try {
+                long start = System.nanoTime();
+                int forced = JircdServerTestAccess.shutdown(server.application, REASON, budget);
+                Duration elapsed = Duration.ofNanos(System.nanoTime() - start);
+
+                assertThat(forced).isEqualTo(1);
+                // The post-deadline grace is part of the budget, not added to it.
+                assertThat(elapsed).isLessThan(budget.plus(Duration.ofMillis(300)));
+            } finally {
+                release.countDown();
+            }
+        }
+    }
+
+    @Test
+    void anIdleClientGetsItsErrorAndEofPromptlyAndIsNotCountedAsForced() throws Exception {
+        try (TestServer server = TestServer.start();
+                RawIrcClient client = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+            client.registerAndAwaitWelcome("idle", "idle");
+            CountDownLatch readLoopEnded = new CountDownLatch(1);
+            JircdServerTestAccess.connectionHandler(server.application)
+                    .onReadLoopEndForTesting(ended -> readLoopEnded.countDown());
+            CompletableFuture<List<String>> received = readToEnd(client);
+
+            // The budget is long and the liveness tick (five seconds, started at connect) is far
+            // away: only the shutdown itself can end this idle connection's read loop now. Before
+            // the fix it ended at the forced close, a whole budget later and counted as forced.
+            Duration budget = Duration.ofSeconds(3);
+            CompletableFuture<Integer> forced = shutdownAsync(server, budget);
+
+            assertThat(readLoopEnded.await(1, TimeUnit.SECONDS)).isTrue();
+            assertThat(received.get(1, TimeUnit.SECONDS)).last().isEqualTo(EXPECTED_ERROR);
+            assertThat(forced.get(10, TimeUnit.SECONDS)).isZero();
+        }
+    }
+
+    @Test
+    void aReaderTearingDownBetweenTheClaimAndTheErrorDoesNotLoseTheError() throws Exception {
+        CountDownLatch claimed = new CountDownLatch(1);
+        CountDownLatch go = new CountDownLatch(1);
+        try (TestServer server = TestServer.start();
+                RawIrcClient client = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+            client.registerAndAwaitWelcome("race", "race");
+            ConnectionHandler handler = JircdServerTestAccess.connectionHandler(server.application);
+            CountDownLatch readLoopEnded = new CountDownLatch(1);
+            handler.onReadLoopEndForTesting(ended -> readLoopEnded.countDown());
+            handler.afterShutdownClaimForTesting(
+                    session -> {
+                        claimed.countDown();
+                        await(go);
+                    });
+            CompletableFuture<List<String>> received = readToEnd(client);
+            try {
+                CompletableFuture<Integer> forced = shutdownAsync(server, PRODUCTION_BUDGET);
+                assertThat(claimed.await(10, TimeUnit.SECONDS)).isTrue();
+
+                // The session is CLOSING but the ERROR is not queued: the read loop sees CLOSING
+                // on the next line and goes on to close the writer.
+                client.send("PING late");
+                assertThat(readLoopEnded.await(10, TimeUnit.SECONDS)).isTrue();
+                Polling.pause(Duration.ofMillis(300));
+                go.countDown();
+
+                assertThat(received.get(15, TimeUnit.SECONDS)).last().isEqualTo(EXPECTED_ERROR);
+                assertThat(forced.get(15, TimeUnit.SECONDS)).isZero();
+            } finally {
+                go.countDown();
+            }
+        }
+    }
+
+    @Test
+    void anInterruptedStopStillWaitsForTheDrainInsteadOfClosingSocketsUnderIt() throws Exception {
+        CountDownLatch stopAtHook = new CountDownLatch(1);
+        CountDownLatch stopGo = new CountDownLatch(1);
+        CountDownLatch closerReached = new CountDownLatch(1);
+        CountDownLatch closerGo = new CountDownLatch(1);
+        try (TestServer server = TestServer.start();
+                RawIrcClient client = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+            client.registerAndAwaitWelcome("intr", "intr");
+            JircdServerTestAccess.beforeStopClosesConnections(
+                    server.application,
+                    () -> {
+                        stopAtHook.countDown();
+                        await(stopGo);
+                    });
+            JircdServerTestAccess.connectionHandler(server.application)
+                    .beforeGracefulCloseForTesting(
+                            closing -> {
+                                closerReached.countDown();
+                                await(closerGo);
+                            });
+            try {
+                Thread stopper =
+                        Thread.ofPlatform()
+                                .start(
+                                        () -> {
+                                            try {
+                                                server.application.stop();
+                                            } catch (IOException _) {
+                                                // Not under test.
+                                            }
+                                        });
+                assertThat(stopAtHook.await(10, TimeUnit.SECONDS)).isTrue();
+                CompletableFuture<Integer> forced = shutdownAsync(server, PRODUCTION_BUDGET);
+                assertThat(closerReached.await(10, TimeUnit.SECONDS)).isTrue();
+                CompletableFuture<List<String>> received = readToEnd(client);
+                stopGo.countDown();
+                Polling.pause(Duration.ofMillis(300));
+
+                // stop() is now waiting for the drain; interrupting it must not end that wait.
+                stopper.interrupt();
+                Polling.pause(Duration.ofMillis(300));
+                assertThat(stopper.isAlive()).isTrue();
+                closerGo.countDown();
+
+                assertThat(received.get(15, TimeUnit.SECONDS)).last().isEqualTo(EXPECTED_ERROR);
+                stopper.join(TimeUnit.SECONDS.toMillis(15));
+                assertThat(stopper.isAlive()).isFalse();
+                assertThat(forced.get(15, TimeUnit.SECONDS)).isZero();
+            } finally {
+                stopGo.countDown();
+                closerGo.countDown();
+            }
+        }
+    }
+
+    @Test
+    void aShutdownDuringAStopThatOwnsTheConnectionsLeavesThemToIt() throws Exception {
+        CountDownLatch stopOwns = new CountDownLatch(1);
+        CountDownLatch stopGo = new CountDownLatch(1);
+        try (TestServer server = TestServer.start();
+                RawIrcClient client = RawIrcClient.connectPlaintext(server.plaintextPort())) {
+            client.registerAndAwaitWelcome("owned", "owned");
+            JircdServerTestAccess.afterStopClaimsClosure(
+                    server.application,
+                    () -> {
+                        stopOwns.countDown();
+                        await(stopGo);
+                    });
+            CompletableFuture<List<String>> received = readToEnd(client);
+            try {
+                CompletableFuture<Void> stop =
+                        CompletableFuture.runAsync(
+                                () -> {
+                                    try {
+                                        server.application.stop();
+                                    } catch (IOException e) {
+                                        throw new java.io.UncheckedIOException(e);
+                                    }
+                                });
+                assertThat(stopOwns.await(10, TimeUnit.SECONDS)).isTrue();
+
+                // stop() owns the closure and has not closed anything yet: shutdown returns
+                // promptly, drains nothing, and the connection is still open.
+                int forced =
+                        CompletableFuture.supplyAsync(
+                                        () ->
+                                                JircdServerTestAccess.shutdown(
+                                                        server.application,
+                                                        REASON,
+                                                        PRODUCTION_BUDGET))
+                                .get(3, TimeUnit.SECONDS);
+                assertThat(forced).isZero();
+                assertThat(received).isNotDone();
+
+                stopGo.countDown();
+                stop.get(15, TimeUnit.SECONDS);
+                assertThat(received.get(15, TimeUnit.SECONDS)).doesNotContain(EXPECTED_ERROR);
+            } finally {
+                stopGo.countDown();
+            }
+        }
+    }
+
+    @Test
+    void aShutdownAfterAStopAndARestartDrainsTheNewConnections() throws Exception {
+        try (TestServer server = TestServer.start()) {
+            server.application.stop();
+            server.application.start();
+            try (RawIrcClient client =
+                    RawIrcClient.connectPlaintext(server.application.plaintextPort())) {
+                client.registerAndAwaitWelcome("again", "again");
+                CompletableFuture<List<String>> received = readToEnd(client);
+
+                int forced =
+                        JircdServerTestAccess.shutdown(
+                                server.application, REASON, PRODUCTION_BUDGET);
+
+                assertThat(forced).isZero();
+                assertThat(received.get(10, TimeUnit.SECONDS)).last().isEqualTo(EXPECTED_ERROR);
+                int port = server.application.plaintextPort();
+                assertThatThrownBy(() -> RawIrcClient.connectPlaintext(port))
+                        .isInstanceOf(IOException.class);
+            }
+        }
+    }
+
+    private static void await(CountDownLatch latch) {
+        try {
+            latch.await(30, TimeUnit.SECONDS);
+        } catch (InterruptedException _) {
+            Thread.currentThread().interrupt();
+        }
+    }
 }

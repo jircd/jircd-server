@@ -17,6 +17,9 @@ package net.jircd.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -26,6 +29,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.slf4j.LoggerFactory;
 
 /** The shutdown budget (spec 016 FR-009) against a lifecycle that is busy. */
 class JircdServerApplicationShutdownTest {
@@ -151,5 +155,78 @@ class JircdServerApplicationShutdownTest {
 
         assertThat(application.connectionHandlerForTesting().isAccepting()).isFalse();
         assertThat(application.ownedListenerCountForTesting()).isZero();
+    }
+
+    @Test
+    void aListenerThatFailsToCloseIsReportedAsIncompleteNotAsStopped() throws Exception {
+        Path config =
+                Files.writeString(
+                        dir.resolve("jircd.yaml"),
+                        """
+                        serverName: test.jircd.local
+                        listeners:
+                          - port: 0
+                            bindAddress: 127.0.0.1
+                            tls: false
+                        """);
+        JircdServerApplication application = new JircdServerApplication(config);
+        int[] attempts = new int[1];
+        application
+                .ownedListenersForTesting()
+                .add(
+                        () -> {
+                            if (attempts[0]++ == 0) throw new java.io.IOException("port stuck");
+                        });
+        Logger log = (Logger) LoggerFactory.getLogger(JircdServerApplication.class);
+        ListAppender<ILoggingEvent> logs = new ListAppender<>();
+        logs.start();
+        log.addAppender(logs);
+        try {
+            application.shutdown("bye", Duration.ofSeconds(2));
+
+            assertThat(logs.list)
+                    .extracting(ILoggingEvent::getFormattedMessage)
+                    .noneMatch(message -> message.equals("jircd stopped"))
+                    .anyMatch(message -> message.contains("listener cleanup was incomplete"));
+            // The documented retry path: an explicit stop() closes what shutdown left open.
+            application.stop();
+            assertThat(attempts[0]).isEqualTo(2);
+        } finally {
+            log.detachAppender(logs);
+        }
+    }
+
+    @Test
+    void aStopAfterAFinishedShutdownPastItsDeadlineDoesNotWarnAboutADrainThatEnded()
+            throws Exception {
+        JircdServerApplication application = application();
+        int[] attempts = new int[1];
+        application
+                .ownedListenersForTesting()
+                .add(
+                        () -> {
+                            if (attempts[0]++ == 0) throw new java.io.IOException("port stuck");
+                        });
+        Logger log = (Logger) LoggerFactory.getLogger(JircdServerApplication.class);
+        ListAppender<ILoggingEvent> logs = new ListAppender<>();
+        logs.start();
+        log.addAppender(logs);
+        try {
+            // A budget of 1 ns: its deadline has passed by the time shutdown() returns, and an
+            // idle server's drain still finishes.
+            application.shutdown("bye", Duration.ofNanos(1));
+            assertThat(application.shutdownDeadlinePassedForTesting())
+                    .as("precondition: stop() below reaches the past-deadline branch")
+                    .isTrue();
+
+            application.stop();
+
+            assertThat(attempts[0]).as("stop() retried the listener that stayed open").isEqualTo(2);
+            assertThat(logs.list)
+                    .extracting(ILoggingEvent::getFormattedMessage)
+                    .noneMatch(message -> message.contains("graceful shutdown was still draining"));
+        } finally {
+            log.detachAppender(logs);
+        }
     }
 }

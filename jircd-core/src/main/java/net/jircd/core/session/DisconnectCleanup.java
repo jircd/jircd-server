@@ -104,6 +104,32 @@ public final class DisconnectCleanup {
     }
 
     public void cleanup(ClientSession session, String reason) {
+        cleanup(session, reason, () -> {});
+    }
+
+    /**
+     * As {@link #cleanup(ClientSession, String)}, running {@code announce} once this call has
+     * claimed CLOSING and before anything else: the read loop already sees the session as closing,
+     * so it dispatches nothing more while {@code announce} queues the session's final line (the
+     * shutdown {@code ERROR}). A session another trigger already claimed keeps that disconnect's
+     * outcome: {@code announce} does not run.
+     *
+     * @return whether this call claimed the session
+     */
+    public boolean cleanup(ClientSession session, String reason, Runnable announce) {
+        if (!claim(session, announce)) {
+            return false;
+        }
+        cleanupClaimed(session, reason);
+        return true;
+    }
+
+    /**
+     * The first half of {@link #cleanup(ClientSession, String, Runnable)}: claims CLOSING and runs
+     * {@code announce}, without the rest of the cleanup. The caller follows with {@link
+     * #cleanupClaimed} when this returns true.
+     */
+    public boolean claim(ClientSession session, Runnable announce) {
         // Idempotency guard: two disconnect triggers can race for the same session (a client-sent
         // QUIT racing an abrupt TCP-level close of the same socket is the concrete case that
         // surfaced this — an OS-level RST can hit the read loop's IOException path before the QUIT
@@ -112,12 +138,13 @@ public final class DisconnectCleanup {
         // WHOWAS entry (among other things) could be recorded twice for one logical disconnect.
         ConnectionLifecycle.State previous = session.lifecycle().claimClosing();
         if (previous == ConnectionLifecycle.State.CLOSING) {
-            return;
+            return false;
         }
         if (previous == ConnectionLifecycle.State.REGISTERED) {
             userStatistics.userLeft();
         }
-        cleanupClaimed(session, reason);
+        announce.run();
+        return true;
     }
 
     /**
