@@ -38,9 +38,16 @@ class LogCaptureConcurrencyTest {
     void readersSeeConsistentSnapshotsAndEveryLoggedLineWhileWritersLog() throws Exception {
         try (ExecutorService writers = Executors.newFixedThreadPool(WRITERS);
                 LogCapture capture = new LogCapture(ConnectionMonitorLog.class)) {
-            // Writers start only after the reader's first snapshot, so every later read in the
-            // loop happens while at least one writer is still running.
+            // Each writer logs the first half of its lines, then waits at a gate. The reader
+            // keeps taking snapshots while the first halves are being written, takes one more
+            // once every writer is parked (so the capture holds a strict part of the total),
+            // and only then releases the second halves. That proves a snapshot was taken with
+            // writes still to come, without relying on thread timing.
+            int half = LINES_PER_WRITER / 2;
+            int total = WRITERS * LINES_PER_WRITER;
             CountDownLatch readerStarted = new CountDownLatch(1);
+            CountDownLatch firstHalvesWritten = new CountDownLatch(WRITERS);
+            CountDownLatch secondHalvesGate = new CountDownLatch(1);
             List<Future<?>> done = new ArrayList<>();
             for (int writer = 0; writer < WRITERS; writer++) {
                 int id = writer;
@@ -48,7 +55,13 @@ class LogCaptureConcurrencyTest {
                         writers.submit(
                                 () -> {
                                     readerStarted.await();
-                                    for (int i = 0; i < LINES_PER_WRITER; i++) {
+                                    for (int i = 0; i < half; i++) {
+                                        ConnectionMonitorLog.sendqOverflow(
+                                                "w" + id + "-" + i, 1, 2L);
+                                    }
+                                    firstHalvesWritten.countDown();
+                                    secondHalvesGate.await();
+                                    for (int i = half; i < LINES_PER_WRITER; i++) {
                                         ConnectionMonitorLog.sendqOverflow(
                                                 "w" + id + "-" + i, 1, 2L);
                                     }
@@ -56,23 +69,37 @@ class LogCaptureConcurrencyTest {
                                 }));
             }
 
-            long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
-            int previous = capture.messages().size();
-            int overlappedReads = 0;
-            readerStarted.countDown();
-            while (!done.stream().allMatch(Future::isDone)) {
-                assertThat(System.nanoTime())
-                        .as("writers still running after 30 s; captured %d lines", previous)
-                        .isLessThan(deadline);
-                List<String> snapshot = capture.messages();
-                assertThat(snapshot).hasSizeGreaterThanOrEqualTo(previous);
-                previous = snapshot.size();
-                capture.awaitMessage(m -> m.startsWith("connection-event"), Duration.ofSeconds(5));
-                overlappedReads++;
+            try {
+                long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
+                int previous = capture.messages().size();
+                boolean sawPartialSnapshot = false;
+                readerStarted.countDown();
+                while (!done.stream().allMatch(Future::isDone)) {
+                    assertThat(System.nanoTime())
+                            .as("writers still running after 30 s; captured %d lines", previous)
+                            .isLessThan(deadline);
+                    List<String> snapshot = capture.messages();
+                    assertThat(snapshot).hasSizeGreaterThanOrEqualTo(previous);
+                    previous = snapshot.size();
+                    sawPartialSnapshot |= previous > 0 && previous < total;
+                    capture.awaitMessage(
+                            m -> m.startsWith("connection-event"), Duration.ofSeconds(5));
+                    if (secondHalvesGate.getCount() > 0 && firstHalvesWritten.getCount() == 0) {
+                        int parked = capture.messages().size();
+                        sawPartialSnapshot |= parked > 0 && parked < total;
+                        secondHalvesGate.countDown();
+                    }
+                }
+                assertThat(sawPartialSnapshot)
+                        .as(
+                                "a snapshot taken after some, but before all, %d lines were logged",
+                                total)
+                        .isTrue();
+            } finally {
+                // Never leave writers parked on a latch: closing the executor would hang.
+                readerStarted.countDown();
+                secondHalvesGate.countDown();
             }
-            assertThat(overlappedReads)
-                    .as("reads completed while a writer was still running")
-                    .isPositive();
             for (Future<?> future : done) {
                 future.get(10, TimeUnit.SECONDS);
             }
