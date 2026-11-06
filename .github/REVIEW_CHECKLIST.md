@@ -1,6 +1,6 @@
 # Pre-PR review checklist
 
-SonarCloud, Sourcery and CodeRabbit review PRs within their limits: SonarCloud only when the PR's workflow has `SONAR_TOKEN`, so not on PRs from forks; Sourcery not on PRs over 150,000 diff characters or once the author's weekly budget is used up (see AGENTS.md); CodeRabbit up to its hourly review allowance, and only on request while the repository has fewer than 10 stars. This list collects what SonarCloud and Sourcery flagged on this repo's merged PRs (#28–#94), before CodeRabbit was added, so a change can be checked against it before the PR opens. Numbers in brackets are example PRs.
+SonarCloud, Sourcery and CodeRabbit review PRs within their limits: SonarCloud only when the PR's workflow has `SONAR_TOKEN`, so not on PRs from forks; Sourcery not on PRs over 150,000 diff characters or once the author's weekly budget is used up (see AGENTS.md); CodeRabbit up to its hourly review allowance, and only on request while the repository has fewer than 10 stars. This list collects what the bots flagged on this repo's merged PRs: SonarCloud and Sourcery on #28–#94, and CodeRabbit from #130 on. Check a change against it before the PR opens. Numbers in brackets are example PRs. When a PR or stack merges, add its recurring findings here (see AGENTS.md, "Review rounds on a PR").
 
 ## SonarCloud rules this repo keeps hitting
 
@@ -55,3 +55,30 @@ Check the diff for each of these before opening the PR.
 - **Tests that can pass while the code is wrong.** Assert content (exact params, fitted text, log lines, final state), not just reply codes or the absence of an exception. Make concurrency tests prove that the overlap happened. Don't reuse a consumed stream. Drive the real handler, not a shortcut. Check that a test fails without the fix. [#52, #59, #65, #81, #82, #87, #92, #94]
 - **Test reliability.** Tests have bounded waits and always clean up (no hang on a failed latch, no leaked connection). They don't depend on platform-specific exception messages, and ordinary tests don't run with load tests. [#39, #41, #59, #90]
 - **Docs and contracts.** Update `specs/` contracts, README and Javadoc in the same PR, and keep them consistent with each other and with the code. Claims match the implementation: an O(n·m) algorithm is not "linear time". [#62, #67, #79, #80, #82, #83, #84, #91]
+
+## What CodeRabbit keeps finding
+
+Collected from #130–#134, the spec-016 stack. Most findings on spec PRs are about claims.
+
+- **Completed tasks and claims match what was built.** When a task is marked `[X]`, re-read its text against the code and tests: class and method names, file permissions, entry points, and whether a case is covered in-process or in a container. Coverage maps, checklists and research notes claim only what was tested or measured. Don't write "no side effect" without a measured result. [#131, #134]
+- **The spec documents agree with each other.** Spec, plan, tasks, data model and contracts state the same rule, range or label list in the same way, and an edge case matches the requirement it qualifies. [#131, #132]
+- **The published configuration matches the applied one.** When applying a reload can fail partway (for example, a file appender that won't start), define a retry or a rollback, so that what `current()` publishes and what is live can't diverge. A later reload with identical settings must retry. [#131, #132]
+- **State changes arrive in order.** Listener callbacks for successive reloads run in publication order, or are serialised, so a slow listener can't apply an older configuration after a newer one. [#131]
+- **Lifecycle windows.** Name and handle the in-between states:
+  - a session registered before its writer is attached;
+  - a connection accepted but not yet served;
+  - a signal after the handler is installed but before the bind;
+  - a `stop()` after a finished shutdown, which must not log a spurious WARN;
+  - a counter updated on the success path that the `IOException` path must not lose.
+
+  [#131, #133, #134]
+- **Errors name their context.** Configuration and I/O errors keep the file path, including REHASH failures and notices fitted to the size limit. Recognise a file reference structurally, not by matching text in a message. [#132]
+- **Deployment and CI.**
+  - Mounted config and TLS files, and their directory, have documented minimal permissions that the container's user can traverse and read (CWE-732).
+  - The build context keeps credentials out.
+  - Image labels match the contract.
+  - Publish jobs don't lose immutable tags when jobs queue, and moving tags move only after the smoke tests pass.
+  - Platform claims cover only what is actually published.
+
+  [#131, #134]
+- **Tests prove what they claim.** A test that removes a resource first shows that something was written before the removal. Build test inputs before an `assertThatThrownBy` lambda (S5778). [#132]
