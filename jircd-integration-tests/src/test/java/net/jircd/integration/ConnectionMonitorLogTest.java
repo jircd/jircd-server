@@ -21,6 +21,7 @@ import java.time.Duration;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import net.jircd.core.session.ConnectionMonitorLog;
+import net.jircd.core.testing.LogCapture;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -46,18 +47,30 @@ class ConnectionMonitorLogTest {
                 TestServer server = TestServer.start()) {
 
             String connectedMessage;
+            String disconnectedMessage;
             try (RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
                 alice.registerAndAwaitWelcome("alice", "alice");
 
+                // "connected" is logged on the connection's own thread, and ConnectionHandler
+                // tracks that thread before starting it. TestServer.close() joins every tracked
+                // connection thread, so no earlier test's server can log it once this capture is
+                // attached. This test's server has one client, so the first "connected" line is
+                // ours; its token is the key for the disconnect below. (The line carries no port
+                // or server name to match on.)
                 connectedMessage =
                         capture.awaitMessage(
                                 message -> message.startsWith("connection-event=connected"),
                                 Duration.ofSeconds(5));
             }
 
-            String disconnectedMessage =
+            // Only the disconnect that carries this connection's token counts; a line from another
+            // test's connection that is still closing has a different token.
+            String ownToken = extractToken(connectedMessage);
+            disconnectedMessage =
                     capture.awaitMessage(
-                            message -> message.startsWith("connection-event=disconnected"),
+                            message ->
+                                    message.startsWith("connection-event=disconnected")
+                                            && ownToken.equals(extractToken(message)),
                             Duration.ofSeconds(5));
 
             String connectedToken = extractToken(connectedMessage);

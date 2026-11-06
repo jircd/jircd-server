@@ -18,10 +18,6 @@ package net.jircd.integration;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import ch.qos.logback.classic.Level;
-import ch.qos.logback.classic.Logger;
-import ch.qos.logback.classic.spi.ILoggingEvent;
-import ch.qos.logback.core.read.ListAppender;
 import java.io.FilterOutputStream;
 import java.io.IOException;
 import java.io.InterruptedIOException;
@@ -36,11 +32,12 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import net.jircd.core.session.ClientSession;
 import net.jircd.core.session.ConnectionHandler;
+import net.jircd.core.testing.LogCapture;
 import net.jircd.server.JircdServerApplication;
 import net.jircd.server.JircdServerTestAccess;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import org.slf4j.LoggerFactory;
+import org.slf4j.event.Level;
 
 /**
  * Graceful shutdown (spec 016 FR-009, SC-003), in process: every connected client is told why
@@ -205,12 +202,9 @@ class GracefulShutdownTest {
 
     @Test
     void aClientThatStopsReadingIsForceClosedAtTheBudget() throws Exception {
-        Logger appLog = (Logger) LoggerFactory.getLogger(JircdServerApplication.class);
-        ListAppender<ILoggingEvent> logs = new ListAppender<>();
-        logs.start();
-        appLog.addAppender(logs);
         // The gate goes in before the client connects: it wraps sessions created after it.
-        try (TestServer server = TestServer.start();
+        try (LogCapture logs = new LogCapture(JircdServerApplication.class);
+                TestServer server = TestServer.start();
                 WriteGate gate = WriteGate.installOn(server);
                 RawIrcClient stuck = RawIrcClient.connectPlaintext(server.plaintextPort())) {
             try {
@@ -224,18 +218,15 @@ class GracefulShutdownTest {
 
                 assertThat(forced).isEqualTo(1);
                 assertThat(elapsed).isLessThan(Duration.ofSeconds(4));
-                assertThat(logs.list)
+                assertThat(logs.events())
                         .anySatisfy(
                                 e -> {
-                                    assertThat(e.getLevel()).isEqualTo(Level.WARN);
-                                    assertThat(e.getFormattedMessage())
-                                            .contains("force-closed 1 connection");
+                                    assertThat(e.level()).isEqualTo(Level.WARN);
+                                    assertThat(e.message()).contains("force-closed 1 connection");
                                 });
             } finally {
                 gate.release();
             }
-        } finally {
-            appLog.detachAppender(logs);
         }
     }
 

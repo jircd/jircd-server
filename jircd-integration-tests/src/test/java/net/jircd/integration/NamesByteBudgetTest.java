@@ -42,6 +42,7 @@ import net.jircd.core.session.SessionWriter;
 import net.jircd.core.session.TagRenderer;
 import net.jircd.core.session.command.JoinCommandHandler;
 import net.jircd.core.session.command.Replies;
+import net.jircd.core.testing.LogCapture;
 import net.jircd.protocol.Command;
 import net.jircd.protocol.Message;
 import net.jircd.protocol.MessageParser;

@@ -21,6 +21,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.nio.file.Files;
 import java.time.Duration;
 import net.jircd.core.session.SecurityEventLog;
+import net.jircd.core.testing.LogCapture;
 import org.junit.jupiter.api.Test;
 
 class Story6OperTest {
