@@ -38,4 +38,23 @@ public final class JircdServerTestAccess {
     public static ConnectionHandler connectionHandler(JircdServerApplication application) {
         return application.connectionHandlerForTesting();
     }
+
+    /** Runs {@code hook} in {@code stop()} just before it closes the connections. */
+    public static void beforeStopClosesConnections(
+            JircdServerApplication application, Runnable hook) {
+        application.beforeStopClosesConnectionsForTesting(hook);
+    }
+
+    /** Runs {@code hook} in {@code stop()} once it owns the connections, before closing them. */
+    public static void afterStopClaimsClosure(JircdServerApplication application, Runnable hook) {
+        application.afterStopClaimsClosureForTesting(hook);
+    }
+
+    /**
+     * Graceful shutdown with a test-chosen budget; returns how many connections had to be closed
+     * without finishing their drain (spec 016 FR-009).
+     */
+    public static int shutdown(JircdServerApplication application, String reason, Duration budget) {
+        return application.shutdown(reason, budget);
+    }
 }

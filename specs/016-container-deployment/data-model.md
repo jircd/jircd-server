@@ -51,7 +51,7 @@ Transition rules:
 | State | Accepts connections | Sends to sessions | Next |
 |---|---|---|---|
 | `RUNNING` | yes | normal traffic | TERM or INT moves to `DRAINING` |
-| `DRAINING` | no (listeners closed) | `ERROR :Closing Link: <host> (Server shutting down)` enqueued once per live session; each writer is drained and closed | All sessions closed, or the 8 s budget runs out: `EXITED(0)` |
+| `DRAINING` | no (listeners closed) | `ERROR :Closing Link: <host> (Server shutting down)` enqueued once per live session; each writer is drained and closed | All sessions closed, or the 8 s budget runs out (the last part of the budget is reserved for the forced close, so the whole shutdown stays inside it): `EXITED(0)` |
 
 Delivery of the `ERROR` is guaranteed only to clients that can still receive it before the deadline. A client that cannot drain, and a connection whose session is not created before the deadline, is force-closed without the `ERROR` and counted. A session already disconnecting for another reason (QUIT, EOF, KILL, timeout) keeps that disconnect's outcome; shutdown adds no `ERROR` to it. If closing a listener fails, the listener is not retried by shutdown (the process exits right after) and the log says listener cleanup was incomplete.
 | `EXITED(0)` | — | — | Process exits with status 0. If the budget ran out, a WARN names how many connections were force-closed |

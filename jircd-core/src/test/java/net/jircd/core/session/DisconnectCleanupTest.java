@@ -195,4 +195,46 @@ class DisconnectCleanupTest {
         assertThat(history.mostRecentNFor("erin", 0)).hasSize(1);
         assertThat(nicknames.claim("erin", alice)).isTrue();
     }
+
+    @Test
+    void aCleanupThatAnnouncesClaimsClosingBeforeItsAnnouncementRuns() {
+        DisconnectCleanup cleanup =
+                new DisconnectCleanup(
+                        new NicknameRegistry(),
+                        new ChannelRegistry(),
+                        new WhowasHistory(() -> 100),
+                        new ExtensionRegistry());
+        ClientSession session = registeredSession();
+        boolean[] closingWhenAnnounced = new boolean[1];
+
+        boolean claimed =
+                cleanup.cleanup(
+                        session,
+                        "Server shutting down",
+                        () -> closingWhenAnnounced[0] = session.lifecycle().isClosing());
+
+        // The read loop must see CLOSING before the final line exists (133.5).
+        assertThat(claimed).isTrue();
+        assertThat(closingWhenAnnounced[0]).isTrue();
+    }
+
+    @Test
+    void aSessionAnotherTriggerAlreadyClaimedGetsNoAnnouncement() {
+        DisconnectCleanup cleanup =
+                new DisconnectCleanup(
+                        new NicknameRegistry(),
+                        new ChannelRegistry(),
+                        new WhowasHistory(() -> 100),
+                        new ExtensionRegistry());
+        ClientSession session = registeredSession();
+        cleanup.cleanup(session, "QUIT");
+        boolean[] announced = new boolean[1];
+
+        boolean claimed =
+                cleanup.cleanup(session, "Server shutting down", () -> announced[0] = true);
+
+        // The earlier disconnect keeps its outcome (133.4).
+        assertThat(claimed).isFalse();
+        assertThat(announced[0]).isFalse();
+    }
 }
