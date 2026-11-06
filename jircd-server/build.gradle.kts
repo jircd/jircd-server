@@ -9,6 +9,7 @@ application {
 dependencies {
     implementation(project(":jircd-protocol"))
     implementation(project(":jircd-core"))
+    testImplementation(testFixtures(project(":jircd-core")))
     implementation(rootProject.libs.slf4j.api)
     // Compile-time, not runtimeOnly: jircd-server configures logback itself from the `logging`
     // YAML section (spec 016) instead of shipping a logback.xml.

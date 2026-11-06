@@ -18,10 +18,6 @@ package net.jircd.core.config;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import ch.qos.logback.classic.Level;
-import ch.qos.logback.classic.Logger;
-import ch.qos.logback.classic.spi.ILoggingEvent;
-import ch.qos.logback.core.read.ListAppender;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -31,11 +27,12 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import net.jircd.core.extension.ExtensionRegistry;
+import net.jircd.core.testing.LogCapture;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import org.slf4j.LoggerFactory;
+import org.slf4j.event.Level;
 
 /**
  * Reload listeners (spec 016 FR-006b): how the application learns about a configuration that was
@@ -50,9 +47,7 @@ class ConfigurationReloaderListenerTest {
 
     private Path config;
     private ConfigurationReloader reloader;
-    private final ListAppender<ILoggingEvent> logs = new ListAppender<>();
-    private final Logger reloaderLog =
-            (Logger) LoggerFactory.getLogger(ConfigurationReloader.class);
+    private LogCapture logs;
 
     @BeforeEach
     void start() throws Exception {
@@ -61,13 +56,12 @@ class ConfigurationReloaderListenerTest {
         reloader =
                 new ConfigurationReloader(
                         config, loader, new ExtensionRegistry(), loader.load(config));
-        logs.start();
-        reloaderLog.addAppender(logs);
+        logs = new LogCapture(ConfigurationReloader.class);
     }
 
     @AfterEach
     void stopCapturing() {
-        reloaderLog.detachAppender(logs);
+        logs.close();
     }
 
     @Test
@@ -126,12 +120,11 @@ class ConfigurationReloaderListenerTest {
 
         assertThat(reloader.current()).isSameAs(applied);
         assertThat(later).containsExactly(applied);
-        assertThat(logs.list)
+        assertThat(logs.events())
                 .anySatisfy(
                         e -> {
-                            assertThat(e.getLevel()).isEqualTo(Level.WARN);
-                            assertThat(e.getThrowableProxy().getMessage())
-                                    .isEqualTo("listener broke");
+                            assertThat(e.level()).isEqualTo(Level.WARN);
+                            assertThat(e.throwableMessage()).isEqualTo("listener broke");
                         });
     }
 

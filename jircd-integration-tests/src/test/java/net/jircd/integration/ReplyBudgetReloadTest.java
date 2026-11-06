@@ -23,6 +23,7 @@ import java.time.Duration;
 import java.util.List;
 import net.jircd.core.session.OutboundSizeGuard;
 import net.jircd.core.session.command.Replies;
+import net.jircd.core.testing.LogCapture;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 

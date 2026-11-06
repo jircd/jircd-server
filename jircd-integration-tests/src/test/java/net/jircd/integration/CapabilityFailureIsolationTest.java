@@ -35,6 +35,7 @@ import net.jircd.core.extension.capability.FramingPlan;
 import net.jircd.core.extension.capability.HookKind;
 import net.jircd.core.extension.capability.InboundTagResult;
 import net.jircd.core.session.ClientSession;
+import net.jircd.core.testing.LogCapture;
 import net.jircd.protocol.Command;
 import net.jircd.protocol.Message;
 import org.junit.jupiter.params.ParameterizedTest;

@@ -29,6 +29,7 @@ import net.jircd.core.extension.AbstractCapabilityExtension;
 import net.jircd.core.extension.Extension;
 import net.jircd.core.extension.ExtensionRegistry;
 import net.jircd.core.extension.ServerContext;
+import net.jircd.core.testing.LogCapture;
 import net.jircd.server.SighupReloadHandler;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;

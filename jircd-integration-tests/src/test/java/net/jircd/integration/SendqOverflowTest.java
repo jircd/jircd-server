@@ -35,6 +35,7 @@ import java.util.regex.Pattern;
 import net.jircd.core.session.ClientSession;
 import net.jircd.core.session.ConnectionMonitorLog;
 import net.jircd.core.session.SessionWriterTestAccess;
+import net.jircd.core.testing.LogCapture;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.params.ParameterizedTest;

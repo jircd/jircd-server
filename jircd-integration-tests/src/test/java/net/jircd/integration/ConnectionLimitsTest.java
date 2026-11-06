@@ -24,6 +24,7 @@ import java.nio.file.Files;
 import java.time.Duration;
 import java.util.concurrent.atomic.AtomicReference;
 import net.jircd.core.session.SecurityEventLog;
+import net.jircd.core.testing.LogCapture;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;

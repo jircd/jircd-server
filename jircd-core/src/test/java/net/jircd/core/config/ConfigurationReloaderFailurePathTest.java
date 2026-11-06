@@ -18,9 +18,6 @@ package net.jircd.core.config;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import ch.qos.logback.classic.Logger;
-import ch.qos.logback.classic.spi.ILoggingEvent;
-import ch.qos.logback.core.read.ListAppender;
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -44,11 +41,13 @@ import net.jircd.core.extension.capability.CapabilityRegistrar;
 import net.jircd.core.session.ClientSession;
 import net.jircd.core.session.RateLimitBucket;
 import net.jircd.core.session.command.CommandHandler;
+import net.jircd.core.testing.LogCapture;
+import net.jircd.core.testing.LogCapture.CapturedEvent;
 import net.jircd.protocol.Command;
 import net.jircd.protocol.Message;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import org.slf4j.LoggerFactory;
+import org.slf4j.event.Level;
 
 /**
  * Reload failure paths: a pending cleanup survives a failed re-enable, a command moves from a
@@ -139,27 +138,19 @@ class ConfigurationReloaderFailurePathTest {
         }
     }
 
-    private static List<ILoggingEvent> captureLogs(Runnable action) {
-        Logger logger = (Logger) LoggerFactory.getLogger(ExtensionRegistry.class);
-        ListAppender<ILoggingEvent> appender = new ListAppender<>();
-        appender.start();
-        logger.addAppender(appender);
-        try {
+    private static List<CapturedEvent> captureLogs(Runnable action) {
+        try (LogCapture capture = new LogCapture(ExtensionRegistry.class)) {
             action.run();
-            return List.copyOf(appender.list);
-        } finally {
-            logger.detachAppender(appender);
-            appender.stop();
+            return capture.events();
         }
     }
 
-    private static void assertFailureLogged(List<ILoggingEvent> logs, String id, String reason) {
+    private static void assertFailureLogged(List<CapturedEvent> logs, String id, String reason) {
         assertThat(logs)
                 .anySatisfy(
                         event -> {
-                            assertThat(event.getLevel())
-                                    .isEqualTo(ch.qos.logback.classic.Level.WARN);
-                            assertThat(event.getFormattedMessage()).contains(id, reason);
+                            assertThat(event.level()).isEqualTo(Level.WARN);
+                            assertThat(event.message()).contains(id, reason);
                         });
     }
 
@@ -388,7 +379,7 @@ class ConfigurationReloaderFailurePathTest {
         b.stopFails = true;
         a.stopError = new AssertionError("a stop");
 
-        List<ILoggingEvent> logs =
+        List<CapturedEvent> logs =
                 captureLogs(
                         () ->
                                 assertThatThrownBy(() -> registry.disable("a"))
@@ -407,7 +398,7 @@ class ConfigurationReloaderFailurePathTest {
         a.stopError = new AssertionError("a stop");
         ConfigurationReloader reloader = reloader("capabilities: {a: disabled, b: disabled}\n");
 
-        List<ILoggingEvent> logs =
+        List<CapturedEvent> logs =
                 captureLogs(
                         () ->
                                 assertThatThrownBy(reloader::reloadWithOutcome)
@@ -429,7 +420,7 @@ class ConfigurationReloaderFailurePathTest {
         ConfigurationReloader reloader =
                 reloader("server-extensions: {server-a: disabled, server-b: disabled}\n");
 
-        List<ILoggingEvent> logs =
+        List<CapturedEvent> logs =
                 captureLogs(
                         () ->
                                 assertThatThrownBy(reloader::reloadWithOutcome)
