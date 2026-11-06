@@ -46,8 +46,9 @@ PRs get reviewed by SonarCloud (quality gate plus non-gating issues, all of whic
       - If there are none, run `git fetch --prune` and then `git branch -f <branch> origin/<branch>`.
       - If there are some, fetch, then move only those onto the rebased branch with `git rebase --onto origin/<branch> $old <branch>`.
     - For a stack built by hand, without GitHub's stacking, rebase the rest of the stack in one go: `git rebase --onto origin/main <merged-branch> <top-branch> --update-refs`. This moves every branch above the merged one, so none is left on the old history.
-      - First check `git worktree list`: `--update-refs` skips any branch checked out in another worktree.
-      - Afterwards, confirm every branch moved, retarget the next PR's base to `main`, and push the rewritten branches with `--force-with-lease`.
+      - First run `git fetch --prune`, so `origin/main` includes the squash merge. Record each stack branch's remote tip.
+      - Check `git worktree list`: `--update-refs` skips any branch checked out in another worktree.
+      - After the rebase, confirm every branch moved and retarget the next PR's base to `main`. Push each rewritten branch with an explicit lease, `--force-with-lease=<branch>:<recorded-tip>`, so a background fetch can't make the push overwrite commits you never saw.
 - Check the diff against [`.github/REVIEW_CHECKLIST.md`](.github/REVIEW_CHECKLIST.md). It lists the Sonar rules this repo keeps hitting, plus what Sourcery and CodeRabbit keep finding:
   - failure and cleanup paths
   - concurrency and reload
