@@ -298,9 +298,13 @@ class ConfigurationReloaderFailurePathTest {
                 reloader(
                         "nicknameMaxLength: 31\ncapabilities: {a: disabled, b: disabled, c: enabled}\n");
         ServerConfiguration previous = reloader.current();
+        List<ServerConfiguration> notified = Collections.synchronizedList(new ArrayList<>());
+        reloader.addReloadListener(notified::add);
 
         // An Error is propagated, never returned as a failure map.
         assertThatThrownBy(reloader::reloadWithOutcome).isSameAs(error);
+        // The configuration was published, so listeners (logging) still hear about it (132.2).
+        assertThat(notified).containsExactly(reloader.current());
         assertThat(registry.stateOf("b")).isEqualTo(Extension.State.FAILED);
         assertThat(registry.stateOf("a")).isEqualTo(Extension.State.DISABLED);
         assertThat(registry.stateOf("c")).isEqualTo(Extension.State.ENABLED);
@@ -327,6 +331,29 @@ class ConfigurationReloaderFailurePathTest {
         assertThat(registry.stateOf("b")).isEqualTo(Extension.State.DISABLED);
         assertThat(events).filteredOn("stop b"::equals).hasSize(3);
         assertThat(events).filteredOn("stop a"::equals).hasSize(1);
+    }
+
+    @Test
+    void aListenerErrorDuringNotificationIsAttachedToTheCleanupErrorNotInsteadOfIt()
+            throws Exception {
+        attachContext();
+        register(new Probe("a", null, Command.TAGMSG));
+        Probe b = register(new Probe("b", "a", null));
+        registry.enable("a");
+        registry.enable("b");
+        AssertionError cleanup = new AssertionError("cleanup sentinel");
+        AssertionError listener = new AssertionError("listener sentinel");
+        b.stopError = cleanup;
+        ConfigurationReloader reloader =
+                reloader("nicknameMaxLength: 31\ncapabilities: {a: disabled, b: disabled}\n");
+        reloader.addReloadListener(
+                applied -> {
+                    throw listener;
+                });
+
+        assertThatThrownBy(reloader::reloadWithOutcome)
+                .isSameAs(cleanup)
+                .satisfies(e -> assertThat(e.getSuppressed()).containsExactly(listener));
     }
 
     @Test

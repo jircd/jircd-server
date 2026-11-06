@@ -22,6 +22,7 @@ import java.util.concurrent.TimeUnit;
 import net.jircd.core.session.ClientSession;
 import net.jircd.core.session.OutboundSizeGuard;
 import net.jircd.core.session.WarningThrottle;
+import net.jircd.protocol.Command;
 import net.jircd.protocol.Message;
 import net.jircd.protocol.MessageSerializer;
 import net.jircd.protocol.NumericReply;
@@ -91,6 +92,51 @@ public final class Replies {
                                         Map.of(), serverName, null, numeric.wireCode(), params));
         params.set(params.size() - 1, truncate(text, budget, false));
         sendChecked(session, new Message(Map.of(), serverName, null, numeric.wireCode(), params));
+    }
+
+    /**
+     * Sends a server {@code NOTICE} whose text may be long (a configuration path in an error, say),
+     * cut on a code-point boundary so the command section fits 512 bytes including CRLF. Line
+     * breaks and NUL in the text become spaces. Does nothing without an attached writer.
+     */
+    public static void sendFittedNotice(ClientSession session, String serverName, String text) {
+        List<String> params = new ArrayList<>();
+        params.add(target(session));
+        params.add("");
+        int budget = noticeBudget(serverName, params);
+        params.set(1, truncate(cutToChars(text, budget), budget, false));
+        sendChecked(session, new Message(Map.of(), serverName, Command.NOTICE, "NOTICE", params));
+    }
+
+    /** Whether {@code text} goes out in one server {@code NOTICE} to {@code session} uncut. */
+    public static boolean fitsInNotice(ClientSession session, String serverName, String text) {
+        List<String> params = new ArrayList<>();
+        params.add(target(session));
+        params.add("");
+        int budget = noticeBudget(serverName, params);
+        // Every UTF-16 char is at least one UTF-8 byte, so a longer text cannot fit; no encoding.
+        return text.length() <= budget && MessageSerializer.utf8Bytes(text) <= budget;
+    }
+
+    /**
+     * At most {@code max} chars of {@code text}, never ending on a lone high surrogate, so a huge
+     * text is bounded before it is split into code points.
+     */
+    private static String cutToChars(String text, int max) {
+        if (text.length() <= max) {
+            return text;
+        }
+        int end = max;
+        if (end > 0 && Character.isHighSurrogate(text.charAt(end - 1))) {
+            end--;
+        }
+        return text.substring(0, end);
+    }
+
+    private static int noticeBudget(String serverName, List<String> params) {
+        return MessageSerializer.MAX_COMMAND_BYTES
+                - MessageSerializer.commandBytes(
+                        new Message(Map.of(), serverName, Command.NOTICE, "NOTICE", params));
     }
 
     /**

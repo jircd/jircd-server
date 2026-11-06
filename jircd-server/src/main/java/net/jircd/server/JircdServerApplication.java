@@ -16,7 +16,6 @@
 package net.jircd.server;
 
 import java.io.Closeable;
-import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.Socket;
@@ -62,6 +61,7 @@ import net.jircd.core.session.command.WhoCommandHandler;
 import net.jircd.core.session.command.WhoisCommandHandler;
 import net.jircd.core.session.command.WhowasCommandHandler;
 import net.jircd.protocol.Command;
+import net.jircd.server.logging.LoggingSettingsApplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -92,6 +92,8 @@ public final class JircdServerApplication {
     private PlaintextListener plaintextListener;
     private TlsListener tlsListener;
     private final List<Closeable> ownedListeners = new ArrayList<>();
+    private final Consumer<ServerConfiguration.Logging> loggingSink;
+    private final Object loggingLock = new Object();
 
     public JircdServerApplication(Path configPath) throws ConfigurationException, IOException {
         this(configPath, socket -> {});
@@ -110,6 +112,21 @@ public final class JircdServerApplication {
     JircdServerApplication(
             Path configPath, Consumer<Socket> acceptedSocketCustomizer, Duration rejectionDeadline)
             throws ConfigurationException, IOException {
+        this(
+                configPath,
+                acceptedSocketCustomizer,
+                rejectionDeadline,
+                JircdServerApplication::applyLogging);
+    }
+
+    /** Test seam: where the {@code logging} section goes, to observe or delay its application. */
+    JircdServerApplication(
+            Path configPath,
+            Consumer<Socket> acceptedSocketCustomizer,
+            Duration rejectionDeadline,
+            Consumer<ServerConfiguration.Logging> loggingSink)
+            throws ConfigurationException, IOException {
+        this.loggingSink = loggingSink;
         extensionRegistry.discover(Thread.currentThread().getContextClassLoader());
 
         Set<String> knownCapabilityIds =
@@ -128,9 +145,8 @@ public final class JircdServerApplication {
                         knownServerExtensionIds,
                         extensionRegistry::discoveredReplyBudgetCatalog);
 
-        try (InputStream in = new FileInputStream(configPath.toFile())) {
-            this.configuration = loader.load(in);
-        }
+        this.configuration = loader.load(configPath);
+        loggingSink.accept(configuration.logging());
 
         this.serverVersion = resolveServerVersion();
         this.serverName = configuration.serverName();
@@ -142,6 +158,7 @@ public final class JircdServerApplication {
 
         this.reloader =
                 new ConfigurationReloader(configPath, loader, extensionRegistry, configuration);
+        reloader.addReloadListener(applied -> applyCurrentLogging());
         this.whowasHistory = new WhowasHistory(() -> reloader.current().whowasHistorySize());
         this.disconnectCleanup =
                 new DisconnectCleanup(
@@ -180,6 +197,26 @@ public final class JircdServerApplication {
                         extensionRegistry.capabilityServices()));
 
         enableConfiguredExtensions();
+    }
+
+    /**
+     * Applies the logging of the configuration that is current <em>now</em>. Reload listeners run
+     * outside the reloader's lock, so two overlapping reloads can reach this out of order; reading
+     * {@code current()} inside this lock means whichever applies last still applies the most
+     * recently published logging, instead of an older one it was handed.
+     */
+    private void applyCurrentLogging() {
+        synchronized (loggingLock) {
+            loggingSink.accept(reloader.current().logging());
+        }
+    }
+
+    /** Applies the {@code logging} section to this process's logback (spec 016 FR-006). */
+    private static void applyLogging(ServerConfiguration.Logging logging) {
+        LoggingSettingsApplier applier = LoggingSettingsApplier.forThisProcess();
+        if (applier != null) {
+            applier.apply(logging);
+        }
     }
 
     private void enableConfiguredExtensions() {
@@ -573,7 +610,7 @@ public final class JircdServerApplication {
             application = new JircdServerApplication(configPath);
             application.start();
         } catch (ConfigurationException e) {
-            LOG.error("Refusing to start: {}", e.getMessage());
+            LOG.error("Refusing to start: {}", e.messageNaming(configPath));
             System.exit(1);
             return;
         } catch (IOException | GeneralSecurityException e) {

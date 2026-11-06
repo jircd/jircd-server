@@ -15,10 +15,15 @@
  */
 package net.jircd.core.config;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.nio.file.AccessDeniedException;
+import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
+import java.nio.file.Path;
 import java.security.GeneralSecurityException;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -81,7 +86,45 @@ public final class ConfigurationLoader {
                 serverName, nicknameMaxLength, channelNameMaxLength, discoveredReplyCatalog.get());
     }
 
+    /**
+     * Reads and validates the configuration file at {@code configPath}. A missing file and one this
+     * process may not read are reported apart, by path (spec 016 FR-010): in a container the second
+     * usually means the file is not readable by the image's user.
+     */
+    public ServerConfiguration load(Path configPath) throws ConfigurationException, IOException {
+        InputStream in;
+        try {
+            in = Files.newInputStream(configPath);
+        } catch (NoSuchFileException _) {
+            throw new ConfigurationException(ConfigurationException.NOT_FOUND + configPath);
+        } catch (AccessDeniedException _) {
+            throw new ConfigurationException(ConfigurationException.NOT_READABLE + configPath);
+        } catch (IOException e) {
+            throw couldNotRead(configPath, e);
+        }
+        byte[] content;
+        try (in) {
+            // Read here so an I/O failure is told apart from invalid YAML, which wraps it.
+            content = in.readAllBytes();
+        } catch (IOException e) {
+            throw couldNotRead(configPath, e);
+        }
+        return load(new ByteArrayInputStream(content), configPath);
+    }
+
+    private static ConfigurationException couldNotRead(Path configPath, IOException cause) {
+        ConfigurationException e =
+                new ConfigurationException(ConfigurationException.COULD_NOT_READ + configPath);
+        e.initCause(cause);
+        return e;
+    }
+
     public ServerConfiguration load(InputStream yamlInput) throws ConfigurationException {
+        return load(yamlInput, null);
+    }
+
+    private ServerConfiguration load(InputStream yamlInput, Path configPath)
+            throws ConfigurationException {
         Object rootObj;
         try {
             rootObj = new Yaml().load(yamlInput);
@@ -227,7 +270,8 @@ public final class ConfigurationLoader {
                 optionalText(root, "motdPath"),
                 optionalText(root, "adminName"),
                 optionalText(root, "adminLocation"),
-                optionalText(root, "adminEmail"));
+                optionalText(root, "adminEmail"),
+                LoggingSection.parse(root, configPath));
     }
 
     /** An optional string setting; absent, null or blank all mean "not configured". */
@@ -652,7 +696,7 @@ public final class ConfigurationLoader {
     }
 
     // Malformed containers may contain secrets even when their enclosing key is not secret.
-    private static Object redactSecrets(Object value) {
+    static Object redactSecrets(Object value) {
         return redactSecrets(value, new IdentityHashMap<>());
     }
 
