@@ -41,8 +41,11 @@ PRs get reviewed by SonarCloud (quality gate plus non-gating issues, all of whic
   - Every slice must pass `./gradlew build` on its own.
   - Create the stack as a GitHub stacked PR. Merge it bottom-up, one PR at a time, with a squash merge. The repo allows only squash merges, and merging a higher PR would also merge everything below it.
     - After each merge, GitHub retargets the next PR to `main` and rebases the rest of the stack. Before merging the next PR, check that it now targets `main` and that its CI passed on the new base.
-    - Then run `git fetch --prune` and reset each local stack branch to its remote one (`git branch -f <branch> origin/<branch>`), so a later `--force-with-lease` push doesn't undo GitHub's rebase. Reset a branch only when `git log origin/<branch>..<branch>` is empty. If it shows unpushed commits, rebase those onto the remote branch instead.
-    - For a stack built by hand, without GitHub's stacking, rebase the next PR yourself with `git rebase --onto origin/main <merged-branch> <next-branch>` and retarget its base to `main`. Naming `<next-branch>` keeps the rebase off whatever branch happens to be checked out.
+    - Then sync the local stack branches, so a later `--force-with-lease` push doesn't undo GitHub's rebase. GitHub's rebase gives every commit a new SHA, so compare against the remote tip from before the fetch, not after it:
+      - Before fetching, `git log origin/<branch>..<branch>` lists the local commits that were never pushed. After a fetch, use `origin/<branch>@{1}` in place of `origin/<branch>`.
+      - If there are none, run `git fetch --prune` and then `git branch -f <branch> origin/<branch>`.
+      - If there are some, move only those onto the rebased branch: `git rebase --onto origin/<branch> origin/<branch>@{1} <branch>`, after the fetch.
+    - For a stack built by hand, without GitHub's stacking, rebase the rest of the stack in one go: `git rebase --onto origin/main <merged-branch> <top-branch> --update-refs`. This moves every branch above the merged one, so none is left on the old history. Then retarget the next PR's base to `main` and push the rewritten branches with `--force-with-lease`.
 - Check the diff against [`.github/REVIEW_CHECKLIST.md`](.github/REVIEW_CHECKLIST.md). It lists the Sonar rules this repo keeps hitting, plus what Sourcery and CodeRabbit keep finding:
   - failure and cleanup paths
   - concurrency and reload
