@@ -85,10 +85,11 @@ A maintainer merges a change and the project's CI builds both image variants and
 - The configuration sets a listener port other than the defaults: the image works, and the docs say the published ports must match the configuration.
 - The configuration names a log file whose directory does not exist or is not writable, at startup: startup fails with a message naming the path and the reason. A reload with such a path is rejected, and the previous logging setup stays in effect.
 - The configuration turns console logging off and sets no log file: the configuration is rejected, because the server would otherwise run with no log output at all.
-- A reload changes the log file path or turns console logging on or off: the new setup takes effect without a restart, and no log line is lost or duplicated across the switch.
+- A reload changes the log file path or turns console logging on or off: the new setup takes effect without a restart, and lines logged before and after the switch reach the destinations configured at that time. The switch is not atomic: a line logged at the very instant of the switch can be lost or reach only one destination.
 - The configuration sets the MOTD file: it must point at a mounted file. The docs must say which paths are writable.
 - The operator sends the reload signal while a previous reload is still running: same behaviour as on a host install.
 - The stop signal arrives during startup, before the listeners are bound: the process exits cleanly with no partial state.
+- The stop signal arrives while a connection is still in the kernel's accept queue (handshake done, not yet accepted by the server): closing the listener makes the operating system reset it, so that client sees a reset instead of the shutdown `ERROR`. Only connections the server has accepted are told why.
 - The container's memory limit is lower than the server's default heap would want: the JVM variant must size itself to the container limit instead of being killed by it.
 - A capability or extension module is added to the project later: the native variant includes it only after being rebuilt. The docs must state that extensions are fixed at build time for the native variant.
 - The image is run on a CPU architecture it was not built for: the container runtime's normal "no matching platform" error appears. No silent emulation is promised.

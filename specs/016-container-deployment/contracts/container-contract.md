@@ -35,6 +35,8 @@ The `jvm` tags are published for linux/amd64 and linux/arm64. The `native` tags 
 | `HUP` (`docker kill -s HUP`) | Reload the configuration, the same as on a host install. An invalid configuration is rejected and the running one is kept |
 | `TERM` (`docker stop`) / `INT` | Stop accepting connections, then send every client `ERROR :Closing Link: <host> (Server shutting down)` and close the connections. The application drains within 8 s, inside Docker's default 10 s stop window; clients that cannot drain in time, and connections with no session yet at the deadline, are force-closed without the `ERROR` and counted in a WARN; a session already disconnecting for another reason (QUIT, EOF, KILL, timeout) keeps that outcome and gets no `ERROR`. A listener that fails to close is logged as incomplete cleanup and not retried (the process exits right after). Exit status 0 |
 
+Only connections the server has accepted are told why. A connection that has completed the TCP handshake but still waits in the kernel's accept queue when the listener closes is reset by the operating system: its client sees a reset and no `ERROR`. Clients should treat a reset on a connection that never got a welcome as a refused connection.
+
 ## Exit status
 
 | Status | Cause |

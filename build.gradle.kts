@@ -79,9 +79,11 @@ subprojects {
         }
     }
 
+    // "container" and "container-load" tests run against a built image (spec 016) and need a
+    // container runtime; jircd-integration-tests registers their own tasks.
     tasks.named<Test>("test") {
         useJUnitPlatform {
-            excludeTags("load")
+            excludeTags("load", "container", "container-load")
         }
     }
 

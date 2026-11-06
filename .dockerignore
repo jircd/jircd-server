@@ -1,0 +1,52 @@
+# Build context for the jircd image (spec 016). Only sources and the Gradle wrapper are needed.
+
+# Local server configuration holds credentials; it must never enter an image or build cache.
+jircd-server/jircd.yaml
+**/jircd.yaml.local
+
+# Deployment samples and anything key-shaped: operators keep configuration and keys in their own
+# directory (for example /srv/jircd), mounted at run time, never in the build context.
+deploy
+**/*.pem
+**/*.p8
+**/*.pk8
+**/*.der
+**/*.key
+**/*.p12
+**/*.pfx
+**/*.jks
+# Public test fixtures live in the source tree and stay part of the context.
+!**/src/test/**/*.pem
+!**/src/test/**/*.key
+!**/src/test/**/*.p12
+!**/src/test/**/*.pfx
+!**/src/test/**/*.jks
+
+# VCS, worktrees and tool state
+.git
+.gitignore
+.worktrees
+.gradle
+**/build
+**/out
+.idea
+.vscode
+*.iml
+.DS_Store
+.sonar
+.codegraph
+graphify-out
+logs
+**/logs
+
+# Docs and agent/tooling files the build doesn't read
+specs
+.specify
+.claude
+.agents
+.github
+.githooks
+
+# The Dockerfile itself
+Dockerfile
+.dockerignore
