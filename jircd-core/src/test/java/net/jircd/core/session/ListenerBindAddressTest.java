@@ -25,7 +25,16 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.SocketException;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
+import javax.net.ssl.SSLServerSocket;
+import javax.net.ssl.SSLServerSocketFactory;
+import javax.net.ssl.SSLSocket;
 import net.jircd.core.config.ServerConfiguration;
 import net.jircd.core.extension.ExtensionRegistry;
 import org.junit.jupiter.api.Test;
@@ -50,6 +59,66 @@ class ListenerBindAddressTest {
                 assertThat(reader.readLine()).contains(" 421 ");
             }
         }
+    }
+
+    @Test
+    void plaintextListenerEnablesTcpNoDelayOnTheSocketReceivedByConnectionHandler()
+            throws Exception {
+        var received = new CountDownLatch(1);
+        var tcpNoDelay = new AtomicBoolean();
+        ConnectionHandler handler = connectionHandler(recordSocketOptions(received, tcpNoDelay));
+        try (PlaintextListener listener = new PlaintextListener(listenerOn(LOOPBACK, 0), handler)) {
+            listener.start();
+            try (Socket client = new Socket(LOOPBACK, listener.boundPort())) {
+                assertThat(client.getRemoteSocketAddress())
+                        .isEqualTo(new InetSocketAddress(LOOPBACK, listener.boundPort()));
+                assertThat(received.await(5, TimeUnit.SECONDS)).isTrue();
+                assertThat(tcpNoDelay).isTrue();
+            }
+        } finally {
+            handler.closeConnections(Duration.ofSeconds(5));
+        }
+    }
+
+    @Test
+    void tlsListenerEnablesTcpNoDelayOnTheSocketReceivedByConnectionHandler() throws Exception {
+        var received = new CountDownLatch(1);
+        var tcpNoDelay = new AtomicBoolean();
+        var tlsSocket = new AtomicBoolean();
+        ConnectionHandler handler =
+                connectionHandler(
+                        socket -> {
+                            tlsSocket.set(socket instanceof SSLSocket);
+                            recordSocketOptions(received, tcpNoDelay).accept(socket);
+                        });
+        SSLServerSocket serverSocket =
+                (SSLServerSocket)
+                        SSLServerSocketFactory.getDefault().createServerSocket(0, 50, LOOPBACK);
+        try (TlsListener listener = new TlsListener(serverSocket, handler)) {
+            listener.start();
+            try (Socket client = new Socket(LOOPBACK, listener.boundPort())) {
+                assertThat(client.getRemoteSocketAddress())
+                        .isEqualTo(new InetSocketAddress(LOOPBACK, listener.boundPort()));
+                assertThat(received.await(5, TimeUnit.SECONDS)).isTrue();
+                assertThat(tcpNoDelay).isTrue();
+                assertThat(tlsSocket).isTrue();
+            }
+        } finally {
+            handler.closeConnections(Duration.ofSeconds(5));
+        }
+    }
+
+    private static Consumer<Socket> recordSocketOptions(
+            CountDownLatch received, AtomicBoolean tcpNoDelay) {
+        return socket -> {
+            try {
+                tcpNoDelay.set(socket.getTcpNoDelay());
+            } catch (SocketException e) {
+                throw new AssertionError(e);
+            } finally {
+                received.countDown();
+            }
+        };
     }
 
     @Test
@@ -87,6 +156,10 @@ class ListenerBindAddressTest {
     }
 
     private static ConnectionHandler connectionHandler() {
+        return connectionHandler(socket -> {});
+    }
+
+    private static ConnectionHandler connectionHandler(Consumer<Socket> acceptedSocketCustomizer) {
         ExtensionRegistry extensionRegistry = new ExtensionRegistry();
         DisconnectCleanup disconnectCleanup =
                 new DisconnectCleanup(
@@ -100,6 +173,7 @@ class ListenerBindAddressTest {
                 () -> "test.jircd.local",
                 () -> new ServerConfiguration.RateLimit(20, 10.0),
                 () -> 60,
-                () -> ServerConfiguration.DEFAULT_SENDQ_LIMIT_BYTES);
+                () -> ServerConfiguration.DEFAULT_SENDQ_LIMIT_BYTES,
+                acceptedSocketCustomizer);
     }
 }

@@ -30,11 +30,14 @@ public final class TlsListener extends AbstractListener<SSLServerSocket> {
 
     public TlsListener(ServerConfiguration.Listener listener, ConnectionHandler connectionHandler)
             throws IOException, GeneralSecurityException {
-        super(
+        this(
                 openServerSocket(
                         listener, TlsSupport.buildServerContext(listener).getServerSocketFactory()),
-                connectionHandler::accept,
-                "tls-listener");
+                connectionHandler);
+    }
+
+    TlsListener(SSLServerSocket serverSocket, ConnectionHandler connectionHandler) {
+        super(serverSocket, connectionHandler::accept, "tls-listener");
     }
 
     static SSLServerSocket openServerSocket(

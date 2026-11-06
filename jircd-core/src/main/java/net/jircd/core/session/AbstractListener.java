@@ -62,17 +62,42 @@ abstract class AbstractListener<S extends Closeable> implements Closeable {
 
     protected abstract Socket accept() throws IOException;
 
+    @SuppressWarnings("PMD.CloseResource") // The socket is transferred to configureAndDispatch.
     private void acceptLoop() {
         while (running) {
+            Socket socket;
             try {
-                // ConnectionHandler owns and closes each accepted connection.
-                connectionHandler.accept(accept());
+                socket = accept();
             } catch (IOException e) {
                 if (running) {
                     LOG.warn("{} accept loop error", threadName, e);
                 }
+                continue;
             }
+            configureAndDispatch(socket);
         }
+    }
+
+    @SuppressWarnings("PMD.CloseResource") // Ownership transfers to the handler after dispatch.
+    private void configureAndDispatch(Socket socket) {
+        // Both listeners pass through here, before ConnectionHandler reserves a slot.
+        try {
+            socket.setTcpNoDelay(true);
+        } catch (IOException | RuntimeException failure) {
+            try {
+                socket.close();
+            } catch (IOException | RuntimeException closeFailure) {
+                failure.addSuppressed(closeFailure);
+            }
+            LOG.debug(
+                    "{} could not configure accepted socket from {}, closing: {}",
+                    threadName,
+                    socket.getRemoteSocketAddress(),
+                    failure.getMessage());
+            return;
+        }
+        // ConnectionHandler owns and closes each accepted connection after dispatch.
+        connectionHandler.accept(socket);
     }
 
     /** Closes the socket and waits up to three seconds; throws if the accept thread cannot exit. */

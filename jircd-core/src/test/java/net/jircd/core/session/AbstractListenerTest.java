@@ -23,7 +23,10 @@ import static org.junit.jupiter.api.Assertions.fail;
 import java.io.Closeable;
 import java.io.IOException;
 import java.net.Socket;
+import java.net.SocketException;
 import java.time.Duration;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -31,6 +34,73 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
 class AbstractListenerTest {
+
+    @SuppressWarnings("PMD.CloseResource") // Listener and test scope own these accepted sockets.
+    @Test
+    void closesSocketWhenTcpNoDelayFailsAndContinuesAccepting() throws Exception {
+        var failed = new FailingTcpNoDelaySocket();
+        var next = new Socket();
+        var accepted = new CountDownLatch(1);
+        var sockets = new ArrayBlockingQueue<Socket>(2);
+        var dispatched = new ConcurrentLinkedQueue<Socket>();
+        var closed = new CountDownLatch(1);
+        sockets.add(failed);
+        sockets.add(next);
+        var listener =
+                new AbstractListener<Closeable>(
+                        closed::countDown,
+                        socket -> {
+                            dispatched.add(socket);
+                            accepted.countDown();
+                        },
+                        "tcp-no-delay-failure-listener") {
+                    @Override
+                    protected Socket accept() throws IOException {
+                        Socket socket = sockets.poll();
+                        if (socket != null) return socket;
+                        awaitClose(closed);
+                        throw new IOException("No more test sockets");
+                    }
+
+                    @Override
+                    public int boundPort() {
+                        return 0;
+                    }
+                };
+        try (listener;
+                failed;
+                next) {
+            listener.start();
+            assertThat(accepted.await(1, TimeUnit.SECONDS)).isTrue();
+            assertThat(failed.closed.get()).isTrue();
+            assertThat(next.getTcpNoDelay()).isTrue();
+            assertThat(dispatched).contains(next).doesNotContain(failed);
+        }
+    }
+
+    private static void awaitClose(CountDownLatch closed) throws IOException {
+        try {
+            closed.await();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException(e);
+        }
+    }
+
+    private static final class FailingTcpNoDelaySocket extends Socket {
+        private final AtomicBoolean closed = new AtomicBoolean();
+
+        @Override
+        public void setTcpNoDelay(boolean on) throws SocketException {
+            throw new SocketException("TCP_NODELAY unavailable");
+        }
+
+        @Override
+        public void close() throws IOException {
+            closed.set(true);
+            super.close();
+        }
+    }
 
     @Test
     void closeFailsWhenAcceptThreadDoesNotExitWithinTimeout() throws Exception {
