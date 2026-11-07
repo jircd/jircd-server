@@ -31,6 +31,24 @@ reviews:
         Spec-kit documents. Check that claims match the code and tests in the PR,
         and that spec, plan, tasks and contracts agree with each other.
 
+  pre_merge_checks:
+    # The built-in docstring check has no path filter, so it counts test methods, test helpers
+    # and CI scripts too. Replaced by the custom check below, scoped to production Java.
+    docstrings:
+      mode: "off"
+    custom_checks:
+      - name: "Production Javadoc coverage"
+        mode: warning
+        instructions: >-
+          Consider only Java files under a `src/main/java/` directory that this PR adds or
+          modifies. Ignore everything else, including `src/test/`, `src/integrationTest/`,
+          `jircd-integration-tests/`, build scripts, workflows and `.github/scripts/`.
+          In those files, list each public or protected class, interface, record, enum,
+          constructor and method that the PR adds or whose signature it changes. Exclude
+          methods annotated `@Override` and record accessors. Pass if every listed element
+          has a Javadoc comment, or if nothing is listed. Otherwise fail and name each
+          element without Javadoc.
+
 chat:
   auto_reply: true
 
