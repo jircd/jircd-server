@@ -112,7 +112,7 @@ Requires JDK 25.
 ./gradlew build                 # build + unit/integration tests + static analysis, all subprojects
 touch jircd-server/jircd.yaml   # a Server Configuration file must exist at this path; an empty
                                  # file is valid and loads every default
-./gradlew :jircd-server:run     # starts the server on 6667 (plaintext) and 6697 (TLS)
+./gradlew :jircd-server:run     # starts the server on 6667 (plaintext); TLS needs a configured listener
 ```
 
 Then connect with any IRC client, or a raw TCP tool for a quick check:
@@ -176,8 +176,24 @@ to keep that file. See the [`logging` contract](specs/016-container-deployment/c
 
 ### Running in a container
 
-There is no published image yet. Build the JVM image from a clean checkout; only a container
-runtime is needed:
+Images are published to the GitHub Container Registry as `ghcr.io/jircd/jircd-server`. Only the
+JVM variant exists so far (linux/amd64 and linux/arm64):
+
+| Tag | Points at |
+|---|---|
+| `jvm`, `latest` | the latest `main` build that passed CI (both move together) |
+| `jvm-sha-<7 hex>` | the build of that `main` commit; never moves |
+| `X.Y.Z-jvm`, `X.Y.Z` | release `vX.Y.Z`; never moves |
+
+`jvm` and `latest` can stay on an older build: a commit skips moving them when a newer commit is already on `main`, so if that newer commit then fails CI, the tags stay put until a later `main` build passes.
+
+```bash
+docker pull ghcr.io/jircd/jircd-server:jvm
+docker run -d --read-only -p 6667:6667 -p 6697:6697 \
+  -v /srv/jircd:/etc/jircd:ro --name jircd ghcr.io/jircd/jircd-server:jvm
+```
+
+To build the image yourself from a clean checkout, only a container runtime is needed:
 
 ```bash
 docker build --target jvm -t jircd:jvm .

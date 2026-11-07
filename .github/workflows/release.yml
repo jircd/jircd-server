@@ -6,17 +6,24 @@ on:
       - "v*.*.*"
 
 permissions:
-  contents: write
+  contents: read
+
+env:
+  IMAGE: ghcr.io/jircd/jircd-server
 
 jobs:
   release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # gh release create uploads the release assets
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Set up JDK 25
-        uses: actions/setup-java@v6
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
           java-version: "25"
@@ -43,3 +50,88 @@ jobs:
             jircd-server/build/distributions/*.tar \
             --title "${{ github.ref_name }}" \
             --generate-notes
+
+  # Release tags are immutable, so the image is built from the release commit and smoke-tested
+  # before anything is pushed. A failing smoke test leaves the release without an image.
+  smoke-jvm:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Derive release version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build the JVM image
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          docker buildx build --target jvm --load \
+            --build-arg "IMAGE_SOURCE=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
+            --build-arg "IMAGE_REVISION=${GITHUB_SHA}" \
+            --build-arg "IMAGE_VERSION=${VERSION}" \
+            --build-arg "JIRCD_VERSION=${VERSION}" \
+            -t jircd:jvm-release .
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+
+      - name: Container smoke tests
+        run: ./gradlew :jircd-integration-tests:containerTest -Djircd.image=jircd:jvm-release --stacktrace
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-container-jvm-test-reports
+          path: "**/build/reports/"
+          retention-days: 7
+
+  publish-jvm:
+    needs: [release, smoke-jvm]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write # push the image to GHCR
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Log in to GHCR
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Derive release version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push the multi-arch image
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          docker buildx build --target jvm --platform linux/amd64,linux/arm64 --push \
+            --build-arg "IMAGE_SOURCE=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
+            --build-arg "IMAGE_REVISION=${GITHUB_SHA}" \
+            --build-arg "IMAGE_VERSION=${VERSION}" \
+            --build-arg "JIRCD_VERSION=${VERSION}" \
+            -t "${IMAGE}:${VERSION}-jvm" -t "${IMAGE}:${VERSION}" .
