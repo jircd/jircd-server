@@ -1,6 +1,8 @@
 # jircd container image (spec 016, contracts/container-contract.md).
 #
 #   docker build -t jircd:jvm .                    # JVM variant (default target)
+#   docker build --build-arg IMAGE_SOURCE=... --build-arg IMAGE_REVISION=... --build-arg IMAGE_VERSION=... .
+#                                                  # fills the OCI labels (CI does this)
 #
 # Every base image is pinned by digest; the tag is in the comment. Dependabot proposes updates.
 
@@ -20,6 +22,17 @@ RUN --mount=type=cache,target=/root/.gradle \
 # ---------------------------------------------------------------------------------------------
 # gcr.io/distroless/java25-debian13:nonroot
 FROM gcr.io/distroless/java25-debian13@sha256:a90a5fadd78dc37b643da72dca2f744ef67eba625eca7227a5b375b548e6b1c2 AS jvm
+# OCI labels (contracts/container-contract.md). CI passes the build args; a local build leaves them
+# at "unknown". The variant-specific description is the only label that differs between variants.
+ARG IMAGE_SOURCE=unknown
+ARG IMAGE_REVISION=unknown
+ARG IMAGE_VERSION=unknown
+LABEL org.opencontainers.image.source="${IMAGE_SOURCE}" \
+      org.opencontainers.image.revision="${IMAGE_REVISION}" \
+      org.opencontainers.image.version="${IMAGE_VERSION}" \
+      org.opencontainers.image.licenses="Apache-2.0" \
+      org.opencontainers.image.title="jircd" \
+      org.opencontainers.image.description="jircd IRCv3 server, JVM variant (Java 25, distroless)"
 COPY --from=build /src/jircd-server/build/install/jircd-server/lib/ /opt/jircd/lib/
 WORKDIR /opt/jircd
 USER 65532:65532

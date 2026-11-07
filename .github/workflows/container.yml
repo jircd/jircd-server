@@ -1,0 +1,133 @@
+name: Container
+
+# Builds the JVM image and runs the container smoke tests (jircd-integration-tests, tag
+# "container") on every pull request and on main. On main the image is then published to GHCR.
+# Spec 016, tasks T041-T043.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: ghcr.io/jircd/jircd-server
+
+jobs:
+  jvm:
+    name: jvm
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Build the JVM image
+        run: |
+          docker buildx build --target jvm --load \
+            --build-arg "IMAGE_SOURCE=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
+            --build-arg "IMAGE_REVISION=${GITHUB_SHA}" \
+            --build-arg "IMAGE_VERSION=sha-${GITHUB_SHA::7}" \
+            -t jircd:jvm-ci .
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+
+      - name: Container smoke tests
+        run: ./gradlew :jircd-integration-tests:containerTest -Djircd.image=jircd:jvm-ci --stacktrace
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: container-jvm-test-reports
+          path: "**/build/reports/"
+          retention-days: 7
+
+  # Pushes only the immutable jvm-sha-<7> tag. It sits outside any concurrency group, so every
+  # main commit gets its tag; GitHub keeps one pending run per group and would cancel an older
+  # pending publish before it pushed.
+  publish-jvm:
+    name: publish-jvm
+    needs: jvm
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Log in to GHCR
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # The runtime stage has no RUN step and the build stage runs on the build platform, so the
+      # arm64 image needs no emulation.
+      - name: Build and push the multi-arch image
+        run: |
+          docker buildx build --target jvm --platform linux/amd64,linux/arm64 --push \
+            --build-arg "IMAGE_SOURCE=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
+            --build-arg "IMAGE_REVISION=${GITHUB_SHA}" \
+            --build-arg "IMAGE_VERSION=sha-${GITHUB_SHA::7}" \
+            -t "${IMAGE}:jvm-sha-${GITHUB_SHA::7}" .
+
+  # Moves the mutable tags from the pushed SHA tag, without a rebuild. Serialised per variant;
+  # skipping an intermediate commit is harmless because the newest pending run moves the tag.
+  retag-jvm:
+    name: retag-jvm
+    needs: publish-jvm
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    concurrency:
+      group: container-retag-jvm
+      cancel-in-progress: false
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Log in to GHCR
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Serialisation alone does not stop a slow older run from retagging after a newer one, so
+      # move the tags only while this commit is still the tip of main. Best-effort, not atomic
+      # with the retag: a tag can stay one commit behind until the next publish moves it.
+      - name: Move jvm and latest to this commit
+        run: |
+          tip=$(git ls-remote "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git" refs/heads/main | cut -f1)
+          if [ "${tip}" != "${GITHUB_SHA}" ]; then
+            echo "::notice::${GITHUB_SHA::7} is no longer the tip of main (${tip:0:7}); leaving jvm and latest alone."
+            exit 0
+          fi
+          docker buildx imagetools create \
+            -t "${IMAGE}:jvm" -t "${IMAGE}:latest" \
+            "${IMAGE}:jvm-sha-${GITHUB_SHA::7}"

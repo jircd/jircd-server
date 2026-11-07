@@ -61,3 +61,11 @@ Nothing is left unfixed. A session whose writer is attached after `drain` has ta
 ## PR #129 CI round
 
 The CI failure was a test ordering problem, not a production defect: `everyClientIsToldWhyBeforeItsConnectionEnds` shut down while 3 connections were still in the kernel accept queue, and the OS reset them. Decision: do not add a lingering close to the teardown paths (it would change every disconnect path for a case the server never saw). The test waits for server-side acceptance, and the edge is documented in `contracts/container-contract.md` (Signals) and `spec.md` (Edge Cases).
+
+## US4 JVM-only slice (2026-11-07)
+
+Codex review of the JVM CI slice against the checklist: 1 finding.
+
+| # | Finding | Disposition |
+|---|---|---|
+| 1 | Medium: the existing `release` job in `release.yml` used tag-pinned actions (`actions/checkout@v7`, `actions/setup-java@v6`) | **Fixed.** Pinned by full commit SHA with version comments, the same SHAs as the new jobs |
