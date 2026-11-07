@@ -101,3 +101,10 @@ Codex review of the JVM CI slice against the checklist: 1 finding.
   - `java:S1130`: removed the `IOException` that `yaml(...)` never throws.
 
 - **Second local Sonar run:** the gate still failed on new-code coverage (0%), all from the 57 lines of `.github/scripts/container-load-summary.py`, which has no test suite. `sonar.coverage.exclusions=.github/**` in the root `build.gradle.kts` takes CI helper scripts out of coverage; they are still analysed for issues. Third run: gate passed, 0 open issues.
+
+## PR #141 review round 1
+
+| # | Finding | Disposition |
+|---|---|---|
+| 1 | CodeRabbit: in `ContainerDeliveryLoadTest`, a failing assertion or exception before `running = false` leaves the reader loops running, so closing the `ExecutorService` waits forever and the test hangs instead of failing | **Fixed.** The body runs in a `try` whose `finally` sets `running = false` and closes every client, inside the try-with-resources and so before the executor closes. Checked by expecting `CLIENTS + 1` registered: the run failed in 8 s instead of hanging; reverted, and it passes. The odd `Polling.pause` wrapping is tidied as well |
+| 2 | CodeRabbit: `tasks.md` T035 named the wrong test path and T037 said the scenarios run "in-process" | **Fixed.** T035 points to the `container` subpackage. T037 says `NativeMetadataScenariosTest` drives the installed server, started under the tracing agent, over sockets, through the separate `nativeMetadataScenarios` Gradle task (not `containerTest`). Both stay `[X]` |

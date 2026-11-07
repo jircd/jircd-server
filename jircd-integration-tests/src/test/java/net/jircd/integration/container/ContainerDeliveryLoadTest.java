@@ -71,7 +71,7 @@ class ContainerDeliveryLoadTest {
     private final CountDownLatch allDelivered = new CountDownLatch(MESSAGES * (CLIENTS - 1));
     private volatile boolean running = true;
 
-    // Every client is closed in the finally-style loop after the run, not where it is opened.
+    // Every client is closed in the finally block below, on every path, not where it is opened.
     @SuppressWarnings("PMD.CloseResource")
     @Test
     void thousandClientsReceiveEveryMessageWithinOneSecond() throws Exception {
@@ -82,32 +82,35 @@ class ContainerDeliveryLoadTest {
         long startNanos = System.nanoTime();
         try (JircdContainer jircd = JircdContainer.start(dir.resolve("etc"));
                 ExecutorService readers = Executors.newVirtualThreadPerTaskExecutor()) {
-            long firstRegisteredNanos = connect(jircd, readers, clients, 0, 1);
-            long startupNanos = firstRegisteredNanos - startNanos;
-            connect(jircd, readers, clients, 1, IDLE_CLIENTS);
-            Polling.pause(
-                    Duration.ofSeconds(
-                            3)); // idle: let allocation and GC settle before sampling memory
-            long idleMemoryBytes = jircd.memoryBytes();
-            connect(jircd, readers, clients, IDLE_CLIENTS, CLIENTS);
-            assertThat(registered).as("registered clients").hasValue(CLIENTS);
+            try {
+                long firstRegisteredNanos = connect(jircd, readers, clients, 0, 1);
+                long startupNanos = firstRegisteredNanos - startNanos;
+                connect(jircd, readers, clients, 1, IDLE_CLIENTS);
+                // Idle: let allocation and GC settle before sampling memory.
+                Polling.pause(Duration.ofSeconds(3));
+                long idleMemoryBytes = jircd.memoryBytes();
+                connect(jircd, readers, clients, IDLE_CLIENTS, CLIENTS);
+                assertThat(registered).as("registered clients").hasValue(CLIENTS);
 
-            long firstSend = System.nanoTime();
-            sendPaced(clients.getFirst());
-            boolean complete = allDelivered.await(30, TimeUnit.SECONDS);
-            long lastNanos = lastDelivery.get();
-            running = false;
-            for (RawIrcClient client : clients) client.close();
-            assertThat(complete).as("deliveries received: " + delivered.get()).isTrue();
+                long firstSend = System.nanoTime();
+                sendPaced(clients.getFirst());
+                boolean complete = allDelivered.await(30, TimeUnit.SECONDS);
+                long lastNanos = lastDelivery.get();
+                assertThat(complete).as("deliveries received: " + delivered.get()).isTrue();
 
-            report(startupNanos, idleMemoryBytes, Duration.ofNanos(lastNanos - firstSend));
+                report(startupNanos, idleMemoryBytes, Duration.ofNanos(lastNanos - firstSend));
+            } finally {
+                // Stop the reader loops first, or closing the executor would wait for them forever.
+                running = false;
+                for (RawIrcClient client : clients) client.close();
+            }
         }
     }
 
     /**
      * Connects clients {@code from} (inclusive) to {@code to} (exclusive); returns the last ready.
      */
-    // Each client lives until the test closes the whole list after the run.
+    // Each client lives until the test's finally block closes the whole list.
     @SuppressWarnings("PMD.CloseResource")
     private long connect(
             JircdContainer jircd,

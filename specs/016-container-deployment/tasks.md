@@ -165,7 +165,7 @@
 ### Tests first
 
 - [X] T034 [P] [US3] Extend `ContainerContractTest` with three tests. First, the fixture gains an Argon2 OPER credential (reusing the Argon2 hashing `TestServer` uses), then `OPER` with it succeeds and a wrong password fails exactly as on the JVM image. Second, TLS registration works with a PKCS12 keystore fixture as well as PEM (FR-014, FR-015). Third, the `CAP LS 302` capability list and the `005` ISUPPORT tokens are identical to a recorded JVM-image baseline (FR-013, FR-014).
-- [X] T035 [P] [US3] Add `jircd-integration-tests/src/test/java/net/jircd/integration/ContainerDeliveryLoadTest.java` (`@Tag("container-load")`), which:
+- [X] T035 [P] [US3] Add `jircd-integration-tests/src/test/java/net/jircd/integration/container/ContainerDeliveryLoadTest.java` (`@Tag("container-load")`), which:
   - starts the container with a configuration that raises `maxConnectionsPerIp` and `maxConnections` above 1,000 (the default is 20 per source address, and every test client shares one), opens 1,000 connections to it, fanning out like `Story1DeliveryLatencyLoadTest`, and asserts that all 1,000 register;
   - asserts every delivery within 1 s (SC-004);
   - prints p50/p99/max latency, throughput, time from container start to the first accepted connection (SC-005), and resident memory with 100 idle clients from the Docker stats API (SC-006).
@@ -180,7 +180,7 @@
   - `metadataRepository { enabled = true }`.
 
   Refresh the verification metadata. `./gradlew build` must not require GraalVM.
-- [X] T037 [US3] Add a `collectNativeMetadata` task in `jircd-server/build.gradle.kts`. It runs the `installDist` server under `-agentlib:native-image-agent=config-merge-dir=…` while `containerTest`-equivalent scenarios run against it in-process over sockets: registration, TLS, OPER with Argon2, reload, shutdown. It then keeps only entries for `org.yaml`, `com.password4j`, `ch.qos.logback` and `net.jircd`, and writes `jircd-server/src/main/resources/META-INF/native-image/net.jircd/jircd-server/reachability-metadata.json`. Commit the generated file once it has been reviewed.
+- [X] T037 [US3] Add a `collectNativeMetadata` task in `jircd-server/build.gradle.kts`. It runs the `installDist` server under `-agentlib:native-image-agent=config-merge-dir=…` while the `native-metadata` scenarios (`NativeMetadataScenariosTest` in `jircd-integration-tests`, run by the separate `nativeMetadataScenarios` Gradle task, not by `containerTest`) drive it over sockets: registration, TLS, OPER with Argon2, reload, shutdown. It then keeps only entries for `org.yaml`, `com.password4j`, `ch.qos.logback` and `net.jircd`, and writes `jircd-server/src/main/resources/META-INF/native-image/net.jircd/jircd-server/reachability-metadata.json`. Commit the generated file once it has been reviewed.
 - [X] T038 [US3] Add the Dockerfile stages:
   - **`native-build`**: `ghcr.io/graalvm/native-image-community:25i5@sha256:…`, running `./gradlew :jircd-server:nativeCompile --no-daemon` with the cache mount.
   - **`native`**: `gcr.io/distroless/base-debian13:nonroot@sha256:…`. Copy the binary to `/opt/jircd/jircd`, with the same `WORKDIR`, `USER`, `EXPOSE` and `CMD` as `jvm`, and `ENTRYPOINT ["/opt/jircd/jircd"]`.
