@@ -81,3 +81,11 @@ Codex review of the JVM CI slice against the checklist: 1 finding.
 | 5 | CodeRabbit: `packages: write` and `contents: write` lack a reason | **Fixed.** Trailing comments in `container.yml` and `release.yml` |
 | 6 | CodeRabbit: a release can exist without an image when `smoke-jvm` fails | **Declined.** A release must not depend on an image variant's smoke test, and US4 says a failing variant is simply not published |
 | 7 | Sourcery | **Skipped.** Weekly review budget used |
+
+## PR #139 review round 2
+
+| # | Finding | Disposition |
+|---|---|---|
+| 1 | CodeRabbit: a release image's app reports `0.1.0-SNAPSHOT` while its label says `X.Y.Z`, because the Docker build does not pass `-Pversion` | **Fixed.** The `build` stage takes `ARG JIRCD_VERSION` (empty default) and passes `-Pversion=$JIRCD_VERSION` only when set; `release.yml` passes it in `smoke-jvm` and `publish-jvm`; `container.yml` does not, so `main` and PR builds keep the `gradle.properties` version |
+| 2 | CodeRabbit: README showed `docker pull` without a `docker run` for the pulled image | **Fixed.** A `docker run` using `ghcr.io/jircd/jircd-server:jvm` follows the pull; the local-build example keeps `jircd:jvm` |
+| 3 | CI: the `jvm` job fails deterministically in the image build (fresh `GRADLE_USER_HOME`): dependency verification of `sonarqube-gradle-plugin-7.5.0.8588.jar` and `sonar-scanner-java-library-shaded-4.2.1.1698.jar` reports `Key C33B56C147B01975 couldn't be found in local key file or remote key servers`. SonarSource revoked the old signing subkey `2161D72E7DCD4258` and now signs with subkey `06D0369BE1D0B06997DA66E8C33B56C147B01975` of primary `679F1EE92B19609DE816FDE81DB198F93525EC1A` | **Fixed.** `verification-metadata.xml` already trusted that signing subkey for both groups, but the public key was missing from `gradle/verification-keyring.keys`, so every fresh `GRADLE_USER_HOME` depended on a key-server lookup (the cached `build` job hid it). The key is now in the keyring; `gradlew help` passes in a fresh container. Both jars verified with gpg against that key and still match the pinned sha256 |

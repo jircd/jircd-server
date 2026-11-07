@@ -76,6 +76,7 @@ jobs:
             --build-arg "IMAGE_SOURCE=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
             --build-arg "IMAGE_REVISION=${GITHUB_SHA}" \
             --build-arg "IMAGE_VERSION=${VERSION}" \
+            --build-arg "JIRCD_VERSION=${VERSION}" \
             -t jircd:jvm-release .
 
       - name: Set up JDK 25
@@ -132,4 +133,5 @@ jobs:
             --build-arg "IMAGE_SOURCE=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
             --build-arg "IMAGE_REVISION=${GITHUB_SHA}" \
             --build-arg "IMAGE_VERSION=${VERSION}" \
+            --build-arg "JIRCD_VERSION=${VERSION}" \
             -t "${IMAGE}:${VERSION}-jvm" -t "${IMAGE}:${VERSION}" .

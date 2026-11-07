@@ -3,6 +3,9 @@
 #   docker build -t jircd:jvm .                    # JVM variant (default target)
 #   docker build --build-arg IMAGE_SOURCE=... --build-arg IMAGE_REVISION=... --build-arg IMAGE_VERSION=... .
 #                                                  # fills the OCI labels (CI does this)
+#   docker build --build-arg JIRCD_VERSION=X.Y.Z .
+#                                                  # sets the version the app reports (releases do
+#                                                  # this); unset keeps the gradle.properties version
 #
 # Every base image is pinned by tag@digest, so Dependabot can propose updates for the right tag.
 
@@ -13,8 +16,9 @@
 FROM --platform=$BUILDPLATFORM eclipse-temurin:25-jdk@sha256:83f4a7fc27df94dcc7b8de04d14cbbba8da14406f921e966969c3b09000aa507 AS build
 WORKDIR /src
 COPY . .
+ARG JIRCD_VERSION=
 RUN --mount=type=cache,target=/root/.gradle \
-    ./gradlew --no-daemon --console=plain :jircd-server:installDist
+    ./gradlew --no-daemon --console=plain ${JIRCD_VERSION:+-Pversion=$JIRCD_VERSION} :jircd-server:installDist
 
 # ---------------------------------------------------------------------------------------------
 # jvm: the supported variant. Distroless Java 25 (Temurin) with no shell, running as nonroot.

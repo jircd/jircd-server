@@ -189,6 +189,8 @@ JVM variant exists so far (linux/amd64 and linux/arm64):
 
 ```bash
 docker pull ghcr.io/jircd/jircd-server:jvm
+docker run -d --read-only -p 6667:6667 -p 6697:6697 \
+  -v /srv/jircd:/etc/jircd:ro --name jircd ghcr.io/jircd/jircd-server:jvm
 ```
 
 To build the image yourself from a clean checkout, only a container runtime is needed:
