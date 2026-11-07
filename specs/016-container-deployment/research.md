@@ -43,7 +43,7 @@ Each section records a decision, why it was made, and what else was considered. 
 - The `ERROR :Closing Link: … (reason)` shape matches what KILL and SendQ overflow already send.
 - The existing `stop()` closes sockets without notifying clients and stays as it is for tests.
 
-**Open check, verified by the native smoke test**: GraalVM CE native images support `sun.misc.Signal.handle`. If the native smoke test shows TERM is not delivered to the handler, add `--install-exit-handlers` to the native build args. How `--install-exit-handlers` interacts with the explicit `sun.misc.Signal` handlers in `native-image-community:25i5` is not established yet; the observed result of the native smoke test is recorded in `validation/native.md` and replaces this note.
+**Native result**: on `native-image-community:25i5`, TERM reaches the explicit `sun.misc.Signal` handler without `--install-exit-handlers`: the signal tests pass against the native image (graceful stop with 100 clients, exit 0, `Closing Link` lines). The flag is not used. See `validation/native.md`.
 
 **Alternatives considered**:
 

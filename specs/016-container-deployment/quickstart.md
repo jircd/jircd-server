@@ -58,14 +58,15 @@ chmod 600 deploy/container/jircd.yaml && docker run --rm -v "$PWD/deploy/contain
 Do this after changing SnakeYAML, password4j, logback or resources:
 
 ```bash
-./gradlew :jircd-server:collectNativeMetadata   # runs the JVM distribution under the tracing agent
-                                                # while the container contract scenarios drive it,
-                                                # then filters and copies into
+./gradlew :jircd-server:collectNativeMetadata   # needs a GraalVM JDK 25: runs the installed server
+                                                # under the tracing agent while the
+                                                # NativeMetadataScenariosTest drives it, then filters
+                                                # and writes into
                                                 # jircd-server/src/main/resources/META-INF/native-image/
 git diff jircd-server/src/main/resources/META-INF/native-image/
 ```
 
-Then rebuild the native image (step 1) and run step 6 against it.
+Without a local GraalVM, run the same task in the GraalVM image on a scratch copy of the checkout (never in the worktree, so its `build/` stays yours) and copy the file back; the exact command is in [validation/native.md](validation/native.md). Then rebuild the native image (step 1) and run step 6 against it.
 
 ## 6. Automated container smoke tests
 
