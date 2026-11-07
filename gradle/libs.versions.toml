@@ -11,6 +11,7 @@ pmd = "7.26.0"
 spotbugsTool = "4.10.3"
 sonarqube = "7.5.0.8588"
 testcontainers = "2.0.5"
+graalvmNative = "1.1.18"
 
 [libraries]
 slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
@@ -26,3 +27,4 @@ testcontainers = { module = "org.testcontainers:testcontainers", version.ref = "
 spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }
 spotbugs = { id = "com.github.spotbugs", version.ref = "spotbugs" }
 sonarqube = { id = "org.sonarqube", version.ref = "sonarqube" }
+graalvm-native = { id = "org.graalvm.buildtools.native", version.ref = "graalvmNative" }

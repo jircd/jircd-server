@@ -1,8 +1,9 @@
 name: Container
 
-# Builds the JVM image and runs the container smoke tests (jircd-integration-tests, tag
-# "container") on every pull request and on main. On main the image is then published to GHCR.
-# Spec 016, tasks T041-T043.
+# Builds the JVM image and the experimental native image (amd64) and runs the container smoke
+# tests (jircd-integration-tests, tag "container") against each on every pull request and on main.
+# On main the images are then published to GHCR. A native build or smoke-test failure fails this
+# workflow (FR-016 only excuses native performance, in load-test.yml). Spec 016, tasks T041-T043.
 
 on:
   push:
@@ -135,3 +136,119 @@ jobs:
           docker buildx imagetools create \
             -t "${IMAGE}:jvm" -t "${IMAGE}:latest" \
             "${IMAGE}:jvm-sha-${GITHUB_SHA::7}"
+
+  native:
+    name: native
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      # ubuntu-latest is amd64, so this builds (and tests) the same architecture that is published.
+      - name: Build the native image
+        run: |
+          docker buildx build --target native --load \
+            --build-arg "IMAGE_SOURCE=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
+            --build-arg "IMAGE_REVISION=${GITHUB_SHA}" \
+            --build-arg "IMAGE_VERSION=sha-${GITHUB_SHA::7}" \
+            -t jircd:native-ci .
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+
+      - name: Container smoke tests
+        run: ./gradlew :jircd-integration-tests:containerTest -Djircd.image=jircd:native-ci --stacktrace
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: container-native-test-reports
+          path: "**/build/reports/"
+          retention-days: 7
+
+  # Pushes only the immutable native-sha-<7> tag (amd64 only), outside any concurrency group for
+  # the same reason as publish-jvm.
+  publish-native:
+    name: publish-native
+    needs: native
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write # push the image to GHCR
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Log in to GHCR
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # The native image is amd64 only: the executable is compiled on the target architecture.
+      - name: Build and push the amd64 image
+        run: |
+          docker buildx build --target native --platform linux/amd64 --push \
+            --build-arg "IMAGE_SOURCE=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
+            --build-arg "IMAGE_REVISION=${GITHUB_SHA}" \
+            --build-arg "IMAGE_VERSION=sha-${GITHUB_SHA::7}" \
+            -t "${IMAGE}:native-sha-${GITHUB_SHA::7}" .
+
+  # Moves the mutable native tag from the pushed SHA tag, without a rebuild. latest stays on the
+  # JVM variant (retag-jvm).
+  retag-native:
+    name: retag-native
+    needs: publish-native
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write # push the image to GHCR
+    concurrency:
+      group: container-retag-native
+      cancel-in-progress: false
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Log in to GHCR
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Same tip check as retag-jvm: move the tag only while this commit is still the tip of main.
+      - name: Move native to this commit
+        run: |
+          set -o pipefail
+          if ! tip=$(git ls-remote "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git" refs/heads/main | cut -f1) || [ -z "${tip}" ]; then
+            echo "::error::Could not read the tip of main; native was not moved."
+            exit 1
+          fi
+          if [ "${tip}" != "${GITHUB_SHA}" ]; then
+            echo "::notice::${GITHUB_SHA::7} is no longer the tip of main (${tip:0:7}); leaving native alone."
+            exit 0
+          fi
+          docker buildx imagetools create \
+            -t "${IMAGE}:native" \
+            "${IMAGE}:native-sha-${GITHUB_SHA::7}"

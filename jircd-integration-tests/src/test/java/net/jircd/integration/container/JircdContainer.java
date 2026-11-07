@@ -23,6 +23,9 @@ import com.github.dockerjava.api.model.AccessMode;
 import com.github.dockerjava.api.model.Bind;
 import com.github.dockerjava.api.model.Frame;
 import com.github.dockerjava.api.model.HostConfig;
+import com.github.dockerjava.api.model.MemoryStatsConfig;
+import com.github.dockerjava.api.model.Statistics;
+import com.github.dockerjava.api.model.StatsConfig;
 import com.github.dockerjava.api.model.Volume;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -36,7 +39,9 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
 import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream;
 import org.testcontainers.DockerClientFactory;
@@ -177,6 +182,43 @@ final class JircdContainer implements AutoCloseable {
     /** Everything the server wrote to standard output and standard error so far. */
     String logs() {
         return container.getLogs();
+    }
+
+    /**
+     * The container's memory in use, in bytes, as {@code docker stats} reports it: the cgroup usage
+     * minus the reclaimable file cache.
+     */
+    long memoryBytes() throws InterruptedException {
+        AtomicReference<Statistics> sample = new AtomicReference<>();
+        CountDownLatch received = new CountDownLatch(1);
+        try (ResultCallback.Adapter<Statistics> callback =
+                new ResultCallback.Adapter<>() {
+                    @Override
+                    public void onNext(Statistics statistics) {
+                        if (sample.compareAndSet(null, statistics)) received.countDown();
+                    }
+                }) {
+            client().statsCmd(container.getContainerId()).exec(callback);
+            if (!received.await(30, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("No docker stats sample within 30 s");
+            }
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        MemoryStatsConfig memory = sample.get().getMemoryStats();
+        Long reported = memory == null ? null : memory.getUsage();
+        if (reported == null) {
+            throw new IllegalStateException("docker stats carried no memory usage");
+        }
+        long usage = reported;
+        StatsConfig stats = memory.getStats();
+        long cache = 0;
+        if (stats != null) {
+            Long inactive = stats.getInactiveFile();
+            Long legacy = stats.getCache();
+            cache = inactive != null ? inactive : legacy != null ? legacy : 0;
+        }
+        return usage - cache;
     }
 
     /** Sends {@code signal} (for example {@code HUP}) to the server process. */

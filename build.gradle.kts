@@ -80,10 +80,11 @@ subprojects {
     }
 
     // "container" and "container-load" tests run against a built image (spec 016) and need a
-    // container runtime; jircd-integration-tests registers their own tasks.
+    // container runtime; "native-metadata" needs a GraalVM JDK. jircd-integration-tests registers
+    // their own tasks.
     tasks.named<Test>("test") {
         useJUnitPlatform {
-            excludeTags("load", "container", "container-load")
+            excludeTags("load", "container", "container-load", "native-metadata")
         }
     }
 
@@ -269,6 +270,9 @@ sonar {
     properties {
         property("sonar.projectKey", "jircd_jircd-server")
         property("sonar.organization", "jircd")
+        // CI helper scripts aren't product code and have no test suite to report coverage from;
+        // they're still analysed for issues.
+        property("sonar.coverage.exclusions", ".github/**")
     }
 }
 

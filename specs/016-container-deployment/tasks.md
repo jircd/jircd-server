@@ -164,8 +164,8 @@
 
 ### Tests first
 
-- [ ] T034 [P] [US3] Extend `ContainerContractTest` with three tests. First, the fixture gains an Argon2 OPER credential (reusing the Argon2 hashing `TestServer` uses), then `OPER` with it succeeds and a wrong password fails exactly as on the JVM image. Second, TLS registration works with a PKCS12 keystore fixture as well as PEM (FR-014, FR-015). Third, the `CAP LS 302` capability list and the `005` ISUPPORT tokens are identical to a recorded JVM-image baseline (FR-013, FR-014).
-- [ ] T035 [P] [US3] Add `jircd-integration-tests/src/test/java/net/jircd/integration/ContainerDeliveryLoadTest.java` (`@Tag("container-load")`), which:
+- [X] T034 [P] [US3] Extend `ContainerContractTest` with three tests. First, the fixture gains an Argon2 OPER credential (reusing the Argon2 hashing `TestServer` uses), then `OPER` with it succeeds and a wrong password fails exactly as on the JVM image. Second, TLS registration works with a PKCS12 keystore fixture as well as PEM (FR-014, FR-015). Third, the `CAP LS 302` capability list and the `005` ISUPPORT tokens are identical to a recorded JVM-image baseline (FR-013, FR-014).
+- [X] T035 [P] [US3] Add `jircd-integration-tests/src/test/java/net/jircd/integration/ContainerDeliveryLoadTest.java` (`@Tag("container-load")`), which:
   - starts the container with a configuration that raises `maxConnectionsPerIp` and `maxConnections` above 1,000 (the default is 20 per source address, and every test client shares one), opens 1,000 connections to it, fanning out like `Story1DeliveryLatencyLoadTest`, and asserts that all 1,000 register;
   - asserts every delivery within 1 s (SC-004);
   - prints p50/p99/max latency, throughput, time from container start to the first accepted connection (SC-005), and resident memory with 100 idle clients from the Docker stats API (SC-006).
@@ -174,21 +174,21 @@
 
 ### Implementation
 
-- [ ] T036 [US3] Add the `org.graalvm.buildtools.native` `1.1.18` plugin to `gradle/libs.versions.toml` and apply it in `jircd-server/build.gradle.kts`:
+- [X] T036 [US3] Add the `org.graalvm.buildtools.native` `1.1.18` plugin to `gradle/libs.versions.toml` and apply it in `jircd-server/build.gradle.kts`:
   - `imageName = "jircd"`, `mainClass = net.jircd.server.JircdServerApplication`, `toolchainDetection = false`;
   - build args `--no-fallback`, `-march=compatibility`, `-H:+ReportExceptionStackTraces`;
   - `metadataRepository { enabled = true }`.
 
   Refresh the verification metadata. `./gradlew build` must not require GraalVM.
-- [ ] T037 [US3] Add a `collectNativeMetadata` task in `jircd-server/build.gradle.kts`. It runs the `installDist` server under `-agentlib:native-image-agent=config-merge-dir=…` while `containerTest`-equivalent scenarios run against it in-process over sockets: registration, TLS, OPER with Argon2, reload, shutdown. It then keeps only entries for `org.yaml`, `com.password4j`, `ch.qos.logback` and `net.jircd`, and writes `jircd-server/src/main/resources/META-INF/native-image/net.jircd/jircd-server/reachability-metadata.json`. Commit the generated file once it has been reviewed.
-- [ ] T038 [US3] Add the Dockerfile stages:
+- [X] T037 [US3] Add a `collectNativeMetadata` task in `jircd-server/build.gradle.kts`. It runs the `installDist` server under `-agentlib:native-image-agent=config-merge-dir=…` while `containerTest`-equivalent scenarios run against it in-process over sockets: registration, TLS, OPER with Argon2, reload, shutdown. It then keeps only entries for `org.yaml`, `com.password4j`, `ch.qos.logback` and `net.jircd`, and writes `jircd-server/src/main/resources/META-INF/native-image/net.jircd/jircd-server/reachability-metadata.json`. Commit the generated file once it has been reviewed.
+- [X] T038 [US3] Add the Dockerfile stages:
   - **`native-build`**: `ghcr.io/graalvm/native-image-community:25i5@sha256:…`, running `./gradlew :jircd-server:nativeCompile --no-daemon` with the cache mount.
   - **`native`**: `gcr.io/distroless/base-debian13:nonroot@sha256:…`. Copy the binary to `/opt/jircd/jircd`, with the same `WORKDIR`, `USER`, `EXPOSE` and `CMD` as `jvm`, and `ENTRYPOINT ["/opt/jircd/jircd"]`.
-- [ ] T039 [US3] Build `jircd:native` locally (arm64) and run the full `containerTest` suite against it.
+- [X] T039 [US3] Build `jircd:native` locally (arm64) and run the full `containerTest` suite against it.
   - If TERM doesn't reach `ShutdownSignalHandler`, add `--install-exit-handlers` to the build args (research R2) and rerun.
   - Fix any missing-metadata failure by regenerating with T037, not by hand-editing.
   - Record the results, the image sizes for both variants, and native start-up time in `specs/016-container-deployment/validation/native.md`.
-- [ ] T040 [US3] Run `containerLoadTest` locally against both images as a sanity check, recorded as arm64 in `validation/native.md`. The authoritative amd64 comparison comes from T044.
+- [X] T040 [US3] Run `containerLoadTest` locally against both images as a sanity check, recorded as arm64 in `validation/native.md`. The authoritative amd64 comparison comes from T044.
 
 **Checkpoint**: The native variant passes the same contract as the JVM variant.
 
@@ -198,25 +198,26 @@
 
 **Independent Test**: A PR runs `container.yml`, building and testing both variants. A deliberately broken native build in a throwaway branch fails the `native` job and names it. A push to `main` publishes `jvm`, `jvm-sha-<7>`, `latest`, `native` and `native-sha-<7>`.
 
-- [ ] T041 [US4] Add OCI labels to both runtime stages of `Dockerfile`, filled from build args: `org.opencontainers.image.source`, `.revision` and `.version`, `.licenses=Apache-2.0`, `.title=jircd`, and a `.description` that names the variant (FR-021).
+- [X] T041 [US4] Add OCI labels to both runtime stages of `Dockerfile`, filled from build args: `org.opencontainers.image.source`, `.revision` and `.version`, `.licenses=Apache-2.0`, `.title=jircd`, and a `.description` that names the variant (FR-021).
   - [X] `jvm` stage (US4 JVM-only PR).
-  - [ ] `native` stage (follows in the US3 PR, reusing the same `IMAGE_*` build args).
-- [ ] T042 [US4] Create `.github/workflows/container.yml`, triggered on `pull_request` and on `push` to `main`, with workflow permissions `contents: read` only. GitHub Actions scopes permissions to a workflow or a job, never a step, so pull-request builds and tests must not share a job with `packages: write`:
+  - [X] `native` stage (US3 PR, same `IMAGE_*` build args; `JIRCD_VERSION` in `native-build`).
+- [X] T042 [US4] Create `.github/workflows/container.yml`, triggered on `pull_request` and on `push` to `main`, with workflow permissions `contents: read` only. GitHub Actions scopes permissions to a workflow or a job, never a step, so pull-request builds and tests must not share a job with `packages: write`:
   - **`jvm` and `native` jobs** (read-only, run on pull requests and on `main`): set up buildx, `build --target <variant> --load` (native on amd64 only), set up JDK 25 and Gradle, then `./gradlew :jircd-integration-tests:containerTest -Djircd.image=…`. Use `persist-credentials: false` on checkout.
   - **`publish-jvm` and `publish-native` jobs** (`needs` the matching test job, `if: github.ref == 'refs/heads/main'`, `permissions: contents: read, packages: write`): log in to GHCR with `GITHUB_TOKEN`, then build and push `linux/amd64,linux/arm64` tagged only `jvm-sha-<7>` (native: amd64, only `native-sha-<7>`); these jobs never push a moving tag. Pushing the immutable `*-sha-<7>` tags happens in the publish job **outside any concurrency group**, so every `main` commit gets its tag: GitHub Actions keeps only one pending run per concurrency group and cancels an older pending one even with `cancel-in-progress: false`, so a burst of commits could otherwise cancel a publish before it pushed its tag. A separate **retag job per variant** (`retag-jvm`, `retag-native`: `needs` the matching publish job, same `if` and `packages: write`) moves `jvm`, `native` and `latest` from the already pushed SHA tag (no rebuild) and runs in a `concurrency` group per variant with `cancel-in-progress: false`; concurrency is scoped to a job or workflow, not a step, so it has to be its own job. There, skipping an intermediate commit is harmless, because the newest pending run moves the tag. Serialization alone does not stop a slow older run from retagging after a newer one, so before retagging it checks that its commit is still the tip of `main` (`git ls-remote origin refs/heads/main` equals `github.sha`) and otherwise skips the moving tags. The check is best-effort: it is not atomic with the retag, so a newer commit can land just after it. The transient outcome is a moving tag one commit behind until the next publish moves it.
 
   Pin every third-party action by commit SHA with a version comment. Upload test reports on failure.
 
   - [X] `jvm`, `publish-jvm` and `retag-jvm` jobs (US4 JVM-only PR).
-  - [ ] `native`, `publish-native` and `retag-native` jobs (follow in the US3 PR).
-- [ ] T043 [P] [US4] Extend `.github/workflows/release.yml` with a separate publish job (job-level `packages: write`; the existing job keeps only `contents: write`) that builds and pushes `X.Y.Z-jvm` and `X.Y.Z` (multi-arch), plus `X.Y.Z-native` (amd64), after the release steps. Release tags are immutable, so the publish job `needs` per-variant smoke-test jobs that build each image from the release commit and run `containerTest` against it (as the `jvm` and `native` jobs of T042 do), and pushes only after they pass. A variant that fails its smoke test is not published (US4). Pin actions by SHA.
+  - [X] `native`, `publish-native` and `retag-native` jobs (US3 PR).
+- [X] T043 [P] [US4] Extend `.github/workflows/release.yml` with a separate publish job (job-level `packages: write`; the existing job keeps only `contents: write`) that builds and pushes `X.Y.Z-jvm` and `X.Y.Z` (multi-arch), plus `X.Y.Z-native` (amd64), after the release steps. Release tags are immutable, so the publish job `needs` per-variant smoke-test jobs that build each image from the release commit and run `containerTest` against it (as the `jvm` and `native` jobs of T042 do), and pushes only after they pass. A variant that fails its smoke test is not published (US4). Pin actions by SHA.
   - [X] `smoke-jvm` and `publish-jvm` jobs, `X.Y.Z-jvm` and `X.Y.Z` (US4 JVM-only PR).
-  - [ ] `smoke-native` and `X.Y.Z-native` (follow in the US3 PR).
-- [ ] T044 [P] [US4] Add a `container-load` job to `.github/workflows/load-test.yml`. It builds both images on amd64, runs `containerLoadTest` against each, and writes a side-by-side table to `$GITHUB_STEP_SUMMARY`: p50/p99/max, throughput, start-up and memory, plus the native-versus-JVM percentage, flagging anything over 10%. The JVM run gates the job. The native run is `continue-on-error` while the variant is experimental (FR-016).
+  - [X] `smoke-native` and `X.Y.Z-native` (US3 PR).
+- [X] T044 [P] [US4] Add a `container-load` job to `.github/workflows/load-test.yml`. It builds both images on amd64, runs `containerLoadTest` against each, and writes a side-by-side table to `$GITHUB_STEP_SUMMARY`: p50/p99/max, throughput, start-up and memory, plus the native-versus-JVM percentage, flagging anything over 10%. The JVM run gates the job. The native run is `continue-on-error` while the variant is experimental (FR-016).
 - [X] T045 [P] [US4] Add `package-ecosystem: docker` (directory `/`, weekly, grouped) to `.github/dependabot.yml`, so the digest-pinned base images get update PRs.
 - [ ] T046 [US4] Before opening the PR, check the workflows with `actionlint` if it is available. Otherwise review them by hand against `.github/REVIEW_CHECKLIST.md`. Record what was checked in `specs/016-container-deployment/validation/ci.md`. CI evidence from the PR run is added after it completes.
   - [X] `actionlint` on every workflow for the JVM-only slice; summary in `validation/ci.md`.
-  - [ ] Rerun with the native jobs, and add the PR-run CI evidence once it completes.
+  - [X] Rerun with the native jobs and `container-load` (US3 PR).
+  - [ ] Add the PR-run CI evidence once it completes.
 
 **Checkpoint**: Both variants are built, tested and published automatically.
 

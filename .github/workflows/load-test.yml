@@ -37,3 +37,64 @@ jobs:
             **/build/reports/
             **/build/test-results/
           retention-days: 14
+
+  # Spec 016 T044: the same 1,000-client delivery scenario against both container images, on amd64.
+  # The JVM run gates the job; the native variant is experimental (FR-016), so its build and run
+  # are continue-on-error and only show up in the summary table.
+  container-load:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+
+      - name: Build the JVM image
+        run: docker buildx build --target jvm --load -t jircd:jvm-load .
+
+      - name: Container load test, JVM (gates the job)
+        run: |
+          ./gradlew :jircd-integration-tests:containerLoadTest \
+            -Djircd.image=jircd:jvm-load \
+            -Djircd.load.report="${GITHUB_WORKSPACE}/container-load/jvm.properties" --stacktrace
+
+      - name: Build the native image
+        id: native-build
+        continue-on-error: true # experimental variant
+        run: docker buildx build --target native --load -t jircd:native-load .
+
+      - name: Container load test, native
+        if: steps.native-build.outcome == 'success'
+        continue-on-error: true # experimental variant
+        run: |
+          ./gradlew :jircd-integration-tests:containerLoadTest \
+            -Djircd.image=jircd:native-load \
+            -Djircd.load.report="${GITHUB_WORKSPACE}/container-load/native.properties" --stacktrace
+
+      - name: Write the summary
+        if: always()
+        run: |
+          python3 .github/scripts/container-load-summary.py \
+            container-load/jvm.properties container-load/native.properties >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload reports and results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: container-load-reports
+          path: |
+            container-load/
+            **/build/reports/
+          retention-days: 14

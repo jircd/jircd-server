@@ -176,16 +176,20 @@ to keep that file. See the [`logging` contract](specs/016-container-deployment/c
 
 ### Running in a container
 
-Images are published to the GitHub Container Registry as `ghcr.io/jircd/jircd-server`. Only the
-JVM variant exists so far (linux/amd64 and linux/arm64):
+Images are published to the GitHub Container Registry as `ghcr.io/jircd/jircd-server`, in two
+variants. The JVM variant is the supported one (linux/amd64 and linux/arm64). The native variant is
+experimental (linux/amd64 only, see [The native variant](#the-native-variant)):
 
 | Tag | Points at |
 |---|---|
-| `jvm`, `latest` | the latest `main` build that passed CI (both move together) |
-| `jvm-sha-<7 hex>` | the build of that `main` commit; never moves |
-| `X.Y.Z-jvm`, `X.Y.Z` | release `vX.Y.Z`; never moves |
+| `jvm`, `latest` | the latest `main` build of the JVM variant that passed CI (both move together) |
+| `jvm-sha-<7 hex>` | the JVM build of that `main` commit; never moves |
+| `X.Y.Z-jvm`, `X.Y.Z` | JVM image of release `vX.Y.Z`; never moves |
+| `native` | the latest `main` build of the native variant that passed CI |
+| `native-sha-<7 hex>` | the native build of that `main` commit; never moves |
+| `X.Y.Z-native` | native image of release `vX.Y.Z`; never moves |
 
-`jvm` and `latest` can stay on an older build: a commit skips moving them when a newer commit is already on `main`, so if that newer commit then fails CI, the tags stay put until a later `main` build passes.
+`latest` is always the JVM variant. `jvm`, `latest` and `native` can stay on an older build: a commit skips moving them when a newer commit is already on `main`, so if that newer commit then fails CI, the tags stay put until a later `main` build passes. A release's native image is published only if its own smoke test passes, independently of the JVM image.
 
 ```bash
 docker pull ghcr.io/jircd/jircd-server:jvm
@@ -200,6 +204,8 @@ docker build --target jvm -t jircd:jvm .
 docker run -d --read-only -p 6667:6667 -p 6697:6697 \
   -v /srv/jircd:/etc/jircd:ro --name jircd jircd:jvm
 ```
+
+`--target native` builds the native variant instead (`docker build --target native -t jircd:native .`). It compiles on your machine's architecture and needs several GB of memory and a few minutes.
 
 - The configuration is read from `/etc/jircd/jircd.yaml`; pass another path as the container
   command to change that. Start from [`deploy/container/jircd.yaml`](deploy/container/jircd.yaml)
@@ -217,6 +223,22 @@ docker run -d --read-only -p 6667:6667 -p 6697:6697 \
   with status 1 and a `Refusing to start:` line.
 - OPER passwords must not cross the plaintext listener: the sample sets `operRequireTls: true`,
   so enable a TLS listener before using OPER.
+
+#### The native variant
+
+`ghcr.io/jircd/jircd-server:native` runs the same server as a GraalVM native executable on
+distroless `base`, with the same configuration file, ports, user, signals and exit statuses as the
+JVM image: the container test suite runs unchanged against both. It starts in tens of milliseconds
+and uses much less memory when idle. It is **experimental**:
+
+- **Extensions are fixed at build time.** The nine built-in capabilities and extensions are
+  compiled in and configured with `capabilities` and `server-extensions` as usual, but you cannot
+  add or swap extension jars afterwards. Use the JVM image for that.
+- **Serial garbage collector.** The executable uses GraalVM's default Serial GC and a heap that
+  GraalVM sizes itself. Latency and throughput can differ from the JVM image under heavy load; CI
+  records both side by side in the weekly load-test summary.
+- **linux/amd64 only** for the published image. Build it yourself for another architecture.
+- A native build or smoke-test failure fails CI, but a performance shortfall does not.
 
 ### OPER protection
 

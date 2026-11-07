@@ -161,3 +161,15 @@ Fix: the test now waits, with `Polling.until` and a 10 s bound, until `Connectio
 ## Review round 4
 
 Early TERM is covered in-process only. `main` installs the signal handlers before it loads the configuration, and the server logs nothing between that point and the "Plaintext listener started" line after the bind, so there is no observable marker a container test could wait for before sending TERM. Sending it right after container start would race the JVM's startup and could land before or after the handlers exist (or after the bind), so it would not pin the behaviour. `ShutdownSignalHandlerTest.aSignalBeforeTheServerExistsStillExitsZero` covers the signal-before-attach case deterministically. T026 was reworded to say so; no container test was added.
+
+## US3: tests first, then green (T034, T035, T039)
+
+| Test | Evidence |
+|---|---|
+| `capabilitiesAndIsupportMatchTheRecordedJvmBaseline` (T034) | Red with an empty `container/jvm-baseline.txt` against `jircd:jvm` (the actual 8 capabilities and 12 ISUPPORT tokens listed in the failure); green once the baseline was recorded from that run. A first version with the default configuration saw only `cap-notify`, so the test enables all seven capabilities and both extensions. |
+| `operWithAnArgon2CredentialSucceedsAndAWrongPasswordFails`, `tlsRegistrationWorksWithAPkcs12KeystoreAsWellAsPem` (T034) | Describe behaviour the JVM image already has, so they pass on first run against `jircd:jvm`; their value is the native run. On the native image without metadata the whole suite failed because the server refused to start. |
+| `ContainerDeliveryLoadTest` (T035) | First run failed with 0 of 29,970 deliveries received: the server sends a single-word trailing parameter without `:`, so the reader's `PRIVMSG … :msg-` match never fired. Fixed in the test; then green on both images. |
+| `containerTest` | JVM and native (arm64): 16 tests, 0 failed each. See [native.md](native.md). |
+
+`NativeMetadataScenariosTest` needed a pause between commands (the per-connection rate limit drops the 21st command in a burst) and a plain `PING`/`PONG` read instead of the barrier helper, because `server-time` tags the `PONG`.
+
