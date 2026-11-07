@@ -4,14 +4,13 @@
 #   docker build --build-arg IMAGE_SOURCE=... --build-arg IMAGE_REVISION=... --build-arg IMAGE_VERSION=... .
 #                                                  # fills the OCI labels (CI does this)
 #
-# Every base image is pinned by digest; the tag is in the comment. Dependabot proposes updates.
+# Every base image is pinned by tag@digest, so Dependabot can propose updates for the right tag.
 
 # ---------------------------------------------------------------------------------------------
 # build: compiles the server distribution once, on the build machine's own platform. Jars are
 # platform-independent, so a multi-arch image never runs Gradle under emulation.
 # ---------------------------------------------------------------------------------------------
-# eclipse-temurin:25-jdk
-FROM --platform=$BUILDPLATFORM eclipse-temurin@sha256:83f4a7fc27df94dcc7b8de04d14cbbba8da14406f921e966969c3b09000aa507 AS build
+FROM --platform=$BUILDPLATFORM eclipse-temurin:25-jdk@sha256:83f4a7fc27df94dcc7b8de04d14cbbba8da14406f921e966969c3b09000aa507 AS build
 WORKDIR /src
 COPY . .
 RUN --mount=type=cache,target=/root/.gradle \
@@ -20,8 +19,7 @@ RUN --mount=type=cache,target=/root/.gradle \
 # ---------------------------------------------------------------------------------------------
 # jvm: the supported variant. Distroless Java 25 (Temurin) with no shell, running as nonroot.
 # ---------------------------------------------------------------------------------------------
-# gcr.io/distroless/java25-debian13:nonroot
-FROM gcr.io/distroless/java25-debian13@sha256:a90a5fadd78dc37b643da72dca2f744ef67eba625eca7227a5b375b548e6b1c2 AS jvm
+FROM gcr.io/distroless/java25-debian13:nonroot@sha256:a90a5fadd78dc37b643da72dca2f744ef67eba625eca7227a5b375b548e6b1c2 AS jvm
 # OCI labels (contracts/container-contract.md). CI passes the build args; a local build leaves them
 # at "unknown". The variant-specific description is the only label that differs between variants.
 ARG IMAGE_SOURCE=unknown

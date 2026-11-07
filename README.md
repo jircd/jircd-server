@@ -185,6 +185,8 @@ JVM variant exists so far (linux/amd64 and linux/arm64):
 | `jvm-sha-<7 hex>` | the build of that `main` commit; never moves |
 | `X.Y.Z-jvm`, `X.Y.Z` | release `vX.Y.Z`; never moves |
 
+`jvm` and `latest` can stay on an older build: a commit skips moving them when a newer commit is already on `main`, so if that newer commit then fails CI, the tags stay put until a later `main` build passes.
+
 ```bash
 docker pull ghcr.io/jircd/jircd-server:jvm
 ```

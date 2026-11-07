@@ -69,3 +69,15 @@ Codex review of the JVM CI slice against the checklist: 1 finding.
 | # | Finding | Disposition |
 |---|---|---|
 | 1 | Medium: the existing `release` job in `release.yml` used tag-pinned actions (`actions/checkout@v7`, `actions/setup-java@v6`) | **Fixed.** Pinned by full commit SHA with version comments, the same SHAs as the new jobs |
+
+## PR #139 review round 1
+
+| # | Finding | Disposition |
+|---|---|---|
+| 1 | CodeRabbit: the retag step treated an empty or failed `git ls-remote` tip as "main moved on" and skipped silently | **Fixed.** The step fails with an `::error::` message when the lookup fails or returns an empty tip; a non-empty tip that differs still skips with a notice |
+| 2 | CodeRabbit: the `release` job's checkout kept credentials | **Fixed.** `persist-credentials: false`; the job only uses `GH_TOKEN` for `gh release create` |
+| 3 | CodeRabbit: Dependabot ignores tags in comments and treats digest-only references as latest | **Fixed.** Both `FROM` lines carry the tag before the digest (`eclipse-temurin:25-jdk@sha256:…`, `gcr.io/distroless/java25-debian13:nonroot@sha256:…`); digests unchanged and still equal to the current tag digests |
+| 4 | CodeRabbit: README does not say `jvm` and `latest` can lag | **Fixed.** One sentence under the tag table |
+| 5 | CodeRabbit: `packages: write` and `contents: write` lack a reason | **Fixed.** Trailing comments in `container.yml` and `release.yml` |
+| 6 | CodeRabbit: a release can exist without an image when `smoke-jvm` fails | **Declined.** A release must not depend on an image variant's smoke test, and US4 says a failing variant is simply not published |
+| 7 | Sourcery | **Skipped.** Weekly review budget used |

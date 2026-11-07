@@ -67,7 +67,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write
+      packages: write # push the image to GHCR
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -103,7 +103,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write
+      packages: write # push the image to GHCR
     concurrency:
       group: container-retag-jvm
       cancel-in-progress: false
@@ -123,7 +123,11 @@ jobs:
       # with the retag: a tag can stay one commit behind until the next publish moves it.
       - name: Move jvm and latest to this commit
         run: |
-          tip=$(git ls-remote "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git" refs/heads/main | cut -f1)
+          set -o pipefail
+          if ! tip=$(git ls-remote "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git" refs/heads/main | cut -f1) || [ -z "${tip}" ]; then
+            echo "::error::Could not read the tip of main; jvm and latest were not moved."
+            exit 1
+          fi
           if [ "${tip}" != "${GITHUB_SHA}" ]; then
             echo "::notice::${GITHUB_SHA::7} is no longer the tip of main (${tip:0:7}); leaving jvm and latest alone."
             exit 0
