@@ -34,17 +34,17 @@ Summaries only. Local runs on Docker Desktop (engine `linux/arm64`, 8 GB, 14 CPU
 
 ## Start-up and load (T040, arm64)
 
-Start-up, from container start to the `jircd started as` log line (`docker logs -t`): JVM about **181 ms**, native about **43 ms**.
+Start-up (SC-005) is the Docker `State.StartedAt` of the container to the `Plaintext listener started` log line (`docker logs -t`, same daemon clock), when the port is bound. `ContainerDeliveryLoadTest` reports it as `startupMs` and prints whether it meets the 1,000 ms budget, but never fails on it (FR-016). An earlier `docker logs -t` check to the `jircd started as` line gave JVM about 181 ms and native about 43 ms.
 
 `ContainerDeliveryLoadTest`: 1,000 clients, 30 messages paced at 110 ms, each delivered to 999 clients (29,970 deliveries). Throughput is bounded by that pacing, so compare it only between variants.
 
 | Metric | JVM | Native |
 |---|---:|---:|
-| p50 latency | 14.3 ms | 14.0 ms |
-| p99 latency | 24.3 ms | 25.4 ms |
-| max latency | 25.8 ms | 27.8 ms |
-| throughput | 8,890 msg/s | 8,862 msg/s |
-| start-up to first registered client (includes container create) | 1,344 ms | 1,089 ms |
-| memory, 100 idle clients | 136 MiB | 17.8 MiB |
+| p50 latency | 14.2 ms | 15.9 ms |
+| p99 latency | 29.9 ms | 27.3 ms |
+| max latency | 31.5 ms | 29.1 ms |
+| throughput | 9,314 msg/s | 9,300 msg/s |
+| start-up, container start to listening (SC-005) | 236 ms | 66 ms |
+| memory, 100 idle clients | 124.2 MiB | 17.7 MiB |
 
-Every delivery is within the 1 s budget (SC-004) on both. These are single local runs; CI gives the amd64 comparison.
+Every delivery is within the 1 s budget (SC-004) on both, and both meet SC-005 (the old figure of about 1.1 to 1.3 s included container creation and registering a client, so it did not measure SC-005). These are single local runs; CI gives the amd64 comparison.

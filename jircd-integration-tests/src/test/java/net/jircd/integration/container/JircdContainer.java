@@ -35,6 +35,7 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -219,6 +220,40 @@ final class JircdContainer implements AutoCloseable {
             cache = inactive != null ? inactive : legacy != null ? legacy : 0;
         }
         return usage - cache;
+    }
+
+    /**
+     * Time from the container's start to the server's "Plaintext listener started" log line, the
+     * moment the port is bound and connections are accepted (spec 016 SC-005). Both ends are
+     * timestamps from the Docker daemon (the container's {@code State.StartedAt} and the {@code
+     * docker logs -t} prefix), so they share one clock. Polling a TCP connect after {@link
+     * #start(Path)} could not measure this: {@code start} already waited for the server to be up,
+     * so the first connect would succeed at once.
+     */
+    Duration startupDuration() throws InterruptedException {
+        String id = container.getContainerId();
+        Instant started =
+                Instant.parse(client().inspectContainerCmd(id).exec().getState().getStartedAt());
+        StringBuilder out = new StringBuilder();
+        client().logContainerCmd(id)
+                .withStdOut(true)
+                .withStdErr(true)
+                .withTimestamps(true)
+                .exec(
+                        new ResultCallback.Adapter<Frame>() {
+                            @Override
+                            public void onNext(Frame frame) {
+                                out.append(new String(frame.getPayload(), StandardCharsets.UTF_8));
+                            }
+                        })
+                .awaitCompletion(30, TimeUnit.SECONDS);
+        for (String line : out.toString().split("\\R")) {
+            if (line.contains("Plaintext listener started")) {
+                return Duration.between(
+                        started, Instant.parse(line.substring(0, line.indexOf(' '))));
+            }
+        }
+        throw new IllegalStateException("No 'Plaintext listener started' line in:\n" + out);
     }
 
     /** Sends {@code signal} (for example {@code HUP}) to the server process. */

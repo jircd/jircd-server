@@ -108,3 +108,9 @@ Codex review of the JVM CI slice against the checklist: 1 finding.
 |---|---|---|
 | 1 | CodeRabbit: in `ContainerDeliveryLoadTest`, a failing assertion or exception before `running = false` leaves the reader loops running, so closing the `ExecutorService` waits forever and the test hangs instead of failing | **Fixed.** The body runs in a `try` whose `finally` sets `running = false` and closes every client, inside the try-with-resources and so before the executor closes. Checked by expecting `CLIENTS + 1` registered: the run failed in 8 s instead of hanging; reverted, and it passes. The odd `Polling.pause` wrapping is tidied as well |
 | 2 | CodeRabbit: `tasks.md` T035 named the wrong test path and T037 said the scenarios run "in-process" | **Fixed.** T035 points to the `container` subpackage. T037 says `NativeMetadataScenariosTest` drives the installed server, started under the tracing agent, over sockets, through the separate `nativeMetadataScenarios` Gradle task (not `containerTest`). Both stay `[X]` |
+
+## PR #141 review round 2
+
+| # | Finding | Disposition |
+|---|---|---|
+| 1 | CodeRabbit: `ContainerDeliveryLoadTest`'s `startupMs` ran from before container creation to the first client's JOIN reply, so it did not measure SC-005 (accepting connections within 1 s of container start) | **Fixed.** `JircdContainer.startupDuration()` takes Docker's `State.StartedAt` and the timestamp of the `Plaintext listener started` log line (`docker logs -t`), both from the daemon's clock. A TCP-connect poll after `start()` could not work: `start()` already waits for the server to be up. The test reports it as `startupMs` (the summary script's key, label updated) and prints met / not met, without asserting (FR-016). New figures: JVM 236 ms, native 66 ms (`native.md`; the `quickstart.md` wording follows) |

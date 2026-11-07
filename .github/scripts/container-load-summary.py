@@ -17,7 +17,7 @@ METRICS = [
     ("p99Ms", "p99 latency", "ms", True),
     ("maxMs", "max latency", "ms", True),
     ("throughputPerSec", "throughput", "msg/s", False),
-    ("startupMs", "start-up to first client", "ms", True),
+    ("startupMs", "start-up to accepting connections", "ms", True),
     ("idleMemoryMiB", "memory, 100 idle clients", "MiB", True),
 ]
 FLAG_OVER_PERCENT = 10.0

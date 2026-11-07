@@ -47,9 +47,9 @@ import org.junit.jupiter.api.io.TempDir;
  * Spec 016 SC-004 to SC-006 against the built image: 1,000 clients register and join one channel,
  * and every message one of them sends reaches the other 999 within a second. Prints (and writes to
  * the file named by {@code -Djircd.load.report}) p50/p99/max delivery latency, throughput, the time
- * from container start to the first registered client, and the container's memory with 100 idle
- * clients. Every client answers the server's {@code PING}, so keep-alive never decides the run
- * (lesson of #128).
+ * from container start to the server accepting connections (SC-005, reported, never asserted), and
+ * the container's memory with 100 idle clients. Every client answers the server's {@code PING}, so
+ * keep-alive never decides the run (lesson of #128).
  */
 @Tag("container-load")
 class ContainerDeliveryLoadTest {
@@ -79,12 +79,12 @@ class ContainerDeliveryLoadTest {
         ContainerFixture.write(
                 dir.resolve("etc"), "maxConnections: 5000\nmaxConnectionsPerIp: 5000\n");
         List<RawIrcClient> clients = new ArrayList<>();
-        long startNanos = System.nanoTime();
         try (JircdContainer jircd = JircdContainer.start(dir.resolve("etc"));
                 ExecutorService readers = Executors.newVirtualThreadPerTaskExecutor()) {
             try {
-                long firstRegisteredNanos = connect(jircd, readers, clients, 0, 1);
-                long startupNanos = firstRegisteredNanos - startNanos;
+                // SC-005 is informational: native is experimental (FR-016), so never asserted.
+                long startupNanos = jircd.startupDuration().toNanos();
+                connect(jircd, readers, clients, 0, 1);
                 connect(jircd, readers, clients, 1, IDLE_CLIENTS);
                 // Idle: let allocation and GC settle before sampling memory.
                 Polling.pause(Duration.ofSeconds(3));
@@ -242,6 +242,12 @@ class ContainerDeliveryLoadTest {
         results.setProperty(
                 "idleMemoryMiB", String.format("%.1f", idleMemoryBytes / (1024.0 * 1024.0)));
         System.out.println("ContainerDeliveryLoadTest: " + results);
+        System.out.println(
+                "SC-005 (accepting within 1000 ms of container start): "
+                        + (startupNanos <= 1_000_000_000L ? "met" : "NOT met")
+                        + " at "
+                        + results.getProperty("startupMs")
+                        + " ms");
         String reportPath = System.getProperty("jircd.load.report");
         if (reportPath != null && !reportPath.isBlank()) {
             Path file = Path.of(reportPath);
