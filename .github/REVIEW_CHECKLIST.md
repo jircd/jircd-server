@@ -53,8 +53,8 @@ Check the diff for each of these before opening the PR.
 - **Persistence of changes.** A reloaded value survives restart where the contract says it should, and cached file content notices edits. [#67, #87]
 - **Public API compatibility.** Changing a public constructor or record breaks callers. Keep the old signature, or follow the constitution's breaking-change rule: give the migration path in the PR body. While the project is unreleased (0.1.0-SNAPSHOT) the version bump comes with the first release. [#39, #52, #63, #82, #83, #84, #87]
 - **Tests that can pass while the code is wrong.** Assert content (exact params, fitted text, log lines, final state), not just reply codes or the absence of an exception. Make concurrency tests prove that the overlap happened. Don't reuse a consumed stream. Drive the real handler, not a shortcut. Check that a test fails without the fix. [#52, #59, #65, #81, #82, #87, #92, #94]
-- **Test reliability.** Tests have bounded waits and always clean up (no hang on a failed latch, no leaked connection). They don't depend on platform-specific exception messages, and ordinary tests don't run with load tests. [#39, #41, #59, #90]
-- **Docs and contracts.** Update `specs/` contracts, README and Javadoc in the same PR, and keep them consistent with each other and with the code. Claims match the implementation: an O(n·m) algorithm is not "linear time". [#62, #67, #79, #80, #82, #83, #84, #91]
+- **Test reliability.** Tests have bounded waits and always clean up (no hang on a failed latch, no leaked connection). They don't depend on platform-specific exception messages, and ordinary tests don't run with load tests. [#39, #41, #59, #90, #141]
+- **Docs and contracts.** Update `specs/` contracts, README and Javadoc in the same PR, and keep them consistent with each other and with the code. Claims match the implementation: an O(n·m) algorithm is not "linear time". Run examples use the tag the preceding pull or build creates, not another one. [#62, #67, #79, #80, #82, #83, #84, #91, #139]
 
 ## What CodeRabbit keeps finding
 
@@ -79,6 +79,12 @@ Collected from #130–#134, the spec-016 stack. Most findings on spec PRs are ab
   - Image labels match the contract.
   - Publish jobs don't lose immutable tags when jobs queue, and moving tags move only after the smoke tests pass.
   - Platform claims cover only what is actually published.
+  - Base images are pinned as `tag@digest`, so Dependabot can still read the tag.
+  - Every key trusted in `gradle/verification-metadata.xml` is also in `gradle/verification-keyring.keys`. Prove it with a fresh Gradle home: the image build starts with an empty one.
+  - A workflow lookup that fails or returns nothing fails the step. It never skips silently.
+  - A checkout in a job that never pushes sets `persist-credentials: false`. Each write permission has a comment saying why.
+  - The release version reaches every build stage, and the OCI label version matches the app version. The default build target (a plain `docker build .`) is the published default image.
+  - A reported metric measures what the spec defines. SC-005 start-up was first measured from a different start point.
 
-  [#131, #134]
+  [#131, #134, #139, #141]
 - **Tests prove what they claim.** A test that removes a resource first shows that something was written before the removal. Build test inputs before an `assertThatThrownBy` lambda (S5778). [#132]
