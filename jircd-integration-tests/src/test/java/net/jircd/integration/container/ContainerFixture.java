@@ -38,6 +38,9 @@ final class ContainerFixture {
 
     static final String SERVER_NAME = "test.jircd.local";
 
+    /** The password of the {@code tls/test-keystore.p12} test resource. */
+    static final String KEYSTORE_PASSWORD = "changeit";
+
     private ContainerFixture() {}
 
     /** Plaintext 6667 and TLS 6697 on every address, then {@code extraYaml}. */
@@ -55,12 +58,30 @@ final class ContainerFixture {
                 + extraYaml;
     }
 
+    /** As {@link #baseYaml} but the TLS listener reads a PKCS12 keystore instead of PEM files. */
+    static String pkcs12Yaml(String extraYaml) {
+        return "serverName: "
+                + SERVER_NAME
+                + "\n"
+                + "listeners:\n"
+                + "  - port: 6667\n"
+                + "    tls: false\n"
+                + "  - port: 6697\n"
+                + "    tls: true\n"
+                + "    keystorePath: /etc/jircd/keystore.p12\n"
+                + "    keystorePassword: \""
+                + KEYSTORE_PASSWORD
+                + "\"\n"
+                + extraYaml;
+    }
+
     /** {@code jircd.yaml} ({@link #baseYaml}{@code (extraYaml)}), the certificate and the key. */
     static Map<String, byte[]> files(String extraYaml) throws IOException {
         Map<String, byte[]> files = new LinkedHashMap<>();
         files.put("jircd.yaml", baseYaml(extraYaml).getBytes(StandardCharsets.UTF_8));
         files.put("cert.pem", resource("tls/test-fullchain.pem"));
         files.put("key.pem", resource("tls/test-privkey.pem"));
+        files.put("keystore.p12", resource("tls/test-keystore.p12"));
         return files;
     }
 
@@ -83,6 +104,7 @@ final class ContainerFixture {
         Files.createDirectories(dir);
         copyResource("tls/test-fullchain.pem", dir.resolve("cert.pem"));
         copyResource("tls/test-privkey.pem", dir.resolve("key.pem"));
+        copyResource("tls/test-keystore.p12", dir.resolve("keystore.p12"));
         Path config = dir.resolve("jircd.yaml");
         Files.writeString(config, yaml);
         openUp(dir);

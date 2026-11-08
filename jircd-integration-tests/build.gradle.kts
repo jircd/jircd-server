@@ -36,6 +36,10 @@ fun registerContainerSuite(name: String, tag: String, heap: String) =
         val image = jircdImage.orNull
         inputs.property("jircd.image", image ?: "")
         if (image != null) systemProperty("jircd.image", image)
+        // Where the container load suite writes its results (the CI summary reads them).
+        val loadReport = providers.systemProperty("jircd.load.report").orNull
+        inputs.property("jircd.load.report", loadReport ?: "")
+        if (loadReport != null) systemProperty("jircd.load.report", loadReport)
         // A tag with no tests behind it must not report success (it would hide a missing suite).
         var selected = 0L
         afterSuite(
@@ -57,3 +61,23 @@ fun registerContainerSuite(name: String, tag: String, heap: String) =
 
 registerContainerSuite("containerTest", "container", "1g")
 registerContainerSuite("containerLoadTest", "container-load", "2g")
+
+// Spec 016 T037: drives the installed server under the GraalVM tracing agent. Needs a GraalVM JDK
+// (the one running Gradle), so it is only reached through :jircd-server:collectNativeMetadata.
+val nativeAgentDir = project(":jircd-server").layout.buildDirectory.dir("native-agent")
+tasks.register<Test>("nativeMetadataScenarios") {
+    group = "verification"
+    description = "Runs the native-metadata scenarios against the installed server under the agent."
+    useJUnitPlatform { includeTags("native-metadata") }
+    testClassesDirs = testSourceSet.get().output.classesDirs
+    classpath = testSourceSet.get().runtimeClasspath
+    dependsOn(":jircd-server:installDist")
+    outputs.upToDateWhen { false }
+    val lib = project(":jircd-server").layout.buildDirectory.dir("install/jircd-server/lib")
+    doFirst {
+        // Merge starts from nothing, so entries for code that no longer runs do not linger.
+        delete(nativeAgentDir)
+        systemProperty("jircd.server.lib", lib.get().asFile.absolutePath)
+        systemProperty("jircd.agent.dir", nativeAgentDir.get().asFile.absolutePath)
+    }
+}

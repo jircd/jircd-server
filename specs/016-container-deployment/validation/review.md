@@ -89,3 +89,28 @@ Codex review of the JVM CI slice against the checklist: 1 finding.
 | 1 | CodeRabbit: a release image's app reports `0.1.0-SNAPSHOT` while its label says `X.Y.Z`, because the Docker build does not pass `-Pversion` | **Fixed.** The `build` stage takes `ARG JIRCD_VERSION` (empty default) and passes `-Pversion=$JIRCD_VERSION` only when set; `release.yml` passes it in `smoke-jvm` and `publish-jvm`; `container.yml` does not, so `main` and PR builds keep the `gradle.properties` version |
 | 2 | CodeRabbit: README showed `docker pull` without a `docker run` for the pulled image | **Fixed.** A `docker run` using `ghcr.io/jircd/jircd-server:jvm` follows the pull; the local-build example keeps `jircd:jvm` |
 | 3 | CI: the `jvm` job fails deterministically in the image build (fresh `GRADLE_USER_HOME`): dependency verification of `sonarqube-gradle-plugin-7.5.0.8588.jar` and `sonar-scanner-java-library-shaded-4.2.1.1698.jar` reports `Key C33B56C147B01975 couldn't be found in local key file or remote key servers`. SonarSource revoked the old signing subkey `2161D72E7DCD4258` and now signs with subkey `06D0369BE1D0B06997DA66E8C33B56C147B01975` of primary `679F1EE92B19609DE816FDE81DB198F93525EC1A` | **Fixed.** `verification-metadata.xml` already trusted that signing subkey for both groups, but the public key was missing from `gradle/verification-keyring.keys`, so every fresh `GRADLE_USER_HOME` depended on a key-server lookup (the cached `build` job hid it). The key is now in the keyring; `gradlew help` passes in a fresh container. Both jars verified with gpg against that key and still match the pinned sha256 |
+
+## US3 PR review (2026-11-07)
+
+- **Codex (cross-vendor) review of the diff:** no findings.
+- **Local SonarCloud, branch `016-us3-native`:** gate failed on 6 issues, all fixed in code (no suppressions):
+  - `pythonsecurity:S8707` in `container-load-summary.py`: input paths are resolved and must stay inside `$GITHUB_WORKSPACE` (else the current directory); anything else exits 2 with an error.
+  - `java:S2925` twice in `ContainerDeliveryLoadTest`: the 3 s idle wait uses `Polling.pause`, and the send pacing is a `ScheduledExecutorService` at a fixed 110 ms rate (clients still answer `PING` in their reader loops).
+  - `java:S9395`: explicit `(double)` cast in the latency assertion.
+  - `java:S3577`: `NativeMetadataScenarios` renamed `NativeMetadataScenariosTest`; it stays out of `test`/`build` through its `native-metadata` tag.
+  - `java:S1130`: removed the `IOException` that `yaml(...)` never throws.
+
+- **Second local Sonar run:** the gate still failed on new-code coverage (0%), all from the 57 lines of `.github/scripts/container-load-summary.py`, which has no test suite. `sonar.coverage.exclusions=.github/**` in the root `build.gradle.kts` takes CI helper scripts out of coverage; they are still analysed for issues. Third run: gate passed, 0 open issues.
+
+## PR #141 review round 1
+
+| # | Finding | Disposition |
+|---|---|---|
+| 1 | CodeRabbit: in `ContainerDeliveryLoadTest`, a failing assertion or exception before `running = false` leaves the reader loops running, so closing the `ExecutorService` waits forever and the test hangs instead of failing | **Fixed.** The body runs in a `try` whose `finally` sets `running = false` and closes every client, inside the try-with-resources and so before the executor closes. Checked by expecting `CLIENTS + 1` registered: the run failed in 8 s instead of hanging; reverted, and it passes. The odd `Polling.pause` wrapping is tidied as well |
+| 2 | CodeRabbit: `tasks.md` T035 named the wrong test path and T037 said the scenarios run "in-process" | **Fixed.** T035 points to the `container` subpackage. T037 says `NativeMetadataScenariosTest` drives the installed server, started under the tracing agent, over sockets, through the separate `nativeMetadataScenarios` Gradle task (not `containerTest`). Both stay `[X]` |
+
+## PR #141 review round 2
+
+| # | Finding | Disposition |
+|---|---|---|
+| 1 | CodeRabbit: `ContainerDeliveryLoadTest`'s `startupMs` ran from before container creation to the first client's JOIN reply, so it did not measure SC-005 (accepting connections within 1 s of container start) | **Fixed.** `JircdContainer.startupDuration()` takes Docker's `State.StartedAt` and the timestamp of the `Plaintext listener started` log line (`docker logs -t`), both from the daemon's clock. A TCP-connect poll after `start()` could not work: `start()` already waits for the server to be up. The test reports it as `startupMs` (the summary script's key, label updated) and prints met / not met, without asserting (FR-016). New figures: JVM 236 ms, native 66 ms (`native.md`; the `quickstart.md` wording follows) |

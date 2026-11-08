@@ -58,14 +58,15 @@ chmod 600 deploy/container/jircd.yaml && docker run --rm -v "$PWD/deploy/contain
 Do this after changing SnakeYAML, password4j, logback or resources:
 
 ```bash
-./gradlew :jircd-server:collectNativeMetadata   # runs the JVM distribution under the tracing agent
-                                                # while the container contract scenarios drive it,
-                                                # then filters and copies into
+./gradlew :jircd-server:collectNativeMetadata   # needs a GraalVM JDK 25: runs the installed server
+                                                # under the tracing agent while the
+                                                # NativeMetadataScenariosTest drives it, then filters
+                                                # and writes into
                                                 # jircd-server/src/main/resources/META-INF/native-image/
 git diff jircd-server/src/main/resources/META-INF/native-image/
 ```
 
-Then rebuild the native image (step 1) and run step 6 against it.
+Without a local GraalVM, run the same task in the GraalVM image on a scratch copy of the checkout (never in the worktree, so its `build/` stays yours) and copy the file back; the exact command is in [validation/native.md](validation/native.md). Then rebuild the native image (step 1) and run step 6 against it.
 
 ## 6. Automated container smoke tests
 
@@ -85,4 +86,4 @@ Expected: the same test classes pass against both images. They cover registratio
 
 Run locally, this is a quick check on the developer's architecture. The recorded comparison comes from the weekly amd64 CI run.
 
-Expected: both meet the 1-second delivery budget at 1,000 connections (SC-004). Each run prints p50/p99/max latency, throughput, time to first accepted connection (SC-005) and resident memory with 100 idle clients (SC-006). The weekly workflow writes both runs side by side in the job summary. Record a summary, not raw data, in `validation/` (repo rule: no raw validation data).
+Expected: both meet the 1-second delivery budget at 1,000 connections (SC-004). Each run prints p50/p99/max latency, throughput, time from container start to the server listening (SC-005, reported, not asserted) and resident memory with 100 idle clients (SC-006). The weekly workflow writes both runs side by side in the job summary. Record a summary, not raw data, in `validation/` (repo rule: no raw validation data).

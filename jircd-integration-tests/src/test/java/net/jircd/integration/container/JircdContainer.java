@@ -23,6 +23,9 @@ import com.github.dockerjava.api.model.AccessMode;
 import com.github.dockerjava.api.model.Bind;
 import com.github.dockerjava.api.model.Frame;
 import com.github.dockerjava.api.model.HostConfig;
+import com.github.dockerjava.api.model.MemoryStatsConfig;
+import com.github.dockerjava.api.model.Statistics;
+import com.github.dockerjava.api.model.StatsConfig;
 import com.github.dockerjava.api.model.Volume;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -32,11 +35,14 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
 import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream;
 import org.testcontainers.DockerClientFactory;
@@ -177,6 +183,77 @@ final class JircdContainer implements AutoCloseable {
     /** Everything the server wrote to standard output and standard error so far. */
     String logs() {
         return container.getLogs();
+    }
+
+    /**
+     * The container's memory in use, in bytes, as {@code docker stats} reports it: the cgroup usage
+     * minus the reclaimable file cache.
+     */
+    long memoryBytes() throws InterruptedException {
+        AtomicReference<Statistics> sample = new AtomicReference<>();
+        CountDownLatch received = new CountDownLatch(1);
+        try (ResultCallback.Adapter<Statistics> callback =
+                new ResultCallback.Adapter<>() {
+                    @Override
+                    public void onNext(Statistics statistics) {
+                        if (sample.compareAndSet(null, statistics)) received.countDown();
+                    }
+                }) {
+            client().statsCmd(container.getContainerId()).exec(callback);
+            if (!received.await(30, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("No docker stats sample within 30 s");
+            }
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        MemoryStatsConfig memory = sample.get().getMemoryStats();
+        Long reported = memory == null ? null : memory.getUsage();
+        if (reported == null) {
+            throw new IllegalStateException("docker stats carried no memory usage");
+        }
+        long usage = reported;
+        StatsConfig stats = memory.getStats();
+        long cache = 0;
+        if (stats != null) {
+            Long inactive = stats.getInactiveFile();
+            Long legacy = stats.getCache();
+            cache = inactive != null ? inactive : legacy != null ? legacy : 0;
+        }
+        return usage - cache;
+    }
+
+    /**
+     * Time from the container's start to the server's "Plaintext listener started" log line, the
+     * moment the port is bound and connections are accepted (spec 016 SC-005). Both ends are
+     * timestamps from the Docker daemon (the container's {@code State.StartedAt} and the {@code
+     * docker logs -t} prefix), so they share one clock. Polling a TCP connect after {@link
+     * #start(Path)} could not measure this: {@code start} already waited for the server to be up,
+     * so the first connect would succeed at once.
+     */
+    Duration startupDuration() throws InterruptedException {
+        String id = container.getContainerId();
+        Instant started =
+                Instant.parse(client().inspectContainerCmd(id).exec().getState().getStartedAt());
+        StringBuilder out = new StringBuilder();
+        client().logContainerCmd(id)
+                .withStdOut(true)
+                .withStdErr(true)
+                .withTimestamps(true)
+                .exec(
+                        new ResultCallback.Adapter<Frame>() {
+                            @Override
+                            public void onNext(Frame frame) {
+                                out.append(new String(frame.getPayload(), StandardCharsets.UTF_8));
+                            }
+                        })
+                .awaitCompletion(30, TimeUnit.SECONDS);
+        for (String line : out.toString().split("\\R")) {
+            if (line.contains("Plaintext listener started")) {
+                return Duration.between(
+                        started, Instant.parse(line.substring(0, line.indexOf(' '))));
+            }
+        }
+        throw new IllegalStateException("No 'Plaintext listener started' line in:\n" + out);
     }
 
     /** Sends {@code signal} (for example {@code HUP}) to the server process. */

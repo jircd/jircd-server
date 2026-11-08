@@ -1,0 +1,63 @@
+{
+    "reflection": [
+        {
+            "type": "ch.qos.logback.classic.spi.LogbackServiceProvider"
+        },
+        {
+            "type": "net.jircd.capabilities.awaynotify.AwayNotifyExtension"
+        },
+        {
+            "type": "net.jircd.capabilities.batch.BatchExtension"
+        },
+        {
+            "type": "net.jircd.capabilities.echomessage.EchoMessageExtension"
+        },
+        {
+            "type": "net.jircd.capabilities.messagetags.MessageTagsExtension"
+        },
+        {
+            "type": "net.jircd.capabilities.multiprefix.MultiPrefixExtension"
+        },
+        {
+            "type": "net.jircd.capabilities.servertime.ServerTimeExtension"
+        },
+        {
+            "type": "net.jircd.capabilities.userhostinnames.UserhostInNamesExtension"
+        },
+        {
+            "type": "net.jircd.server.logging.BootstrapLogbackConfigurator"
+        },
+        {
+            "type": "net.jircd.serverextensions.admin.AdminExtension"
+        },
+        {
+            "type": "net.jircd.serverextensions.cloak.CloakExtension"
+        }
+    ],
+    "resources": [
+        {
+            "glob": "/psw4j.properties"
+        },
+        {
+            "glob": "META-INF/services/ch.qos.logback.classic.spi.Configurator"
+        },
+        {
+            "glob": "META-INF/services/net.jircd.core.extension.CapabilityExtension"
+        },
+        {
+            "glob": "META-INF/services/net.jircd.core.extension.ServerExtension"
+        },
+        {
+            "glob": "ch/qos/logback/classic/logback-classic-version.properties"
+        },
+        {
+            "glob": "ch/qos/logback/core/logback-core-version.properties"
+        },
+        {
+            "glob": "net/jircd/server/version.properties"
+        },
+        {
+            "glob": "psw4j.properties"
+        }
+    ]
+}
