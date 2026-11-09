@@ -49,6 +49,7 @@ Check the diff for each of these before opening the PR.
 - **Rejected requests change nothing.** A rejected MODE, CAP REQ, PASS or OPER leaves state exactly as it was, and the client gets the documented error. [#61, #79, #82, #87]
 - **Counters and accounting.** Counts stay right across nickname changes, unregistered connections, failed setup and peaks (LUSERS), and byte counts stay right across dequeues and overflow (SendQ). [#63, #84]
 - **Security.** Secrets never reach logs, error messages or reports, including nested YAML values and extension settings. Lockout trackers stay safe when full, when verification is slow and when operators share a name. [#37, #70, #82]
+- **Dependency verification.** A new or updated dependency needs its signing key in `gradle/verification-keyring.keys`. Key servers are disabled, so a missing key fails `./gradlew build` locally; add the key as AGENTS.md describes, not with `--write-verification-metadata`.
 - **Determinism.** Output does not depend on the JVM's locale or time zone (number formatting, date formatting). [#87]
 - **Persistence of changes.** A reloaded value survives restart where the contract says it should, and cached file content notices edits. [#67, #87]
 - **Public API compatibility.** Changing a public constructor or record breaks callers. Keep the old signature, or follow the constitution's breaking-change rule: give the migration path in the PR body. While the project is unreleased (0.1.0-SNAPSHOT) the version bump comes with the first release. [#39, #52, #63, #82, #83, #84, #87]

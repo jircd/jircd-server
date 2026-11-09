@@ -13,6 +13,17 @@ IRCv3 server in Java 25 (Gradle toolchain, multi-module). The project rules live
 - Formatting: `./gradlew spotlessApply`. The pre-commit hook runs `spotlessCheck`; enable it with `git config core.hooksPath .githooks`.
 - Load tests (tag `load`) are excluded from `test`. Run them only with `./gradlew loadTest` when performance budgets are affected.
 - Coverage floor: `build` also runs `testCodeCoverageVerification` (aggregate over every module with `src/main/java`), which fails below 85% line / 75% branch. Report: `./gradlew testCodeCoverageReport`. Weekly CI (`load-test.yml`) runs `loadTest`.
+- Dependency verification: `gradle/verification-metadata.xml` disables key servers (`<key-servers enabled="false"/>`) and `gradle/verification-keyring.keys` holds the trusted signing keys. Key-server lookups failed intermittently, which broke CI's image build at random (#139, #143); with lookups off, a key missing from the keyring fails every `./gradlew build`, locally and in CI.
+  - Adding a key (a new dependency, or an update signed with a new key): the failure says "Key servers are disabled" and the HTML report under `build/reports/dependency-verification/` names the key id. Fetch it into a throwaway gpg home and append it to the keyring in the file's format, using the full fingerprint from the dependency's release notes or a key server:
+    ```bash
+    H=$(mktemp -d); F=<full fingerprint>
+    gpg --homedir "$H" --keyserver hkps://keyserver.ubuntu.com --recv-keys "$F"
+    { gpg --homedir "$H" --list-keys --with-colons "$F" | awk -F: '/^pub/{print "pub    " $5} /^uid/{print "uid    " $10} /^sub/{print "sub    " $5}'; echo; gpg --homedir "$H" --export --armor "$F"; echo; } >> gradle/verification-keyring.keys
+    rm -rf "$H"
+    ```
+    Check the fingerprint against a second source before trusting it. If the metadata doesn't trust the key yet (a new subkey counts), also add `<trusted-key id="<full fingerprint>" group="<group>"/>` under `<trusted-keys>`, and remove the key from `<ignored-keys>` if it is listed there. `keys.openpgp.org` strips user ids from unverified keys; `keyserver.ubuntu.com` keeps them.
+  - Don't use `--write-verification-metadata pgp,sha256 --export-keys` for this: it ignores `enabled="false"`, fetches from the key servers anyway, and rewrites the keyring and `<trusted-keys>` far beyond the one key (50 keys instead of 42 in a test).
+  - A Dependabot PR that fails with a missing key (#140: Spotless 8.11.0 is signed with a new subkey) needs the same commit (the keyring block, plus the `<trusted-key>` entry if it is new) pushed to its branch.
 - Local server config `jircd-server/jircd.yaml` holds credentials and is gitignored. Never commit it.
 
 ## Workflow
