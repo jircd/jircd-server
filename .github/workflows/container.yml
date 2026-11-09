@@ -38,6 +38,26 @@ jobs:
             --build-arg "IMAGE_VERSION=sha-${GITHUB_SHA::7}" \
             -t jircd:jvm-ci .
 
+      # A plain `docker build .` builds the Dockerfile's last stage, which must stay the JVM image
+      # (the experimental native stage must not become the default). The two image IDs differ (the
+      # config history names another stage), so compare the config and the layers. The layer cache
+      # from the build above makes this step instant.
+      - name: Check that an untargeted build gives the JVM image
+        run: |
+          set -euo pipefail
+          docker buildx build --load \
+            --build-arg "IMAGE_SOURCE=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
+            --build-arg "IMAGE_REVISION=${GITHUB_SHA}" \
+            --build-arg "IMAGE_VERSION=sha-${GITHUB_SHA::7}" \
+            -t jircd:default .
+          format='{{json .Config}} {{json .RootFS.Layers}}'
+          jvm=$(docker image inspect -f "${format}" jircd:jvm-ci)
+          default=$(docker image inspect -f "${format}" jircd:default)
+          if [ -z "${jvm}" ] || [ "${jvm}" != "${default}" ]; then
+            echo "::error::An untargeted docker build does not give the JVM image; the Dockerfile's last stage must be the JVM one."
+            exit 1
+          fi
+
       - name: Set up JDK 25
         uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
