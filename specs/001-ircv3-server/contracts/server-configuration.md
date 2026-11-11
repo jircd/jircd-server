@@ -111,6 +111,11 @@ operFailureThreshold: 5  # 1–20 failures per source bucket, across connections
 operLockoutSeconds: 300  # 1–86400 seconds from first failure; fixed deadline
 operRequireTls: false   # true rejects plaintext OPER with 491 ERR_NOOPERHOST
 
+logging:                 # optional (016) — see contracts/logging-config.md in specs/016-container-deployment
+  console: true          # optional — default true; false needs a file
+  file: /var/log/jircd/jircd.log  # optional — no default; absent = no log file; the directory
+                                  # must already exist and be writable, or loading fails
+
 administratorCredentials:
   - username: root-admin
     hashedPassword: "<bcrypt/Argon2id hash — never plain text, see research.md 'Administrator credential storage' and 008-argon2-admin-verification research.md>"
@@ -118,6 +123,16 @@ administratorCredentials:
 
 ## Behavioral Contract
 
+- **Logging (016)**: the optional top-level `logging` section has two keys, `console`
+  (boolean, default `true`) and `file` (non-blank path, no default). Unknown keys, a non-mapping
+  section, a non-boolean `console` and `console: false` without a `file` are rejected, and the
+  message names the setting. A relative `file` resolves against the working directory. The path
+  must not contain `%`, be a filesystem root or be the configuration file (also through a
+  symlink); its directory must exist and be writable, and an existing file must be a regular
+  writable file. The file rotates daily and at 50 MB (30 days, 1 GB total, gzip). The section
+  reloads with `SIGHUP`/`REHASH`; a rejected section rejects the whole reload. With
+  `-Dlogback.configurationFile` set, the section is neither applied nor validated. Details:
+  [`logging-config.md`](../../016-container-deployment/contracts/logging-config.md).
 - **Load-time validation**: an unknown key in either `capabilities` or
   `server-extensions` — including a `moderation` or
   `capability-negotiation` entry, since neither is a toggleable extension

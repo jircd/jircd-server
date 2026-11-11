@@ -114,3 +114,23 @@ Codex review of the JVM CI slice against the checklist: 1 finding.
 | # | Finding | Disposition |
 |---|---|---|
 | 1 | CodeRabbit: `ContainerDeliveryLoadTest`'s `startupMs` ran from before container creation to the first client's JOIN reply, so it did not measure SC-005 (accepting connections within 1 s of container start) | **Fixed.** `JircdContainer.startupDuration()` takes Docker's `State.StartedAt` and the timestamp of the `Plaintext listener started` log line (`docker logs -t`), both from the daemon's clock. A TCP-connect poll after `start()` could not work: `start()` already waits for the server to be up. The test reports it as `startupMs` (the summary script's key, label updated) and prints met / not met, without asserting (FR-016). New figures: JVM 236 ms, native 66 ms (`native.md`; the `quickstart.md` wording follows) |
+
+## Close-out (2026-11-11)
+
+The close-out diff is documentation only (`README.md`, `AGENTS.md`, the 001 configuration contract, `specs/016` validation files and `tasks.md`). Checked against `.github/REVIEW_CHECKLIST.md`:
+
+| Checklist item | Result |
+|---|---|
+| Docs and contracts; completed tasks and claims match what was built | The `logging` entry in `server-configuration.md` was compared with `LoggingSection` and `logging-config.md` (keys, rejections, path rules, reload, `-Dlogback.configurationFile`). The README container text was compared with the Dockerfile, workflows and `container-contract.md`; three gaps were fixed (default `docker build .`, log-volume example, Compose). The zero-config claim (plaintext 6667 only) matches `JircdServerApplication`. |
+| Deployment and CI: permissions, platform claims, default target | The README log example was run for real: a named volume is root-owned and the server refuses to start, so the example uses a host directory owned by 65532. Platform claims match the published manifests (JVM amd64+arm64, native amd64). |
+| Other items (failure paths, concurrency, hostile input, ...) | Not touched: no code changed. |
+
+Local Sonar (`build sonar --no-parallel`, gate wait, SCM disabled) on branch `016-closeout`: **gate passed, 0 open issues**.
+
+Codex review of the close-out diff against the checklist: 1 finding.
+
+| # | Finding | Disposition |
+|---|---|---|
+| 1 | The README says to reload with HUP but not that Docker Desktop bind mounts can show stale contents just after a save, which `tests.md` (US2 findings) said the README should mention | **Fixed.** The container section tells Docker Desktop users to wait a few seconds after saving before sending HUP |
+
+Codex also checked the README container claims against the Dockerfile, `deploy/container/jircd.yaml` and `container-contract.md`, the `logging` schema entry against `LoggingSection` and `logging-config.md`, the AGENTS.md SHA-512 sentence, and the `[X]` tasks against the validation files, with no other findings.

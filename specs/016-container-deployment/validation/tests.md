@@ -173,3 +173,12 @@ Early TERM is covered in-process only. `main` installs the signal handlers befor
 
 `NativeMetadataScenariosTest` needed a pause between commands (the per-connection rate limit drops the 21st command in a burst) and a plain `PING`/`PONG` read instead of the barrier helper, because `server-time` tags the `PONG`.
 
+## Closing run (2026-11-11, `main` at `40e8f4f` plus the close-out branch)
+
+| Check | Result |
+|---|---|
+| `./gradlew build` (tests, Spotless, SpotBugs, PMD, coverage floor) | **pass**, exit 0. Aggregate coverage 96.1% line, 89.9% branch (floor 85% / 75%) |
+| `docker build --target jvm -t jircd:jvm .` and `--target native -t jircd:native .` (arm64, Docker Desktop) | both build |
+| `./gradlew :jircd-integration-tests:containerTest -Djircd.image=jircd:jvm` | **16 tests, 0 failed, 0 skipped** |
+| `./gradlew :jircd-integration-tests:containerTest -Djircd.image=jircd:native` | **16 tests, 0 failed, 0 skipped** |
+| Log-file volume check from the README (JVM image, `--read-only`) | a host directory owned by uid 65532 gets `jircd.log`; a fresh named volume makes the server refuse to start (`logging.file directory is not writable`) |
