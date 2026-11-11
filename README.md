@@ -197,7 +197,8 @@ docker run -d --read-only -p 6667:6667 -p 6697:6697 \
   -v /srv/jircd:/etc/jircd:ro --name jircd ghcr.io/jircd/jircd-server:jvm
 ```
 
-To build the image yourself from a clean checkout, only a container runtime is needed:
+To build the image yourself from a clean checkout, only a container runtime is needed. A plain
+`docker build .` without `--target` builds the same JVM image:
 
 ```bash
 docker build --target jvm -t jircd:jvm .
@@ -217,12 +218,31 @@ docker run -d --read-only -p 6667:6667 -p 6697:6697 \
   bound, so publish what you configured.
 - Nothing is written to the container's filesystem by default, so `--read-only` works. Logs go to
   standard output (`docker logs jircd`). For a log file, mount a volume writable by uid 65532 and
-  set `logging.file` ([Logging](#logging)).
+  set `logging.file` ([Logging](#logging)), for example
+  `mkdir -p /srv/jircd-logs && sudo chown 65532:65532 /srv/jircd-logs`, then
+  `-v /srv/jircd-logs:/var/log/jircd` with `file: /var/log/jircd/jircd.log`. A new Docker named
+  volume there is root-owned, so the server refuses to start. The working directory `/opt/jircd`
+  is read-only, so a relative `logging.file` or other relative path in the configuration cannot be
+  written there: use absolute paths.
 - Reload with `docker kill -s HUP jircd`; stop with `docker stop jircd` (see
   [Reloading and stopping](#reloading-and-stopping)). A missing or unreadable configuration exits
-  with status 1 and a `Refusing to start:` line.
+  with status 1 and a `Refusing to start:` line. On Docker Desktop, wait a few seconds after saving
+  the configuration before sending HUP: its bind mounts can show the old file, or none, just after
+  a change.
 - OPER passwords must not cross the plaintext listener: the sample sets `operRequireTls: true`,
   so enable a TLS listener before using OPER.
+
+A minimal Compose file for the same setup (optional; the `docker run` above is enough):
+
+```yaml
+services:
+  jircd:
+    image: ghcr.io/jircd/jircd-server:jvm
+    read_only: true
+    ports: ["6667:6667", "6697:6697"]
+    volumes: ["/srv/jircd:/etc/jircd:ro"]
+    stop_grace_period: 10s   # the default; the server drains within 8 s
+```
 
 #### The native variant
 
