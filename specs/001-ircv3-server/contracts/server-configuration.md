@@ -113,7 +113,8 @@ operRequireTls: false   # true rejects plaintext OPER with 491 ERR_NOOPERHOST
 
 logging:                 # optional (016) — see contracts/logging-config.md in specs/016-container-deployment
   console: true          # optional — default true; false needs a file
-  file: /var/log/jircd/jircd.log  # optional — no default; absent = no log file
+  file: /var/log/jircd/jircd.log  # optional — no default; absent = no log file; the directory
+                                  # must already exist and be writable, or loading fails
 
 administratorCredentials:
   - username: root-admin

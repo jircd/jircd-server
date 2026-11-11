@@ -238,8 +238,9 @@ A minimal Compose file for the same setup (optional; the `docker run` above is e
 services:
   jircd:
     image: ghcr.io/jircd/jircd-server:jvm
+    container_name: jircd   # so `docker kill -s HUP jircd` above finds it
     read_only: true
-    ports: ["6667:6667", "6697:6697"]
+    ports: ["6667:6667", "6697:6697"]   # 6697 answers only once a TLS listener is configured
     volumes: ["/srv/jircd:/etc/jircd:ro"]
     stop_grace_period: 10s   # the default; the server drains within 8 s
 ```
