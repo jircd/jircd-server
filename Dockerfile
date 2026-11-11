@@ -79,3 +79,9 @@ EXPOSE 6667 6697
 # Exec form, so the server is PID 1 and receives HUP (reload) and TERM (graceful shutdown).
 ENTRYPOINT ["/opt/jircd/jircd"]
 CMD ["/etc/jircd/jircd.yaml"]
+
+# ---------------------------------------------------------------------------------------------
+# default: the last stage is what a plain `docker build .` (no --target) builds, so it must be the
+# supported JVM image, not the experimental native one above. Adds nothing to jvm.
+# ---------------------------------------------------------------------------------------------
+FROM jvm AS default

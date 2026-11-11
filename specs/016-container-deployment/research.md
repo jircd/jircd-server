@@ -94,7 +94,7 @@ Details:
 - Build args: `--no-fallback`, `-march=compatibility` (the binary runs on any x86-64-v1 host, not just the build CPU), `-H:+ReportExceptionStackTraces`, and `-R:MaxHeapSize` left at its default; see R6.
 - Enable the reachability-metadata repository, which covers logback-classic 1.6.6 (tested-versions include it) and slf4j-api.
 - SnakeYAML 2.7 isn't in the repository's tested versions (it stops at 2.1), and password4j isn't in it at all. Metadata for both, plus the project's own resources (`net/jircd/server/version.properties`), comes from the GraalVM tracing agent.
-- The agent runs on the JVM distribution while the container contract scenarios run against it. Its output is filtered to the `org.yaml`, `com.password4j`, `ch.qos.logback` and `net.jircd` packages and committed under `jircd-server/src/main/resources/META-INF/native-image/net.jircd/jircd-server/`.
+- The agent runs the installed JVM distribution (not a container) while `NativeMetadataScenariosTest` drives it over sockets (`collectNativeMetadata`, quickstart §5). Its output is filtered to the `org.yaml`, `com.password4j`, `ch.qos.logback` and `net.jircd` packages and committed under `jircd-server/src/main/resources/META-INF/native-image/net.jircd/jircd-server/`.
 - Regenerating it is a documented Gradle task (quickstart §5). A dependency bump that breaks it shows up as a failed native smoke test (FR-018).
 
 **Rationale**:
