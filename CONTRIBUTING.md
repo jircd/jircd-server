@@ -97,10 +97,13 @@ Open a [discussion or issue](../../issues) if anything above is unclear.
 ## Dependency security
 
 Dependabot opens grouped weekly PRs for Gradle and GitHub Actions updates (at
-most a few open at a time). Version bumps must also refresh
-`gradle/verification-metadata.xml`: run
-`./gradlew --write-verification-metadata sha256 build` and check that the diff
-only adds the new artifacts and removes the old ones.
+most a few open at a time). Version bumps must also refresh the dependency
+verification files. Key servers are disabled, so a missing signing key fails
+`./gradlew build` instead of being fetched. Add the key to
+`gradle/verification-keyring.keys` (or, for an unsigned artifact, a checksum to
+`gradle/verification-metadata.xml`) as described under "Dependency
+verification" in [`AGENTS.md`](AGENTS.md), and check that the diff only adds the
+new entries and removes the old ones.
 
 A Dependabot Gradle wrapper bump must also update `distributionSha256Sum` in
 `gradle/wrapper/gradle-wrapper.properties`. Use the SHA-256 checksum for the
