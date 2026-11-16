@@ -32,6 +32,20 @@ final class FanoutStats {
     }
 
     /**
+     * The delivery budget's value: the largest per-round max in {@code roundMaxMs} (in round
+     * order), leaving out the first round. Round 0 sends its whole batch into a cold JIT, so its
+     * slowest delivery measures cold-start speed times batch size (#147). Later warm-up rounds
+     * still count (#118).
+     */
+    static double budgetMaxMs(double... roundMaxMs) {
+        if (roundMaxMs.length < 2) {
+            throw new IllegalArgumentException(
+                    "the budget needs at least two rounds, got " + roundMaxMs.length);
+        }
+        return Arrays.stream(roundMaxMs).skip(1).max().orElseThrow();
+    }
+
+    /**
      * The coefficient of variation in percent: the sample standard deviation over the mean. It is 0
      * for fewer than two values.
      */

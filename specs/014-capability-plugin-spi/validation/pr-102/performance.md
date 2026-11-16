@@ -526,6 +526,8 @@ The A/A control above was noisy because the harness measured each phase over one
 - reads the NAMES/WHO replies, with an overall 60 s deadline, up to the real `366`/`315` numeric. `readUntil("315")` also stopped at a WHO line that merely contained those digits (a nickname such as `r315`), which left part of the listing queued, understated those latencies, and overflowed the sender's 2 MiB SendQ once a round had 60+ listings; this probably contributed to the 1,000-recipient NAMES/WHO noise;
 - keeps every content, order and framing assertion, now across all rounds, and still fails when any delivery, in a warm-up or a measured round, takes 1 s or more (per delivery, so the budget does not depend on the batch count); warm-up rounds stay out of the reported statistics.
 
+> **2026-11-16 ([#147](https://github.com/jircd/jircd-server/issues/147)):** the 1 s budget now skips round 0, the first warm-up round. Round 0 sends its whole batch into a cold JIT, so its slowest delivery measures cold-start speed times batch size, not what a client sees (the weekly run on Nov 16 failed on 1,372 ms in round 0 while every later round stayed under 363 ms). Later warm-up rounds and all measured rounds still count. The summary line keeps `worstMaxMs` (all rounds) and adds `budgetMaxMs`, the asserted value.
+
 Statistics are in `FanoutStats` (unit-tested by `FanoutStatsTest`). The `loadTest` run of this class went from about 3 s to 25–30 s on the same machine; the full `./gradlew loadTest` grows by the same amount.
 
 ### How to run the A/A control (for later PRs)

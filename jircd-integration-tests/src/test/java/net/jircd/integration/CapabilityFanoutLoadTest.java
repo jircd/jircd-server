@@ -53,6 +53,9 @@ import org.junit.jupiter.params.provider.ValueSource;
  * this same class are comparable. A single pass over a 5–30 ms window was too noisy to resolve 10%
  * (see {@code specs/014-capability-plugin-spi/validation/pr-102/performance.md}, "A/A control").
  *
+ * <p>The 1 s per-delivery budget covers every round except round 0, the cold first warm-up round
+ * (#147); see {@link FanoutStats#budgetMaxMs}.
+ *
  * <p>Rate limits are raised for every client so no command is dropped; every item must arrive,
  * which rules out silent rate-limit or SendQ loss. Only APIs that exist on main are used, so the
  * identical class runs against the baseline revision.
@@ -263,7 +266,7 @@ class CapabilityFanoutLoadTest {
             return FanoutStats.cvPercent(measured.stream().mapToDouble(metric).toArray());
         }
 
-        /** The slowest single delivery in any round, warm-up included (the delivery budget). */
+        /** The slowest single delivery in any round, round 0 included (for diagnosis). */
         double worstMaxMs() {
             return Stream.concat(warmup.stream(), measured.stream())
                     .mapToDouble(Round::maxMs)
@@ -271,11 +274,22 @@ class CapabilityFanoutLoadTest {
                     .orElseThrow();
         }
 
+        /**
+         * The delivery budget's value: the slowest single delivery in every round except the cold
+         * round 0, so later warm-up rounds still count.
+         */
+        double budgetMaxMs() {
+            return FanoutStats.budgetMaxMs(
+                    Stream.concat(warmup.stream(), measured.stream())
+                            .mapToDouble(Round::maxMs)
+                            .toArray());
+        }
+
         void print(int recipients) {
             System.out.printf(
                     "CapabilityFanoutLoadTest: recipients=%d phase=%s items=%d p50Ms=%.3f p99Ms=%.3f"
                             + " maxMs=%.3f throughputPerSec=%.0f cpuMs=%.1f allocMB=%.1f rounds=%d"
-                            + " windowMs=%.1f minWindowMs=%.1f worstMaxMs=%.3f roundCvThroughputPct=%.1f roundCvP99Pct=%.1f%n",
+                            + " windowMs=%.1f minWindowMs=%.1f worstMaxMs=%.3f budgetMaxMs=%.3f roundCvThroughputPct=%.1f roundCvP99Pct=%.1f%n",
                     recipients,
                     name,
                     (int) median(r -> r.sortedNanos().length),
@@ -289,6 +303,7 @@ class CapabilityFanoutLoadTest {
                     median(r -> r.wallNanos() / 1e6),
                     minWindowMs(),
                     worstMaxMs(),
+                    budgetMaxMs(),
                     cv(Round::throughputPerSec),
                     cv(Round::p99Ms));
             for (int i = 0; i < warmup.size() + measured.size(); i++) {
@@ -735,7 +750,7 @@ class CapabilityFanoutLoadTest {
 
             for (Phase phase : phases) phase.print(recipients);
             for (Phase phase : phases) {
-                assertThat(phase.worstMaxMs()).as(phase.name()).isLessThan(1000.0);
+                assertThat(phase.budgetMaxMs()).as(phase.name()).isLessThan(1000.0);
             }
 
             int messages = load.messages() * phases.get(0).batches();

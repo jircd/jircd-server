@@ -45,6 +45,24 @@ class FanoutStatsTest {
     }
 
     @Test
+    void budgetMaxIgnoresTheColdFirstRound() {
+        assertThat(FanoutStats.budgetMaxMs(1372, 363, 331, 125, 284)).isEqualTo(363.0);
+    }
+
+    @Test
+    void budgetMaxStillCountsALaterWarmupRound() {
+        assertThat(FanoutStats.budgetMaxMs(10, 1200, 331, 125)).isEqualTo(1200.0);
+    }
+
+    @Test
+    void budgetMaxOfASingleRoundIsRejected() {
+        assertThatThrownBy(() -> FanoutStats.budgetMaxMs(5))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("at least two rounds");
+        assertThatThrownBy(FanoutStats::budgetMaxMs).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     void cvIsTheSampleStandardDeviationOverTheMean() {
         // mean 5, sample variance 32 / 7, so sd = 2.138...
         assertThat(FanoutStats.cvPercent(2, 4, 4, 4, 5, 5, 7, 9))
