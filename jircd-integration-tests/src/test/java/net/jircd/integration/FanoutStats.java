@@ -32,23 +32,29 @@ final class FanoutStats {
     }
 
     /**
-     * The delivery budget's value: the largest per-round max in {@code roundMaxMs} (in round
-     * order). With {@code skipRound0} it leaves out round 0, which is only justified for the first
-     * round measured in the JVM: that round sends its whole batch into a cold JIT, so its slowest
-     * delivery measures cold-start speed times batch size (#147). Every other round counts,
-     * including round 0 of a later phase and later warm-up rounds (#118).
+     * The delivery budget's value: the largest per-round max in {@code roundMaxMs} (in round order,
+     * warm-up rounds first) after leaving out the first {@code skipLeading} rounds. Skipping is
+     * only justified for the warm-up of the first phase measured in the JVM: those rounds send
+     * their batches into a cold or still-warming JIT, so their slowest delivery measures warm-up
+     * speed times batch size (#147). Every round of a later phase counts, warm-up included (#118),
+     * and so does every measured round.
      *
-     * @throws IllegalArgumentException if no round is left to take the maximum of
+     * @throws IllegalArgumentException if {@code skipLeading} is negative or no round is left to
+     *     take the maximum of
      */
-    static double budgetMaxMs(boolean skipRound0, double... roundMaxMs) {
-        int skipped = skipRound0 ? 1 : 0;
-        if (roundMaxMs.length <= skipped) {
-            throw new IllegalArgumentException(
-                    "the budget needs at least two rounds when skipping round 0, and one"
-                            + " otherwise; got "
-                            + roundMaxMs.length);
+    static double budgetMaxMs(int skipLeading, double... roundMaxMs) {
+        if (skipLeading < 0) {
+            throw new IllegalArgumentException("skipLeading must not be negative: " + skipLeading);
         }
-        return Arrays.stream(roundMaxMs).skip(skipped).max().orElseThrow();
+        if (roundMaxMs.length <= skipLeading) {
+            throw new IllegalArgumentException(
+                    "no round left after skipping "
+                            + skipLeading
+                            + " of "
+                            + roundMaxMs.length
+                            + " rounds");
+        }
+        return Arrays.stream(roundMaxMs).skip(skipLeading).max().orElseThrow();
     }
 
     /**

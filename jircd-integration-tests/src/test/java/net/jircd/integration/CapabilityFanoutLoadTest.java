@@ -54,9 +54,10 @@ import org.junit.jupiter.params.provider.ValueSource;
  * this same class are comparable. A single pass over a 5–30 ms window was too noisy to resolve 10%
  * (see {@code specs/014-capability-plugin-spi/validation/pr-102/performance.md}, "A/A control").
  *
- * <p>The 1 s per-delivery budget covers every round except the very first one measured in the JVM,
- * round 0 of whichever phase runs first: it sends its whole batch into a cold JIT (#147). Round 0
- * of every other phase counts; see {@link FanoutStats#budgetMaxMs}.
+ * <p>The 1 s per-delivery budget covers every round except the warm-up rounds of the very first
+ * phase measured in the JVM: those send their batches into a cold or still-warming JIT (#147).
+ * Every round of every other phase counts, warm-up included, and so do the first phase's measured
+ * rounds; see {@link FanoutStats#budgetMaxMs}.
  *
  * <p>Rate limits are raised for every client so no command is dropped; every item must arrive,
  * which rules out silent rate-limit or SendQ loss. Only APIs that exist on main are used, so the
@@ -67,8 +68,11 @@ class CapabilityFanoutLoadTest {
 
     private static final Duration TIMEOUT = Duration.ofSeconds(60);
 
-    /** Set by the first phase measured in this JVM, which alone may skip round 0 (#147). */
-    private static final AtomicBoolean COLD_ROUND_CLAIMED = new AtomicBoolean();
+    /**
+     * Set by the first phase measured in this JVM, whose warm-up rounds alone may skip the budget
+     * (#147).
+     */
+    private static final AtomicBoolean WARMUP_EXEMPTION_CLAIMED = new AtomicBoolean();
 
     /**
      * A phase's warm-up lasts at least this many rounds and this long, whichever is later. The
@@ -254,11 +258,11 @@ class CapabilityFanoutLoadTest {
 
     /**
      * The warm-up rounds, which are only checked, and the measured rounds, which are reported.
-     * {@code budgetSkipsRound0} is true only for the first phase measured in the JVM, whose round 0
-     * ran into a cold JIT (#147).
+     * {@code budgetSkipsWarmup} is true only for the first phase measured in the JVM, whose warm-up
+     * rounds ran into a cold or still-warming JIT (#147).
      */
     private record Phase(
-            String name, List<Round> warmup, List<Round> measured, boolean budgetSkipsRound0) {
+            String name, List<Round> warmup, List<Round> measured, boolean budgetSkipsWarmup) {
         /** Batches run in the whole phase, which is what the readers must have received. */
         int batches() {
             return Stream.concat(warmup.stream(), measured.stream()).mapToInt(Round::batches).sum();
@@ -276,7 +280,7 @@ class CapabilityFanoutLoadTest {
             return FanoutStats.cvPercent(measured.stream().mapToDouble(metric).toArray());
         }
 
-        /** The slowest single delivery in any round, round 0 always included (for diagnosis). */
+        /** The slowest single delivery in any round, warm-up included (for diagnosis). */
         double worstMaxMs() {
             return Stream.concat(warmup.stream(), measured.stream())
                     .mapToDouble(Round::maxMs)
@@ -285,13 +289,13 @@ class CapabilityFanoutLoadTest {
         }
 
         /**
-         * The delivery budget's value: the slowest single delivery in every round, except that
-         * round 0 is left out when {@code budgetSkipsRound0} is set (the JVM's first round). Later
-         * warm-up rounds always count.
+         * The delivery budget's value: the slowest single delivery in every round, except that the
+         * warm-up rounds are left out when {@code budgetSkipsWarmup} is set (the JVM's first
+         * phase). The measured rounds always count.
          */
         double budgetMaxMs() {
             return FanoutStats.budgetMaxMs(
-                    budgetSkipsRound0,
+                    budgetSkipsWarmup ? warmup.size() : 0,
                     Stream.concat(warmup.stream(), measured.stream())
                             .mapToDouble(Round::maxMs)
                             .toArray());
@@ -301,7 +305,7 @@ class CapabilityFanoutLoadTest {
             System.out.printf(
                     "CapabilityFanoutLoadTest: recipients=%d phase=%s items=%d p50Ms=%.3f p99Ms=%.3f"
                             + " maxMs=%.3f throughputPerSec=%.0f cpuMs=%.1f allocMB=%.1f rounds=%d"
-                            + " windowMs=%.1f minWindowMs=%.1f worstMaxMs=%.3f budgetMaxMs=%.3f budgetSkipsRound0=%b roundCvThroughputPct=%.1f roundCvP99Pct=%.1f%n",
+                            + " windowMs=%.1f minWindowMs=%.1f worstMaxMs=%.3f budgetMaxMs=%.3f budgetSkipsWarmup=%b roundCvThroughputPct=%.1f roundCvP99Pct=%.1f%n",
                     recipients,
                     name,
                     (int) median(r -> r.sortedNanos().length),
@@ -316,7 +320,7 @@ class CapabilityFanoutLoadTest {
                     minWindowMs(),
                     worstMaxMs(),
                     budgetMaxMs(),
-                    budgetSkipsRound0,
+                    budgetSkipsWarmup,
                     cv(Round::throughputPerSec),
                     cv(Round::p99Ms));
             for (int i = 0; i < warmup.size() + measured.size(); i++) {
@@ -381,7 +385,7 @@ class CapabilityFanoutLoadTest {
      * deliveries, not the preparation or the collecting and sorting of latencies.
      */
     private static Phase measure(String name, Prepare prepare, Collect collect) throws Exception {
-        boolean budgetSkipsRound0 = COLD_ROUND_CLAIMED.compareAndSet(false, true);
+        boolean budgetSkipsWarmup = WARMUP_EXEMPTION_CLAIMED.compareAndSet(false, true);
         List<Round> warmup = new ArrayList<>();
         List<Round> measured = new ArrayList<>();
         long warmupStart = System.nanoTime();
@@ -415,7 +419,7 @@ class CapabilityFanoutLoadTest {
             Arrays.sort(nanos);
             (warm ? warmup : measured).add(new Round(nanos, batch - first, wall, cpu, bytes));
         }
-        return new Phase(name, warmup, measured, budgetSkipsRound0);
+        return new Phase(name, warmup, measured, budgetSkipsWarmup);
     }
 
     private static long cpuNanos() {

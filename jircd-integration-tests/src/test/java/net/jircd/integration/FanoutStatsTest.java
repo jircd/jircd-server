@@ -45,30 +45,40 @@ class FanoutStatsTest {
     }
 
     @Test
-    void budgetMaxIgnoresRoundZeroWhenSkippingIt() {
-        assertThat(FanoutStats.budgetMaxMs(true, 1372, 363, 331, 125, 284)).isEqualTo(363.0);
-    }
-
-    @Test
-    void budgetMaxIncludesRoundZeroWhenNotSkippingIt() {
+    void budgetMaxWithNoSkipCountsRoundZero() {
         // a later phase's round 0 spike must fail the budget
-        assertThat(FanoutStats.budgetMaxMs(false, 1372, 363, 331)).isEqualTo(1372.0);
-        assertThat(FanoutStats.budgetMaxMs(false, 5)).isEqualTo(5.0);
+        assertThat(FanoutStats.budgetMaxMs(0, 1372, 363, 331)).isEqualTo(1372.0);
+        assertThat(FanoutStats.budgetMaxMs(0, 5)).isEqualTo(5.0);
     }
 
     @Test
-    void budgetMaxStillCountsALaterRoundWhenSkippingRoundZero() {
-        assertThat(FanoutStats.budgetMaxMs(true, 10, 1200, 331, 125)).isEqualTo(1200.0);
+    void budgetMaxIgnoresExactlyTheFirstNRounds() {
+        assertThat(FanoutStats.budgetMaxMs(1, 1372, 363, 331, 125, 284)).isEqualTo(363.0);
+        assertThat(FanoutStats.budgetMaxMs(3, 1862, 800, 598, 395, 494, 305)).isEqualTo(494.0);
+        // round N, the first one not skipped, counts
+        assertThat(FanoutStats.budgetMaxMs(2, 1862, 800, 598, 90)).isEqualTo(598.0);
     }
 
     @Test
-    void budgetMaxLeavingNoRoundsIsRejected() {
-        assertThatThrownBy(() -> FanoutStats.budgetMaxMs(true, 5))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("at least two rounds");
-        assertThatThrownBy(() -> FanoutStats.budgetMaxMs(true))
+    void budgetMaxStillCountsALaterRoundAfterTheSkippedOnes() {
+        assertThat(FanoutStats.budgetMaxMs(2, 10, 20, 1200, 125)).isEqualTo(1200.0);
+    }
+
+    @Test
+    void budgetMaxLeavingNoRoundIsRejected() {
+        assertThatThrownBy(() -> FanoutStats.budgetMaxMs(1, 5))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> FanoutStats.budgetMaxMs(false))
+        assertThatThrownBy(() -> FanoutStats.budgetMaxMs(3, 5, 6, 7))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> FanoutStats.budgetMaxMs(4, 5, 6, 7))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> FanoutStats.budgetMaxMs(0))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void budgetMaxNegativeSkipIsRejected() {
+        assertThatThrownBy(() -> FanoutStats.budgetMaxMs(-1, 5, 6))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
