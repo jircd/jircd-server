@@ -187,7 +187,7 @@
       the brackets!)  The text of each field should be enclosed by
       matching brackets, based on the current transaction.
 
-   Copyright 2026 Guillermo Castro
+   Copyright 2026 JIRCD Maintainers
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
