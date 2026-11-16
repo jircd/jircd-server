@@ -45,21 +45,31 @@ class FanoutStatsTest {
     }
 
     @Test
-    void budgetMaxIgnoresTheColdFirstRound() {
-        assertThat(FanoutStats.budgetMaxMs(1372, 363, 331, 125, 284)).isEqualTo(363.0);
+    void budgetMaxIgnoresRoundZeroWhenSkippingIt() {
+        assertThat(FanoutStats.budgetMaxMs(true, 1372, 363, 331, 125, 284)).isEqualTo(363.0);
     }
 
     @Test
-    void budgetMaxStillCountsALaterWarmupRound() {
-        assertThat(FanoutStats.budgetMaxMs(10, 1200, 331, 125)).isEqualTo(1200.0);
+    void budgetMaxIncludesRoundZeroWhenNotSkippingIt() {
+        // a later phase's round 0 spike must fail the budget
+        assertThat(FanoutStats.budgetMaxMs(false, 1372, 363, 331)).isEqualTo(1372.0);
+        assertThat(FanoutStats.budgetMaxMs(false, 5)).isEqualTo(5.0);
     }
 
     @Test
-    void budgetMaxOfASingleRoundIsRejected() {
-        assertThatThrownBy(() -> FanoutStats.budgetMaxMs(5))
+    void budgetMaxStillCountsALaterRoundWhenSkippingRoundZero() {
+        assertThat(FanoutStats.budgetMaxMs(true, 10, 1200, 331, 125)).isEqualTo(1200.0);
+    }
+
+    @Test
+    void budgetMaxLeavingNoRoundsIsRejected() {
+        assertThatThrownBy(() -> FanoutStats.budgetMaxMs(true, 5))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("at least two rounds");
-        assertThatThrownBy(FanoutStats::budgetMaxMs).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> FanoutStats.budgetMaxMs(true))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> FanoutStats.budgetMaxMs(false))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
