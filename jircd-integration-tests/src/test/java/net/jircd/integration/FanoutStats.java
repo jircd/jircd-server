@@ -32,6 +32,32 @@ final class FanoutStats {
     }
 
     /**
+     * The delivery budget's value: the largest per-round max in {@code roundMaxMs} (in round order,
+     * warm-up rounds first) after leaving out the first {@code skipLeading} rounds. Skipping is
+     * only justified for the warm-up of the first phase measured in the JVM: those rounds send
+     * their batches into a cold or still-warming JIT, so their slowest delivery measures warm-up
+     * speed times batch size (#147). Every round of a later phase counts, warm-up included (#118),
+     * and so does every measured round.
+     *
+     * @throws IllegalArgumentException if {@code skipLeading} is negative or no round is left to
+     *     take the maximum of
+     */
+    static double budgetMaxMs(int skipLeading, double... roundMaxMs) {
+        if (skipLeading < 0) {
+            throw new IllegalArgumentException("skipLeading must not be negative: " + skipLeading);
+        }
+        if (roundMaxMs.length <= skipLeading) {
+            throw new IllegalArgumentException(
+                    "no round left after skipping "
+                            + skipLeading
+                            + " of "
+                            + roundMaxMs.length
+                            + " rounds");
+        }
+        return Arrays.stream(roundMaxMs).skip(skipLeading).max().orElseThrow();
+    }
+
+    /**
      * The coefficient of variation in percent: the sample standard deviation over the mean. It is 0
      * for fewer than two values.
      */

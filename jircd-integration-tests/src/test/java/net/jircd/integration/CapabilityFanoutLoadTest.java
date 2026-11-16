@@ -30,6 +30,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLongArray;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -53,6 +54,11 @@ import org.junit.jupiter.params.provider.ValueSource;
  * this same class are comparable. A single pass over a 5–30 ms window was too noisy to resolve 10%
  * (see {@code specs/014-capability-plugin-spi/validation/pr-102/performance.md}, "A/A control").
  *
+ * <p>The 1 s per-delivery budget covers every round except the warm-up rounds of the very first
+ * phase measured in the JVM: those send their batches into a cold or still-warming JIT (#147).
+ * Every round of every other phase counts, warm-up included, and so do the first phase's measured
+ * rounds; see {@link FanoutStats#budgetMaxMs}.
+ *
  * <p>Rate limits are raised for every client so no command is dropped; every item must arrive,
  * which rules out silent rate-limit or SendQ loss. Only APIs that exist on main are used, so the
  * identical class runs against the baseline revision.
@@ -61,6 +67,12 @@ import org.junit.jupiter.params.provider.ValueSource;
 class CapabilityFanoutLoadTest {
 
     private static final Duration TIMEOUT = Duration.ofSeconds(60);
+
+    /**
+     * Set by the first phase measured in this JVM, whose warm-up rounds alone may skip the budget
+     * (#147).
+     */
+    private static final AtomicBoolean WARMUP_EXEMPTION_CLAIMED = new AtomicBoolean();
 
     /**
      * A phase's warm-up lasts at least this many rounds and this long, whichever is later. The
@@ -244,8 +256,13 @@ class CapabilityFanoutLoadTest {
         }
     }
 
-    /** The warm-up rounds, which are only checked, and the measured rounds, which are reported. */
-    private record Phase(String name, List<Round> warmup, List<Round> measured) {
+    /**
+     * The warm-up rounds, which are only checked, and the measured rounds, which are reported.
+     * {@code budgetSkipsWarmup} is true only for the first phase measured in the JVM, whose warm-up
+     * rounds ran into a cold or still-warming JIT (#147).
+     */
+    private record Phase(
+            String name, List<Round> warmup, List<Round> measured, boolean budgetSkipsWarmup) {
         /** Batches run in the whole phase, which is what the readers must have received. */
         int batches() {
             return Stream.concat(warmup.stream(), measured.stream()).mapToInt(Round::batches).sum();
@@ -263,7 +280,7 @@ class CapabilityFanoutLoadTest {
             return FanoutStats.cvPercent(measured.stream().mapToDouble(metric).toArray());
         }
 
-        /** The slowest single delivery in any round, warm-up included (the delivery budget). */
+        /** The slowest single delivery in any round, warm-up included (for diagnosis). */
         double worstMaxMs() {
             return Stream.concat(warmup.stream(), measured.stream())
                     .mapToDouble(Round::maxMs)
@@ -271,11 +288,24 @@ class CapabilityFanoutLoadTest {
                     .orElseThrow();
         }
 
+        /**
+         * The delivery budget's value: the slowest single delivery in every round, except that the
+         * warm-up rounds are left out when {@code budgetSkipsWarmup} is set (the JVM's first
+         * phase). The measured rounds always count.
+         */
+        double budgetMaxMs() {
+            return FanoutStats.budgetMaxMs(
+                    budgetSkipsWarmup ? warmup.size() : 0,
+                    Stream.concat(warmup.stream(), measured.stream())
+                            .mapToDouble(Round::maxMs)
+                            .toArray());
+        }
+
         void print(int recipients) {
             System.out.printf(
                     "CapabilityFanoutLoadTest: recipients=%d phase=%s items=%d p50Ms=%.3f p99Ms=%.3f"
                             + " maxMs=%.3f throughputPerSec=%.0f cpuMs=%.1f allocMB=%.1f rounds=%d"
-                            + " windowMs=%.1f minWindowMs=%.1f worstMaxMs=%.3f roundCvThroughputPct=%.1f roundCvP99Pct=%.1f%n",
+                            + " windowMs=%.1f minWindowMs=%.1f worstMaxMs=%.3f budgetMaxMs=%.3f budgetSkipsWarmup=%b roundCvThroughputPct=%.1f roundCvP99Pct=%.1f%n",
                     recipients,
                     name,
                     (int) median(r -> r.sortedNanos().length),
@@ -289,6 +319,8 @@ class CapabilityFanoutLoadTest {
                     median(r -> r.wallNanos() / 1e6),
                     minWindowMs(),
                     worstMaxMs(),
+                    budgetMaxMs(),
+                    budgetSkipsWarmup,
                     cv(Round::throughputPerSec),
                     cv(Round::p99Ms));
             for (int i = 0; i < warmup.size() + measured.size(); i++) {
@@ -353,6 +385,7 @@ class CapabilityFanoutLoadTest {
      * deliveries, not the preparation or the collecting and sorting of latencies.
      */
     private static Phase measure(String name, Prepare prepare, Collect collect) throws Exception {
+        boolean budgetSkipsWarmup = WARMUP_EXEMPTION_CLAIMED.compareAndSet(false, true);
         List<Round> warmup = new ArrayList<>();
         List<Round> measured = new ArrayList<>();
         long warmupStart = System.nanoTime();
@@ -386,7 +419,7 @@ class CapabilityFanoutLoadTest {
             Arrays.sort(nanos);
             (warm ? warmup : measured).add(new Round(nanos, batch - first, wall, cpu, bytes));
         }
-        return new Phase(name, warmup, measured);
+        return new Phase(name, warmup, measured, budgetSkipsWarmup);
     }
 
     private static long cpuNanos() {
@@ -735,7 +768,7 @@ class CapabilityFanoutLoadTest {
 
             for (Phase phase : phases) phase.print(recipients);
             for (Phase phase : phases) {
-                assertThat(phase.worstMaxMs()).as(phase.name()).isLessThan(1000.0);
+                assertThat(phase.budgetMaxMs()).as(phase.name()).isLessThan(1000.0);
             }
 
             int messages = load.messages() * phases.get(0).batches();
