@@ -87,9 +87,9 @@ method's existing "validate raw bytes first" structure.
 **Decision (FR-012)**: The existing invalid-UTF8 branch in `processLine()`
 (`!Utf8Validator.isValidUtf8(lineBytes)`) changes from "reply `421` and return, connection stays
 open" to enqueuing `ERROR :Malformed message (invalid UTF-8)` and calling
-`disconnectCleanup.cleanup(...)` — the same enqueue-then-cleanup shape `QuitCommandHandler`,
-`KillCommandHandler`, and `LivenessMonitor.timeOut()` already use for a definitive,
-client-visible connection end, rather than leaving the client to guess whether to retry.
+`disconnectCleanup.cleanup(...)` — an enqueue-then-cleanup shape for a definitive, client-visible connection end (`QuitCommandHandler`,
+`KillCommandHandler` and `LivenessMonitor.timeOut()` now claim first and queue the `ERROR` as part
+of the claim, #151), rather than leaving the client to guess whether to retry.
 
 **Rationale (all of Story 3)**: Every fix reuses an already-defined numeric (`409`/`410`/`412`)
 already reserved in the full catalog per `001-ircv3-server`'s completeness requirement, or an

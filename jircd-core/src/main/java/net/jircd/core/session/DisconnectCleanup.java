@@ -158,7 +158,8 @@ public final class DisconnectCleanup {
 
     /**
      * Disconnects {@code session} with a final {@code ERROR}: claims CLOSING, queues the {@code
-     * ERROR} (its reason cut to fit one wire line) as part of that claim, then runs the rest of the
+     * ERROR} (its reason cut to fit one wire line) as the writer's final line, as part of that
+     * claim, so nothing another task queues afterwards follows it, then runs the rest of the
      * cleanup with {@code cleanupReason}. Once the client has read the {@code ERROR} it no longer
      * counts (LUSERS, #151). The claim and the enqueue are one step for the writer's close, so a
      * liveness thread that sees CLOSING waits for the {@code ERROR}. A session another trigger
@@ -175,7 +176,7 @@ public final class DisconnectCleanup {
                 writer == null
                         ? () -> {}
                         : () ->
-                                writer.enqueueRaw(
+                                writer.enqueueFinal(
                                         new Message(
                                                 Map.of(),
                                                 null,
@@ -197,10 +198,19 @@ public final class DisconnectCleanup {
      * command including CRLF. Counted with the trailing-parameter colon, so it fits either way.
      */
     static String fitErrorReason(String reason) {
+        return fitTrailing(reason, null, Command.ERROR, "ERROR");
+    }
+
+    /**
+     * Cuts {@code reason} on a code-point boundary so the command section {@code [:prefix ]COMMAND
+     * :<reason>} fits 512 bytes including CRLF. Counted with the trailing-parameter colon (the
+     * serializer adds just one, also for a reason that itself starts with a colon).
+     */
+    private static String fitTrailing(String reason, String prefix, Command command, String raw) {
         int budget =
                 MessageSerializer.MAX_COMMAND_BYTES
                         - MessageSerializer.commandBytes(
-                                new Message(Map.of(), null, Command.ERROR, "ERROR", List.of(" ")))
+                                new Message(Map.of(), prefix, command, raw, List.of(" ")))
                         + 1; // the placeholder's own byte
         StringBuilder fitted = new StringBuilder();
         int bytes = 0;
@@ -233,9 +243,12 @@ public final class DisconnectCleanup {
                 && session.ident() != null
                 && session.realHostname() != null) {
             String prefix = PresentedIdentity.presentedForm(session, extensionRegistry);
-            Message quit = new Message(Map.of(), prefix, Command.QUIT, "QUIT", List.of(reason));
+            // The reason is cut so the broadcast line, with the quitter's prefix, fits one wire
+            // line: an over-long line would fail serialization on every peer's writer.
+            String quitReason = fitTrailing(reason, prefix, Command.QUIT, "QUIT");
+            Message quit = new Message(Map.of(), prefix, Command.QUIT, "QUIT", List.of(quitReason));
             Recipients.deliver(neighbors, quit);
-            extensionRegistry.committedEvents().quit(session, prefix, reason, neighbors);
+            extensionRegistry.committedEvents().quit(session, prefix, quitReason, neighbors);
             // One WHOWAS entry per disconnection, regardless of cause (QUIT, KILL, keep-alive
             // timeout) — this is the single point every cause funnels through, so no cause-specific
             // recording is needed anywhere else. presentedHostname is a snapshot of whatever cloak

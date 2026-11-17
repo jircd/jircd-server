@@ -24,6 +24,7 @@ import java.util.Map;
 import net.jircd.core.extension.ExtensionRegistry;
 import net.jircd.core.session.command.QuitCommandHandler;
 import net.jircd.protocol.Command;
+import net.jircd.protocol.MalformedMessageException;
 import net.jircd.protocol.Message;
 import net.jircd.protocol.MessageParser;
 import org.junit.jupiter.api.Test;
@@ -49,7 +50,7 @@ class QuitClaimOrderTest {
     }
 
     @Test
-    void quitAfterAnotherTriggerClaimedTheSessionQueuesNoError() throws Exception {
+    void quitAfterAnotherTriggerClaimedTheSessionQueuesNoError() {
         ClientSession session = new ClientSession("c1", "h", RateLimitBucket.withDefaults());
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         try (SessionWriter writer = new SessionWriter(session, out, TagRenderer.NONE)) {
@@ -64,7 +65,7 @@ class QuitClaimOrderTest {
     }
 
     @Test
-    void quitStopsTheConnectionCountingAndSendsErrorOnce() throws Exception {
+    void quitStopsTheConnectionCountingAndSendsErrorOnce() {
         ClientSession session = new ClientSession("c2", "h", RateLimitBucket.withDefaults());
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         try (SessionWriter writer = new SessionWriter(session, out, TagRenderer.NONE)) {
@@ -79,10 +80,13 @@ class QuitClaimOrderTest {
 
     /**
      * The longest QUIT the input limit allows is one byte too long as an ERROR (the command is a
-     * byte longer): the session must still be fully released, with an ERROR that fits.
+     * byte longer), and longer still as the QUIT line broadcast with the quitter's prefix: the
+     * session must still be fully released, the ERROR must be exactly the 512 bytes that fit, and a
+     * channel peer must still get a QUIT line that fits.
      */
     @Test
-    void maxLengthQuitReasonStillReleasesTheSessionAndSendsAFittingError() throws Exception {
+    void maxLengthQuitReasonStillReleasesTheSessionAndSendsFittingLines()
+            throws MalformedMessageException {
         NicknameRegistry nicknames = new NicknameRegistry();
         ChannelRegistry channels = new ChannelRegistry();
         UserStatistics statistics = new UserStatistics();
@@ -100,21 +104,45 @@ class QuitClaimOrderTest {
         nicknames.claim("erin", session);
         session.lifecycle().completeRegistration();
         statistics.userRegistered();
+        ClientSession peer = new ClientSession("c4", "h", RateLimitBucket.withDefaults());
+        peer.setNickname("peer");
         Channel channel = channels.join("#c", session, ignored -> true).orElseThrow().channel();
+        channels.join("#c", peer, ignored -> true);
         String reason = "x " + "a".repeat(502); // "QUIT :" + reason + CRLF is exactly 512 bytes
         ByteArrayOutputStream out = new ByteArrayOutputStream();
-        try (SessionWriter writer = new SessionWriter(session, out, TagRenderer.NONE)) {
+        ByteArrayOutputStream peerOut = new ByteArrayOutputStream();
+        try (SessionWriter writer = new SessionWriter(session, out, TagRenderer.NONE);
+                SessionWriter peerWriter = new SessionWriter(peer, peerOut, TagRenderer.NONE)) {
             session.attachWriter(writer);
+            peer.attachWriter(peerWriter);
 
             new QuitCommandHandler(cleanup).handle(session, MessageParser.parse("QUIT :" + reason));
 
             assertThat(session.lifecycle().isClosing()).isTrue();
         }
         assertThat(nicknames.lookup("erin")).isEmpty();
-        assertThat(channel.members()).doesNotContain(session);
+        assertThat(channel.members()).containsExactly(peer);
         assertThat(statistics.registeredCount()).isZero();
         String sent = out.toString(StandardCharsets.UTF_8);
         assertThat(sent).startsWith("ERROR :x aaa").endsWith("\r\n");
-        assertThat(sent.getBytes(StandardCharsets.UTF_8).length).isLessThanOrEqualTo(512);
+        assertThat(sent.getBytes(StandardCharsets.UTF_8)).hasSize(512);
+        String broadcast = peerOut.toString(StandardCharsets.UTF_8);
+        assertThat(broadcast).startsWith(":erin!erin@h QUIT :x aaa").endsWith("\r\n");
+        assertThat(broadcast.getBytes(StandardCharsets.UTF_8)).hasSize(512);
+    }
+
+    /** The serializer adds a colon for a reason starting with one; the budget must count it. */
+    @Test
+    void colonPrefixedLongReasonStillFitsExactly() {
+        ClientSession session = new ClientSession("c5", "h", RateLimitBucket.withDefaults());
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        try (SessionWriter writer = new SessionWriter(session, out, TagRenderer.NONE)) {
+            session.attachWriter(writer);
+
+            cleanup().disconnectWithError(session, ":" + "a".repeat(600), "gone");
+        }
+        String sent = out.toString(StandardCharsets.UTF_8);
+        assertThat(sent).startsWith("ERROR ::aaa");
+        assertThat(sent.getBytes(StandardCharsets.UTF_8)).hasSize(512);
     }
 }

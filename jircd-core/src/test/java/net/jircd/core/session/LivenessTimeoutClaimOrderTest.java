@@ -80,7 +80,7 @@ class LivenessTimeoutClaimOrderTest {
     }
 
     @Test
-    void timeoutAfterAnotherTriggerClaimedTheSessionQueuesNoError() throws Exception {
+    void timeoutAfterAnotherTriggerClaimedTheSessionQueuesNoError() {
         MutableClock clock = new MutableClock();
         ClientSession session = new ClientSession("c1", "h", RateLimitBucket.withDefaults());
         session.markAliveAt(clock.instant());
@@ -97,7 +97,7 @@ class LivenessTimeoutClaimOrderTest {
     }
 
     @Test
-    void timeoutClaimsTheSessionAndSendsErrorOnce() throws Exception {
+    void timeoutClaimsTheSessionAndSendsErrorOnce() {
         MutableClock clock = new MutableClock();
         ClientSession session = new ClientSession("c2", "h", RateLimitBucket.withDefaults());
         session.markAliveAt(clock.instant());

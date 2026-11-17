@@ -6,10 +6,12 @@ in `001-ircv3-server`/`002-extended-irc-commands`.
 
 ## QUIT sends ERROR before closing (FR-001)
 
-**Decision**: `QuitCommandHandler` enqueues an `ERROR :<reason>` line to the quitting
-client's own writer, then calls `disconnectCleanup.cleanup(session, reason)` exactly as
-today — same two-step order `LivenessMonitor.timeOut()` and `KillCommandHandler` already
-use (enqueue `ERROR` first, then run the shared cleanup path).
+**Decision**: `QuitCommandHandler` calls `DisconnectCleanup.disconnectWithError(session, reason,
+reason)`, which claims CLOSING first and queues the `ERROR :<reason>` line to the quitting client's
+own writer as the final line of that claim (the reason cut to fit one wire line), then runs the
+shared cleanup. `LivenessMonitor.timeOut()` and `KillCommandHandler` use the same claim-first
+helper (#151: once a client has read its `ERROR` it no longer counts for LUSERS). This replaced the
+original order, which queued `ERROR` first and then ran `cleanup(session, reason)`.
 
 **Rationale**: `DisconnectCleanup.cleanup()` closes the session's writer as its own last
 step; enqueuing `ERROR` before calling it guarantees the line is queued ahead of that close
