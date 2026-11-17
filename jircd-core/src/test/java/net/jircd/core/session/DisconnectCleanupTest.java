@@ -61,6 +61,53 @@ class DisconnectCleanupTest {
     }
 
     @Test
+    void anAnnouncementThatThrowsStillLetsTheCleanupReleaseTheSession() {
+        NicknameRegistry nicknames = new NicknameRegistry();
+        DisconnectCleanup cleanup =
+                new DisconnectCleanup(
+                        nicknames,
+                        new ChannelRegistry(),
+                        new WhowasHistory(() -> 100),
+                        new ExtensionRegistry());
+        ClientSession session = registeredSession();
+        nicknames.claim("erin", session);
+
+        boolean claimed =
+                cleanup.cleanup(
+                        session,
+                        "reason",
+                        () -> {
+                            throw new IllegalStateException("announce failed");
+                        });
+
+        assertThat(claimed).isTrue();
+        assertThat(nicknames.lookup("erin")).isEmpty();
+    }
+
+    /** The ERROR is the last line: whatever another task queues after it is dropped. */
+    @Test
+    void lineQueuedAfterTheErrorIsDropped() {
+        ClientSession session = registeredSession();
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        try (SessionWriter writer = new SessionWriter(session, out, TagRenderer.NONE)) {
+            session.attachWriter(writer);
+            DisconnectCleanup cleanup =
+                    new DisconnectCleanup(
+                            new NicknameRegistry(),
+                            new ChannelRegistry(),
+                            new WhowasHistory(() -> 100),
+                            new ExtensionRegistry(),
+                            () ->
+                                    writer.enqueueRaw(
+                                            net.jircd.protocol.Message.of(
+                                                    net.jircd.protocol.Command.PING, "late")));
+
+            cleanup.disconnectWithError(session, "bye", "bye");
+        }
+        assertThat(out.toString(StandardCharsets.UTF_8)).isEqualTo("ERROR bye\r\n");
+    }
+
+    @Test
     void firstCleanupCallClaimsTheClosingTransition() {
         DisconnectCleanup cleanup =
                 new DisconnectCleanup(

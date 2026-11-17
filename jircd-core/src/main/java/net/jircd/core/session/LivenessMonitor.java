@@ -177,8 +177,7 @@ public final class LivenessMonitor {
     }
 
     private void timeOut(String reason) {
-        enqueueError(reason);
-        disconnectCleanup.cleanup(session, reason);
+        disconnectCleanup.disconnectWithError(session, reason, reason);
     }
 
     private void enqueueError(String reason) {

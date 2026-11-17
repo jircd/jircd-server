@@ -111,7 +111,7 @@ No new subproject — every file below is an existing file from `001-ircv3-serve
 ```text
 jircd-core/
 └── src/main/java/net/jircd/core/session/command/
-    ├── QuitCommandHandler.java      # send ERROR before disconnectCleanup.cleanup() (FR-001)
+    ├── QuitCommandHandler.java      # claim CLOSING, then send ERROR, via disconnectCleanup.disconnectWithError() (FR-001, #151)
     ├── UserCommandHandler.java      # reject empty realname with 461 (FR-002)
     ├── JoinCommandHandler.java      # sendNamesReply: compute 353's visibility symbol (FR-003)
     ├── LusersCommandHandler.java    # reword 251 text, real invisible count (FR-004)
