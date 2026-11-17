@@ -10,7 +10,7 @@ googleJavaFormat = "1.36.1"
 spotbugs = "6.5.13"
 pmd = "7.26.0"
 spotbugsTool = "4.10.3"
-sonarqube = "7.5.0.8588"
+sonarqube = "7.6.0.18749"
 testcontainers = "2.0.5"
 graalvmNative = "1.1.18"
 
