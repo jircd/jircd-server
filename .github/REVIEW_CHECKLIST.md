@@ -33,6 +33,7 @@ Tests:
 - **S5853**: chain consecutive AssertJ assertions on the same subject.
 - **S5841**: assert `isNotEmpty()` before `allMatch` / `allSatisfy` / `doesNotContain`.
 - **S3415**: the computed value goes in `assertThat(...)`, the expected literal in the matcher.
+- **S1130**: a test declares only the checked exceptions its body can throw; drop a leftover `throws Exception` (#152).
 - **S2699**: every test asserts something.
 - **S5838**: use AssertJ's dedicated assertion (`hasSize`, `isEmpty`, `contains`) rather than `isEqualTo` on a derived value.
 
