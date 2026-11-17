@@ -24,7 +24,7 @@ RUN --mount=type=cache,target=/root/.gradle \
 # ---------------------------------------------------------------------------------------------
 # jvm: the supported variant. Distroless Java 25 (Temurin) with no shell, running as nonroot.
 # ---------------------------------------------------------------------------------------------
-FROM gcr.io/distroless/java25-debian13:nonroot@sha256:8ac5525549d14b8ddd34562f9fc8e6ba4840c995363a1507b17cadf8bb7ab57e AS jvm
+FROM gcr.io/distroless/java25-debian13:nonroot@sha256:1c4ced761d17961c900cba60c33c8c3c46edbdadaa9d5ef9806eb5a6824fd406 AS jvm
 # OCI labels (contracts/container-contract.md). CI passes the build args; a local build leaves them
 # at "unknown". The variant-specific description is the only label that differs between variants.
 ARG IMAGE_SOURCE=unknown
@@ -62,7 +62,7 @@ RUN --mount=type=cache,target=/root/.gradle \
 # native: the experimental variant. The executable links glibc dynamically, so it runs on
 # distroless base (glibc, CA certificates, tzdata; no shell), as nonroot.
 # ---------------------------------------------------------------------------------------------
-FROM gcr.io/distroless/base-debian13:nonroot@sha256:7fe4df6a4413adf5889960d345a28b4574aea0872ea47684c7244c8d88027dca AS native
+FROM gcr.io/distroless/base-debian13:nonroot@sha256:a08d9054afbaf1af9b90fd02cdc7b32236319b5376d374505a41548d42b0c5db AS native
 ARG IMAGE_SOURCE=unknown
 ARG IMAGE_REVISION=unknown
 ARG IMAGE_VERSION=unknown
