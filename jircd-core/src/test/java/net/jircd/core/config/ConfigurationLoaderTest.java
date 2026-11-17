@@ -105,12 +105,11 @@ class ConfigurationLoaderTest {
                 "::ffff:203.0.113.0/80"
             })
     void rejectsInvalidConnectionOverrideCidr(String cidr) {
-        assertThatThrownBy(
-                        () ->
-                                load(
-                                        "connectionLimitOverrides: [{cidr: '"
-                                                + cidr
-                                                + "', maxConnectionsPerIp: 200}]"))
+        assertThatThrownBy(() ->
+                        load(
+                                "connectionLimitOverrides: [{cidr: '"
+                                        + cidr
+                                        + "', maxConnectionsPerIp: 200}]"))
                 .isInstanceOf(ConfigurationException.class)
                 .hasMessageContaining("connectionLimitOverrides[0].cidr");
     }
@@ -145,14 +144,13 @@ class ConfigurationLoaderTest {
                 "203.0.113.0/24;::ffff:203.0.113.0/120"
             })
     void rejectsDuplicateConnectionOverrideRanges(String first, String second) {
-        assertThatThrownBy(
-                        () ->
-                                load(
-                                        "connectionLimitOverrides: [{cidr: '"
-                                                + first
-                                                + "', maxConnectionsPerIp: 1}, {cidr: '"
-                                                + second
-                                                + "', maxConnectionsPerIp: 2}]"))
+        assertThatThrownBy(() ->
+                        load(
+                                "connectionLimitOverrides: [{cidr: '"
+                                        + first
+                                        + "', maxConnectionsPerIp: 1}, {cidr: '"
+                                        + second
+                                        + "', maxConnectionsPerIp: 2}]"))
                 .isInstanceOf(ConfigurationException.class)
                 .hasMessageContaining("connectionLimitOverrides[1].cidr")
                 .hasMessageContaining("duplicate");
@@ -243,11 +241,11 @@ class ConfigurationLoaderTest {
         ServerConfiguration configuration =
                 load(
                         """
-            motdPath: /etc/jircd/motd.txt
-            adminName: Jane
-            adminLocation: Earth
-            adminEmail: jane@example.org
-            """);
+                        motdPath: /etc/jircd/motd.txt
+                        adminName: Jane
+                        adminLocation: Earth
+                        adminEmail: jane@example.org
+                        """);
 
         assertThat(configuration.motdPath()).isEqualTo("/etc/jircd/motd.txt");
         assertThat(configuration.adminContact())
@@ -370,10 +368,9 @@ class ConfigurationLoaderTest {
 
     @Test
     void syntaxErrorsIncludeLocationWithoutSourceText() {
-        assertThatThrownBy(
-                        () ->
-                                load(
-                                        "serverName: irc.example.net\nlisteners:\n  - keystorePassword: [987654321}\n"))
+        assertThatThrownBy(() ->
+                        load(
+                                "serverName: irc.example.net\nlisteners:\n  - keystorePassword: [987654321}\n"))
                 .isInstanceOf(ConfigurationException.class)
                 .hasMessageContaining("invalid YAML at line 3, column 33")
                 .hasMessageNotContaining("987654321")
@@ -635,28 +632,25 @@ class ConfigurationLoaderTest {
 
     @Test
     void plainTextCredentialIsRejected() {
-        assertThatThrownBy(
-                        () ->
-                                load(
-                                        "administratorCredentials:\n  - username: root\n    hashedPassword: hunter2\n"))
+        assertThatThrownBy(() ->
+                        load(
+                                "administratorCredentials:\n  - username: root\n    hashedPassword: hunter2\n"))
                 .isInstanceOf(ConfigurationException.class);
     }
 
     @Test
     void unsupportedArgon2VariantIsRejected() {
-        assertThatThrownBy(
-                        () ->
-                                load(
-                                        "administratorCredentials:\n"
-                                                + "  - username: root\n"
-                                                + "    hashedPassword: \"$argon2i$v=19$m=65536,t=3,p=4$c2FsdA$aGFzaA\"\n"))
+        assertThatThrownBy(() ->
+                        load(
+                                "administratorCredentials:\n"
+                                        + "  - username: root\n"
+                                        + "    hashedPassword: \"$argon2i$v=19$m=65536,t=3,p=4$c2FsdA$aGFzaA\"\n"))
                 .isInstanceOf(ConfigurationException.class);
-        assertThatThrownBy(
-                        () ->
-                                load(
-                                        "administratorCredentials:\n"
-                                                + "  - username: root\n"
-                                                + "    hashedPassword: \"$argon2d$v=19$m=65536,t=3,p=4$c2FsdA$aGFzaA\"\n"))
+        assertThatThrownBy(() ->
+                        load(
+                                "administratorCredentials:\n"
+                                        + "  - username: root\n"
+                                        + "    hashedPassword: \"$argon2d$v=19$m=65536,t=3,p=4$c2FsdA$aGFzaA\"\n"))
                 .isInstanceOf(ConfigurationException.class);
     }
 

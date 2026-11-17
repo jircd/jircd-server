@@ -54,11 +54,10 @@ class SessionWriterCloseTest {
                                         "failure", "host.example", RateLimitBucket.withDefaults()),
                                 failing,
                                 TagRenderer.NONE)) {
-            writer.setOnWriteFailure(
-                    () -> {
-                        writer.close();
-                        callbackReturned.countDown();
-                    });
+            writer.setOnWriteFailure(() -> {
+                writer.close();
+                callbackReturned.countDown();
+            });
             writer.enqueueRaw(line(0));
             assertThat(callbackReturned.await(1, TimeUnit.SECONDS)).isTrue();
         }
@@ -84,11 +83,10 @@ class SessionWriterCloseTest {
                                 TagRenderer.NONE)) {
             writer.setOnDrainTruncated(truncated::incrementAndGet);
             // As in production: the failure's cleanup closes the writer from its own thread.
-            writer.setOnWriteFailure(
-                    () -> {
-                        writer.close();
-                        callbackReturned.countDown();
-                    });
+            writer.setOnWriteFailure(() -> {
+                writer.close();
+                callbackReturned.countDown();
+            });
             writer.enqueueRaw(line(0));
             assertThat(callbackReturned.await(1, TimeUnit.SECONDS)).isTrue();
         }

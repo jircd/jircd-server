@@ -184,13 +184,12 @@ class CommandHandoverDispatchTest {
             client.attachWriter(writer);
             // A worker failure is rethrown by get() below; a hung worker cannot hang the loop.
             CompletableFuture<Void> flips =
-                    CompletableFuture.runAsync(
-                            () -> {
-                                for (int i = 0; i < FLIPS; i++) {
-                                    registry.applyDesiredState(handOver(i % 2 == 0), () -> {});
-                                    swaps.incrementAndGet();
-                                }
-                            });
+                    CompletableFuture.runAsync(() -> {
+                        for (int i = 0; i < FLIPS; i++) {
+                            registry.applyDesiredState(handOver(i % 2 == 0), () -> {});
+                            swaps.incrementAndGet();
+                        }
+                    });
             byte[] line = "TAGMSG #c".getBytes(StandardCharsets.UTF_8);
             long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
             while (!flips.isDone() && System.nanoTime() < deadline) {

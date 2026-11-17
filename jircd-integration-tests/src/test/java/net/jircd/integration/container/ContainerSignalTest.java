@@ -158,17 +158,16 @@ class ContainerSignalTest {
     private static CompletableFuture<List<String>> readToEnd(RawIrcClient client) {
         CompletableFuture<List<String>> lines = new CompletableFuture<>();
         Thread.ofVirtual()
-                .start(
-                        () -> {
-                            List<String> seen = new ArrayList<>();
-                            try {
-                                String line;
-                                while ((line = client.readLine()) != null) seen.add(line);
-                            } catch (IOException _) {
-                                // A reset after the last line still ends the stream.
-                            }
-                            lines.complete(seen);
-                        });
+                .start(() -> {
+                    List<String> seen = new ArrayList<>();
+                    try {
+                        String line;
+                        while ((line = client.readLine()) != null) seen.add(line);
+                    } catch (IOException _) {
+                        // A reset after the last line still ends the stream.
+                    }
+                    lines.complete(seen);
+                });
         return lines;
     }
 

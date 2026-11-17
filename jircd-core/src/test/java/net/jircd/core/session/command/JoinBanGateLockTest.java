@@ -56,11 +56,10 @@ class JoinBanGateLockTest {
         ClientSession joiner = session("joiner");
         try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
             var join =
-                    executor.submit(
-                            () -> {
-                                handler.handle(joiner, MessageParser.parse("JOIN #banned"));
-                                return null;
-                            });
+                    executor.submit(() -> {
+                        handler.handle(joiner, MessageParser.parse("JOIN #banned"));
+                        return null;
+                    });
             try {
                 assertThat(displaying.await(5, TimeUnit.SECONDS)).isTrue();
                 assertThat(executor.submit(() -> registry.lookup("#quiet")))

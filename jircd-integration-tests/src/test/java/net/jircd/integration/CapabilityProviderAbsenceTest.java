@@ -80,10 +80,9 @@ class CapabilityProviderAbsenceTest {
                     kept =
                             new String(in.readAllBytes(), StandardCharsets.UTF_8)
                                     .lines()
-                                    .filter(
-                                            line ->
-                                                    hiddenClassSuffixes.stream()
-                                                            .noneMatch(line.trim()::endsWith))
+                                    .filter(line ->
+                                            hiddenClassSuffixes.stream()
+                                                    .noneMatch(line.trim()::endsWith))
                                     .toList();
                 }
                 Path file = Files.createTempFile(scratch, "services-", ".txt");

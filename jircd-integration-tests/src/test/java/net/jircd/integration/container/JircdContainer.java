@@ -95,9 +95,8 @@ final class JircdContainer implements AutoCloseable {
                         .waitingFor(
                                 Wait.forLogMessage(".*jircd started as.*\\n", 1)
                                         .withStartupTimeout(STARTUP_TIMEOUT));
-        writableBinds.forEach(
-                (host, inside) ->
-                        container.withFileSystemBind(host.toString(), inside, BindMode.READ_WRITE));
+        writableBinds.forEach((host, inside) ->
+                container.withFileSystemBind(host.toString(), inside, BindMode.READ_WRITE));
         container.start();
         return new JircdContainer(container);
     }
@@ -115,17 +114,15 @@ final class JircdContainer implements AutoCloseable {
         VolumeConfigured container = new VolumeConfigured(files);
         container
                 .withExposedPorts(6667, 6697)
-                .withCreateContainerCmdModifier(
-                        cmd -> {
-                            cmd.withVolumes(new Volume("/etc/jircd"));
-                            readOnlyRoot(cmd);
-                        })
+                .withCreateContainerCmdModifier(cmd -> {
+                    cmd.withVolumes(new Volume("/etc/jircd"));
+                    readOnlyRoot(cmd);
+                })
                 .waitingFor(
                         Wait.forLogMessage(".*jircd started as.*\\n", 1)
                                 .withStartupTimeout(STARTUP_TIMEOUT));
-        writableBinds.forEach(
-                (host, inside) ->
-                        container.withFileSystemBind(host.toString(), inside, BindMode.READ_WRITE));
+        writableBinds.forEach((host, inside) ->
+                container.withFileSystemBind(host.toString(), inside, BindMode.READ_WRITE));
         container.start();
         return new JircdContainer(container);
     }

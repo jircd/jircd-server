@@ -53,18 +53,17 @@ class JircdServerApplicationShutdownTest {
         // Stands in for a start() that is still bringing listeners up.
         Thread slowStart =
                 Thread.ofPlatform()
-                        .start(
-                                () -> {
-                                    lifecycle.lock();
-                                    try {
-                                        held.countDown();
-                                        release.await();
-                                    } catch (InterruptedException _) {
-                                        Thread.currentThread().interrupt();
-                                    } finally {
-                                        lifecycle.unlock();
-                                    }
-                                });
+                        .start(() -> {
+                            lifecycle.lock();
+                            try {
+                                held.countDown();
+                                release.await();
+                            } catch (InterruptedException _) {
+                                Thread.currentThread().interrupt();
+                            } finally {
+                                lifecycle.unlock();
+                            }
+                        });
         try {
             assertThat(held.await(10, TimeUnit.SECONDS)).isTrue();
             Duration budget = Duration.ofMillis(800);
@@ -106,25 +105,23 @@ class JircdServerApplicationShutdownTest {
         JircdServerApplication application = application();
         CountDownLatch paused = new CountDownLatch(1);
         CountDownLatch resume = new CountDownLatch(1);
-        application.onStartPhaseForTesting(
-                phase -> {
-                    if (phase != pauseAt) return;
-                    paused.countDown();
+        application.onStartPhaseForTesting(phase -> {
+            if (phase != pauseAt) return;
+            paused.countDown();
+            try {
+                resume.await();
+            } catch (InterruptedException _) {
+                Thread.currentThread().interrupt();
+            }
+        });
+        CompletableFuture<Void> start =
+                CompletableFuture.runAsync(() -> {
                     try {
-                        resume.await();
-                    } catch (InterruptedException _) {
-                        Thread.currentThread().interrupt();
+                        application.start();
+                    } catch (Exception e) {
+                        throw new IllegalStateException(e);
                     }
                 });
-        CompletableFuture<Void> start =
-                CompletableFuture.runAsync(
-                        () -> {
-                            try {
-                                application.start();
-                            } catch (Exception e) {
-                                throw new IllegalStateException(e);
-                            }
-                        });
         try {
             assertThat(paused.await(10, TimeUnit.SECONDS)).isTrue();
             // start() holds the lifecycle, so this shutdown drains, gives up waiting for the
@@ -171,10 +168,9 @@ class JircdServerApplicationShutdownTest {
         int[] attempts = new int[1];
         application
                 .ownedListenersForTesting()
-                .add(
-                        () -> {
-                            if (attempts[0]++ == 0) throw new java.io.IOException("port stuck");
-                        });
+                .add(() -> {
+                    if (attempts[0]++ == 0) throw new java.io.IOException("port stuck");
+                });
         try (LogCapture logs = new LogCapture(JircdServerApplication.class)) {
             application.shutdown("bye", Duration.ofSeconds(2));
 
@@ -195,10 +191,9 @@ class JircdServerApplicationShutdownTest {
         int[] attempts = new int[1];
         application
                 .ownedListenersForTesting()
-                .add(
-                        () -> {
-                            if (attempts[0]++ == 0) throw new java.io.IOException("port stuck");
-                        });
+                .add(() -> {
+                    if (attempts[0]++ == 0) throw new java.io.IOException("port stuck");
+                });
         try (LogCapture logs = new LogCapture(JircdServerApplication.class)) {
             // A budget of 1 ns: its deadline has passed by the time shutdown() returns, and an
             // idle server's drain still finishes.

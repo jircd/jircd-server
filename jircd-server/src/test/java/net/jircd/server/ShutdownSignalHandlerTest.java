@@ -58,11 +58,10 @@ class ShutdownSignalHandlerTest {
 
     @Test
     void aFailingShutdownStillExitsZero() {
-        handler.attach(
-                () -> {
-                    events.add("shutdown");
-                    throw new IllegalStateException("listener close failed");
-                });
+        handler.attach(() -> {
+            events.add("shutdown");
+            throw new IllegalStateException("listener close failed");
+        });
 
         handler.onSignal("TERM");
 

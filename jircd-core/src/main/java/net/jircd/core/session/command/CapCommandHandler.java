@@ -90,42 +90,38 @@ public final class CapCommandHandler implements CommandHandler {
         negotiator.beginNegotiation(session);
         int version = CapabilityNegotiationGrammar.parseLsVersion(message);
         String server = serverName.get();
-        negotiator.runUnderControl(
-                () -> {
-                    session.recordCapVersion(version);
-                    String target = Replies.target(session);
-                    List<String> offered = negotiator.currentlyOfferedCapabilityNames();
-                    // Enable rejects an offer set that cannot fit one line for an older client at
-                    // the configured nickname length; a later longer limit still never truncates
-                    // the list.
-                    boolean continuation =
-                            continuation(session)
-                                    || !CapabilityNegotiationGrammar.fitsOneLine(
-                                            server, target, "LS", offered);
-                    enqueueAll(
-                            session,
-                            CapabilityNegotiationGrammar.lsReplies(
-                                    server, target, offered, continuation));
-                });
+        negotiator.runUnderControl(() -> {
+            session.recordCapVersion(version);
+            String target = Replies.target(session);
+            List<String> offered = negotiator.currentlyOfferedCapabilityNames();
+            // Enable rejects an offer set that cannot fit one line for an older client at
+            // the configured nickname length; a later longer limit still never truncates
+            // the list.
+            boolean continuation =
+                    continuation(session)
+                            || !CapabilityNegotiationGrammar.fitsOneLine(
+                                    server, target, "LS", offered);
+            enqueueAll(
+                    session,
+                    CapabilityNegotiationGrammar.lsReplies(server, target, offered, continuation));
+        });
     }
 
     private void handleList(ClientSession session) {
         String server = serverName.get();
-        negotiator.runUnderControl(
-                () -> {
-                    String target = Replies.target(session);
-                    List<String> held = new ArrayList<>(session.negotiatedCapabilities());
-                    held.sort(Comparator.naturalOrder());
-                    // A held set an older client could not get on one line still reaches it whole.
-                    boolean continuation =
-                            continuation(session)
-                                    || !CapabilityNegotiationGrammar.fitsOneLine(
-                                            server, target, "LIST", held);
-                    enqueueAll(
-                            session,
-                            CapabilityNegotiationGrammar.listReplies(
-                                    server, target, held, continuation));
-                });
+        negotiator.runUnderControl(() -> {
+            String target = Replies.target(session);
+            List<String> held = new ArrayList<>(session.negotiatedCapabilities());
+            held.sort(Comparator.naturalOrder());
+            // A held set an older client could not get on one line still reaches it whole.
+            boolean continuation =
+                    continuation(session)
+                            || !CapabilityNegotiationGrammar.fitsOneLine(
+                                    server, target, "LIST", held);
+            enqueueAll(
+                    session,
+                    CapabilityNegotiationGrammar.listReplies(server, target, held, continuation));
+        });
     }
 
     /**
@@ -138,27 +134,25 @@ public final class CapCommandHandler implements CommandHandler {
     private void handleReq(ClientSession session, Message message) {
         List<String> requested = CapabilityNegotiationGrammar.parseCapabilityList(message);
         String server = serverName.get();
-        negotiator.runUnderControl(
-                () -> {
-                    String target = Replies.target(session);
-                    Optional<Set<String>> candidate = negotiator.candidate(session, requested);
-                    Message reply =
-                            candidate.isPresent()
-                                    ? CapabilityNegotiationGrammar.ack(server, target, requested)
-                                    : CapabilityNegotiationGrammar.nak(server, target, requested);
-                    if (MessageSerializer.commandBytes(reply)
-                            > MessageSerializer.MAX_COMMAND_BYTES) {
-                        Replies.sendFitted(
-                                session,
-                                server,
-                                NumericReply.ERR_INPUTTOOLONG,
-                                List.of(),
-                                "Input line was too long");
-                        return;
-                    }
-                    candidate.ifPresent(session::replaceNegotiatedCapabilities);
-                    enqueue(session, reply);
-                });
+        negotiator.runUnderControl(() -> {
+            String target = Replies.target(session);
+            Optional<Set<String>> candidate = negotiator.candidate(session, requested);
+            Message reply =
+                    candidate.isPresent()
+                            ? CapabilityNegotiationGrammar.ack(server, target, requested)
+                            : CapabilityNegotiationGrammar.nak(server, target, requested);
+            if (MessageSerializer.commandBytes(reply) > MessageSerializer.MAX_COMMAND_BYTES) {
+                Replies.sendFitted(
+                        session,
+                        server,
+                        NumericReply.ERR_INPUTTOOLONG,
+                        List.of(),
+                        "Input line was too long");
+                return;
+            }
+            candidate.ifPresent(session::replaceNegotiatedCapabilities);
+            enqueue(session, reply);
+        });
     }
 
     private void handleEnd(ClientSession session) {

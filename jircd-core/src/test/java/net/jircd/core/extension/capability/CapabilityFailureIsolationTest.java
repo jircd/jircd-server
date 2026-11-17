@@ -137,22 +137,18 @@ class CapabilityFailureIsolationTest {
                                                                         notice(),
                                                                         List.of(outsider())))));
                 case INBOUND_TAGS ->
-                        registrar.onInboundTags(
-                                (tags, context) ->
-                                        answer(
-                                                () ->
-                                                        new InboundTagResult(
-                                                                Map.of("+x", "1"), Map.of()),
-                                                // A forged server tag.
-                                                () ->
-                                                        new InboundTagResult(
-                                                                Map.of("time", SECRET), Map.of())));
+                        registrar.onInboundTags((tags, context) ->
+                                answer(
+                                        () -> new InboundTagResult(Map.of("+x", "1"), Map.of()),
+                                        // A forged server tag.
+                                        () ->
+                                                new InboundTagResult(
+                                                        Map.of("time", SECRET), Map.of())));
                 case RECIPIENTS ->
-                        registrar.onRecipients(
-                                (intent, context) ->
-                                        answer(
-                                                () -> Set.of(DeliveryRole.SENDER_COPY),
-                                                () -> Set.of(DeliveryRole.ORDINARY_TARGET)));
+                        registrar.onRecipients((intent, context) ->
+                                answer(
+                                        () -> Set.of(DeliveryRole.SENDER_COPY),
+                                        () -> Set.of(DeliveryRole.ORDINARY_TARGET)));
                 case OUTBOUND_TAGS ->
                         registrar.onOutboundTags(
                                 Set.of("f"),
@@ -331,11 +327,10 @@ class CapabilityFailureIsolationTest {
     private void assertSanitized() {
         assertThat(logs.list)
                 .isNotEmpty()
-                .allSatisfy(
-                        event -> {
-                            assertThat(event.getFormattedMessage()).doesNotContain(SECRET);
-                            assertThat(event.getThrowableProxy()).isNull();
-                        });
+                .allSatisfy(event -> {
+                    assertThat(event.getFormattedMessage()).doesNotContain(SECRET);
+                    assertThat(event.getThrowableProxy()).isNull();
+                });
     }
 
     static Stream<Arguments> faults() {
@@ -664,14 +659,13 @@ class CapabilityFailureIsolationTest {
         AtomicReference<String> lateResult = new AtomicReference<>();
         Thread inFlight =
                 Thread.ofVirtual()
-                        .start(
-                                () ->
-                                        lateResult.set(
-                                                registry.hookDispatcher()
-                                                        .memberStatus(
-                                                                captured,
-                                                                holder.negotiatedCapabilities(),
-                                                                member)));
+                        .start(() ->
+                                lateResult.set(
+                                        registry.hookDispatcher()
+                                                .memberStatus(
+                                                        captured,
+                                                        holder.negotiatedCapabilities(),
+                                                        member)));
         try {
             assertThat(entered.await(WAIT_SECONDS, TimeUnit.SECONDS)).isTrue();
             registry.hookDispatcher()
@@ -745,12 +739,11 @@ class CapabilityFailureIsolationTest {
     void aWithdrawalThatCannotBeScheduledIsReportedAndTheNextFaultTriesAgain() {
         AtomicInteger attempts = new AtomicInteger();
         registry =
-                registry(
-                        task -> {
-                            if (attempts.incrementAndGet() == 1)
-                                throw new RejectedExecutionException("full");
-                            task.run();
-                        });
+                registry(task -> {
+                    if (attempts.incrementAndGet() == 1)
+                        throw new RejectedExecutionException("full");
+                    task.run();
+                });
         Faulty faulty = new Faulty("faulty", HookKind.MEMBER_STATUS);
         enable(faulty);
         ClientSession holder = connect("holder", "faulty");
@@ -803,10 +796,9 @@ class CapabilityFailureIsolationTest {
     @Test
     void aThrowingPublicationObserverChangesNoPublicationsOutcome() {
         // Sourcery, PR #112 comment 1: the observer runs after the publication has committed.
-        registry.observeCapabilityPublications(
-                timing -> {
-                    throw new IllegalStateException("observer");
-                });
+        registry.observeCapabilityPublications(timing -> {
+            throw new IllegalStateException("observer");
+        });
         Faulty faulty = new Faulty("faulty", HookKind.MEMBER_STATUS);
         enable(faulty);
         assertThat(registry.stateOf("faulty")).isEqualTo(Extension.State.ENABLED);
@@ -836,13 +828,12 @@ class CapabilityFailureIsolationTest {
         // The enable and the fault's withdrawal.
         assertThat(timings)
                 .hasSize(2)
-                .allSatisfy(
-                        timing -> {
-                            assertThat(timing.sessions()).isEqualTo(3);
-                            assertThat(timing.waitNanos()).isNotNegative();
-                            assertThat(timing.publishNanos()).isNotNegative();
-                            assertThat(timing.notifyNanos()).isNotNegative();
-                        });
+                .allSatisfy(timing -> {
+                    assertThat(timing.sessions()).isEqualTo(3);
+                    assertThat(timing.waitNanos()).isNotNegative();
+                    assertThat(timing.publishNanos()).isNotNegative();
+                    assertThat(timing.notifyNanos()).isNotNegative();
+                });
     }
 
     private static ExtensionRegistry.DesiredState desired(Set<String> changed) {

@@ -32,16 +32,14 @@ final class ClientTagForwarder extends AbstractCapabilityExtension {
 
     @Override
     public void register(CapabilityRegistrar registrar) {
-        registrar.onInboundTags(
-                (tags, context) -> {
-                    Map<String, String> forwarded = new LinkedHashMap<>();
-                    tags.tags()
-                            .forEach(
-                                    (key, value) -> {
-                                        if (key.startsWith("+")) forwarded.put(key, value);
-                                    });
-                    return new InboundTagResult(forwarded, Map.of());
-                });
+        registrar.onInboundTags((tags, context) -> {
+            Map<String, String> forwarded = new LinkedHashMap<>();
+            tags.tags()
+                    .forEach((key, value) -> {
+                        if (key.startsWith("+")) forwarded.put(key, value);
+                    });
+            return new InboundTagResult(forwarded, Map.of());
+        });
     }
 
     static void enableIn(net.jircd.core.extension.ExtensionRegistry registry) {

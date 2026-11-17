@@ -38,10 +38,10 @@ class CapabilityGroupTest {
 
     private static final String BATCH_AND_TAGS_YAML =
             """
-      capabilities:
-        batch: enabled
-        message-tags: enabled
-      """;
+            capabilities:
+              batch: enabled
+              message-tags: enabled
+            """;
 
     private static Message privmsg(String body) {
         return new Message(
@@ -141,16 +141,15 @@ class CapabilityGroupTest {
             ClientSession session = live(server, "erin");
             Thread first =
                     Thread.ofVirtual()
-                            .start(
-                                    () -> {
-                                        for (int i = 0; i < 20; i++) {
-                                            session.writer()
-                                                    .enqueueGroup(
-                                                            "a",
-                                                            List.of(),
-                                                            List.of(privmsg("a1"), privmsg("a2")));
-                                        }
-                                    });
+                            .start(() -> {
+                                for (int i = 0; i < 20; i++) {
+                                    session.writer()
+                                            .enqueueGroup(
+                                                    "a",
+                                                    List.of(),
+                                                    List.of(privmsg("a1"), privmsg("a2")));
+                                }
+                            });
             for (int i = 0; i < 20; i++) {
                 session.writer()
                         .enqueueGroup("b", List.of(), List.of(privmsg("b1"), privmsg("b2")));

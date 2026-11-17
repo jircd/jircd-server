@@ -495,10 +495,9 @@ public final class Channel {
     /** Matches either the presented or real identity against the given mask list. */
     public boolean matchesMask(ChannelMode mode, String presented, String real) {
         return mutableMasks(mode).stream()
-                .anyMatch(
-                        entry ->
-                                NickMask.matches(presented, entry.mask())
-                                        || NickMask.matches(real, entry.mask()));
+                .anyMatch(entry ->
+                        NickMask.matches(presented, entry.mask())
+                                || NickMask.matches(real, entry.mask()));
     }
 
     @Override

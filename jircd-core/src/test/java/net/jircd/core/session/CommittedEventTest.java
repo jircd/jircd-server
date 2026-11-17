@@ -334,10 +334,9 @@ class CommittedEventTest {
         synchronized (spy.events) {
             bobs =
                     spy.events.stream()
-                            .filter(
-                                    e ->
-                                            e.subject().startsWith("bob!")
-                                                    || e.subject().startsWith("robert!"))
+                            .filter(e ->
+                                    e.subject().startsWith("bob!")
+                                            || e.subject().startsWith("robert!"))
                             .toList();
         }
         assertThat(bobs)

@@ -142,21 +142,16 @@ public final class HookDispatcher {
                                             .hook(Hooks.InboundTagHook.class)
                                             .apply(input, context),
                             r -> validInbound(r, registration, input));
-            result.ifPresent(
-                    r -> {
-                        forwarded.putAll(r.forwarded());
-                        r.forwarded()
-                                .keySet()
-                                .forEach(
-                                        key ->
-                                                owners.computeIfAbsent(
-                                                                key,
-                                                                ignored ->
-                                                                        new java.util
-                                                                                .LinkedHashSet<>())
-                                                        .add(registration.capabilityName()));
-                        attributes.putAll(r.context());
-                    });
+            result.ifPresent(r -> {
+                forwarded.putAll(r.forwarded());
+                r.forwarded()
+                        .keySet()
+                        .forEach(key ->
+                                owners.computeIfAbsent(
+                                                key, ignored -> new java.util.LinkedHashSet<>())
+                                        .add(registration.capabilityName()));
+                attributes.putAll(r.context());
+            });
         }
         InboundTagResult merged =
                 forwarded.isEmpty() && attributes.isEmpty()

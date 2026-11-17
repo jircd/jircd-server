@@ -63,13 +63,11 @@ class ModeMemberDepartureTest {
                 var executor = Executors.newVirtualThreadPerTaskExecutor()) {
             operator.attachWriter(writer);
             var pending =
-                    executor.submit(
-                            () -> {
-                                handler.handle(
-                                        operator,
-                                        MessageParser.parse("MODE #c " + change + " target"));
-                                return null;
-                            });
+                    executor.submit(() -> {
+                        handler.handle(
+                                operator, MessageParser.parse("MODE #c " + change + " target"));
+                        return null;
+                    });
             try {
                 await(resolved);
                 registry.part(channel, target).orElseThrow();

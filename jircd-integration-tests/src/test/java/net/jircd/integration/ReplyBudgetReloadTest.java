@@ -219,13 +219,12 @@ class ReplyBudgetReloadTest {
                         .anyMatch(line -> line.contains(" 369 "));
                 assertThat(logs.messages())
                         .isNotEmpty()
-                        .allSatisfy(
-                                line ->
-                                        assertThat(line)
-                                                .contains(
-                                                        "Dropping oversized",
-                                                        "budget",
-                                                        "suppressedSinceLast="));
+                        .allSatisfy(line ->
+                                assertThat(line)
+                                        .contains(
+                                                "Dropping oversized",
+                                                "budget",
+                                                "suppressedSinceLast="));
             }
         }
     }
@@ -233,10 +232,9 @@ class ReplyBudgetReloadTest {
     private static void assertWireFits(List<String> lines) {
         assertThat(lines)
                 .isNotEmpty()
-                .allSatisfy(
-                        line ->
-                                assertThat(line.getBytes(StandardCharsets.UTF_8).length + 2)
-                                        .as("wire bytes including CRLF")
-                                        .isLessThanOrEqualTo(512));
+                .allSatisfy(line ->
+                        assertThat(line.getBytes(StandardCharsets.UTF_8).length + 2)
+                                .as("wire bytes including CRLF")
+                                .isLessThanOrEqualTo(512));
     }
 }

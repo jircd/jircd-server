@@ -25,9 +25,9 @@ class AwayNotifyTest {
 
     private static final String AWAY_NOTIFY_ENABLED_YAML =
             """
-      capabilities:
-        away-notify: enabled
-      """;
+            capabilities:
+              away-notify: enabled
+            """;
 
     @Test
     void optedInChannelMateSeesAwayThenBackNotices() throws Exception {

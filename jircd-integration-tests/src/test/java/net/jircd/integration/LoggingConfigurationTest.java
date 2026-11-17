@@ -225,10 +225,9 @@ class LoggingConfigurationTest {
             assertThat(rootAppenders())
                     .filteredOn(RollingFileAppender.class::isInstance)
                     .singleElement()
-                    .satisfies(
-                            a ->
-                                    assertThat(((RollingFileAppender<?>) a).getFile())
-                                            .isEqualTo(second.toString()));
+                    .satisfies(a ->
+                            assertThat(((RollingFileAppender<?>) a).getFile())
+                                    .isEqualTo(second.toString()));
         }
     }
 

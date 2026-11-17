@@ -45,10 +45,9 @@ class ConnectionLimitsTest {
             assertRejected(server, false);
             assertRejected(server, true);
             assertThat(logs.messages())
-                    .anyMatch(
-                            message ->
-                                    message.contains("security-event=connection-limit")
-                                            && message.contains(key));
+                    .anyMatch(message ->
+                            message.contains("security-event=connection-limit")
+                                    && message.contains(key));
 
             Files.writeString(server.configPath, TestServer.baseYaml() + admin + key + ": 0\n");
             root.send("REHASH");
@@ -120,10 +119,9 @@ class ConnectionLimitsTest {
                 logs.awaitMessage(
                         message ->
                                 logs.messages().stream()
-                                                .filter(
-                                                        line ->
-                                                                line.startsWith(
-                                                                        "security-event=connection-limit "))
+                                                .filter(line ->
+                                                        line.startsWith(
+                                                                "security-event=connection-limit "))
                                                 .count()
                                         == 4,
                         WAIT);
@@ -163,11 +161,10 @@ class ConnectionLimitsTest {
             root.readUntil("382", WAIT);
             assertRejected(server, false);
             assertThat(logs.messages())
-                    .anyMatch(
-                            message ->
-                                    message.contains("security-event=connection-limit")
-                                            && message.contains("bucket=127.0.0.1/32")
-                                            && message.contains("limitApplied=1"));
+                    .anyMatch(message ->
+                            message.contains("security-event=connection-limit")
+                                    && message.contains("bucket=127.0.0.1/32")
+                                    && message.contains("limitApplied=1"));
             assertThat(second.readThroughPong(WAIT)).isNotEmpty();
             Files.writeString(server.configPath, TestServer.baseYaml() + base + override + "3}]\n");
             root.send("REHASH");

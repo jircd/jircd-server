@@ -74,10 +74,10 @@ class ConfigurationReloaderLinkageTest {
         Files.writeString(
                 yaml,
                 """
-        serverName: test.jircd.local
-        nicknameMaxLength: 20
-        server-extensions: {broken: enabled, good: enabled}
-        """);
+                serverName: test.jircd.local
+                nicknameMaxLength: 20
+                server-extensions: {broken: enabled, good: enabled}
+                """);
         ConfigurationReloader reloader =
                 new ConfigurationReloader(yaml, loader, extensions, initial);
 

@@ -97,19 +97,15 @@ class GrandfatheredReplyTest {
             assertThat(HandlerHarness.codes(replies)).containsExactly("301", "313", "318");
             assertThat(replies)
                     .isNotEmpty()
-                    .allSatisfy(
-                            reply ->
-                                    assertThat(reply.params().get(1)).isEqualTo(target.nickname()));
+                    .allSatisfy(reply ->
+                            assertThat(reply.params().get(1)).isEqualTo(target.nickname()));
             assertThat(replies.stream().filter(reply -> "301".equals(reply.rawCommand())))
                     .singleElement()
-                    .satisfies(
-                            reply ->
-                                    assertThat(reply.params().getLast())
-                                            .isNotEmpty()
-                                            .satisfies(
-                                                    text ->
-                                                            assertThat(target.awayReason())
-                                                                    .startsWith(text)));
+                    .satisfies(reply ->
+                            assertThat(reply.params().getLast())
+                                    .isNotEmpty()
+                                    .satisfies(text ->
+                                            assertThat(target.awayReason()).startsWith(text)));
             warnings.assertReply("311");
             warnings.assertReply("312");
         }
@@ -145,12 +141,10 @@ class GrandfatheredReplyTest {
                             "USERHOST " + target.nickname() + " small");
             assertThat(replies)
                     .singleElement()
-                    .satisfies(
-                            reply -> {
-                                assertThat(reply.rawCommand()).isEqualTo("302");
-                                assertThat(reply.params().getLast())
-                                        .isEqualTo("small=+ident@host.example");
-                            });
+                    .satisfies(reply -> {
+                        assertThat(reply.rawCommand()).isEqualTo("302");
+                        assertThat(reply.params().getLast()).isEqualTo("small=+ident@host.example");
+                    });
             warnings.assertReply("302");
         }
     }
@@ -171,14 +165,11 @@ class GrandfatheredReplyTest {
             assertThat(HandlerHarness.codes(replies)).contains("332").doesNotContain("333");
             assertThat(replies.stream().filter(reply -> "332".equals(reply.rawCommand())))
                     .singleElement()
-                    .satisfies(
-                            reply ->
-                                    assertThat(reply.params().getLast())
-                                            .isNotEmpty()
-                                            .satisfies(
-                                                    text ->
-                                                            assertThat(channel.topic())
-                                                                    .startsWith(text)));
+                    .satisfies(reply ->
+                            assertThat(reply.params().getLast())
+                                    .isNotEmpty()
+                                    .satisfies(
+                                            text -> assertThat(channel.topic()).startsWith(text)));
             warnings.assertReply("333");
         }
     }
@@ -287,17 +278,13 @@ class GrandfatheredReplyTest {
                         command + " " + target.nickname() + " :hello");
         assertThat(replies)
                 .singleElement()
-                .satisfies(
-                        reply -> {
-                            assertThat(reply.rawCommand()).isEqualTo("301");
-                            assertThat(reply.params().get(1)).isEqualTo(target.nickname());
-                            assertThat(reply.params().getLast())
-                                    .isNotEmpty()
-                                    .satisfies(
-                                            text ->
-                                                    assertThat(target.awayReason())
-                                                            .startsWith(text));
-                        });
+                .satisfies(reply -> {
+                    assertThat(reply.rawCommand()).isEqualTo("301");
+                    assertThat(reply.params().get(1)).isEqualTo(target.nickname());
+                    assertThat(reply.params().getLast())
+                            .isNotEmpty()
+                            .satisfies(text -> assertThat(target.awayReason()).startsWith(text));
+                });
     }
 
     @ParameterizedTest
@@ -325,17 +312,16 @@ class GrandfatheredReplyTest {
             assertThat(HandlerHarness.codes(replies)).containsExactly("PING");
             assertThat(warnings.appender.list)
                     .singleElement()
-                    .satisfies(
-                            event -> {
-                                assertThat(event.getLevel()).isEqualTo(Level.WARN);
-                                assertThat(event.getFormattedMessage())
-                                        .contains(
-                                                "reply=" + command,
-                                                "reason=text has no room for a complete code point",
-                                                "fixedFieldsBytes=510",
-                                                "budget=512")
-                                        .doesNotContain("fields exceed command budget");
-                            });
+                    .satisfies(event -> {
+                        assertThat(event.getLevel()).isEqualTo(Level.WARN);
+                        assertThat(event.getFormattedMessage())
+                                .contains(
+                                        "reply=" + command,
+                                        "reason=text has no room for a complete code point",
+                                        "fixedFieldsBytes=510",
+                                        "budget=512")
+                                .doesNotContain("fields exceed command budget");
+                    });
         }
     }
 
@@ -358,13 +344,12 @@ class GrandfatheredReplyTest {
             assertThat(replies).isEmpty();
             assertThat(warnings.appender.list)
                     .singleElement()
-                    .satisfies(
-                            event ->
-                                    assertThat(event.getFormattedMessage())
-                                            .contains(
-                                                    "reply=" + command,
-                                                    "reason=fields exceed command budget")
-                                            .doesNotContain("reason=text"));
+                    .satisfies(event ->
+                            assertThat(event.getFormattedMessage())
+                                    .contains(
+                                            "reply=" + command,
+                                            "reason=fields exceed command budget")
+                                    .doesNotContain("reason=text"));
         }
     }
 
@@ -386,12 +371,10 @@ class GrandfatheredReplyTest {
             assertThat(replies).isEmpty();
             assertThat(warnings.appender.list)
                     .singleElement()
-                    .satisfies(
-                            event ->
-                                    assertThat(event.getFormattedMessage())
-                                            .contains("Outbound server tags exceed 4094 data bytes")
-                                            .doesNotContain(
-                                                    "fields exceed command budget", "reason=text"));
+                    .satisfies(event ->
+                            assertThat(event.getFormattedMessage())
+                                    .contains("Outbound server tags exceed 4094 data bytes")
+                                    .doesNotContain("fields exceed command budget", "reason=text"));
         }
     }
 
@@ -410,12 +393,11 @@ class GrandfatheredReplyTest {
 
         void assertReply(String code) {
             assertThat(appender.list)
-                    .anySatisfy(
-                            event -> {
-                                assertThat(event.getLevel()).isEqualTo(Level.WARN);
-                                assertThat(event.getFormattedMessage())
-                                        .contains("Dropping oversized", "=" + code, "budget");
-                            });
+                    .anySatisfy(event -> {
+                        assertThat(event.getLevel()).isEqualTo(Level.WARN);
+                        assertThat(event.getFormattedMessage())
+                                .contains("Dropping oversized", "=" + code, "budget");
+                    });
         }
 
         @Override

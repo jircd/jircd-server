@@ -66,93 +66,67 @@ class MembershipStressTest {
             List<Future<?>> pending = new ArrayList<>();
             for (Operation operation : operations) {
                 pending.add(
-                        executor.submit(
-                                () -> {
-                                    if (!start.await(5, TimeUnit.SECONDS)) {
-                                        throw new IllegalStateException("Start barrier timed out");
+                        executor.submit(() -> {
+                            if (!start.await(5, TimeUnit.SECONDS)) {
+                                throw new IllegalStateException("Start barrier timed out");
+                            }
+                            ClientSession member = sessions.get(operation.member());
+                            switch (operation.kind()) {
+                                case 0 ->
+                                        registry.join(operation.channel(), member, ignored -> true)
+                                                .ifPresent(result -> {
+                                                    observedChannels.add(result.channel());
+                                                    assertRecipients(result.recipients(), sessions);
+                                                    if (!result.alreadyMember()) {
+                                                        assertThat(result.recipients())
+                                                                .contains(member);
+                                                        successfulJoins.incrementAndGet();
+                                                    }
+                                                });
+                                case 1 ->
+                                        registry.lookup(operation.channel())
+                                                .flatMap(channel -> registry.part(channel, member))
+                                                .ifPresent(departure -> {
+                                                    assertDeparture(departure, sessions);
+                                                    departures.incrementAndGet();
+                                                });
+                                case 2 ->
+                                        registry.lookup(operation.channel())
+                                                .ifPresent(channel -> {
+                                                    KickOutcome result =
+                                                            registry.kick(
+                                                                    channel,
+                                                                    member,
+                                                                    sessions.get(operation.target())
+                                                                            .nickname());
+                                                    if (result
+                                                            instanceof KickOutcome.Kicked kicked) {
+                                                        assertDeparture(
+                                                                kicked.departure(), sessions);
+                                                        departures.incrementAndGet();
+                                                    }
+                                                });
+                                case 3 -> {
+                                    // Count under the same registry monitor as
+                                    // leaveAll; its production signature and the
+                                    // synchronization of the other operations stay intact.
+                                    synchronized (registry) {
+                                        int membershipsBefore = member.channelMemberships().size();
+                                        assertRecipients(registry.leaveAll(member), sessions);
+                                        departures.addAndGet(membershipsBefore);
                                     }
-                                    ClientSession member = sessions.get(operation.member());
-                                    switch (operation.kind()) {
-                                        case 0 ->
-                                                registry.join(
-                                                                operation.channel(),
-                                                                member,
-                                                                ignored -> true)
-                                                        .ifPresent(
-                                                                result -> {
-                                                                    observedChannels.add(
-                                                                            result.channel());
-                                                                    assertRecipients(
-                                                                            result.recipients(),
-                                                                            sessions);
-                                                                    if (!result.alreadyMember()) {
-                                                                        assertThat(
-                                                                                        result
-                                                                                                .recipients())
-                                                                                .contains(member);
-                                                                        successfulJoins
-                                                                                .incrementAndGet();
-                                                                    }
-                                                                });
-                                        case 1 ->
-                                                registry.lookup(operation.channel())
-                                                        .flatMap(
-                                                                channel ->
-                                                                        registry.part(
-                                                                                channel, member))
-                                                        .ifPresent(
-                                                                departure -> {
-                                                                    assertDeparture(
-                                                                            departure, sessions);
-                                                                    departures.incrementAndGet();
-                                                                });
-                                        case 2 ->
-                                                registry.lookup(operation.channel())
-                                                        .ifPresent(
-                                                                channel -> {
-                                                                    KickOutcome result =
-                                                                            registry.kick(
-                                                                                    channel,
-                                                                                    member,
-                                                                                    sessions.get(
-                                                                                                    operation
-                                                                                                            .target())
-                                                                                            .nickname());
-                                                                    if (result
-                                                                            instanceof
-                                                                            KickOutcome.Kicked
-                                                                                    kicked) {
-                                                                        assertDeparture(
-                                                                                kicked.departure(),
-                                                                                sessions);
-                                                                        departures
-                                                                                .incrementAndGet();
-                                                                    }
-                                                                });
-                                        case 3 -> {
-                                            // Count under the same registry monitor as
-                                            // leaveAll; its production signature and the
-                                            // synchronization of the other operations stay intact.
-                                            synchronized (registry) {
-                                                int membershipsBefore =
-                                                        member.channelMemberships().size();
-                                                assertRecipients(
-                                                        registry.leaveAll(member), sessions);
-                                                departures.addAndGet(membershipsBefore);
-                                            }
-                                        }
-                                        case 4 ->
-                                                registry.lookup(operation.channel())
-                                                        .ifPresent(
-                                                                channel -> {
-                                                                    // The owner checks membership
-                                                                    // and grants voice atomically.
-                                                                    channel.grantVoice(member);
-                                                                });
-                                        default -> throw new AssertionError(operation);
-                                    }
-                                    return null;
-                                }));
+                                }
+                                case 4 ->
+                                        registry.lookup(operation.channel())
+                                                .ifPresent(channel -> {
+                                                    // The owner checks membership
+                                                    // and grants voice atomically.
+                                                    channel.grantVoice(member);
+                                                });
+                                default -> throw new AssertionError(operation);
+                            }
+                            return null;
+                        }));
             }
             start.countDown();
             for (Future<?> result : pending) {

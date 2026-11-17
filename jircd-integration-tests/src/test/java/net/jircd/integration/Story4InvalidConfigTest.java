@@ -36,9 +36,9 @@ class Story4InvalidConfigTest {
                 configPath,
                 TestServer.baseYaml()
                         + """
-            capabilities:
-              nonexistent: enabled
-            """);
+                        capabilities:
+                          nonexistent: enabled
+                        """);
 
         assertThatThrownBy(() -> new JircdServerApplication(configPath))
                 .isInstanceOf(ConfigurationException.class)
@@ -54,9 +54,9 @@ class Story4InvalidConfigTest {
                 configPath,
                 TestServer.baseYaml()
                         + """
-            capabilities:
-              cloak: enabled
-            """);
+                        capabilities:
+                          cloak: enabled
+                        """);
 
         assertThatThrownBy(() -> new JircdServerApplication(configPath))
                 .isInstanceOf(ConfigurationException.class)
@@ -72,9 +72,9 @@ class Story4InvalidConfigTest {
                     server.configPath,
                     TestServer.baseYaml()
                             + """
-              capabilities:
-                moderation: enabled
-              """);
+                            capabilities:
+                              moderation: enabled
+                            """);
             Signal.raise(new Signal("HUP"));
 
             // A failed reload logs and leaves prior state untouched — settle briefly, then confirm

@@ -405,11 +405,10 @@ class ExtensionRegistryCapabilityTest {
             logger.detachAppender(appender);
         }
         assertThat(appender.list)
-                .anySatisfy(
-                        event ->
-                                assertThat(event.getFormattedMessage())
-                                        .contains("DupTwo")
-                                        .contains("Duplicate extension id: dup"));
+                .anySatisfy(event ->
+                        assertThat(event.getFormattedMessage())
+                                .contains("DupTwo")
+                                .contains("Duplicate extension id: dup"));
         assertThat(discovered.all())
                 .extracting(Extension::id)
                 .containsExactlyInAnyOrder("dup", "unique");
@@ -535,16 +534,15 @@ class ExtensionRegistryCapabilityTest {
                     public void start(ServerContext context) {
                         CountDownLatch done = new CountDownLatch(1);
                         Thread other =
-                                new Thread(
-                                        () -> {
-                                            synchronized (registry) {
-                                                readResult[0] =
-                                                        registry.enabled().size()
-                                                                + "/"
-                                                                + registry.stateOf("blocker");
-                                                done.countDown();
-                                            }
-                                        });
+                                new Thread(() -> {
+                                    synchronized (registry) {
+                                        readResult[0] =
+                                                registry.enabled().size()
+                                                        + "/"
+                                                        + registry.stateOf("blocker");
+                                        done.countDown();
+                                    }
+                                });
                         other.start();
                         try {
                             otherThreadFinished[0] = done.await(5, TimeUnit.SECONDS);
@@ -613,11 +611,10 @@ class ExtensionRegistryCapabilityTest {
         // A different thread must acquire the lifecycle lock and retry the owed cleanup.
         child.stopError = null;
         var retry =
-                new FutureTask<>(
-                        () -> {
-                            registry.disable("child");
-                            return null;
-                        });
+                new FutureTask<>(() -> {
+                    registry.disable("child");
+                    return null;
+                });
         Thread.ofPlatform().daemon().start(retry);
         retry.get(5, TimeUnit.SECONDS);
         assertThat(child.stops).hasValue(2);

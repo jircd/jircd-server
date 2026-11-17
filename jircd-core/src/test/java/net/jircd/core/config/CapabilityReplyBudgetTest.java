@@ -157,11 +157,10 @@ class CapabilityReplyBudgetTest {
                                 .nicknameMaxLength())
                 .isEqualTo(150);
         // ... startup rejects it once the provider's identity bytes are reserved ...
-        assertThatThrownBy(
-                        () ->
-                                loader().load(
-                                                new ByteArrayInputStream(
-                                                        tight.getBytes(StandardCharsets.UTF_8))))
+        assertThatThrownBy(() ->
+                        loader().load(
+                                        new ByteArrayInputStream(
+                                                tight.getBytes(StandardCharsets.UTF_8))))
                 .isInstanceOf(ConfigurationException.class)
                 .hasMessageContaining("353=");
         // ... and so does reload, with the previous configuration untouched.
@@ -192,13 +191,12 @@ class CapabilityReplyBudgetTest {
 
     @Test
     void namesFitComputationReportsTheRemainingChannelBudget() {
-        assertThatThrownBy(
-                        () ->
-                                ConfigurationLoader.validateNamesBudget(
-                                        "test.jircd.local",
-                                        216,
-                                        51,
-                                        catalog("multi-prefix", ReplySlot.STATUS, 2)))
+        assertThatThrownBy(() ->
+                        ConfigurationLoader.validateNamesBudget(
+                                "test.jircd.local",
+                                216,
+                                51,
+                                catalog("multi-prefix", ReplySlot.STATUS, 2)))
                 .isInstanceOf(ConfigurationException.class)
                 .hasMessageContaining("353=514")
                 .hasMessageContaining("budget=");
@@ -234,11 +232,10 @@ class CapabilityReplyBudgetTest {
                 "serverName: test.jircd.local\nnicknameMaxLength: 150\nchannelNameMaxLength: 50\n";
         for (ReplyBudgetCatalog catalog : List.of(tooWide, throwing)) {
             ConfigurationLoader loader = new ConfigurationLoader(Set.of(), Set.of(), () -> catalog);
-            assertThatThrownBy(
-                            () ->
-                                    loader.load(
-                                            new ByteArrayInputStream(
-                                                    configured.getBytes(StandardCharsets.UTF_8))))
+            assertThatThrownBy(() ->
+                            loader.load(
+                                    new ByteArrayInputStream(
+                                            configured.getBytes(StandardCharsets.UTF_8))))
                     .isInstanceOf(ConfigurationException.class)
                     .hasMessageContaining("reply bound");
         }

@@ -48,10 +48,9 @@ class ConnectionTokenOpacityTest {
                     capture.awaitMessage(
                             m ->
                                     capture.messages().stream()
-                                                    .filter(
-                                                            x ->
-                                                                    x.startsWith(
-                                                                            "connection-event=connected"))
+                                                    .filter(x ->
+                                                            x.startsWith(
+                                                                    "connection-event=connected"))
                                                     .count()
                                             >= expectedCount,
                             Duration.ofSeconds(5));

@@ -58,24 +58,23 @@ public final class UserhostCommandHandler implements CommandHandler {
         for (int i = 0; i < count; i++) {
             nicknameRegistry
                     .lookup(message.params().get(i))
-                    .ifPresent(
-                            target -> {
-                                String hostname =
-                                        target == session || session.isAdministrator()
-                                                ? target.realHostname()
-                                                : PresentedIdentity.displayHostname(
-                                                        target, extensionRegistry);
-                                entries.add(
-                                        target.nickname()
-                                                + (target.userModes().contains(UserMode.OPERATOR)
-                                                        ? "*"
-                                                        : "")
-                                                + '='
-                                                + (target.isAway() ? '-' : '+')
-                                                + target.ident()
-                                                + '@'
-                                                + hostname);
-                            });
+                    .ifPresent(target -> {
+                        String hostname =
+                                target == session || session.isAdministrator()
+                                        ? target.realHostname()
+                                        : PresentedIdentity.displayHostname(
+                                                target, extensionRegistry);
+                        entries.add(
+                                target.nickname()
+                                        + (target.userModes().contains(UserMode.OPERATOR)
+                                                ? "*"
+                                                : "")
+                                        + '='
+                                        + (target.isAway() ? '-' : '+')
+                                        + target.ident()
+                                        + '@'
+                                        + hostname);
+                    });
         }
         Replies.sendListed(
                 session, serverName.get(), NumericReply.RPL_USERHOST, List.of(), entries);

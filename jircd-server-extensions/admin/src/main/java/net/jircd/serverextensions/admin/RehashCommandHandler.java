@@ -70,12 +70,11 @@ public final class RehashCommandHandler implements CommandHandler {
             // A valid reload still applies; a provider that failed to change is reported, not
             // hidden.
             outcome.failures()
-                    .forEach(
-                            (id, reason) ->
-                                    Replies.sendFittedNotice(
-                                            session,
-                                            serverName.get(),
-                                            "Rehash could not apply " + id + ": " + reason));
+                    .forEach((id, reason) ->
+                            Replies.sendFittedNotice(
+                                    session,
+                                    serverName.get(),
+                                    "Rehash could not apply " + id + ": " + reason));
         } catch (ConfigurationException e) {
             reportRejection(session, e);
         } catch (IOException _) {

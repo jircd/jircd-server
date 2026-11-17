@@ -175,10 +175,9 @@ class Story6OperTest {
             }
             assertThat(
                             logs.messages().stream()
-                                    .filter(
-                                            message ->
-                                                    message.contains(
-                                                            "security-event=failed-authentication"))
+                                    .filter(message ->
+                                            message.contains(
+                                                    "security-event=failed-authentication"))
                                     .map(message -> message.substring(message.indexOf("reason="))))
                     .containsExactly(
                             "reason=invalid OPER credentials", "reason=OPER source locked out");

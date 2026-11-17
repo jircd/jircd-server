@@ -39,11 +39,9 @@ class NicknameRegistryTest {
                     IntStream.range(0, contenders).mapToObj(i -> newSession("c" + i)).toList();
             var futures =
                     sessions.stream()
-                            .map(
-                                    session ->
-                                            (Future<Boolean>)
-                                                    pool.submit(
-                                                            () -> registry.claim("Alice", session)))
+                            .map(session ->
+                                    (Future<Boolean>)
+                                            pool.submit(() -> registry.claim("Alice", session)))
                             .toList();
             AtomicInteger winners = new AtomicInteger();
             for (Future<Boolean> future : futures) {

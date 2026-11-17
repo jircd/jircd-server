@@ -73,15 +73,14 @@ class SessionWriterOverflowTest {
             try {
                 for (int i = 0; i < 8; i++)
                     tasks.add(
-                            threads.submit(
-                                    () -> {
-                                        try {
-                                            gate.await();
-                                        } catch (InterruptedException _) {
-                                            Thread.currentThread().interrupt();
-                                        }
-                                        writer.enqueueRaw(Message.of(Command.PING, "x".repeat(32)));
-                                    }));
+                            threads.submit(() -> {
+                                try {
+                                    gate.await();
+                                } catch (InterruptedException _) {
+                                    Thread.currentThread().interrupt();
+                                }
+                                writer.enqueueRaw(Message.of(Command.PING, "x".repeat(32)));
+                            }));
                 gate.countDown();
                 for (var task : tasks) task.get(250, TimeUnit.MILLISECONDS);
                 assertThat(callbacks).hasValue(1);

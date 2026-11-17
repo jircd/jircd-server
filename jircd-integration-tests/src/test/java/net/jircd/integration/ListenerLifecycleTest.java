@@ -75,22 +75,18 @@ class ListenerLifecycleTest {
             IOException first = new IOException("first listener failure");
             IOException second = new IOException("second listener failure");
             ownedListeners(server.application)
-                    .add(
-                            () -> {
-                                throw first;
-                            });
+                    .add(() -> {
+                        throw first;
+                    });
             ownedListeners(server.application)
-                    .add(
-                            () -> {
-                                throw second;
-                            });
+                    .add(() -> {
+                        throw second;
+                    });
             try {
                 assertThatThrownBy(server.application::stop)
                         .isSameAs(first)
-                        .satisfies(
-                                failure ->
-                                        assertThat(failure.getSuppressed())
-                                                .containsExactly(second));
+                        .satisfies(failure ->
+                                assertThat(failure.getSuppressed()).containsExactly(second));
                 assertThat(server.application.nicknameRegistry().all()).isEmpty();
                 assertThat(client.readLine()).isNull();
             } finally {
@@ -247,26 +243,23 @@ class ListenerLifecycleTest {
         var secondAttempts = new AtomicInteger();
         var successfulAttempts = new AtomicInteger();
         ownedListeners(application)
-                .add(
-                        () -> {
-                            if (firstAttempts.incrementAndGet() == 1) {
-                                throw firstFailure;
-                            }
-                        });
+                .add(() -> {
+                    if (firstAttempts.incrementAndGet() == 1) {
+                        throw firstFailure;
+                    }
+                });
         ownedListeners(application)
-                .add(
-                        () -> {
-                            if (secondAttempts.incrementAndGet() == 1) {
-                                throw secondFailure;
-                            }
-                        });
+                .add(() -> {
+                    if (secondAttempts.incrementAndGet() == 1) {
+                        throw secondFailure;
+                    }
+                });
         ownedListeners(application).add(successfulAttempts::incrementAndGet);
 
         assertThatThrownBy(application::stop)
                 .isSameAs(firstFailure)
-                .satisfies(
-                        failure ->
-                                assertThat(failure.getSuppressed()).containsExactly(secondFailure));
+                .satisfies(failure ->
+                        assertThat(failure.getSuppressed()).containsExactly(secondFailure));
         assertThat(successfulAttempts.get()).isEqualTo(1);
         assertThat(ownedListeners(application)).hasSize(2);
         assertThatCode(application::stop).doesNotThrowAnyException();
@@ -285,28 +278,24 @@ class ListenerLifecycleTest {
         var laterFailure = new IllegalArgumentException("later runtime failure");
         var attempts = new AtomicInteger();
         ownedListeners(application)
-                .add(
-                        () -> {
-                            throw runtimeFailure;
-                        });
+                .add(() -> {
+                    throw runtimeFailure;
+                });
         ownedListeners(application)
-                .add(
-                        () -> {
-                            throw ioFailure;
-                        });
+                .add(() -> {
+                    throw ioFailure;
+                });
         ownedListeners(application)
-                .add(
-                        () -> {
-                            throw laterFailure;
-                        });
+                .add(() -> {
+                    throw laterFailure;
+                });
         ownedListeners(application).add(attempts::incrementAndGet);
 
         assertThatThrownBy(application::stop)
                 .isSameAs(ioFailure)
-                .satisfies(
-                        failure ->
-                                assertThat(failure.getSuppressed())
-                                        .containsExactly(runtimeFailure, laterFailure));
+                .satisfies(failure ->
+                        assertThat(failure.getSuppressed())
+                                .containsExactly(runtimeFailure, laterFailure));
         assertThat(attempts.get()).isEqualTo(1);
         assertThat(ownedListeners(application)).hasSize(3);
     }
@@ -318,22 +307,19 @@ class ListenerLifecycleTest {
         var secondFailure = new IllegalArgumentException("second runtime failure");
         var attempts = new AtomicInteger();
         ownedListeners(application)
-                .add(
-                        () -> {
-                            throw firstFailure;
-                        });
+                .add(() -> {
+                    throw firstFailure;
+                });
         ownedListeners(application)
-                .add(
-                        () -> {
-                            throw secondFailure;
-                        });
+                .add(() -> {
+                    throw secondFailure;
+                });
         ownedListeners(application).add(attempts::incrementAndGet);
 
         assertThatThrownBy(application::stop)
                 .isSameAs(firstFailure)
-                .satisfies(
-                        failure ->
-                                assertThat(failure.getSuppressed()).containsExactly(secondFailure));
+                .satisfies(failure ->
+                        assertThat(failure.getSuppressed()).containsExactly(secondFailure));
         assertThat(attempts.get()).isEqualTo(1);
     }
 
@@ -381,32 +367,29 @@ class ListenerLifecycleTest {
         var starting = new CountDownLatch(1);
         application.start();
         ownedListeners(application)
-                .add(
-                        () -> {
-                            closing.countDown();
-                            try {
-                                release.await();
-                            } catch (InterruptedException e) {
-                                Thread.currentThread().interrupt();
-                                throw new IOException(e);
-                            }
-                        });
+                .add(() -> {
+                    closing.countDown();
+                    try {
+                        release.await();
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        throw new IOException(e);
+                    }
+                });
         try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
             try {
                 var stopping =
-                        executor.submit(
-                                () -> {
-                                    application.stop();
-                                    return null;
-                                });
+                        executor.submit(() -> {
+                            application.stop();
+                            return null;
+                        });
                 assertThat(closing.await(1, TimeUnit.SECONDS)).isTrue();
                 var restarting =
-                        executor.submit(
-                                () -> {
-                                    starting.countDown();
-                                    application.start();
-                                    return null;
-                                });
+                        executor.submit(() -> {
+                            starting.countDown();
+                            application.start();
+                            return null;
+                        });
                 assertThat(starting.await(1, TimeUnit.SECONDS)).isTrue();
                 assertThatThrownBy(() -> restarting.get(100, TimeUnit.MILLISECONDS))
                         .isInstanceOf(TimeoutException.class);

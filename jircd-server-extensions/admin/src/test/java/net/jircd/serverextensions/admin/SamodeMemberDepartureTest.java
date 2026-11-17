@@ -64,11 +64,10 @@ class SamodeMemberDepartureTest {
             admin.attachWriter(adminWriter);
             peer.attachWriter(peerWriter);
             var pending =
-                    executor.submit(
-                            () -> {
-                                handler.handle(admin, MessageParser.parse("SAMODE #c " + change));
-                                return null;
-                            });
+                    executor.submit(() -> {
+                        handler.handle(admin, MessageParser.parse("SAMODE #c " + change));
+                        return null;
+                    });
             try {
                 await(resolved);
                 registry.part(channel, admin).orElseThrow();

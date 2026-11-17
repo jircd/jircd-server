@@ -99,20 +99,18 @@ class CapabilityCompositionTest {
                     member ->
                             member.nickname() + "!" + member.ident() + "@" + member.displayHost());
             // label seam: client tag into bounded context, then a role decision that can see it.
-            registrar.onInboundTags(
-                    (tags, context) ->
-                            new InboundTagResult(
-                                    Map.of(),
-                                    tags.tags().containsKey("label")
-                                            ? Map.of("experimental/label", tags.tags().get("label"))
-                                            : Map.of()));
-            registrar.onRecipients(
-                    (intent, context) -> {
-                        contextSeenByRoles.set(context);
-                        return context.attributes().containsKey("experimental/label")
-                                ? Set.of(DeliveryRole.SENDER_COPY)
-                                : Set.of();
-                    });
+            registrar.onInboundTags((tags, context) ->
+                    new InboundTagResult(
+                            Map.of(),
+                            tags.tags().containsKey("label")
+                                    ? Map.of("experimental/label", tags.tags().get("label"))
+                                    : Map.of()));
+            registrar.onRecipients((intent, context) -> {
+                contextSeenByRoles.set(context);
+                return context.attributes().containsKey("experimental/label")
+                        ? Set.of(DeliveryRole.SENDER_COPY)
+                        : Set.of();
+            });
             // chathistory seam: a finite group framed only when its prerequisite is also
             // negotiated.
             registrar.onOutputGroup(

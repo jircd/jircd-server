@@ -89,11 +89,10 @@ class CapabilityDispatchTest {
     void eventHooksOnlyRunForTheirKindAndNoListenerMeansNoAudienceTraversal() {
         int[] traversed = {0};
         Audience audience =
-                new Audience(
-                        () -> {
-                            traversed[0]++;
-                            return List.of();
-                        });
+                new Audience(() -> {
+                    traversed[0]++;
+                    return List.of();
+                });
         CommittedEvent committed =
                 new CommittedEvent(EventKind.JOINED, 1, "n!u@h", "", "#c", audience);
         dispatcher.event(
@@ -130,11 +129,10 @@ class CapabilityDispatchTest {
         ClientSession peer = session("a");
         int[] calls = {0};
         Audience audience =
-                new Audience(
-                        () -> {
-                            calls[0]++;
-                            return List.of(peer, peer);
-                        });
+                new Audience(() -> {
+                    calls[0]++;
+                    return List.of(peer, peer);
+                });
         assertThat(audience.peers()).containsExactly(peer);
         assertThat(audience.peers()).containsExactly(peer);
         assertThat(calls[0]).isEqualTo(1);
@@ -230,11 +228,10 @@ class CapabilityDispatchTest {
                 snapshotOf(
                         "mt",
                         r ->
-                                r.onInboundTags(
-                                        (in, ctx) ->
-                                                new InboundTagResult(
-                                                        Map.of("+a", "1", "+forged", "x"),
-                                                        Map.of("mt/seen", "yes"))));
+                                r.onInboundTags((in, ctx) ->
+                                        new InboundTagResult(
+                                                Map.of("+a", "1", "+forged", "x"),
+                                                Map.of("mt/seen", "yes"))));
         InboundTags input = new InboundTags("PRIVMSG", Map.of("+a", "1"));
         InboundTagResult result = dispatcher.inboundTags(snapshot, Set.of("mt"), input, CONTEXT);
         assertThat(result).isEqualTo(InboundTagResult.NONE);
@@ -265,10 +262,8 @@ class CapabilityDispatchTest {
                 snapshotOf(
                         "mt",
                         r ->
-                                r.onInboundTags(
-                                        (in, ctx) ->
-                                                new InboundTagResult(
-                                                        Map.of(), Map.of("other/key", "v"))));
+                                r.onInboundTags((in, ctx) ->
+                                        new InboundTagResult(Map.of(), Map.of("other/key", "v"))));
         assertThat(
                         dispatcher.inboundTags(
                                 snapshot, Set.of(), new InboundTags("PRIVMSG", Map.of()), CONTEXT))

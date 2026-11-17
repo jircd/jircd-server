@@ -52,34 +52,31 @@ class UserhostInNamesExtensionTest {
         assertThat(descriptor.requiresProviders()).isEmpty();
         assertThat(descriptor.registrations())
                 .singleElement()
-                .satisfies(
-                        hook -> {
-                            assertThat(hook.kind()).isEqualTo(HookKind.NAMES_IDENTITY);
-                            assertThat(hook.slot()).isEqualTo(ReplySlot.IDENTITY);
-                            assertThat(hook.replyBound().maxBytes(ReplyLimits.REFERENCE))
-                                    .isEqualTo(92);
-                            assertThat(hook.replyBound().maxBytes(new ReplyLimits(1, 2, 3, 7, 11)))
-                                    .isEqualTo(20);
-                            assertThat(
-                                            hook.replyBound()
-                                                    .maxBytes(
-                                                            new ReplyLimits(
-                                                                    1,
-                                                                    2,
-                                                                    3,
-                                                                    Integer.MAX_VALUE,
-                                                                    Integer.MAX_VALUE)))
-                                    .isEqualTo(4294967296L);
-                        });
+                .satisfies(hook -> {
+                    assertThat(hook.kind()).isEqualTo(HookKind.NAMES_IDENTITY);
+                    assertThat(hook.slot()).isEqualTo(ReplySlot.IDENTITY);
+                    assertThat(hook.replyBound().maxBytes(ReplyLimits.REFERENCE)).isEqualTo(92);
+                    assertThat(hook.replyBound().maxBytes(new ReplyLimits(1, 2, 3, 7, 11)))
+                            .isEqualTo(20);
+                    assertThat(
+                                    hook.replyBound()
+                                            .maxBytes(
+                                                    new ReplyLimits(
+                                                            1,
+                                                            2,
+                                                            3,
+                                                            Integer.MAX_VALUE,
+                                                            Integer.MAX_VALUE)))
+                            .isEqualTo(4294967296L);
+                });
     }
 
     @Test
     void rendersOnlyPermittedIdentityIndependentlyOfStatusAndNegotiation() {
         HookDispatcher dispatcher =
-                new HookDispatcher(
-                        (provider, kind, category) -> {
-                            throw new AssertionError(provider + "/" + kind + "/" + category);
-                        });
+                new HookDispatcher((provider, kind, category) -> {
+                    throw new AssertionError(provider + "/" + kind + "/" + category);
+                });
         RuntimeSnapshot snapshot = RuntimeSnapshot.EMPTY.with(descriptor());
         MemberSnapshot member =
                 new MemberSnapshot("nick", "界".repeat(9), "é".repeat(31) + "x", List.of("@", "+"));
@@ -99,10 +96,9 @@ class UserhostInNamesExtensionTest {
     @CsvSource({"'',host", "ident,''", "'',''"})
     void missingIdentOrDisplayHostKeepsBareNickname(String ident, String displayHost) {
         HookDispatcher dispatcher =
-                new HookDispatcher(
-                        (provider, kind, category) -> {
-                            throw new AssertionError(provider + "/" + kind + "/" + category);
-                        });
+                new HookDispatcher((provider, kind, category) -> {
+                    throw new AssertionError(provider + "/" + kind + "/" + category);
+                });
         RuntimeSnapshot snapshot = RuntimeSnapshot.EMPTY.with(descriptor());
         MemberSnapshot member = new MemberSnapshot("nick", ident, displayHost, List.of());
 

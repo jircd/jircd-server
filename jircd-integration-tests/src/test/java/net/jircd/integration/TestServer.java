@@ -35,11 +35,11 @@ public final class TestServer implements AutoCloseable {
     /** Enables all three Story 2 capabilities — none are enabled by default (research.md). */
     public static final String ALL_CAPABILITIES_ENABLED_YAML =
             """
-      capabilities:
-        message-tags: enabled
-        server-time: enabled
-        echo-message: enabled
-      """;
+            capabilities:
+              message-tags: enabled
+              server-time: enabled
+              echo-message: enabled
+            """;
 
     /** The address test listeners bind and test clients connect to. */
     public static final String LOOPBACK = "127.0.0.1";

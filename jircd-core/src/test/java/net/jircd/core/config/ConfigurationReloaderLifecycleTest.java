@@ -308,14 +308,13 @@ class ConfigurationReloaderLifecycleTest {
                 reloader(extensions, "capabilities: {slow: enabled, other: disabled}\n");
 
         CompletableFuture<ConfigurationReloader.ReloadOutcome> reload =
-                CompletableFuture.supplyAsync(
-                        () -> {
-                            try {
-                                return reloader.reloadWithOutcome();
-                            } catch (Exception e) {
-                                throw new IllegalStateException(e);
-                            }
-                        });
+                CompletableFuture.supplyAsync(() -> {
+                    try {
+                        return reloader.reloadWithOutcome();
+                    } catch (Exception e) {
+                        throw new IllegalStateException(e);
+                    }
+                });
         try {
             assertThat(slow.entered.await(5, TimeUnit.SECONDS)).isTrue();
             // Mid-reload: the disable of "other" is not published ahead of the enable.

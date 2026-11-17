@@ -111,20 +111,17 @@ class SendqOverflowTest {
             List<String> received = floodUntil(sender, reader, session, 15360);
             CountDownLatch gate = new CountDownLatch(1);
             var quitting =
-                    threads.submit(
-                            () -> {
-                                gate.await();
-                                stuck.send("QUIT :finished");
-                                return null;
-                            });
+                    threads.submit(() -> {
+                        gate.await();
+                        stuck.send("QUIT :finished");
+                        return null;
+                    });
             var flooding =
-                    threads.submit(
-                            () -> {
-                                gate.await();
-                                for (int i = 0; i < 4; i++)
-                                    sender.send("PRIVMSG #q :" + "x".repeat(480));
-                                return null;
-                            });
+                    threads.submit(() -> {
+                        gate.await();
+                        for (int i = 0; i < 4; i++) sender.send("PRIVMSG #q :" + "x".repeat(480));
+                        return null;
+                    });
             gate.countDown();
             quitting.get(5, TimeUnit.SECONDS);
             flooding.get(5, TimeUnit.SECONDS);
@@ -135,20 +132,17 @@ class SendqOverflowTest {
             server.application.stop();
             assertThat(
                             received.stream()
-                                    .filter(
-                                            line ->
-                                                    line.startsWith(":stuck!")
-                                                            && line.contains(" QUIT ")))
+                                    .filter(line ->
+                                            line.startsWith(":stuck!") && line.contains(" QUIT ")))
                     .hasSize(1);
             assertThat(
                             log.messages().stream()
-                                    .filter(
-                                            line ->
-                                                    line.contains("connection-event=disconnected")
-                                                            && line.contains(
-                                                                    "connection="
-                                                                            + session.connectionId()
-                                                                            + " ")))
+                                    .filter(line ->
+                                            line.contains("connection-event=disconnected")
+                                                    && line.contains(
+                                                            "connection="
+                                                                    + session.connectionId()
+                                                                    + " ")))
                     .hasSize(1);
         }
     }
@@ -178,10 +172,9 @@ class SendqOverflowTest {
                 String token = "connection=" + session.connectionId() + " ";
                 List<String> overflow =
                         log.messages().stream()
-                                .filter(
-                                        m ->
-                                                m.startsWith("connection-event=sendq-overflow")
-                                                        && m.contains(token))
+                                .filter(m ->
+                                        m.startsWith("connection-event=sendq-overflow")
+                                                && m.contains(token))
                                 .toList();
                 assertThat(overflow).hasSize(1);
                 assertThat(overflow.get(0))
@@ -189,13 +182,10 @@ class SendqOverflowTest {
                         .contains(" queuedBytes=");
                 assertThat(
                                 log.messages().stream()
-                                        .filter(
-                                                m ->
-                                                        m.startsWith(
-                                                                        "connection-event=disconnected")
-                                                                && m.contains(token)
-                                                                && m.endsWith(
-                                                                        "reason=SendQ exceeded")))
+                                        .filter(m ->
+                                                m.startsWith("connection-event=disconnected")
+                                                        && m.contains(token)
+                                                        && m.endsWith("reason=SendQ exceeded")))
                         .hasSize(1);
                 Matcher total = Pattern.compile("overflowTotal=(\\d+)").matcher(overflow.get(0));
                 assertThat(total.find()).isTrue();

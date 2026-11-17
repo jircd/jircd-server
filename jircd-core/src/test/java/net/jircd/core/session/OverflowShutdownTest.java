@@ -80,11 +80,10 @@ class OverflowShutdownTest {
                 assertThat(cleaning.await(1, TimeUnit.SECONDS)).isTrue();
                 assertThat(senderReturned.await(250, TimeUnit.MILLISECONDS)).isTrue();
                 var stopping =
-                        threads.submit(
-                                () -> {
-                                    handler.closeConnections(Duration.ofSeconds(5));
-                                    return null;
-                                });
+                        threads.submit(() -> {
+                            handler.closeConnections(Duration.ofSeconds(5));
+                            return null;
+                        });
                 assertThatThrownBy(() -> stopping.get(100, TimeUnit.MILLISECONDS))
                         .isInstanceOf(TimeoutException.class);
                 release.countDown();

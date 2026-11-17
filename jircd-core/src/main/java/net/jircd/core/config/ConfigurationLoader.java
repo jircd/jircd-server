@@ -370,13 +370,12 @@ public final class ConfigurationLoader {
             return;
         }
         StringBuilder sizes = new StringBuilder();
-        worst.forEach(
-                (reply, bytes) -> {
-                    if (!sizes.isEmpty()) {
-                        sizes.append(", ");
-                    }
-                    sizes.append(reply).append('=').append(bytes);
-                });
+        worst.forEach((reply, bytes) -> {
+            if (!sizes.isEmpty()) {
+                sizes.append(", ");
+            }
+            sizes.append(reply).append('=').append(bytes);
+        });
         throw new ConfigurationException(
                 "serverName (S="
                         + serverBytes

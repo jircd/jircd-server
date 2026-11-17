@@ -212,10 +212,9 @@ class JoinStormLoadTest {
 
                 long[] sorted =
                         samples.stream()
-                                .filter(
-                                        sample ->
-                                                sample.sentAt() >= window.start
-                                                        && sample.sentAt() < stormEnd)
+                                .filter(sample ->
+                                        sample.sentAt() >= window.start
+                                                && sample.sentAt() < stormEnd)
                                 .mapToLong(Sample::latencyNanos)
                                 .sorted()
                                 .toArray();
@@ -245,12 +244,11 @@ class JoinStormLoadTest {
 
     private static <T> CompletableFuture<T> watch(
             CompletableFuture<T> task, CompletableFuture<Void> failure) {
-        task.whenComplete(
-                (_, error) -> {
-                    if (error != null) {
-                        failure.completeExceptionally(error);
-                    }
-                });
+        task.whenComplete((_, error) -> {
+            if (error != null) {
+                failure.completeExceptionally(error);
+            }
+        });
         return task;
     }
 

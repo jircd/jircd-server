@@ -74,11 +74,8 @@ class SighupReloadOutcomeTest {
 
             assertThat(registry.stateOf("broken")).isEqualTo(Extension.State.FAILED);
             assertThat(logs.messages())
-                    .anySatisfy(
-                            message ->
-                                    assertThat(message)
-                                            .contains("broken")
-                                            .contains("cannot start broken"))
+                    .anySatisfy(message ->
+                            assertThat(message).contains("broken").contains("cannot start broken"))
                     .noneMatch("Configuration reloaded via SIGHUP"::equals);
         }
     }

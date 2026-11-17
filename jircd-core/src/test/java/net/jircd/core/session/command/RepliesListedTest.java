@@ -58,10 +58,9 @@ class RepliesListedTest {
     void emptyItemsStillEmitOneReplyWithEmptyTrailingParameter() throws Exception {
         assertThat(sendListed(List.of()))
                 .singleElement()
-                .satisfies(
-                        reply ->
-                                assertThat(reply.params())
-                                        .containsExactly("requester", "=", "#ébudget", ""));
+                .satisfies(reply ->
+                        assertThat(reply.params())
+                                .containsExactly("requester", "=", "#ébudget", ""));
     }
 
     @Test
@@ -73,13 +72,12 @@ class RepliesListedTest {
         String token = "x".repeat(budget);
         assertThat(sendListed(List.of(token)))
                 .singleElement()
-                .satisfies(
-                        reply -> {
-                            assertThat(reply.params().getLast()).isEqualTo(token);
-                            assertThat(MessageSerializer.commandBytes(reply) + 1)
-                                    .as("singleton serialized without colon still has room for it")
-                                    .isLessThanOrEqualTo(MessageSerializer.MAX_COMMAND_BYTES);
-                        });
+                .satisfies(reply -> {
+                    assertThat(reply.params().getLast()).isEqualTo(token);
+                    assertThat(MessageSerializer.commandBytes(reply) + 1)
+                            .as("singleton serialized without colon still has room for it")
+                            .isLessThanOrEqualTo(MessageSerializer.MAX_COMMAND_BYTES);
+                });
     }
 
     @Test
@@ -92,12 +90,11 @@ class RepliesListedTest {
         List<Message> replies = sendListed(List.of(first, "y"));
         assertThat(replies)
                 .singleElement()
-                .satisfies(
-                        reply -> {
-                            assertThat(reply.params().getLast()).isEqualTo(first + " y");
-                            assertThat(MessageSerializer.commandBytes(reply))
-                                    .isEqualTo(MessageSerializer.MAX_COMMAND_BYTES);
-                        });
+                .satisfies(reply -> {
+                    assertThat(reply.params().getLast()).isEqualTo(first + " y");
+                    assertThat(MessageSerializer.commandBytes(reply))
+                            .isEqualTo(MessageSerializer.MAX_COMMAND_BYTES);
+                });
     }
 
     @Test

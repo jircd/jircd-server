@@ -135,14 +135,13 @@ final class CapabilityFaults implements FaultReporter {
     private void schedule(String providerId, Incident incident) {
         boolean handedOff = false;
         try {
-            withdrawals.execute(
-                    () -> {
-                        try {
-                            withdraw.accept(providerId, incident.fault);
-                        } finally {
-                            pending.remove(providerId, incident);
-                        }
-                    });
+            withdrawals.execute(() -> {
+                try {
+                    withdraw.accept(providerId, incident.fault);
+                } finally {
+                    pending.remove(providerId, incident);
+                }
+            });
             handedOff = true;
         } catch (RuntimeException e) {
             Fault fault = incident.fault;

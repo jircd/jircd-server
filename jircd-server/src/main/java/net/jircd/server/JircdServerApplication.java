@@ -252,20 +252,18 @@ public final class JircdServerApplication {
     private void enableConfiguredExtensions() {
         configuration
                 .capabilityStates()
-                .forEach(
-                        (id, enabled) -> {
-                            if (enabled) {
-                                extensionRegistry.enable(id);
-                            }
-                        });
+                .forEach((id, enabled) -> {
+                    if (enabled) {
+                        extensionRegistry.enable(id);
+                    }
+                });
         configuration
                 .serverExtensionStates()
-                .forEach(
-                        (id, enabled) -> {
-                            if (enabled) {
-                                extensionRegistry.enable(id);
-                            }
-                        });
+                .forEach((id, enabled) -> {
+                    if (enabled) {
+                        extensionRegistry.enable(id);
+                    }
+                });
     }
 
     private void registerStory1Handlers() {

@@ -210,20 +210,16 @@ class NamesByteBudgetTest {
                                     .map(Message::rawCommand))
                     .containsExactly("PING");
             assertThat(logs.messages())
-                    .anySatisfy(
-                            line ->
-                                    assertThat(line)
-                                            .contains(
-                                                    "Dropping oversized listed reply header",
-                                                    channel,
-                                                    "headerBytes="))
-                    .anySatisfy(
-                            line ->
-                                    assertThat(line)
-                                            .contains(
-                                                    "Dropping oversized reply",
-                                                    "reply=366",
-                                                    "budget=512"));
+                    .anySatisfy(line ->
+                            assertThat(line)
+                                    .contains(
+                                            "Dropping oversized listed reply header",
+                                            channel,
+                                            "headerBytes="))
+                    .anySatisfy(line ->
+                            assertThat(line)
+                                    .contains(
+                                            "Dropping oversized reply", "reply=366", "budget=512"));
         }
     }
 
@@ -258,11 +254,10 @@ class NamesByteBudgetTest {
     private static void assertFittedCloser(List<Message> replies) {
         assertThat(replies.stream().filter(reply -> "366".equals(reply.rawCommand())))
                 .singleElement()
-                .satisfies(
-                        reply ->
-                                assertThat(reply.params().getLast())
-                                        .isNotEmpty()
-                                        .matches("End of /NAMES list"::startsWith));
+                .satisfies(reply ->
+                        assertThat(reply.params().getLast())
+                                .isNotEmpty()
+                                .matches("End of /NAMES list"::startsWith));
     }
 
     private static ExtensionRegistry installedProviders() {

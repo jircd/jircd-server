@@ -55,14 +55,14 @@ class CapabilityFailureIsolationTest {
     /** Only the probes: every discovered provider is off, so each fallback is exact. */
     private static final String YAML =
             """
-      capabilities:
-        message-tags: disabled
-        server-time: disabled
-        echo-message: disabled
-        away-notify: disabled
-        batch: disabled
-        multi-prefix: disabled
-      """;
+            capabilities:
+              message-tags: disabled
+              server-time: disabled
+              echo-message: disabled
+              away-notify: disabled
+              batch: disabled
+              multi-prefix: disabled
+            """;
 
     /** Every wire-affecting hook; the one named by {@link #faulting} throws. */
     private static final class Probe extends AbstractCapabilityExtension {
@@ -99,19 +99,17 @@ class CapabilityFailureIsolationTest {
                                                 "probe away " + event.subject().split("!")[0]));
                         return List.of(new EventIntent(notice, event.audience().peers()));
                     });
-            registrar.onInboundTags(
-                    (tags, context) -> {
-                        maybeFault(HookKind.INBOUND_TAGS);
-                        String value = tags.tags().get("+probe");
-                        return value == null
-                                ? InboundTagResult.NONE
-                                : new InboundTagResult(Map.of("+probe", value), Map.of());
-                    });
-            registrar.onRecipients(
-                    (intent, context) -> {
-                        maybeFault(HookKind.RECIPIENTS);
-                        return Set.of(DeliveryRole.SENDER_COPY);
-                    });
+            registrar.onInboundTags((tags, context) -> {
+                maybeFault(HookKind.INBOUND_TAGS);
+                String value = tags.tags().get("+probe");
+                return value == null
+                        ? InboundTagResult.NONE
+                        : new InboundTagResult(Map.of("+probe", value), Map.of());
+            });
+            registrar.onRecipients((intent, context) -> {
+                maybeFault(HookKind.RECIPIENTS);
+                return Set.of(DeliveryRole.SENDER_COPY);
+            });
             registrar.onOutboundTags(
                     Set.of("probe"),
                     16,
@@ -231,14 +229,13 @@ class CapabilityFailureIsolationTest {
 
     private static List<String> relevant(List<String> lines) {
         return lines.stream()
-                .filter(
-                        l ->
-                                l.contains("probe")
-                                        || l.contains("PROBE")
-                                        || l.contains("PRIVMSG #room")
-                                        || l.contains(" 353 ")
-                                        || l.contains(" 421 ")
-                                        || l.contains(" CAP "))
+                .filter(l ->
+                        l.contains("probe")
+                                || l.contains("PROBE")
+                                || l.contains("PRIVMSG #room")
+                                || l.contains(" 353 ")
+                                || l.contains(" 421 ")
+                                || l.contains(" CAP "))
                 .filter(l -> !l.startsWith("PONG") && !l.endsWith(" barrier"))
                 .toList();
     }
@@ -355,11 +352,8 @@ class CapabilityFailureIsolationTest {
                         faulted.stream()
                                 .filter(l -> !l.contains(" CAP "))
                                 .map(CapabilityFailureIsolationTest::normalized)
-                                .map(
-                                        l ->
-                                                kind == HookKind.INBOUND_TAGS
-                                                        ? withoutLateProbeTag(l)
-                                                        : l)
+                                .map(l ->
+                                        kind == HookKind.INBOUND_TAGS ? withoutLateProbeTag(l) : l)
                                 .toList();
                 assertThat(output)
                         .containsExactlyElementsOf(

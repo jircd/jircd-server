@@ -48,11 +48,11 @@ class Story4ConfigToggleTest {
                     server.configPath,
                     TestServer.baseYaml()
                             + """
-              capabilities:
-                message-tags: disabled
-                server-time: enabled
-                echo-message: enabled
-              """);
+                            capabilities:
+                              message-tags: disabled
+                              server-time: enabled
+                              echo-message: enabled
+                            """);
             Signal.raise(new Signal("HUP"));
             awaitState(server, "message-tags", Extension.State.DISABLED);
 

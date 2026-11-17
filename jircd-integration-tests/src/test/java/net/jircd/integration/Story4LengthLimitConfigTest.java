@@ -34,10 +34,10 @@ class Story4LengthLimitConfigTest {
         try (TestServer server =
                         TestServer.start(
                                 """
-                nicknameMaxLength: 5
-                channelNameMaxLength: 10
-                topicMaxLength: 20
-                """);
+                                nicknameMaxLength: 5
+                                channelNameMaxLength: 10
+                                topicMaxLength: 20
+                                """);
                 RawIrcClient alice = RawIrcClient.connectPlaintext(server.plaintextPort())) {
 
             alice.send("NICK abcdef"); // 6 chars > 5

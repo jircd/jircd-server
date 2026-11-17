@@ -39,11 +39,11 @@ class CapabilityGroupLifecycleTest {
 
     private static final String YAML =
             """
-      capabilities:
-        batch: enabled
-        message-tags: enabled
-      sendqLimitBytes: 16384
-      """;
+            capabilities:
+              batch: enabled
+              message-tags: enabled
+            sendqLimitBytes: 16384
+            """;
 
     private static Message privmsg(String body) {
         return new Message(
