@@ -351,10 +351,8 @@ class CapabilityDependencyTest {
                                             List.of("#probe", "plain"))));
             assertThat(
                             alice.readThroughPong(TIMEOUT).stream()
-                                    .filter(
-                                            l ->
-                                                    l.contains("PRIVMSG #probe")
-                                                            || l.contains("BATCH")))
+                                    .filter(l ->
+                                            l.contains("PRIVMSG #probe") || l.contains("BATCH")))
                     .containsExactly(":bot!bot@host PRIVMSG #probe plain");
         }
     }

@@ -143,10 +143,9 @@ class CapabilityNegotiationGrammarTest {
         for (int i = 0; i < 80; i++) held.add("vendor.example/capability-" + i);
         assertThat(CapabilityNegotiationGrammar.listReplies(SERVER, "bob", held, true))
                 .hasSizeGreaterThan(1)
-                .allSatisfy(
-                        line ->
-                                assertThat(MessageSerializer.commandBytes(line))
-                                        .isLessThanOrEqualTo(MessageSerializer.MAX_COMMAND_BYTES));
+                .allSatisfy(line ->
+                        assertThat(MessageSerializer.commandBytes(line))
+                                .isLessThanOrEqualTo(MessageSerializer.MAX_COMMAND_BYTES));
     }
 
     @Test

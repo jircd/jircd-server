@@ -40,9 +40,8 @@ import org.junit.jupiter.api.Test;
 class ServerTimeExtensionTest {
     private final List<String> faults = new ArrayList<>();
     private final HookDispatcher dispatcher =
-            new HookDispatcher(
-                    (provider, kind, category) ->
-                            faults.add(provider + "/" + kind + "/" + category));
+            new HookDispatcher((provider, kind, category) ->
+                    faults.add(provider + "/" + kind + "/" + category));
 
     private static OutboundMessage message(Instant sentAt) {
         return new OutboundMessage(

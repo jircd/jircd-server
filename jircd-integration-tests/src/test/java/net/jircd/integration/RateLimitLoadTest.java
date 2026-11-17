@@ -52,17 +52,16 @@ class RateLimitLoadTest {
 
             Thread floodThread =
                     Thread.ofVirtual()
-                            .start(
-                                    () -> {
-                                        try {
-                                            for (int i = 0; i < 500; i++) {
-                                                flooder.send("PRIVMSG #lobby :flood " + i);
-                                            }
-                                        } catch (IOException ignored) {
-                                            // Best-effort flood — this test asserts alice/bob's
-                                            // latency, not the flooder's own delivery.
-                                        }
-                                    });
+                            .start(() -> {
+                                try {
+                                    for (int i = 0; i < 500; i++) {
+                                        flooder.send("PRIVMSG #lobby :flood " + i);
+                                    }
+                                } catch (IOException ignored) {
+                                    // Best-effort flood — this test asserts alice/bob's
+                                    // latency, not the flooder's own delivery.
+                                }
+                            });
 
             // Paced below alice's own per-connection rate limit (FR-016, 20-token bucket refilling
             // at 10/sec — Story5BanCapTest) — alice is the well-behaved party here, not the one

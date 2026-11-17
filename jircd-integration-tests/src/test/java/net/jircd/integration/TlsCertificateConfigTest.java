@@ -97,11 +97,11 @@ class TlsCertificateConfigTest {
     void tlsListenerWithNoCertificateConfiguredFailsToStart() {
         String yaml =
                 """
-        serverName: test.jircd.local
-        listeners:
-          - port: 0
-            tls: true
-        """;
+                serverName: test.jircd.local
+                listeners:
+                  - port: 0
+                    tls: true
+                """;
         assertThatThrownBy(() -> TestServer.start(yaml))
                 .isInstanceOf(ConfigurationException.class)
                 .hasMessageContaining("no certificate is configured");
@@ -147,13 +147,13 @@ class TlsCertificateConfigTest {
     void tlsListenerWithANonexistentCertPathFailsAtStartupNotLazily() {
         String yaml =
                 """
-        serverName: test.jircd.local
-        listeners:
-          - port: 0
-            tls: true
-            certPath: /nonexistent/fullchain.pem
-            keyPath: /nonexistent/privkey.pem
-        """;
+                serverName: test.jircd.local
+                listeners:
+                  - port: 0
+                    tls: true
+                    certPath: /nonexistent/fullchain.pem
+                    keyPath: /nonexistent/privkey.pem
+                """;
         assertThatThrownBy(() -> TestServer.start(yaml))
                 .isInstanceOf(ConfigurationException.class)
                 .hasMessageContaining("invalid TLS certificate configuration");
@@ -163,13 +163,13 @@ class TlsCertificateConfigTest {
     void certificateFieldsOnANonTlsListenerAreIgnoredNotRejected() throws Exception {
         String yaml =
                 """
-        serverName: test.jircd.local
-        listeners:
-          - port: 0
-            bindAddress: 127.0.0.1
-            tls: false
-            certPath: /nonexistent/fullchain.pem
-        """;
+                serverName: test.jircd.local
+                listeners:
+                  - port: 0
+                    bindAddress: 127.0.0.1
+                    tls: false
+                    certPath: /nonexistent/fullchain.pem
+                """;
         try (TestServer server = TestServer.start(yaml);
                 RawIrcClient client = RawIrcClient.connectPlaintext(server.plaintextPort())) {
             client.registerAndAwaitWelcome(

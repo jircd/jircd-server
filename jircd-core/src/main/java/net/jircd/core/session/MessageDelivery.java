@@ -232,17 +232,16 @@ public final class MessageDelivery {
         }
 
         Map<ClientSession, Set<DeliveryRole>> delivered = new LinkedHashMap<>();
-        roles.forEach(
-                (recipient, recipientRoles) -> {
-                    if (recipientGate.test(recipient)) {
-                        delivered.put(recipient, Set.copyOf(recipientRoles));
-                        // Borrowed reference to the recipient's own writer, closed by its
-                        // connection.
-                        @SuppressWarnings("PMD.CloseResource")
-                        SessionWriter writer = recipient.writer();
-                        if (writer != null) writer.enqueue(envelope);
-                    }
-                });
+        roles.forEach((recipient, recipientRoles) -> {
+            if (recipientGate.test(recipient)) {
+                delivered.put(recipient, Set.copyOf(recipientRoles));
+                // Borrowed reference to the recipient's own writer, closed by its
+                // connection.
+                @SuppressWarnings("PMD.CloseResource")
+                SessionWriter writer = recipient.writer();
+                if (writer != null) writer.enqueue(envelope);
+            }
+        });
         return new Delivery(envelope, context, delivered);
     }
 

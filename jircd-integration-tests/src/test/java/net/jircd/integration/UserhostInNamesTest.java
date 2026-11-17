@@ -139,14 +139,13 @@ class UserhostInNamesTest {
             List<Message> who = replies(observer, "WHO #room");
             assertThat(who.stream().filter(m -> "352".equals(m.rawCommand())))
                     .singleElement()
-                    .satisfies(
-                            m -> {
-                                assertThat(m.params()).hasSize(8);
-                                assertThat(m.params().get(2)).isEqualTo("ident");
-                                assertThat(m.params().get(3)).isEqualTo(host);
-                                assertThat(m.params().get(5)).isEqualTo("alice");
-                                assertThat(m.params().get(6)).isEqualTo("H@");
-                            });
+                    .satisfies(m -> {
+                        assertThat(m.params()).hasSize(8);
+                        assertThat(m.params().get(2)).isEqualTo("ident");
+                        assertThat(m.params().get(3)).isEqualTo(host);
+                        assertThat(m.params().get(5)).isEqualTo("alice");
+                        assertThat(m.params().get(6)).isEqualTo("H@");
+                    });
         }
     }
 
@@ -165,10 +164,8 @@ class UserhostInNamesTest {
             negotiate(viewer, "viewer", CAPABILITY);
             assertThat(
                             tokens(replies(viewer, "NAMES")).stream()
-                                    .map(
-                                            token ->
-                                                    token.replaceFirst("^[~&@%+]+", "")
-                                                            .split("!", 2)[0]))
+                                    .map(token ->
+                                            token.replaceFirst("^[~&@%+]+", "").split("!", 2)[0]))
                     .doesNotContain("owner");
             assertThat(names(viewer, "NAMES #secret")).isEmpty();
             assertThat(names(viewer, "NAMES #missing")).isEmpty();
@@ -202,11 +199,10 @@ class UserhostInNamesTest {
                             replies(viewer, "WHO #room").stream()
                                     .filter(m -> "352".equals(m.rawCommand())))
                     .singleElement()
-                    .satisfies(
-                            m -> {
-                                assertThat(m.params().get(5)).isEqualTo("owner");
-                                assertThat(m.params().get(6)).isEqualTo("H" + prefix);
-                            });
+                    .satisfies(m -> {
+                        assertThat(m.params().get(5)).isEqualTo("owner");
+                        assertThat(m.params().get(6)).isEqualTo("H" + prefix);
+                    });
         }
     }
 
@@ -239,10 +235,8 @@ class UserhostInNamesTest {
                             m -> assertThat(m.params().getLast()).isEqualTo("End of /NAMES list"));
             assertThat(result)
                     .isNotEmpty()
-                    .allSatisfy(
-                            m ->
-                                    assertThat(MessageSerializer.commandBytes(m))
-                                            .isLessThanOrEqualTo(512));
+                    .allSatisfy(m ->
+                            assertThat(MessageSerializer.commandBytes(m)).isLessThanOrEqualTo(512));
         }
     }
 }

@@ -43,14 +43,14 @@ class CapabilityPublicationTimingLoadTest {
     /** The per-connection rate limit is raised: over-rate commands are dropped, not delayed. */
     private static final String YAML =
             """
-      maxConnections: 10000
-      maxConnectionsPerIp: 10000
-      rateLimit:
-        bucketSize: 10000
-        refillRatePerSecond: 10000
-      capabilities:
-        multi-prefix: enabled
-      """;
+            maxConnections: 10000
+            maxConnectionsPerIp: 10000
+            rateLimit:
+              bucketSize: 10000
+              refillRatePerSecond: 10000
+            capabilities:
+              multi-prefix: enabled
+            """;
 
     private record Sample(String label, long[] sortedNanos) {
         double p50Ms() {

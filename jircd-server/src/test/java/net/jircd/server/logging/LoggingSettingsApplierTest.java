@@ -242,11 +242,10 @@ class LoggingSettingsApplierTest {
         assertThat(rootAppenders()).containsExactlyElementsOf(before);
         assertThat(Files.readString(good)).contains("still to the good file");
         assertThat(warnings.list)
-                .anySatisfy(
-                        e -> {
-                            assertThat(e.getLevel()).isEqualTo(Level.WARN);
-                            assertThat(e.getFormattedMessage()).contains(gone.toString());
-                        });
+                .anySatisfy(e -> {
+                    assertThat(e.getLevel()).isEqualTo(Level.WARN);
+                    assertThat(e.getFormattedMessage()).contains(gone.toString());
+                });
     }
 
     @Test

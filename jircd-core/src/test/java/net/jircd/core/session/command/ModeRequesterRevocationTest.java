@@ -147,11 +147,10 @@ class ModeRequesterRevocationTest {
                 var executor = Executors.newVirtualThreadPerTaskExecutor()) {
             requester.attachWriter(writer);
             var pending =
-                    executor.submit(
-                            () -> {
-                                handler.handle(requester, MessageParser.parse("MODE #c " + change));
-                                return null;
-                            });
+                    executor.submit(() -> {
+                        handler.handle(requester, MessageParser.parse("MODE #c " + change));
+                        return null;
+                    });
             try {
                 await(checked);
                 switch (how) {

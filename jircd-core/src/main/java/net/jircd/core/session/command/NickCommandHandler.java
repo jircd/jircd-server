@@ -117,13 +117,12 @@ public final class NickCommandHandler implements CommandHandler {
         // this line, the new one after. Peers are told outside the mutex.
         extensionRegistry
                 .capabilityControl()
-                .runUnderControl(
-                        () -> {
-                            session.setNickname(requested);
-                            if (notification != null && !session.lifecycle().isClosing()) {
-                                Recipients.deliver(List.of(session), notification);
-                            }
-                        });
+                .runUnderControl(() -> {
+                    session.setNickname(requested);
+                    if (notification != null && !session.lifecycle().isClosing()) {
+                        Recipients.deliver(List.of(session), notification);
+                    }
+                });
         // Disconnect cleanup reads the nickname after claiming CLOSING. If it ran before the change
         // above it saw nothing to release, and CLOSING is then visible here: roll the claim back.
         if (session.lifecycle().isClosing()) {

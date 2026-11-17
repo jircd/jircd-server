@@ -231,18 +231,14 @@ class SessionWriterGroupTest {
                 int id = t;
                 threads.add(
                         Thread.ofVirtual()
-                                .start(
-                                        () -> {
-                                            for (int i = 0; i < 25; i++) {
-                                                writer.enqueueGroup(
-                                                        "t" + id,
-                                                        List.of(),
-                                                        List.of(
-                                                                privmsg("a"),
-                                                                privmsg("b"),
-                                                                privmsg("c")));
-                                            }
-                                        }));
+                                .start(() -> {
+                                    for (int i = 0; i < 25; i++) {
+                                        writer.enqueueGroup(
+                                                "t" + id,
+                                                List.of(),
+                                                List.of(privmsg("a"), privmsg("b"), privmsg("c")));
+                                    }
+                                }));
             }
             for (Thread thread : threads) thread.join();
         }

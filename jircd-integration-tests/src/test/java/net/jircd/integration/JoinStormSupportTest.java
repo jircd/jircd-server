@@ -88,11 +88,10 @@ class JoinStormSupportTest {
             try (var peer = listener.accept()) {
                 AtomicBoolean stormOver = new AtomicBoolean();
                 var draining =
-                        threads.submit(
-                                () -> {
-                                    JoinStormLoadTest.drainUntil(client, stormOver);
-                                    return null;
-                                });
+                        threads.submit(() -> {
+                            JoinStormLoadTest.drainUntil(client, stormOver);
+                            return null;
+                        });
                 stormOver.set(true);
                 clients.close();
                 draining.get(1, TimeUnit.SECONDS);

@@ -147,11 +147,10 @@ class ConfigurationReloaderFailurePathTest {
 
     private static void assertFailureLogged(List<CapturedEvent> logs, String id, String reason) {
         assertThat(logs)
-                .anySatisfy(
-                        event -> {
-                            assertThat(event.level()).isEqualTo(Level.WARN);
-                            assertThat(event.message()).contains(id, reason);
-                        });
+                .anySatisfy(event -> {
+                    assertThat(event.level()).isEqualTo(Level.WARN);
+                    assertThat(event.message()).contains(id, reason);
+                });
     }
 
     private void attachContext() {
@@ -337,10 +336,9 @@ class ConfigurationReloaderFailurePathTest {
         b.stopError = cleanup;
         ConfigurationReloader reloader =
                 reloader("nicknameMaxLength: 31\ncapabilities: {a: disabled, b: disabled}\n");
-        reloader.addReloadListener(
-                applied -> {
-                    throw listener;
-                });
+        reloader.addReloadListener(applied -> {
+            throw listener;
+        });
 
         assertThatThrownBy(reloader::reloadWithOutcome)
                 .isSameAs(cleanup)
@@ -380,10 +378,8 @@ class ConfigurationReloaderFailurePathTest {
         a.stopError = new AssertionError("a stop");
 
         List<CapturedEvent> logs =
-                captureLogs(
-                        () ->
-                                assertThatThrownBy(() -> registry.disable("a"))
-                                        .isSameAs(a.stopError));
+                captureLogs(() ->
+                        assertThatThrownBy(() -> registry.disable("a")).isSameAs(a.stopError));
         assertFailureLogged(logs, "b", "stuck b");
         assertThat(registry.stateOf("b")).isEqualTo(Extension.State.FAILED);
     }
@@ -399,10 +395,8 @@ class ConfigurationReloaderFailurePathTest {
         ConfigurationReloader reloader = reloader("capabilities: {a: disabled, b: disabled}\n");
 
         List<CapturedEvent> logs =
-                captureLogs(
-                        () ->
-                                assertThatThrownBy(reloader::reloadWithOutcome)
-                                        .isSameAs(a.stopError));
+                captureLogs(() ->
+                        assertThatThrownBy(reloader::reloadWithOutcome).isSameAs(a.stopError));
         assertFailureLogged(logs, "b", "stuck b");
         assertThat(registry.stateOf("b")).isEqualTo(Extension.State.FAILED);
     }
@@ -421,10 +415,8 @@ class ConfigurationReloaderFailurePathTest {
                 reloader("server-extensions: {server-a: disabled, server-b: disabled}\n");
 
         List<CapturedEvent> logs =
-                captureLogs(
-                        () ->
-                                assertThatThrownBy(reloader::reloadWithOutcome)
-                                        .isSameAs(a.stopError));
+                captureLogs(() ->
+                        assertThatThrownBy(reloader::reloadWithOutcome).isSameAs(a.stopError));
         assertFailureLogged(logs, "server-b", "stuck server-b");
         assertThat(registry.stateOf(b.id())).isEqualTo(Extension.State.FAILED);
     }

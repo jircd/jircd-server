@@ -102,7 +102,7 @@ subprojects {
 
     configure<com.diffplug.gradle.spotless.SpotlessExtension> {
         java {
-            // Pinned: google-java-format 2.0.0 (Spotless 8.11 default) reformats ~50 files; take it in its own PR.
+            // The google-java-format version comes from gradle/libs.versions.toml.
             googleJavaFormat(rootProject.libs.versions.googleJavaFormat.get()).aosp()
             licenseHeaderFile(rootProject.file("gradle/license-header.txt"))
             target("src/*/java/**/*.java")

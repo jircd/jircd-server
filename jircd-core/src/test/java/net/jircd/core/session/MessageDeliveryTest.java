@@ -52,21 +52,19 @@ class MessageDeliveryTest {
 
         @Override
         public void register(CapabilityRegistrar registrar) {
-            registrar.onInboundTags(
-                    (tags, context) -> {
-                        inboundCalls.incrementAndGet();
-                        Map<String, String> forwarded = new LinkedHashMap<>();
-                        tags.tags().entrySet().stream()
-                                .filter(e -> e.getKey().startsWith("+"))
-                                .forEach(e -> forwarded.put(e.getKey(), e.getValue()));
-                        return new InboundTagResult(forwarded, Map.of("copy/label", "L1"));
-                    });
-            registrar.onRecipients(
-                    (intent, context) -> {
-                        recipientCalls.incrementAndGet();
-                        seenContext.set(context);
-                        return Set.of(DeliveryRole.SENDER_COPY);
-                    });
+            registrar.onInboundTags((tags, context) -> {
+                inboundCalls.incrementAndGet();
+                Map<String, String> forwarded = new LinkedHashMap<>();
+                tags.tags().entrySet().stream()
+                        .filter(e -> e.getKey().startsWith("+"))
+                        .forEach(e -> forwarded.put(e.getKey(), e.getValue()));
+                return new InboundTagResult(forwarded, Map.of("copy/label", "L1"));
+            });
+            registrar.onRecipients((intent, context) -> {
+                recipientCalls.incrementAndGet();
+                seenContext.set(context);
+                return Set.of(DeliveryRole.SENDER_COPY);
+            });
             registrar.onOutboundTags(
                     Set.of("msgid"),
                     42,
@@ -190,27 +188,19 @@ class MessageDeliveryTest {
         join(bob, "#c");
         MessageDelivery.AuthorizedTarget forChannel = delivery.authorize(alice, "#c", true);
 
-        org.assertj.core.api.Assertions.assertThatThrownBy(
-                        () ->
-                                delivery.deliver(
-                                        alice,
-                                        "PRIVMSG",
-                                        "#does-not-exist",
-                                        "hi",
-                                        Map.of(),
-                                        forChannel,
-                                        r -> true))
+        org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                        delivery.deliver(
+                                alice,
+                                "PRIVMSG",
+                                "#does-not-exist",
+                                "hi",
+                                Map.of(),
+                                forChannel,
+                                r -> true))
                 .isInstanceOf(IllegalArgumentException.class);
-        org.assertj.core.api.Assertions.assertThatThrownBy(
-                        () ->
-                                delivery.deliver(
-                                        mallory,
-                                        "PRIVMSG",
-                                        "#c",
-                                        "hi",
-                                        Map.of(),
-                                        forChannel,
-                                        r -> true))
+        org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                        delivery.deliver(
+                                mallory, "PRIVMSG", "#c", "hi", Map.of(), forChannel, r -> true))
                 .isInstanceOf(IllegalArgumentException.class);
 
         assertThat(received(bob)).isEmpty();
@@ -225,11 +215,9 @@ class MessageDeliveryTest {
 
         MessageDelivery.AuthorizedTarget foreign = other.authorize(alice, "bob", true);
 
-        org.assertj.core.api.Assertions.assertThatThrownBy(
-                        () ->
-                                delivery.deliver(
-                                        alice, "PRIVMSG", "bob", "hi", Map.of(), foreign,
-                                        r -> true))
+        org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                        delivery.deliver(
+                                alice, "PRIVMSG", "bob", "hi", Map.of(), foreign, r -> true))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThat(received(bob)).isEmpty();
     }
@@ -408,11 +396,10 @@ class MessageDeliveryTest {
         String time = sent.envelope().sentAt().toString();
         assertThat(peers)
                 .isNotEmpty()
-                .allSatisfy(
-                        peer ->
-                                assertThat(received(peer))
-                                        .contains("msgid=" + msgid)
-                                        .contains("time=" + time));
+                .allSatisfy(peer ->
+                        assertThat(received(peer))
+                                .contains("msgid=" + msgid)
+                                .contains("time=" + time));
         assertThat(received(sender)).contains("msgid=" + msgid);
         assertThat(provider.inboundCalls).hasValue(1);
         assertThat(provider.recipientCalls).hasValue(1);
@@ -501,10 +488,9 @@ class MessageDeliveryTest {
 
         @Override
         public void register(CapabilityRegistrar registrar) {
-            registrar.onInboundTags(
-                    (tags, context) ->
-                            new InboundTagResult(
-                                    Map.of("+private", tags.tags().get("+private")), Map.of()));
+            registrar.onInboundTags((tags, context) ->
+                    new InboundTagResult(
+                            Map.of("+private", tags.tags().get("+private")), Map.of()));
         }
     }
 
@@ -529,10 +515,9 @@ class MessageDeliveryTest {
 
         @Override
         public void register(CapabilityRegistrar registrar) {
-            registrar.onInboundTags(
-                    (tags, context) ->
-                            new InboundTagResult(
-                                    Map.of("+private", tags.tags().get("+private")), Map.of()));
+            registrar.onInboundTags((tags, context) ->
+                    new InboundTagResult(
+                            Map.of("+private", tags.tags().get("+private")), Map.of()));
         }
     }
 
@@ -603,33 +588,30 @@ class MessageDeliveryTest {
         // set.
         extensions
                 .capabilityControl()
-                .runUnderControl(
-                        () -> {
-                            Thread thread =
-                                    Thread.ofPlatform()
-                                            .start(
-                                                    () ->
-                                                            // Gated out: no writer is touched, only
-                                                            // the capture can wait.
-                                                            delivery.deliver(
-                                                                    alice,
-                                                                    "PRIVMSG",
-                                                                    "bob",
-                                                                    "hi",
-                                                                    Map.of(),
-                                                                    authorized,
-                                                                    r -> false));
-                            worker.set(thread);
-                            long deadline =
-                                    System.nanoTime()
-                                            + java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
-                            while (System.nanoTime() < deadline
-                                    && thread.getState() != Thread.State.BLOCKED
-                                    && thread.getState() != Thread.State.TERMINATED) {
-                                Thread.onSpinWait();
-                            }
-                            observed.set(thread.getState());
-                        });
+                .runUnderControl(() -> {
+                    Thread thread =
+                            Thread.ofPlatform()
+                                    .start(() ->
+                                            // Gated out: no writer is touched, only
+                                            // the capture can wait.
+                                            delivery.deliver(
+                                                    alice,
+                                                    "PRIVMSG",
+                                                    "bob",
+                                                    "hi",
+                                                    Map.of(),
+                                                    authorized,
+                                                    r -> false));
+                    worker.set(thread);
+                    long deadline =
+                            System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
+                    while (System.nanoTime() < deadline
+                            && thread.getState() != Thread.State.BLOCKED
+                            && thread.getState() != Thread.State.TERMINATED) {
+                        Thread.onSpinWait();
+                    }
+                    observed.set(thread.getState());
+                });
         worker.get().join();
 
         assertThat(observed.get()).isEqualTo(Thread.State.BLOCKED);

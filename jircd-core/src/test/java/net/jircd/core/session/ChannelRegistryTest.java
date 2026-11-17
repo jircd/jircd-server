@@ -89,31 +89,28 @@ class ChannelRegistryTest {
 
         try (var executor = Executors.newCachedThreadPool()) {
             var holder =
-                    executor.submit(
-                            () -> {
-                                synchronized (original) {
-                                    holding.countDown();
-                                    await(releaseChannel);
-                                }
-                                return null;
-                            });
+                    executor.submit(() -> {
+                        synchronized (original) {
+                            holding.countDown();
+                            await(releaseChannel);
+                        }
+                        return null;
+                    });
             try {
                 assertThat(holding.await(5, TimeUnit.SECONDS)).isTrue();
                 var part =
-                        executor.submit(
-                                () -> {
-                                    partThread.set(Thread.currentThread());
-                                    return registry.part(original, departing);
-                                });
+                        executor.submit(() -> {
+                            partThread.set(Thread.currentThread());
+                            return registry.part(original, departing);
+                        });
                 // Only the registry monitor is free, so a BLOCKED PART already owns it and waits on
                 // the channel monitor.
                 awaitBlocked(partThread);
                 var join =
-                        executor.submit(
-                                () -> {
-                                    joinThread.set(Thread.currentThread());
-                                    return registry.join("#lobby", joining, ignored -> true);
-                                });
+                        executor.submit(() -> {
+                            joinThread.set(Thread.currentThread());
+                            return registry.join("#lobby", joining, ignored -> true);
+                        });
                 awaitBlocked(joinThread);
                 assertThat(join.isDone()).isFalse();
                 assertThat(part.isDone()).isFalse();
@@ -152,12 +149,11 @@ class ChannelRegistryTest {
         CountDownLatch attemptingRemoval = new CountDownLatch(1);
         try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
             var removal =
-                    executor.submit(
-                            () -> {
-                                await(admitting);
-                                attemptingRemoval.countDown();
-                                return registry.part(original, departing);
-                            });
+                    executor.submit(() -> {
+                        await(admitting);
+                        attemptingRemoval.countDown();
+                        return registry.part(original, departing);
+                    });
             Channel joined =
                     registry.join(
                                     "#lobby",
@@ -268,11 +264,10 @@ class ChannelRegistryTest {
             target.attachWriter(targetWriter);
             operator.attachWriter(operatorWriter);
             var first =
-                    executor.submit(
-                            () -> {
-                                handler.handle(operator, MessageParser.parse("KICK #c target"));
-                                return null;
-                            });
+                    executor.submit(() -> {
+                        handler.handle(operator, MessageParser.parse("KICK #c target"));
+                        return null;
+                    });
             try {
                 assertThat(deliveringFirst.await(5, TimeUnit.SECONDS)).isTrue();
                 handler.handle(operator, MessageParser.parse("KICK #c target"));
@@ -292,12 +287,9 @@ class ChannelRegistryTest {
     /** The ordinary rendering of a join's member facts: nickname with the highest status. */
     private static List<String> listing(JoinResult result) {
         return result.members().stream()
-                .map(
-                        fact ->
-                                (fact.heldStatuses().isEmpty()
-                                                ? ""
-                                                : fact.heldStatuses().getFirst())
-                                        + fact.member().nickname())
+                .map(fact ->
+                        (fact.heldStatuses().isEmpty() ? "" : fact.heldStatuses().getFirst())
+                                + fact.member().nickname())
                 .toList();
     }
 
@@ -447,19 +439,17 @@ class ChannelRegistryTest {
         CountDownLatch start = new CountDownLatch(1);
         try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
             var first =
-                    executor.submit(
-                            () -> {
-                                ready.countDown();
-                                await(start);
-                                return registry.kick(channel, operator, "target");
-                            });
+                    executor.submit(() -> {
+                        ready.countDown();
+                        await(start);
+                        return registry.kick(channel, operator, "target");
+                    });
             var second =
-                    executor.submit(
-                            () -> {
-                                ready.countDown();
-                                await(start);
-                                return registry.kick(channel, operator, "TARGET");
-                            });
+                    executor.submit(() -> {
+                        ready.countDown();
+                        await(start);
+                        return registry.kick(channel, operator, "TARGET");
+                    });
             try {
                 await(ready);
             } finally {
@@ -484,22 +474,20 @@ class ChannelRegistryTest {
         CountDownLatch start = new CountDownLatch(1);
         try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
             var part =
-                    executor.submit(
-                            () -> {
-                                ready.countDown();
-                                await(start);
-                                return registry.part(channel, target);
-                            });
+                    executor.submit(() -> {
+                        ready.countDown();
+                        await(start);
+                        return registry.part(channel, target);
+                    });
             var kick =
-                    executor.submit(
-                            () -> {
-                                ready.countDown();
-                                await(start);
-                                KickOutcome result = registry.kick(channel, operator, "target");
-                                return result instanceof KickOutcome.Kicked kicked
-                                        ? Optional.of(kicked.departure())
-                                        : Optional.<Departure>empty();
-                            });
+                    executor.submit(() -> {
+                        ready.countDown();
+                        await(start);
+                        KickOutcome result = registry.kick(channel, operator, "target");
+                        return result instanceof KickOutcome.Kicked kicked
+                                ? Optional.of(kicked.departure())
+                                : Optional.<Departure>empty();
+                    });
             try {
                 await(ready);
             } finally {
@@ -521,27 +509,25 @@ class ChannelRegistryTest {
         CountDownLatch closed = new CountDownLatch(1);
         try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
             var join =
-                    executor.submit(
-                            () ->
-                                    registry.join(
-                                            "#c",
-                                            session,
-                                            channel -> {
-                                                admitting.countDown();
-                                                await(closed);
-                                                return true;
-                                            }));
+                    executor.submit(() ->
+                            registry.join(
+                                    "#c",
+                                    session,
+                                    channel -> {
+                                        admitting.countDown();
+                                        await(closed);
+                                        return true;
+                                    }));
             var leave =
-                    executor.submit(
-                            () -> {
-                                await(admitting);
-                                try {
-                                    session.lifecycle().closeIfNotAlreadyClosing();
-                                } finally {
-                                    closed.countDown();
-                                }
-                                return registry.leaveAll(session);
-                            });
+                    executor.submit(() -> {
+                        await(admitting);
+                        try {
+                            session.lifecycle().closeIfNotAlreadyClosing();
+                        } finally {
+                            closed.countDown();
+                        }
+                        return registry.leaveAll(session);
+                    });
             join.get(5, TimeUnit.SECONDS);
             leave.get(5, TimeUnit.SECONDS);
         }
@@ -577,16 +563,14 @@ class ChannelRegistryTest {
         AtomicBoolean hookHeldMonitor = new AtomicBoolean();
         AtomicReference<ChannelRegistry> self = new AtomicReference<>();
         ChannelRegistry registry =
-                new ChannelRegistry(
-                        channel -> {
-                            if ("#storm".equals(channel.name())
-                                    && first.compareAndSet(true, false)) {
-                                hookHeldMonitor.set(
-                                        Thread.holdsLock(self.get()) || Thread.holdsLock(channel));
-                                inSnapshot.countDown();
-                                await(release);
-                            }
-                        });
+                new ChannelRegistry(channel -> {
+                    if ("#storm".equals(channel.name()) && first.compareAndSet(true, false)) {
+                        hookHeldMonitor.set(
+                                Thread.holdsLock(self.get()) || Thread.holdsLock(channel));
+                        inSnapshot.countDown();
+                        await(release);
+                    }
+                });
         self.set(registry);
         ClientSession quietMember = newSession("quiet");
         Channel quiet =
@@ -600,22 +584,20 @@ class ChannelRegistryTest {
                 // One bounded budget for every operation, well inside the hook's own 5 s release
                 // wait.
                 var progress =
-                        executor.submit(
-                                () -> {
-                                    assertThat(registry.lookup("#quiet")).containsSame(quiet);
-                                    ClientSession other = newSession("other");
-                                    assertThat(registry.join("#quiet", other, ignored -> true))
-                                            .isPresent();
-                                    assertThat(registry.part(quiet, other)).isPresent();
-                                    // A second JOIN on the paused channel needs both monitors.
-                                    assertThat(
-                                                    registry.join(
-                                                            "#storm",
-                                                            newSession("second"),
-                                                            ignored -> true))
-                                            .isPresent();
-                                    return null;
-                                });
+                        executor.submit(() -> {
+                            assertThat(registry.lookup("#quiet")).containsSame(quiet);
+                            ClientSession other = newSession("other");
+                            assertThat(registry.join("#quiet", other, ignored -> true)).isPresent();
+                            assertThat(registry.part(quiet, other)).isPresent();
+                            // A second JOIN on the paused channel needs both monitors.
+                            assertThat(
+                                            registry.join(
+                                                    "#storm",
+                                                    newSession("second"),
+                                                    ignored -> true))
+                                    .isPresent();
+                            return null;
+                        });
                 assertThat(progress).succeedsWithin(Duration.ofSeconds(2));
             } finally {
                 release.countDown();
@@ -634,13 +616,12 @@ class ChannelRegistryTest {
         CountDownLatch release = new CountDownLatch(1);
         AtomicBoolean first = new AtomicBoolean(true);
         ChannelRegistry registry =
-                new ChannelRegistry(
-                        channel -> {
-                            if (first.compareAndSet(true, false)) {
-                                inSnapshot.countDown();
-                                await(release);
-                            }
-                        });
+                new ChannelRegistry(channel -> {
+                    if (first.compareAndSet(true, false)) {
+                        inSnapshot.countDown();
+                        await(release);
+                    }
+                });
         ClientSession operator = newSession("operator");
         ClientSession joiner = newSession("joiner");
         // Joining without a hook pause: the first hook call is the joiner's.
@@ -674,14 +655,13 @@ class ChannelRegistryTest {
         CountDownLatch release = new CountDownLatch(1);
         try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
             var holder =
-                    executor.submit(
-                            () -> {
-                                synchronized (channel) {
-                                    holding.countDown();
-                                    await(release);
-                                }
-                                return null;
-                            });
+                    executor.submit(() -> {
+                        synchronized (channel) {
+                            holding.countDown();
+                            await(release);
+                        }
+                        return null;
+                    });
             try {
                 assertThat(holding.await(5, TimeUnit.SECONDS)).isTrue();
                 assertThat(executor.submit(listing))
@@ -700,14 +680,13 @@ class ChannelRegistryTest {
         ClientSession joiner = newSession("joiner");
         IllegalStateException failure = new IllegalStateException("admission failed");
 
-        assertThatThrownBy(
-                        () ->
-                                registry.join(
-                                        "#fresh",
-                                        joiner,
-                                        ignored -> {
-                                            throw failure;
-                                        }))
+        assertThatThrownBy(() ->
+                        registry.join(
+                                "#fresh",
+                                joiner,
+                                ignored -> {
+                                    throw failure;
+                                }))
                 .isSameAs(failure);
 
         assertThat(registry.lookup("#fresh")).isEmpty();
@@ -723,14 +702,13 @@ class ChannelRegistryTest {
         ClientSession joiner = newSession("joiner");
         IllegalStateException failure = new IllegalStateException("admission failed");
 
-        assertThatThrownBy(
-                        () ->
-                                registry.join(
-                                        "#lobby",
-                                        joiner,
-                                        ignored -> {
-                                            throw failure;
-                                        }))
+        assertThatThrownBy(() ->
+                        registry.join(
+                                "#lobby",
+                                joiner,
+                                ignored -> {
+                                    throw failure;
+                                }))
                 .isSameAs(failure);
 
         assertThat(registry.lookup("#lobby")).containsSame(existing);

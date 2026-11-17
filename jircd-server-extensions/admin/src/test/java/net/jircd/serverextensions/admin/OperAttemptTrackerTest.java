@@ -165,17 +165,16 @@ class OperAttemptTrackerTest {
             var tasks = new java.util.ArrayList<java.util.concurrent.Future<?>>();
             for (int i = 0; i < 20; i++) {
                 tasks.add(
-                        executor.submit(
-                                () ->
-                                        tracker.authenticate(
-                                                "source",
-                                                3,
-                                                60,
-                                                true,
-                                                () -> {
-                                                    verified.incrementAndGet();
-                                                    return false;
-                                                })));
+                        executor.submit(() ->
+                                tracker.authenticate(
+                                        "source",
+                                        3,
+                                        60,
+                                        true,
+                                        () -> {
+                                            verified.incrementAndGet();
+                                            return false;
+                                        })));
             }
             for (var task : tasks) {
                 task.get();
@@ -242,23 +241,22 @@ class OperAttemptTrackerTest {
         var release = new java.util.concurrent.CountDownLatch(1);
         try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
             var first =
-                    executor.submit(
-                            () ->
-                                    tracker.authenticate(
-                                            "one",
-                                            2,
-                                            60,
-                                            true,
-                                            () -> {
-                                                entered.countDown();
-                                                try {
-                                                    release.await();
-                                                } catch (InterruptedException interrupted) {
-                                                    Thread.currentThread().interrupt();
-                                                    throw new IllegalStateException(interrupted);
-                                                }
-                                                return false;
-                                            }));
+                    executor.submit(() ->
+                            tracker.authenticate(
+                                    "one",
+                                    2,
+                                    60,
+                                    true,
+                                    () -> {
+                                        entered.countDown();
+                                        try {
+                                            release.await();
+                                        } catch (InterruptedException interrupted) {
+                                            Thread.currentThread().interrupt();
+                                            throw new IllegalStateException(interrupted);
+                                        }
+                                        return false;
+                                    }));
             try {
                 assertThat(entered.await(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
                 var second =

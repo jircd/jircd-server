@@ -139,10 +139,9 @@ class SingleWaveJoinStormLoadTest {
 
     private static <T> CompletableFuture<T> watch(
             CompletableFuture<T> task, CompletableFuture<Void> failure) {
-        task.whenComplete(
-                (result, error) -> {
-                    if (error != null) failure.completeExceptionally(error);
-                });
+        task.whenComplete((result, error) -> {
+            if (error != null) failure.completeExceptionally(error);
+        });
         return task;
     }
 

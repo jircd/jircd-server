@@ -124,10 +124,8 @@ class UserhostInNamesLoadTest {
                 replies.stream().filter(message -> "353".equals(message.rawCommand())).toList();
         assertThat(replies.stream().filter(message -> "366".equals(message.rawCommand())))
                 .singleElement()
-                .satisfies(
-                        message ->
-                                assertThat(message.params().getLast())
-                                        .isEqualTo("End of /NAMES list"));
+                .satisfies(message ->
+                        assertThat(message.params().getLast()).isEqualTo("End of /NAMES list"));
 
         List<String> actualTokens =
                 nameReplies.stream()

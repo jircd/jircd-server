@@ -68,11 +68,10 @@ class ConfigurationReloaderListenerTest {
     void aListenerGetsTheAppliedConfigurationOnceAfterItIsPublished() throws Exception {
         List<ServerConfiguration> seen = new CopyOnWriteArrayList<>();
         List<ServerConfiguration> currentDuringCall = new CopyOnWriteArrayList<>();
-        reloader.addReloadListener(
-                applied -> {
-                    seen.add(applied);
-                    currentDuringCall.add(reloader.current());
-                });
+        reloader.addReloadListener(applied -> {
+            seen.add(applied);
+            currentDuringCall.add(reloader.current());
+        });
         Files.writeString(config, HEADER + "topicMaxLength: 123\n");
 
         ServerConfiguration applied = reloader.reloadWithOutcome().configuration();
@@ -109,10 +108,9 @@ class ConfigurationReloaderListenerTest {
     @Test
     void aFailingListenerIsLoggedAndNeitherUndoesTheReloadNorStopsTheOthers() throws Exception {
         List<ServerConfiguration> later = new CopyOnWriteArrayList<>();
-        reloader.addReloadListener(
-                applied -> {
-                    throw new IllegalStateException("listener broke");
-                });
+        reloader.addReloadListener(applied -> {
+            throw new IllegalStateException("listener broke");
+        });
         reloader.addReloadListener(later::add);
         Files.writeString(config, HEADER + "topicMaxLength: 200\n");
 
@@ -121,37 +119,34 @@ class ConfigurationReloaderListenerTest {
         assertThat(reloader.current()).isSameAs(applied);
         assertThat(later).containsExactly(applied);
         assertThat(logs.events())
-                .anySatisfy(
-                        e -> {
-                            assertThat(e.level()).isEqualTo(Level.WARN);
-                            assertThat(e.throwableMessage()).isEqualTo("listener broke");
-                        });
+                .anySatisfy(e -> {
+                    assertThat(e.level()).isEqualTo(Level.WARN);
+                    assertThat(e.throwableMessage()).isEqualTo("listener broke");
+                });
     }
 
     @Test
     void listenersRunOutsideTheReloadSoTheyCannotDeadlockAnotherReload() throws Exception {
         AtomicBoolean first = new AtomicBoolean(true);
         AtomicBoolean otherReloadFinished = new AtomicBoolean();
-        reloader.addReloadListener(
-                applied -> {
-                    if (!first.getAndSet(false)) return;
-                    Thread other =
-                            Thread.ofVirtual()
-                                    .start(
-                                            () -> {
-                                                try {
-                                                    reloader.reload();
-                                                    otherReloadFinished.set(true);
-                                                } catch (Exception e) {
-                                                    throw new IllegalStateException(e);
-                                                }
-                                            });
-                    try {
-                        other.join(TimeUnit.SECONDS.toMillis(5));
-                    } catch (InterruptedException _) {
-                        Thread.currentThread().interrupt();
-                    }
-                });
+        reloader.addReloadListener(applied -> {
+            if (!first.getAndSet(false)) return;
+            Thread other =
+                    Thread.ofVirtual()
+                            .start(() -> {
+                                try {
+                                    reloader.reload();
+                                    otherReloadFinished.set(true);
+                                } catch (Exception e) {
+                                    throw new IllegalStateException(e);
+                                }
+                            });
+            try {
+                other.join(TimeUnit.SECONDS.toMillis(5));
+            } catch (InterruptedException _) {
+                Thread.currentThread().interrupt();
+            }
+        });
 
         reloader.reload();
 
@@ -164,13 +159,12 @@ class ConfigurationReloaderListenerTest {
         CountDownLatch releaseFirst = new CountDownLatch(1);
         AtomicBoolean firstCall = new AtomicBoolean(true);
         List<Integer> delivered = new CopyOnWriteArrayList<>();
-        reloader.addReloadListener(
-                applied -> {
-                    if (firstCall.getAndSet(false)) {
-                        firstInListener.countDown();
-                        await(releaseFirst);
-                    }
-                });
+        reloader.addReloadListener(applied -> {
+            if (firstCall.getAndSet(false)) {
+                firstInListener.countDown();
+                await(releaseFirst);
+            }
+        });
         reloader.addReloadListener(applied -> delivered.add(applied.topicMaxLength()));
 
         Files.writeString(config, HEADER + "topicMaxLength: 111\n");
@@ -193,16 +187,15 @@ class ConfigurationReloaderListenerTest {
             throws Exception {
         AtomicBoolean nested = new AtomicBoolean(true);
         List<Integer> later = new CopyOnWriteArrayList<>();
-        reloader.addReloadListener(
-                applied -> {
-                    if (!nested.getAndSet(false)) return;
-                    try {
-                        Files.writeString(config, HEADER + "topicMaxLength: 333\n");
-                        reloader.reload();
-                    } catch (Exception e) {
-                        throw new IllegalStateException(e);
-                    }
-                });
+        reloader.addReloadListener(applied -> {
+            if (!nested.getAndSet(false)) return;
+            try {
+                Files.writeString(config, HEADER + "topicMaxLength: 333\n");
+                reloader.reload();
+            } catch (Exception e) {
+                throw new IllegalStateException(e);
+            }
+        });
         reloader.addReloadListener(applied -> later.add(applied.topicMaxLength()));
         Files.writeString(config, HEADER + "topicMaxLength: 111\n");
 
@@ -235,28 +228,26 @@ class ConfigurationReloaderListenerTest {
         AtomicBoolean first = new AtomicBoolean(true);
         List<Integer> seen = new CopyOnWriteArrayList<>();
         AssertionError sentinel = new AssertionError("listener sentinel");
-        reloader.addReloadListener(
-                applied -> {
-                    seen.add(applied.topicMaxLength());
-                    if (first.getAndSet(false)) {
-                        inListener.countDown();
-                        await(release);
-                        throw sentinel;
-                    }
-                });
+        reloader.addReloadListener(applied -> {
+            seen.add(applied.topicMaxLength());
+            if (first.getAndSet(false)) {
+                inListener.countDown();
+                await(release);
+                throw sentinel;
+            }
+        });
         Files.writeString(config, HEADER + "topicMaxLength: 111\n");
         java.util.concurrent.atomic.AtomicReference<Throwable> thrown =
                 new java.util.concurrent.atomic.AtomicReference<>();
         Thread a =
                 Thread.ofVirtual()
-                        .start(
-                                () -> {
-                                    try {
-                                        reloader.reload();
-                                    } catch (Throwable t) {
-                                        thrown.set(t);
-                                    }
-                                });
+                        .start(() -> {
+                            try {
+                                reloader.reload();
+                            } catch (Throwable t) {
+                                thrown.set(t);
+                            }
+                        });
         assertThat(inListener.await(5, TimeUnit.SECONDS)).isTrue();
         Files.writeString(config, HEADER + "topicMaxLength: 222\n");
 
@@ -275,10 +266,9 @@ class ConfigurationReloaderListenerTest {
     void aListenerErrorDoesNotSkipTheOtherListenersForTheSameConfiguration() throws Exception {
         List<Integer> later = new CopyOnWriteArrayList<>();
         AssertionError sentinel = new AssertionError("first listener");
-        reloader.addReloadListener(
-                applied -> {
-                    throw sentinel;
-                });
+        reloader.addReloadListener(applied -> {
+            throw sentinel;
+        });
         reloader.addReloadListener(applied -> later.add(applied.topicMaxLength()));
         Files.writeString(config, HEADER + "topicMaxLength: 77\n");
 
@@ -291,14 +281,12 @@ class ConfigurationReloaderListenerTest {
     void theSameErrorThrownByTwoListenersDoesNotAbortDelivery() throws Exception {
         List<Integer> later = new CopyOnWriteArrayList<>();
         AssertionError shared = new AssertionError("shared sentinel");
-        reloader.addReloadListener(
-                applied -> {
-                    throw shared;
-                });
-        reloader.addReloadListener(
-                applied -> {
-                    throw shared;
-                });
+        reloader.addReloadListener(applied -> {
+            throw shared;
+        });
+        reloader.addReloadListener(applied -> {
+            throw shared;
+        });
         reloader.addReloadListener(applied -> later.add(applied.topicMaxLength()));
         Files.writeString(config, HEADER + "topicMaxLength: 88\n");
 

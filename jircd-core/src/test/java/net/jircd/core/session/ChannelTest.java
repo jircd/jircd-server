@@ -113,14 +113,11 @@ class ChannelTest {
         assertThat(channel.memberListing())
                 .containsExactlyElementsOf(
                         channel.members().stream()
-                                .map(
-                                        m ->
-                                                (channel.operators().contains(m)
-                                                                ? "@"
-                                                                : channel.voiced().contains(m)
-                                                                        ? "+"
-                                                                        : "")
-                                                        + m.nickname())
+                                .map(m ->
+                                        (channel.operators().contains(m)
+                                                        ? "@"
+                                                        : channel.voiced().contains(m) ? "+" : "")
+                                                + m.nickname())
                                 .toList());
     }
 
@@ -166,15 +163,14 @@ class ChannelTest {
         AtomicBoolean running = new AtomicBoolean(true);
         try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
             var writer =
-                    executor.submit(
-                            () -> {
-                                while (running.get()) {
-                                    channel.revokeOperator(flipper);
-                                    channel.grantVoice(flipper);
-                                    channel.revokeVoice(flipper);
-                                    channel.grantOperator(flipper);
-                                }
-                            });
+                    executor.submit(() -> {
+                        while (running.get()) {
+                            channel.revokeOperator(flipper);
+                            channel.grantVoice(flipper);
+                            channel.revokeVoice(flipper);
+                            channel.grantOperator(flipper);
+                        }
+                    });
             try {
                 int impossible = 0;
                 for (int i = 0; i < 2_000_000; i++) {
@@ -232,24 +228,21 @@ class ChannelTest {
         CountDownLatch removed = new CountDownLatch(1);
         try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
             var grant =
-                    executor.submit(
-                            () -> {
-                                ClientSession resolvedTarget =
-                                        channel.findMember("target").orElseThrow();
-                                resolved.countDown();
-                                await(removed);
-                                return channel.grantOperator(resolvedTarget);
-                            });
+                    executor.submit(() -> {
+                        ClientSession resolvedTarget = channel.findMember("target").orElseThrow();
+                        resolved.countDown();
+                        await(removed);
+                        return channel.grantOperator(resolvedTarget);
+                    });
             var part =
-                    executor.submit(
-                            () -> {
-                                await(resolved);
-                                try {
-                                    return registry.part(channel, target);
-                                } finally {
-                                    removed.countDown();
-                                }
-                            });
+                    executor.submit(() -> {
+                        await(resolved);
+                        try {
+                            return registry.part(channel, target);
+                        } finally {
+                            removed.countDown();
+                        }
+                    });
             assertThat(part.get(5, TimeUnit.SECONDS)).isPresent();
             assertThat(grant.get(5, TimeUnit.SECONDS)).isFalse();
         }
@@ -394,20 +387,18 @@ class ChannelTest {
         CountDownLatch granted = new CountDownLatch(1);
         try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
             var grant =
-                    executor.submit(
-                            () -> {
-                                try {
-                                    return channel.grantOperator(target);
-                                } finally {
-                                    granted.countDown();
-                                }
-                            });
+                    executor.submit(() -> {
+                        try {
+                            return channel.grantOperator(target);
+                        } finally {
+                            granted.countDown();
+                        }
+                    });
             var part =
-                    executor.submit(
-                            () -> {
-                                await(granted);
-                                return registry.part(channel, target);
-                            });
+                    executor.submit(() -> {
+                        await(granted);
+                        return registry.part(channel, target);
+                    });
             assertThat(grant.get(5, TimeUnit.SECONDS)).isTrue();
             assertThat(part.get(5, TimeUnit.SECONDS)).isPresent();
         }
@@ -438,12 +429,10 @@ class ChannelTest {
     void underMonitorReleasesTheMonitorWhenTheActionThrows() throws Exception {
         Channel channel = new Channel("#c");
 
-        assertThatThrownBy(
-                        () ->
-                                channel.underMonitor(
-                                        () -> {
-                                            throw new IllegalStateException("boom");
-                                        }))
+        assertThatThrownBy(() ->
+                        channel.underMonitor(() -> {
+                            throw new IllegalStateException("boom");
+                        }))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("boom");
 

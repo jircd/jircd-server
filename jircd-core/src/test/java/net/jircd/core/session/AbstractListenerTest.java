@@ -194,13 +194,12 @@ class AbstractListenerTest {
                 Thread.currentThread().interrupt();
                 assertThatThrownBy(listener::close)
                         .isSameAs(closeFailure)
-                        .satisfies(
-                                failure -> {
-                                    assertThat(failure.getSuppressed()).hasSize(1);
-                                    assertThat(failure.getSuppressed()[0])
-                                            .isInstanceOf(IOException.class)
-                                            .hasCauseInstanceOf(InterruptedException.class);
-                                });
+                        .satisfies(failure -> {
+                            assertThat(failure.getSuppressed()).hasSize(1);
+                            assertThat(failure.getSuppressed()[0])
+                                    .isInstanceOf(IOException.class)
+                                    .hasCauseInstanceOf(InterruptedException.class);
+                        });
                 assertThat(Thread.currentThread().isInterrupted()).isTrue();
             } finally {
                 Thread.interrupted();

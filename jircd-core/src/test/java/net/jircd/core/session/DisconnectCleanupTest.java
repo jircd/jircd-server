@@ -150,22 +150,20 @@ class DisconnectCleanupTest {
                 var executor = Executors.newVirtualThreadPerTaskExecutor()) {
             newcomer.attachWriter(writer);
             var joining =
-                    executor.submit(
-                            () ->
-                                    registry.join(
-                                            "#two",
-                                            newcomer,
-                                            channel -> {
-                                                admitting.countDown();
-                                                await(releaseAdmission);
-                                                return true;
-                                            }));
+                    executor.submit(() ->
+                            registry.join(
+                                    "#two",
+                                    newcomer,
+                                    channel -> {
+                                        admitting.countDown();
+                                        await(releaseAdmission);
+                                        return true;
+                                    }));
             var leaving =
-                    executor.submit(
-                            () -> {
-                                await(admitting);
-                                cleanup.cleanup(quitter, "leaving");
-                            });
+                    executor.submit(() -> {
+                        await(admitting);
+                        cleanup.cleanup(quitter, "leaving");
+                    });
             try {
                 // Cleanup has claimed CLOSING and entered its body, while the admitted join still
                 // holds the registry: the quitter keeps its memberships until the admission is

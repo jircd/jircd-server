@@ -127,28 +127,26 @@ class ContainerDeliveryLoadTest {
         for (int index = from; index < to; index++) {
             int member = index;
             inFlight.acquire();
-            readers.execute(
-                    () -> {
-                        try {
-                            RawIrcClient client =
-                                    RawIrcClient.connectPlaintext(jircd.plaintextPort());
-                            client.registerAndAwaitWelcome("c" + member, "c" + member);
-                            registered.incrementAndGet();
-                            client.send("JOIN " + CHANNEL);
-                            client.readUntil(" 366 ", SETUP_TIMEOUT);
-                            synchronized (batch) {
-                                batch.set(member - from, client);
-                            }
-                            lastReady.accumulateAndGet(System.nanoTime(), Math::max);
-                            inFlight.release();
-                            joined.countDown();
-                            read(client, member);
-                        } catch (IOException e) {
-                            inFlight.release();
-                            joined.countDown();
-                            if (running) throw new java.io.UncheckedIOException(e);
-                        }
-                    });
+            readers.execute(() -> {
+                try {
+                    RawIrcClient client = RawIrcClient.connectPlaintext(jircd.plaintextPort());
+                    client.registerAndAwaitWelcome("c" + member, "c" + member);
+                    registered.incrementAndGet();
+                    client.send("JOIN " + CHANNEL);
+                    client.readUntil(" 366 ", SETUP_TIMEOUT);
+                    synchronized (batch) {
+                        batch.set(member - from, client);
+                    }
+                    lastReady.accumulateAndGet(System.nanoTime(), Math::max);
+                    inFlight.release();
+                    joined.countDown();
+                    read(client, member);
+                } catch (IOException e) {
+                    inFlight.release();
+                    joined.countDown();
+                    if (running) throw new java.io.UncheckedIOException(e);
+                }
+            });
         }
         if (!joined.await(SETUP_TIMEOUT.toSeconds(), TimeUnit.SECONDS)) {
             throw new IllegalStateException("Only " + registered.get() + " clients registered");

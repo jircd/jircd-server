@@ -209,20 +209,18 @@ class MemberReplyRenderingTest {
                 new java.util.concurrent.atomic.AtomicReference<>();
         extensions
                 .capabilityControl()
-                .runUnderControl(
-                        () -> {
-                            Thread thread = Thread.ofPlatform().start(reply);
-                            worker.set(thread);
-                            long deadline =
-                                    System.nanoTime()
-                                            + java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
-                            while (System.nanoTime() < deadline
-                                    && thread.getState() != Thread.State.BLOCKED
-                                    && thread.getState() != Thread.State.TERMINATED) {
-                                Thread.onSpinWait();
-                            }
-                            observed.set(thread.getState());
-                        });
+                .runUnderControl(() -> {
+                    Thread thread = Thread.ofPlatform().start(reply);
+                    worker.set(thread);
+                    long deadline =
+                            System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
+                    while (System.nanoTime() < deadline
+                            && thread.getState() != Thread.State.BLOCKED
+                            && thread.getState() != Thread.State.TERMINATED) {
+                        Thread.onSpinWait();
+                    }
+                    observed.set(thread.getState());
+                });
         worker.get().join();
         return observed.get();
     }

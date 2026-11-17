@@ -50,10 +50,9 @@ class ReplyBudgetConfigurationTest {
 
     @Test
     void rejects353OverflowWithComputedBudgetAndKeys() {
-        assertThatThrownBy(
-                        () ->
-                                load(
-                                        "serverName: test.jircd.local\nnicknameMaxLength: 217\nchannelNameMaxLength: 50\n"))
+        assertThatThrownBy(() ->
+                        load(
+                                "serverName: test.jircd.local\nnicknameMaxLength: 217\nchannelNameMaxLength: 50\n"))
                 .isInstanceOf(ConfigurationException.class)
                 .hasMessageContaining("serverName")
                 .hasMessageContaining("nicknameMaxLength")
@@ -67,12 +66,11 @@ class ReplyBudgetConfigurationTest {
     void checks366IndependentlyAtItsBoundary() throws Exception {
         String server = "s".repeat(73) + ".";
         ConfigurationLoader.validateNamesBudget(server, 9, 400);
-        assertThatThrownBy(
-                        () ->
-                                load(
-                                        "serverName: x"
-                                                + server
-                                                + "\nnicknameMaxLength: 9\nchannelNameMaxLength: 400\n"))
+        assertThatThrownBy(() ->
+                        load(
+                                "serverName: x"
+                                        + server
+                                        + "\nnicknameMaxLength: 9\nchannelNameMaxLength: 400\n"))
                 .isInstanceOf(ConfigurationException.class)
                 .hasMessageContaining("366=513")
                 .hasMessageContaining("budget=399");
@@ -81,10 +79,9 @@ class ReplyBudgetConfigurationTest {
     @Test
     void accepts353ExactlyAtTheConservativeBoundary() throws Exception {
         ConfigurationLoader.validateNamesBudget("test.jircd.local", 215, 51, TWO_SYMBOL_STATUS);
-        assertThatThrownBy(
-                        () ->
-                                ConfigurationLoader.validateNamesBudget(
-                                        "test.jircd.local", 216, 51, TWO_SYMBOL_STATUS))
+        assertThatThrownBy(() ->
+                        ConfigurationLoader.validateNamesBudget(
+                                "test.jircd.local", 216, 51, TWO_SYMBOL_STATUS))
                 .isInstanceOf(ConfigurationException.class)
                 .hasMessageContaining("353=514");
     }

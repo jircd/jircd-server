@@ -49,12 +49,11 @@ public final class SighupReloadHandler {
                 LOG.info("Configuration reloaded via SIGHUP");
             }
             outcome.failures()
-                    .forEach(
-                            (id, reason) ->
-                                    LOG.warn(
-                                            "Configuration reloaded via SIGHUP, but could not apply {}: {}",
-                                            id,
-                                            reason));
+                    .forEach((id, reason) ->
+                            LOG.warn(
+                                    "Configuration reloaded via SIGHUP, but could not apply {}: {}",
+                                    id,
+                                    reason));
         } catch (ConfigurationException e) {
             LOG.warn(
                     "SIGHUP reload failed, running configuration left untouched: {}",

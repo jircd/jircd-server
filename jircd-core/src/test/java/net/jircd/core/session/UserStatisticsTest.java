@@ -125,19 +125,17 @@ final class UserStatisticsTest {
             List<Future<?>> futures = new ArrayList<>();
             for (ClientSession session : all) {
                 futures.add(
-                        pool.submit(
-                                () -> {
-                                    go.await();
-                                    completion.tryComplete(session);
-                                    return null;
-                                }));
+                        pool.submit(() -> {
+                            go.await();
+                            completion.tryComplete(session);
+                            return null;
+                        }));
                 futures.add(
-                        pool.submit(
-                                () -> {
-                                    go.await();
-                                    cleanup.cleanup(session, "Quit");
-                                    return null;
-                                }));
+                        pool.submit(() -> {
+                            go.await();
+                            cleanup.cleanup(session, "Quit");
+                            return null;
+                        }));
             }
             go.countDown();
             for (Future<?> future : futures) {

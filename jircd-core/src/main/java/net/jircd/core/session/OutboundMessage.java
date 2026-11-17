@@ -77,10 +77,9 @@ public final class OutboundMessage {
                         command,
                         body == null ? List.of(target) : List.of(target, body));
         Map<String, String> forwarded = new java.util.LinkedHashMap<>();
-        this.clientTags.forEach(
-                (key, value) -> {
-                    if (key.startsWith("+")) forwarded.put(key, value);
-                });
+        this.clientTags.forEach((key, value) -> {
+            if (key.startsWith("+")) forwarded.put(key, value);
+        });
         this.forwardedClientTags = Map.copyOf(forwarded);
     }
 
@@ -134,13 +133,12 @@ public final class OutboundMessage {
      */
     Map<String, String> forwardedFor(Set<String> negotiated) {
         Map<String, String> visible = new java.util.LinkedHashMap<>();
-        forwardedClientTags.forEach(
-                (key, value) -> {
-                    if (!java.util.Collections.disjoint(
-                            forwardOwners.getOrDefault(key, Set.of()), negotiated)) {
-                        visible.put(key, value);
-                    }
-                });
+        forwardedClientTags.forEach((key, value) -> {
+            if (!java.util.Collections.disjoint(
+                    forwardOwners.getOrDefault(key, Set.of()), negotiated)) {
+                visible.put(key, value);
+            }
+        });
         return visible;
     }
 

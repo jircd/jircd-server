@@ -183,10 +183,9 @@ class LifecycleOutcomeReportingTest {
                 .startsWith(":irc.example NOTICE root :Configuration file: ")
                 .contains(directory.toString());
         assertThat(lines)
-                .allSatisfy(
-                        line ->
-                                assertThat(line.getBytes(StandardCharsets.UTF_8).length + 2)
-                                        .isLessThanOrEqualTo(512));
+                .allSatisfy(line ->
+                        assertThat(line.getBytes(StandardCharsets.UTF_8).length + 2)
+                                .isLessThanOrEqualTo(512));
     }
 
     @Test

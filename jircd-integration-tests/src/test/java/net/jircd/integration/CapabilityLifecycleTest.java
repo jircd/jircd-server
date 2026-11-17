@@ -55,10 +55,9 @@ class CapabilityLifecycleTest {
 
     static Stream<Arguments> matrix() {
         return Stream.of(Path.values())
-                .flatMap(
-                        path ->
-                                Stream.of("multi-prefix", "message-tags")
-                                        .map(cap -> Arguments.of(path, cap)));
+                .flatMap(path ->
+                        Stream.of("multi-prefix", "message-tags")
+                                .map(cap -> Arguments.of(path, cap)));
     }
 
     private static String capabilitiesYaml(String disabled) {

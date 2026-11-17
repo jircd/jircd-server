@@ -58,13 +58,12 @@ class SighupReloadHandlerTest {
         }
 
         assertThat(events.list)
-                .anySatisfy(
-                        e -> {
-                            assertThat(e.getLevel()).isEqualTo(Level.WARN);
-                            assertThat(e.getFormattedMessage())
-                                    .startsWith("SIGHUP reload failed")
-                                    .contains("invalid YAML")
-                                    .contains(config.toString());
-                        });
+                .anySatisfy(e -> {
+                    assertThat(e.getLevel()).isEqualTo(Level.WARN);
+                    assertThat(e.getFormattedMessage())
+                            .startsWith("SIGHUP reload failed")
+                            .contains("invalid YAML")
+                            .contains(config.toString());
+                });
     }
 }

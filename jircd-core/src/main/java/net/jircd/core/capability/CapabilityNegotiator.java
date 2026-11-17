@@ -111,12 +111,11 @@ public final class CapabilityNegotiator {
     public boolean request(ClientSession session, List<String> requested) {
         return extensionRegistry
                 .capabilityControl()
-                .underControl(
-                        () -> {
-                            Optional<Set<String>> accepted = candidate(session, requested);
-                            accepted.ifPresent(session::replaceNegotiatedCapabilities);
-                            return accepted.isPresent();
-                        });
+                .underControl(() -> {
+                    Optional<Set<String>> accepted = candidate(session, requested);
+                    accepted.ifPresent(session::replaceNegotiatedCapabilities);
+                    return accepted.isPresent();
+                });
     }
 
     private static boolean isRemoval(String name) {

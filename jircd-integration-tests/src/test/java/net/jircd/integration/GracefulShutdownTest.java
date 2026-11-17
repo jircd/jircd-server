@@ -57,17 +57,16 @@ class GracefulShutdownTest {
     private static CompletableFuture<List<String>> readToEnd(RawIrcClient client) {
         CompletableFuture<List<String>> lines = new CompletableFuture<>();
         Thread.ofVirtual()
-                .start(
-                        () -> {
-                            List<String> seen = new ArrayList<>();
-                            try {
-                                String line;
-                                while ((line = client.readLine()) != null) seen.add(line);
-                            } catch (IOException _) {
-                                // A reset after the last line still ends the stream.
-                            }
-                            lines.complete(seen);
-                        });
+                .start(() -> {
+                    List<String> seen = new ArrayList<>();
+                    try {
+                        String line;
+                        while ((line = client.readLine()) != null) seen.add(line);
+                    } catch (IOException _) {
+                        // A reset after the last line still ends the stream.
+                    }
+                    lines.complete(seen);
+                });
         return lines;
     }
 
@@ -219,11 +218,10 @@ class GracefulShutdownTest {
                 assertThat(forced).isEqualTo(1);
                 assertThat(elapsed).isLessThan(Duration.ofSeconds(4));
                 assertThat(logs.events())
-                        .anySatisfy(
-                                e -> {
-                                    assertThat(e.level()).isEqualTo(Level.WARN);
-                                    assertThat(e.message()).contains("force-closed 1 connection");
-                                });
+                        .anySatisfy(e -> {
+                            assertThat(e.level()).isEqualTo(Level.WARN);
+                            assertThat(e.message()).contains("force-closed 1 connection");
+                        });
             } finally {
                 gate.release();
             }
@@ -240,10 +238,9 @@ class GracefulShutdownTest {
                 ClientSession session = blockedClientSession(server, gate, client);
                 CountDownLatch readLoopEnded = new CountDownLatch(1);
                 JircdServerTestAccess.connectionHandler(server.application)
-                        .onReadLoopEndForTesting(
-                                ended -> {
-                                    if (ended == session) readLoopEnded.countDown();
-                                });
+                        .onReadLoopEndForTesting(ended -> {
+                            if (ended == session) readLoopEnded.countDown();
+                        });
                 CompletableFuture<Integer> forced = shutdownAsync(server, PRODUCTION_BUDGET);
                 awaitClosing(session);
 
@@ -320,15 +317,14 @@ class GracefulShutdownTest {
             try {
                 ClientSession session = blockedClientSession(server, gate, client);
                 JircdServerTestAccess.connectionHandler(server.application)
-                        .beforeGracefulCloseForTesting(
-                                closing -> {
-                                    closerReached.countDown();
-                                    try {
-                                        closerGo.await();
-                                    } catch (InterruptedException _) {
-                                        Thread.currentThread().interrupt();
-                                    }
-                                });
+                        .beforeGracefulCloseForTesting(closing -> {
+                            closerReached.countDown();
+                            try {
+                                closerGo.await();
+                            } catch (InterruptedException _) {
+                                Thread.currentThread().interrupt();
+                            }
+                        });
                 CompletableFuture<Integer> forced = shutdownAsync(server, PRODUCTION_BUDGET);
                 assertThat(closerReached.await(10, TimeUnit.SECONDS)).isTrue();
 
@@ -450,22 +446,20 @@ class GracefulShutdownTest {
                         await(stopGo);
                     });
             JircdServerTestAccess.connectionHandler(server.application)
-                    .beforeGracefulCloseForTesting(
-                            closing -> {
-                                closerReached.countDown();
-                                await(closerGo);
-                            });
+                    .beforeGracefulCloseForTesting(closing -> {
+                        closerReached.countDown();
+                        await(closerGo);
+                    });
             try {
                 // stop() holds the lifecycle and is about to close the connections.
                 CompletableFuture<Void> stop =
-                        CompletableFuture.runAsync(
-                                () -> {
-                                    try {
-                                        server.application.stop();
-                                    } catch (IOException e) {
-                                        throw new java.io.UncheckedIOException(e);
-                                    }
-                                });
+                        CompletableFuture.runAsync(() -> {
+                            try {
+                                server.application.stop();
+                            } catch (IOException e) {
+                                throw new java.io.UncheckedIOException(e);
+                            }
+                        });
                 assertThat(stopAtHook.await(10, TimeUnit.SECONDS)).isTrue();
                 CompletableFuture<Integer> forced = shutdownAsync(server, PRODUCTION_BUDGET);
                 assertThat(closerReached.await(10, TimeUnit.SECONDS)).isTrue();
@@ -543,11 +537,10 @@ class GracefulShutdownTest {
             ConnectionHandler handler = JircdServerTestAccess.connectionHandler(server.application);
             CountDownLatch readLoopEnded = new CountDownLatch(1);
             handler.onReadLoopEndForTesting(ended -> readLoopEnded.countDown());
-            handler.afterShutdownClaimForTesting(
-                    session -> {
-                        claimed.countDown();
-                        await(go);
-                    });
+            handler.afterShutdownClaimForTesting(session -> {
+                claimed.countDown();
+                await(go);
+            });
             CompletableFuture<List<String>> received = readToEnd(client);
             try {
                 CompletableFuture<Integer> forced = shutdownAsync(server, PRODUCTION_BUDGET);
@@ -584,22 +577,20 @@ class GracefulShutdownTest {
                         await(stopGo);
                     });
             JircdServerTestAccess.connectionHandler(server.application)
-                    .beforeGracefulCloseForTesting(
-                            closing -> {
-                                closerReached.countDown();
-                                await(closerGo);
-                            });
+                    .beforeGracefulCloseForTesting(closing -> {
+                        closerReached.countDown();
+                        await(closerGo);
+                    });
             try {
                 Thread stopper =
                         Thread.ofPlatform()
-                                .start(
-                                        () -> {
-                                            try {
-                                                server.application.stop();
-                                            } catch (IOException _) {
-                                                // Not under test.
-                                            }
-                                        });
+                                .start(() -> {
+                                    try {
+                                        server.application.stop();
+                                    } catch (IOException _) {
+                                        // Not under test.
+                                    }
+                                });
                 assertThat(stopAtHook.await(10, TimeUnit.SECONDS)).isTrue();
                 CompletableFuture<Integer> forced = shutdownAsync(server, PRODUCTION_BUDGET);
                 assertThat(closerReached.await(10, TimeUnit.SECONDS)).isTrue();
@@ -640,25 +631,21 @@ class GracefulShutdownTest {
             CompletableFuture<List<String>> received = readToEnd(client);
             try {
                 CompletableFuture<Void> stop =
-                        CompletableFuture.runAsync(
-                                () -> {
-                                    try {
-                                        server.application.stop();
-                                    } catch (IOException e) {
-                                        throw new java.io.UncheckedIOException(e);
-                                    }
-                                });
+                        CompletableFuture.runAsync(() -> {
+                            try {
+                                server.application.stop();
+                            } catch (IOException e) {
+                                throw new java.io.UncheckedIOException(e);
+                            }
+                        });
                 assertThat(stopOwns.await(10, TimeUnit.SECONDS)).isTrue();
 
                 // stop() owns the closure and has not closed anything yet: shutdown returns
                 // promptly, drains nothing, and the connection is still open.
                 int forced =
-                        CompletableFuture.supplyAsync(
-                                        () ->
-                                                JircdServerTestAccess.shutdown(
-                                                        server.application,
-                                                        REASON,
-                                                        PRODUCTION_BUDGET))
+                        CompletableFuture.supplyAsync(() ->
+                                        JircdServerTestAccess.shutdown(
+                                                server.application, REASON, PRODUCTION_BUDGET))
                                 .get(3, TimeUnit.SECONDS);
                 assertThat(forced).isZero();
                 assertThat(received).isNotDone();

@@ -52,21 +52,18 @@ class LogCaptureConcurrencyTest {
             for (int writer = 0; writer < WRITERS; writer++) {
                 int id = writer;
                 done.add(
-                        writers.submit(
-                                () -> {
-                                    readerStarted.await();
-                                    for (int i = 0; i < half; i++) {
-                                        ConnectionMonitorLog.sendqOverflow(
-                                                "w" + id + "-" + i, 1, 2L);
-                                    }
-                                    firstHalvesWritten.countDown();
-                                    secondHalvesGate.await();
-                                    for (int i = half; i < LINES_PER_WRITER; i++) {
-                                        ConnectionMonitorLog.sendqOverflow(
-                                                "w" + id + "-" + i, 1, 2L);
-                                    }
-                                    return null;
-                                }));
+                        writers.submit(() -> {
+                            readerStarted.await();
+                            for (int i = 0; i < half; i++) {
+                                ConnectionMonitorLog.sendqOverflow("w" + id + "-" + i, 1, 2L);
+                            }
+                            firstHalvesWritten.countDown();
+                            secondHalvesGate.await();
+                            for (int i = half; i < LINES_PER_WRITER; i++) {
+                                ConnectionMonitorLog.sendqOverflow("w" + id + "-" + i, 1, 2L);
+                            }
+                            return null;
+                        }));
             }
 
             try {

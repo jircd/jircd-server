@@ -86,11 +86,10 @@ class ListenerBindAddressTest {
         var tcpNoDelay = new AtomicBoolean();
         var tlsSocket = new AtomicBoolean();
         ConnectionHandler handler =
-                connectionHandler(
-                        socket -> {
-                            tlsSocket.set(socket instanceof SSLSocket);
-                            recordSocketOptions(received, tcpNoDelay).accept(socket);
-                        });
+                connectionHandler(socket -> {
+                    tlsSocket.set(socket instanceof SSLSocket);
+                    recordSocketOptions(received, tcpNoDelay).accept(socket);
+                });
         SSLServerSocket serverSocket =
                 (SSLServerSocket)
                         SSLServerSocketFactory.getDefault().createServerSocket(0, 50, LOOPBACK);
@@ -142,11 +141,10 @@ class ListenerBindAddressTest {
         try (ServerSocket other = new ServerSocket()) {
             other.bind(new InetSocketAddress(LOOPBACK, 0));
 
-            assertThatThrownBy(
-                            () ->
-                                    new PlaintextListener(
-                                            listenerOn(LOOPBACK, other.getLocalPort()),
-                                            connectionHandler()))
+            assertThatThrownBy(() ->
+                            new PlaintextListener(
+                                    listenerOn(LOOPBACK, other.getLocalPort()),
+                                    connectionHandler()))
                     .isInstanceOf(java.net.BindException.class);
         }
     }

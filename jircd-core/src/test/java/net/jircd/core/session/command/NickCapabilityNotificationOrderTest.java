@@ -82,32 +82,29 @@ class NickCapabilityNotificationOrderTest {
         CountDownLatch release = new CountDownLatch(1);
         Thread owner =
                 Thread.ofVirtual()
-                        .start(
-                                () ->
-                                        registry.capabilityControl()
-                                                .runUnderControl(
-                                                        () -> {
-                                                            held.countDown();
-                                                            try {
-                                                                release.await(5, TimeUnit.SECONDS);
-                                                            } catch (InterruptedException _) {
-                                                                Thread.currentThread().interrupt();
-                                                            }
-                                                        }));
+                        .start(() ->
+                                registry.capabilityControl()
+                                        .runUnderControl(() -> {
+                                            held.countDown();
+                                            try {
+                                                release.await(5, TimeUnit.SECONDS);
+                                            } catch (InterruptedException _) {
+                                                Thread.currentThread().interrupt();
+                                            }
+                                        }));
         assertThat(held.await(5, TimeUnit.SECONDS)).isTrue();
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         try (SessionWriter writer = new SessionWriter(alice, out, TagRenderer.NONE)) {
             alice.attachWriter(writer);
             Thread change =
                     Thread.ofVirtual()
-                            .start(
-                                    () -> {
-                                        try {
-                                            handler.handle(alice, MessageParser.parse("NICK bob"));
-                                        } catch (Exception e) {
-                                            throw new IllegalStateException(e);
-                                        }
-                                    });
+                            .start(() -> {
+                                try {
+                                    handler.handle(alice, MessageParser.parse("NICK bob"));
+                                } catch (Exception e) {
+                                    throw new IllegalStateException(e);
+                                }
+                            });
             // Bounded: while a publication holds the mutex, the change has not happened yet.
             assertThat(change.join(java.time.Duration.ofMillis(200))).isFalse();
             assertThat(alice.nickname()).isEqualTo("alice");
@@ -134,13 +131,12 @@ class NickCapabilityNotificationOrderTest {
             client.attachWriter(writer);
             Thread toggler =
                     Thread.ofVirtual()
-                            .start(
-                                    () -> {
-                                        for (int i = 0; i < 200; i++) {
-                                            registry.disable("alpha");
-                                            registry.enable("alpha");
-                                        }
-                                    });
+                            .start(() -> {
+                                for (int i = 0; i < 200; i++) {
+                                    registry.disable("alpha");
+                                    registry.enable("alpha");
+                                }
+                            });
             for (int i = 1; i <= 200; i++) {
                 handler.handle(client, MessageParser.parse("NICK n" + i));
             }

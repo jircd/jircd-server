@@ -155,10 +155,8 @@ class CapabilityReplyCompositionTest {
                 // Alone on its line at the budget's full width; a lone token needs no ':', so 511.
                 assertThat(
                                 names.stream()
-                                        .filter(
-                                                l ->
-                                                        l.contains(" 353 ")
-                                                                && l.contains("@+" + nick)))
+                                        .filter(l ->
+                                                l.contains(" 353 ") && l.contains("@+" + nick)))
                         .singleElement()
                         .isEqualTo(
                                 ":test.jircd.local 353 "
@@ -244,15 +242,14 @@ class CapabilityReplyCompositionTest {
     void startupRejectsLimitsTheDiscoveredStatusDecorationCannotFit() {
         // One nickname byte more than multi-prefix's two statuses leave room for in one 353.
         int tooLong = (512 - (S + C + 13 + P)) / 2 + 1;
-        assertThatThrownBy(
-                        () ->
-                                TestServer.start(
-                                                "nicknameMaxLength: "
-                                                        + tooLong
-                                                        + "\nchannelNameMaxLength: "
-                                                        + C
-                                                        + "\n")
-                                        .close())
+        assertThatThrownBy(() ->
+                        TestServer.start(
+                                        "nicknameMaxLength: "
+                                                + tooLong
+                                                + "\nchannelNameMaxLength: "
+                                                + C
+                                                + "\n")
+                                .close())
                 .isInstanceOf(ConfigurationException.class);
     }
 

@@ -128,20 +128,20 @@ class CapabilityFanoutLoadTest {
 
     private static final String YAML =
             """
-      maxConnections: 10000
-      maxConnectionsPerIp: 10000
-      sendqLimitBytes: 2097152
-      rateLimit:
-        bucketSize: 1000000
-        refillRatePerSecond: 1000000
-      capabilities:
-        message-tags: enabled
-        server-time: enabled
-        echo-message: enabled
-        away-notify: enabled
-        batch: enabled
-        multi-prefix: enabled
-      """;
+            maxConnections: 10000
+            maxConnectionsPerIp: 10000
+            sendqLimitBytes: 2097152
+            rateLimit:
+              bucketSize: 1000000
+              refillRatePerSecond: 1000000
+            capabilities:
+              message-tags: enabled
+              server-time: enabled
+              echo-message: enabled
+              away-notify: enabled
+              batch: enabled
+              multi-prefix: enabled
+            """;
 
     /** The four negotiation mixes, assigned round-robin. */
     private static final List<List<String>> MIXES =
@@ -449,12 +449,11 @@ class CapabilityFanoutLoadTest {
             int count) {
         return readers.stream()
                 .filter(receive)
-                .flatMapToLong(
-                        r -> {
-                            long[] slots = of.apply(r);
-                            return IntStream.range(first, first + count)
-                                    .mapToLong(seq -> slots[seq % slots.length]);
-                        })
+                .flatMapToLong(r -> {
+                    long[] slots = of.apply(r);
+                    return IntStream.range(first, first + count)
+                            .mapToLong(seq -> slots[seq % slots.length]);
+                })
                 .toArray();
     }
 
@@ -779,25 +778,19 @@ class CapabilityFanoutLoadTest {
             for (Reader reader : readers) reader.thread.join(TimeUnit.SECONDS.toMillis(30));
             assertThat(readers)
                     .hasSize(recipients)
-                    .allSatisfy(
-                            reader -> {
-                                int groups = framed(reader.mix) ? groupItems : 0;
-                                assertThat(reader.drained).as("r%d drained", reader.index).isTrue();
-                                assertThat(reader.violations).as("r%d", reader.index).isEmpty();
-                                assertThat(reader.messagesSeen.cardinality()).isEqualTo(messages);
-                                assertThat(reader.nextMessage).isEqualTo(messages);
-                                assertThat(reader.awaysSeen.cardinality())
-                                        .isEqualTo(awayNotify(reader.mix) ? aways : 0);
-                                assertThat(reader.nextGroupMember)
-                                        .isEqualTo(groupItems * GROUP_MEMBERS);
-                                assertThat(reader.opens)
-                                        .as("r%d opens", reader.index)
-                                        .isEqualTo(groups);
-                                assertThat(reader.closes)
-                                        .as("r%d closes", reader.index)
-                                        .isEqualTo(groups);
-                                assertThat(reader.inGroup).isFalse();
-                            });
+                    .allSatisfy(reader -> {
+                        int groups = framed(reader.mix) ? groupItems : 0;
+                        assertThat(reader.drained).as("r%d drained", reader.index).isTrue();
+                        assertThat(reader.violations).as("r%d", reader.index).isEmpty();
+                        assertThat(reader.messagesSeen.cardinality()).isEqualTo(messages);
+                        assertThat(reader.nextMessage).isEqualTo(messages);
+                        assertThat(reader.awaysSeen.cardinality())
+                                .isEqualTo(awayNotify(reader.mix) ? aways : 0);
+                        assertThat(reader.nextGroupMember).isEqualTo(groupItems * GROUP_MEMBERS);
+                        assertThat(reader.opens).as("r%d opens", reader.index).isEqualTo(groups);
+                        assertThat(reader.closes).as("r%d closes", reader.index).isEqualTo(groups);
+                        assertThat(reader.inGroup).isFalse();
+                    });
 
             quitAll(clients);
             assertThat(server.application.nicknameRegistry().all()).isEmpty();

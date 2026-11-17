@@ -273,12 +273,11 @@ public final class ExtensionRegistry {
             throw new IllegalArgumentException("Duplicate extension id: " + extension.id());
         }
         if (existing == null && name != null) {
-            knownCapabilityNames.updateAndGet(
-                    names -> {
-                        Set<String> grown = new HashSet<>(names);
-                        grown.add(name);
-                        return Set.copyOf(grown);
-                    });
+            knownCapabilityNames.updateAndGet(names -> {
+                Set<String> grown = new HashSet<>(names);
+                grown.add(name);
+                return Set.copyOf(grown);
+            });
         }
     }
 
@@ -622,11 +621,10 @@ public final class ExtensionRegistry {
         CapabilityPlan plan = planCapabilities(desired);
         Batch batch = new Batch(failures);
         plan.stagingFailures()
-                .forEach(
-                        (id, cause) -> {
-                            markFailed(byId.get(id), false);
-                            batch.fail(id, describe(cause));
-                        });
+                .forEach((id, cause) -> {
+                    markFailed(byId.get(id), false);
+                    batch.fail(id, describe(cause));
+                });
         boolean published = false;
         try {
             for (CapabilityDescriptor descriptor : plan.toStart()) {
@@ -957,13 +955,12 @@ public final class ExtensionRegistry {
         } finally {
             if (!completed) logUnreportedFailures(failures);
         }
-        caught.forEach(
-                (id, cause) ->
-                        LOG.warn(
-                                "Failed to reconcile extension '{}' to desired state {}",
-                                id,
-                                desiredStates.get(id),
-                                cause));
+        caught.forEach((id, cause) ->
+                LOG.warn(
+                        "Failed to reconcile extension '{}' to desired state {}",
+                        id,
+                        desiredStates.get(id),
+                        cause));
     }
 
     private void reconcileServerExtensions(
@@ -991,22 +988,21 @@ public final class ExtensionRegistry {
 
     /** Logs collected causes or descriptions when an Error prevents returning the failures. */
     private static void logUnreportedFailures(Map<String, ?> failures) {
-        failures.forEach(
-                (id, failure) -> {
-                    if (failure instanceof Throwable cause) {
-                        String why = describe(cause);
-                        LOG.warn(
-                                "Extension '{}' failed during an interrupted lifecycle operation: {}",
-                                id,
-                                why,
-                                cause);
-                    } else {
-                        LOG.warn(
-                                "Extension '{}' failed during an interrupted lifecycle operation: {}",
-                                id,
-                                failure);
-                    }
-                });
+        failures.forEach((id, failure) -> {
+            if (failure instanceof Throwable cause) {
+                String why = describe(cause);
+                LOG.warn(
+                        "Extension '{}' failed during an interrupted lifecycle operation: {}",
+                        id,
+                        why,
+                        cause);
+            } else {
+                LOG.warn(
+                        "Extension '{}' failed during an interrupted lifecycle operation: {}",
+                        id,
+                        failure);
+            }
+        });
     }
 
     private static String describe(Throwable failure) {

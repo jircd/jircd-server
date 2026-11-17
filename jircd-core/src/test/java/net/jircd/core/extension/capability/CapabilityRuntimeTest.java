@@ -222,34 +222,25 @@ class CapabilityRuntimeTest {
         AtomicReference<String> violation = new AtomicReference<>();
         Thread observer =
                 Thread.ofVirtual()
-                        .start(
-                                () -> {
-                                    while (!done.get()) {
-                                        runtime.runUnderControl(
-                                                () -> {
-                                                    boolean offered =
-                                                            registry.capabilitySnapshot()
-                                                                    .descriptor("alpha")
-                                                                    .isPresent();
-                                                    long holders =
-                                                            sessions.stream()
-                                                                    .filter(
-                                                                            s ->
-                                                                                    s.negotiatedCapabilities()
-                                                                                            .contains(
-                                                                                                    "alpha"))
-                                                                    .count();
-                                                    if (holders
-                                                            != (offered ? sessions.size() : 0)) {
-                                                        violation.set(
-                                                                "offered="
-                                                                        + offered
-                                                                        + " holders="
-                                                                        + holders);
-                                                    }
-                                                });
+                        .start(() -> {
+                            while (!done.get()) {
+                                runtime.runUnderControl(() -> {
+                                    boolean offered =
+                                            registry.capabilitySnapshot()
+                                                    .descriptor("alpha")
+                                                    .isPresent();
+                                    long holders =
+                                            sessions.stream()
+                                                    .filter(s ->
+                                                            s.negotiatedCapabilities()
+                                                                    .contains("alpha"))
+                                                    .count();
+                                    if (holders != (offered ? sessions.size() : 0)) {
+                                        violation.set("offered=" + offered + " holders=" + holders);
                                     }
                                 });
+                            }
+                        });
         registry.disable("alpha");
         done.set(true);
         observer.join(TimeUnit.SECONDS.toMillis(WAIT_SECONDS));
@@ -267,15 +258,14 @@ class CapabilityRuntimeTest {
             CountDownLatch go = new CountDownLatch(1);
             Thread requester =
                     Thread.ofVirtual()
-                            .start(
-                                    () -> {
-                                        try {
-                                            go.await();
-                                        } catch (InterruptedException _) {
-                                            Thread.currentThread().interrupt();
-                                        }
-                                        negotiator.request(session, List.of("alpha"));
-                                    });
+                            .start(() -> {
+                                try {
+                                    go.await();
+                                } catch (InterruptedException _) {
+                                    Thread.currentThread().interrupt();
+                                }
+                                negotiator.request(session, List.of("alpha"));
+                            });
             go.countDown();
             registry.disable("alpha");
             requester.join(TimeUnit.SECONDS.toMillis(WAIT_SECONDS));
@@ -291,18 +281,15 @@ class CapabilityRuntimeTest {
         CountDownLatch release = new CountDownLatch(1);
         Thread owner =
                 Thread.ofVirtual()
-                        .start(
-                                () ->
-                                        runtime.runUnderControl(
-                                                () -> {
-                                                    held.countDown();
-                                                    try {
-                                                        release.await(
-                                                                WAIT_SECONDS, TimeUnit.SECONDS);
-                                                    } catch (InterruptedException _) {
-                                                        Thread.currentThread().interrupt();
-                                                    }
-                                                }));
+                        .start(() ->
+                                runtime.runUnderControl(() -> {
+                                    held.countDown();
+                                    try {
+                                        release.await(WAIT_SECONDS, TimeUnit.SECONDS);
+                                    } catch (InterruptedException _) {
+                                        Thread.currentThread().interrupt();
+                                    }
+                                }));
         assertThat(held.await(WAIT_SECONDS, TimeUnit.SECONDS)).isTrue();
         CompletableFuture<Void> disable =
                 CompletableFuture.runAsync(() -> registry.disable("alpha"));
@@ -361,10 +348,8 @@ class CapabilityRuntimeTest {
             recipient.attachWriter(writer);
             Thread sender =
                     Thread.ofVirtual()
-                            .start(
-                                    () ->
-                                            writer.enqueueGroup(
-                                                    "type", List.of(), List.of(privmsg("a"))));
+                            .start(() ->
+                                    writer.enqueueGroup("type", List.of(), List.of(privmsg("a"))));
             assertThat(framer.entered.await(WAIT_SECONDS, TimeUnit.SECONDS)).isTrue();
             registry.disable("tags");
             framer.release.countDown();
@@ -539,11 +524,8 @@ class CapabilityRuntimeTest {
                     () -> {
                         throw new IllegalStateException("not published");
                     };
-            assertThatThrownBy(
-                            () ->
-                                    direct.publish(
-                                            current -> current.withoutAll(Set.of("alpha")),
-                                            failing))
+            assertThatThrownBy(() ->
+                            direct.publish(current -> current.withoutAll(Set.of("alpha")), failing))
                     .hasMessage("not published");
         }
         assertThat(direct.snapshot()).isSameAs(before);

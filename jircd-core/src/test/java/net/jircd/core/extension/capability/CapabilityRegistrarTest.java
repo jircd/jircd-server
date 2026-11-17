@@ -185,13 +185,12 @@ class CapabilityRegistrarTest {
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> registrar.onNamesIdentity(limits -> 513, m -> "x"))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(
-                        () ->
-                                registrar.onNamesIdentity(
-                                        limits -> {
-                                            throw new IllegalStateException("boom");
-                                        },
-                                        m -> "x"))
+        assertThatThrownBy(() ->
+                        registrar.onNamesIdentity(
+                                limits -> {
+                                    throw new IllegalStateException("boom");
+                                },
+                                m -> "x"))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 

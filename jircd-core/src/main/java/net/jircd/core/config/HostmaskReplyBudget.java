@@ -102,13 +102,12 @@ public final class HostmaskReplyBudget {
         all.putAll(namesWorstCaseBytes(serverBytes, nicknameMax, channelMax, catalog));
         all.putAll(worstCaseBytes(serverBytes, nicknameMax, channelMax, catalog));
         StringBuilder over = new StringBuilder();
-        all.forEach(
-                (reply, bytes) -> {
-                    if (bytes > MessageSerializer.MAX_COMMAND_BYTES) {
-                        if (!over.isEmpty()) over.append(", ");
-                        over.append(reply).append('=').append(bytes);
-                    }
-                });
+        all.forEach((reply, bytes) -> {
+            if (bytes > MessageSerializer.MAX_COMMAND_BYTES) {
+                if (!over.isEmpty()) over.append(", ");
+                over.append(reply).append('=').append(bytes);
+            }
+        });
         if (!over.isEmpty()) {
             throw new IllegalArgumentException(
                     "Provider reply decorations exceed the "

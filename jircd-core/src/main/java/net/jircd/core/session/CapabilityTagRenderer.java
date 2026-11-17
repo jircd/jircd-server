@@ -124,16 +124,15 @@ public final class CapabilityTagRenderer implements TagRenderer {
         }
         extensionRegistry
                 .capabilityControl()
-                .runUnderControl(
-                        () ->
-                                append.accept(
-                                        extensionRegistry
-                                                        .capabilitySnapshot()
-                                                        .effective(
-                                                                group.owner(),
-                                                                recipient.negotiatedCapabilities())
-                                                ? group.framed()
-                                                : group.plain()));
+                .runUnderControl(() ->
+                        append.accept(
+                                extensionRegistry
+                                                .capabilitySnapshot()
+                                                .effective(
+                                                        group.owner(),
+                                                        recipient.negotiatedCapabilities())
+                                        ? group.framed()
+                                        : group.plain()));
     }
 
     @Override

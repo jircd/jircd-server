@@ -95,10 +95,9 @@ public final class MessageTagsExtension extends AbstractCapabilityExtension {
     static InboundTagResult forwardClientOnlyTags(InboundTags tags, RequestContext context) {
         Map<String, String> forwarded = new LinkedHashMap<>();
         tags.tags()
-                .forEach(
-                        (key, value) -> {
-                            if (key.startsWith("+")) forwarded.put(key, value);
-                        });
+                .forEach((key, value) -> {
+                    if (key.startsWith("+")) forwarded.put(key, value);
+                });
         return forwarded.isEmpty()
                 ? InboundTagResult.NONE
                 : new InboundTagResult(forwarded, Map.of());

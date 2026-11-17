@@ -432,20 +432,18 @@ public final class ConnectionHandler {
         boolean started = false;
         try {
             rejection =
-                    workers.newThread(
-                            () -> {
-                                try {
-                                    rejectConnection(
-                                            socket, remoteAddress, exceeded, bucket, appliedLimit);
-                                } finally {
-                                    try {
-                                        closeQuietly(socket);
-                                    } finally {
-                                        rejections.remove(Thread.currentThread());
-                                        rejectionSlots.release();
-                                    }
-                                }
-                            });
+                    workers.newThread(() -> {
+                        try {
+                            rejectConnection(socket, remoteAddress, exceeded, bucket, appliedLimit);
+                        } finally {
+                            try {
+                                closeQuietly(socket);
+                            } finally {
+                                rejections.remove(Thread.currentThread());
+                                rejectionSlots.release();
+                            }
+                        }
+                    });
             rejection.setName("connection-rejection");
             rejections.put(rejection, socket);
             rejection.start();
@@ -470,23 +468,22 @@ public final class ConnectionHandler {
             Duration acceptedRegistrationTimeout = registrationTimeout.get();
             Instant acceptedAt = Clock.systemUTC().instant();
             connection =
-                    workers.newThread(
-                            () -> {
-                                try {
-                                    handleConnection(
-                                            socket,
-                                            connectionId,
-                                            acceptedSendqLimit,
-                                            acceptedRegistrationTimeout,
-                                            acceptedAt);
-                                } finally {
-                                    try {
-                                        closeQuietly(socket);
-                                    } finally {
-                                        releaseConnection(Thread.currentThread(), bucket);
-                                    }
-                                }
-                            });
+                    workers.newThread(() -> {
+                        try {
+                            handleConnection(
+                                    socket,
+                                    connectionId,
+                                    acceptedSendqLimit,
+                                    acceptedRegistrationTimeout,
+                                    acceptedAt);
+                        } finally {
+                            try {
+                                closeQuietly(socket);
+                            } finally {
+                                releaseConnection(Thread.currentThread(), bucket);
+                            }
+                        }
+                    });
             connection.setName("connection-" + connectionId);
             connectionsPerBucket.put(bucket, ipCount + 1);
             reserved = true;
@@ -669,11 +666,10 @@ public final class ConnectionHandler {
         List<Thread> owned = List.copyOf(connections.keySet());
         List<Thread> closers =
                 List.copyOf(liveSessions).stream()
-                        .map(
-                                session ->
-                                        Thread.ofVirtual()
-                                                .name("shutdown-" + session.connectionId())
-                                                .start(() -> closeGracefully(session, state)))
+                        .map(session ->
+                                Thread.ofVirtual()
+                                        .name("shutdown-" + session.connectionId())
+                                        .start(() -> closeGracefully(session, state)))
                         .toList();
         for (Thread closer : closers) {
             finishesBy(closer, deadline);
@@ -719,20 +715,19 @@ public final class ConnectionHandler {
         // The claim and the enqueue are one step as far as writer.close() is concerned: a reader or
         // liveness thread that sees CLOSING waits for the ERROR to be queued before it closes.
         boolean claimed =
-                writer.holdingCloseUntilFinalLine(
-                        () ->
-                                disconnectCleanup.claim(
-                                        session,
-                                        () -> {
-                                            afterShutdownClaimHook.get().accept(session);
-                                            writer.enqueueFinal(
-                                                    new Message(
-                                                            Map.of(),
-                                                            null,
-                                                            Command.ERROR,
-                                                            "ERROR",
-                                                            List.of(text)));
-                                        }));
+                writer.holdingCloseUntilFinalLine(() ->
+                        disconnectCleanup.claim(
+                                session,
+                                () -> {
+                                    afterShutdownClaimHook.get().accept(session);
+                                    writer.enqueueFinal(
+                                            new Message(
+                                                    Map.of(),
+                                                    null,
+                                                    Command.ERROR,
+                                                    "ERROR",
+                                                    List.of(text)));
+                                }));
         if (claimed) {
             disconnectCleanup.cleanupClaimed(session, state.reason());
             // The writer has drained (or hit the deadline): wake the read loop now rather than at
@@ -846,10 +841,9 @@ public final class ConnectionHandler {
         writer.setOnWriteFailure(() -> disconnectCleanup.cleanup(session, "Excess Flood"));
         // The close that gives up may run on another thread, so name this connection's thread now.
         String connectionThread = Thread.currentThread().getName();
-        writer.setOnDrainTruncated(
-                () -> {
-                    if (draining.get() != null) forcedConnections.add(connectionThread);
-                });
+        writer.setOnDrainTruncated(() -> {
+            if (draining.get() != null) forcedConnections.add(connectionThread);
+        });
         extensionRegistry.capabilityControl().runUnderControl(() -> session.attachWriter(writer));
         DrainState shutdown = draining.get();
         if (shutdown != null) {
@@ -947,22 +941,21 @@ public final class ConnectionHandler {
         Thread cleanup =
                 Thread.ofVirtual()
                         .name("sendq-disconnect-" + connectionId)
-                        .unstarted(
-                                () -> {
-                                    ConnectionMonitorLog.sendqOverflow(
-                                            connectionId,
-                                            writer.limitBytes(),
-                                            writer.overflowQueuedBytes());
-                                    try {
-                                        disconnectCleanup.cleanup(session, "SendQ exceeded");
-                                    } finally {
-                                        // A racing trigger may own cleanup. Drain its final lines
-                                        // before closing this socket, without waiting for the
-                                        // liveness tick.
-                                        writer.close();
-                                        closeQuietly(socket);
-                                    }
-                                });
+                        .unstarted(() -> {
+                            ConnectionMonitorLog.sendqOverflow(
+                                    connectionId,
+                                    writer.limitBytes(),
+                                    writer.overflowQueuedBytes());
+                            try {
+                                disconnectCleanup.cleanup(session, "SendQ exceeded");
+                            } finally {
+                                // A racing trigger may own cleanup. Drain its final lines
+                                // before closing this socket, without waiting for the
+                                // liveness tick.
+                                writer.close();
+                                closeQuietly(socket);
+                            }
+                        });
         overflowCleanup.set(cleanup);
         cleanup.start();
     }

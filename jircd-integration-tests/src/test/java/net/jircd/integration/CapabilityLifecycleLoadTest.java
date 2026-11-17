@@ -71,15 +71,15 @@ class CapabilityLifecycleLoadTest {
 
     private static final String LIMITS =
             """
-      maxConnections: 10000
-      maxConnectionsPerIp: 10000
-      sendqLimitBytes: 2097152
-      rateLimit:
-        bucketSize: 1000000
-        refillRatePerSecond: 1000000
-      capabilities:
-        batch: enabled
-      """;
+            maxConnections: 10000
+            maxConnectionsPerIp: 10000
+            sendqLimitBytes: 2097152
+            rateLimit:
+              bucketSize: 1000000
+              refillRatePerSecond: 1000000
+            capabilities:
+              batch: enabled
+            """;
 
     /** The configuration with every toggled capability enabled except {@code disabled}. */
     private static String yaml(String disabled) {
@@ -190,16 +190,15 @@ class CapabilityLifecycleLoadTest {
     private static void assertCoherent(ExtensionRegistry registry, Collection<ClientSession> live) {
         AtomicReference<String> incoherent = new AtomicReference<>();
         registry.capabilityControl()
-                .runUnderControl(
-                        () -> {
-                            var offered = registry.capabilitySnapshot().offeredNames();
-                            for (ClientSession session : live) {
-                                for (String name : session.negotiatedCapabilities()) {
-                                    if (!offered.contains(name))
-                                        incoherent.set(session.nickname() + " holds " + name);
-                                }
-                            }
-                        });
+                .runUnderControl(() -> {
+                    var offered = registry.capabilitySnapshot().offeredNames();
+                    for (ClientSession session : live) {
+                        for (String name : session.negotiatedCapabilities()) {
+                            if (!offered.contains(name))
+                                incoherent.set(session.nickname() + " holds " + name);
+                        }
+                    }
+                });
         assertThat(incoherent.get()).isNull();
         for (ClientSession session : live) {
             CapabilityRuntime.CapturedView view = registry.capabilityControl().capture(session);
@@ -253,59 +252,52 @@ class CapabilityLifecycleLoadTest {
                 int channel = c;
                 workers.add(
                         Thread.ofVirtual()
-                                .start(
-                                        () -> {
-                                            try {
-                                                for (long n = 0; !done.get(); n++) {
-                                                    talker.send(
-                                                            "@+n="
-                                                                    + n
-                                                                    + " PRIVMSG #l"
-                                                                    + channel
-                                                                    + " :output "
-                                                                    + n);
-                                                    LockSupport.parkNanos(
-                                                            TimeUnit.MILLISECONDS.toNanos(
-                                                                    2)); // pacing
-                                                }
-                                            } catch (Exception e) {
-                                                if (!done.get()) workerFailure.set(e);
-                                            }
-                                        }));
+                                .start(() -> {
+                                    try {
+                                        for (long n = 0; !done.get(); n++) {
+                                            talker.send(
+                                                    "@+n="
+                                                            + n
+                                                            + " PRIVMSG #l"
+                                                            + channel
+                                                            + " :output "
+                                                            + n);
+                                            LockSupport.parkNanos(
+                                                    TimeUnit.MILLISECONDS.toNanos(2)); // pacing
+                                        }
+                                    } catch (Exception e) {
+                                        if (!done.get()) workerFailure.set(e);
+                                    }
+                                }));
             }
             // Group work: finite groups to random sessions, framed or plain at admission.
             workers.add(
                     Thread.ofVirtual()
-                            .start(
-                                    () -> {
-                                        List<ClientSession> sessions = List.copyOf(live);
-                                        List<Message> members =
-                                                GROUP_MEMBERS.stream()
-                                                        .map(
-                                                                text ->
-                                                                        new Message(
-                                                                                Map.of(),
-                                                                                "bot!bot@host",
-                                                                                Command.PRIVMSG,
-                                                                                "PRIVMSG",
-                                                                                List.of(
-                                                                                        "#grp",
-                                                                                        text)))
-                                                        .toList();
-                                        try {
-                                            while (!done.get()) {
-                                                ClientSession target =
-                                                        sessions.get(
-                                                                ThreadLocalRandom.current()
-                                                                        .nextInt(sessions.size()));
-                                                target.writer()
-                                                        .enqueueGroup("load", List.of(), members);
-                                                LockSupport.parkNanos(200_000); // pacing
-                                            }
-                                        } catch (Exception e) {
-                                            if (!done.get()) workerFailure.set(e);
-                                        }
-                                    }));
+                            .start(() -> {
+                                List<ClientSession> sessions = List.copyOf(live);
+                                List<Message> members =
+                                        GROUP_MEMBERS.stream()
+                                                .map(text ->
+                                                        new Message(
+                                                                Map.of(),
+                                                                "bot!bot@host",
+                                                                Command.PRIVMSG,
+                                                                "PRIVMSG",
+                                                                List.of("#grp", text)))
+                                                .toList();
+                                try {
+                                    while (!done.get()) {
+                                        ClientSession target =
+                                                sessions.get(
+                                                        ThreadLocalRandom.current()
+                                                                .nextInt(sessions.size()));
+                                        target.writer().enqueueGroup("load", List.of(), members);
+                                        LockSupport.parkNanos(200_000); // pacing
+                                    }
+                                } catch (Exception e) {
+                                    if (!done.get()) workerFailure.set(e);
+                                }
+                            }));
 
             registry.observeCapabilityPublications(timings::add);
             List<Long> extensionChanges = new ArrayList<>();
@@ -319,18 +311,16 @@ class CapabilityLifecycleLoadTest {
                 boolean rehash = isRehashCycle(cycle);
                 List<Long> changes = rehash ? rehashChanges : extensionChanges;
                 long disable =
-                        timed(
-                                () -> {
-                                    if (rehash) reload(server, yaml(name));
-                                    else registry.disable(name);
-                                });
+                        timed(() -> {
+                            if (rehash) reload(server, yaml(name));
+                            else registry.disable(name);
+                        });
                 assertCoherent(registry, live);
                 long enable =
-                        timed(
-                                () -> {
-                                    if (rehash) reload(server, yaml(""));
-                                    else registry.enable(name);
-                                });
+                        timed(() -> {
+                            if (rehash) reload(server, yaml(""));
+                            else registry.enable(name);
+                        });
                 assertCoherent(registry, live);
                 if (cycle >= WARMUP) {
                     changes.add(disable);
@@ -392,11 +382,10 @@ class CapabilityLifecycleLoadTest {
                 opens, readers.stream().mapToLong(r -> r.lines.get()).sum());
         assertThat(readers)
                 .hasSize(SESSIONS)
-                .allSatisfy(
-                        r -> {
-                            assertThat(r.violations).hasValue(0);
-                            assertThat(r.opens.get()).isEqualTo(r.closes.get());
-                        });
+                .allSatisfy(r -> {
+                    assertThat(r.violations).hasValue(0);
+                    assertThat(r.opens.get()).isEqualTo(r.closes.get());
+                });
         assertThat(opens).isPositive();
     }
 
