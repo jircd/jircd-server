@@ -15,18 +15,17 @@
  */
 package net.jircd.core.session.command;
 
-import java.util.List;
-import java.util.Map;
 import net.jircd.core.session.ClientSession;
 import net.jircd.core.session.DisconnectCleanup;
-import net.jircd.protocol.Command;
 import net.jircd.protocol.Message;
 
 /**
  * {@code QUIT} — usable at any time, including before registration completes (FR-060). Sends {@code
- * ERROR} (RFC 2812 §3.1.7) before invoking {@link DisconnectCleanup} with the client-supplied
- * reason, or a fixed default if none was given — never a blank reason — the same
- * enqueue-then-cleanup order {@code KILL} and the keep-alive timeout already use.
+ * ERROR} (RFC 2812 §3.1.7) with the client-supplied reason, or a fixed default if none was given —
+ * never a blank reason. {@link DisconnectCleanup} claims CLOSING first and the {@code ERROR} is
+ * queued as part of that claim, so a client that has read it is no longer counted (#151); {@code
+ * KILL} and the keep-alive timeout use the same claim-then-ERROR order. A session another trigger
+ * already claimed gets no second {@code ERROR}.
  */
 public final class QuitCommandHandler implements CommandHandler {
 
@@ -42,14 +41,6 @@ public final class QuitCommandHandler implements CommandHandler {
     public void handle(ClientSession session, Message message) {
         String reason = message.params().isEmpty() ? null : message.params().getFirst();
         String effectiveReason = reason != null ? reason : DEFAULT_REASON;
-        // Borrowed reference to this session's own still-active writer — closed below via
-        // disconnectCleanup.cleanup(), not directly by this handler.
-        @SuppressWarnings("PMD.CloseResource")
-        var writer = session.writer();
-        if (writer != null) {
-            writer.enqueueRaw(
-                    new Message(Map.of(), null, Command.ERROR, "ERROR", List.of(effectiveReason)));
-        }
-        disconnectCleanup.cleanup(session, effectiveReason);
+        disconnectCleanup.disconnectWithError(session, effectiveReason, effectiveReason);
     }
 }

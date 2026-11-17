@@ -16,7 +16,6 @@
 package net.jircd.serverextensions.admin;
 
 import java.util.List;
-import java.util.Map;
 import java.util.function.Supplier;
 import net.jircd.core.extension.ExtensionRegistry;
 import net.jircd.core.session.ClientSession;
@@ -24,7 +23,6 @@ import net.jircd.core.session.DisconnectCleanup;
 import net.jircd.core.session.NicknameRegistry;
 import net.jircd.core.session.command.CommandHandler;
 import net.jircd.core.session.command.Replies;
-import net.jircd.protocol.Command;
 import net.jircd.protocol.Message;
 import net.jircd.protocol.NumericReply;
 
@@ -88,14 +86,20 @@ public final class KillCommandHandler implements CommandHandler {
         }
         String reason = message.params().size() > 1 ? message.params().get(1) : DEFAULT_REASON;
         ClientSession killed = target.get();
-        // Borrowed reference to the target's own still-active writer — closed below via
-        // disconnectCleanup.cleanup(), not directly by this handler.
-        @SuppressWarnings("PMD.CloseResource")
-        var writer = killed.writer();
-        if (writer != null) {
-            writer.enqueueRaw(new Message(Map.of(), null, Command.ERROR, "ERROR", List.of(reason)));
+        boolean claimed =
+                disconnectCleanup.disconnectWithError(
+                        killed, reason, "Killed by " + session.nickname() + " (" + reason + ")");
+        if (!claimed) {
+            // Another disconnect (QUIT, timeout, EOF) got there first and keeps its outcome: the
+            // target is already leaving, so it gets no second ERROR and the killer is told so.
+            Replies.sendFitted(
+                    session,
+                    serverName.get(),
+                    NumericReply.ERR_NOSUCHNICK,
+                    List.of(targetNickname),
+                    "No such nick/channel");
+            return;
         }
-        disconnectCleanup.cleanup(killed, "Killed by " + session.nickname() + " (" + reason + ")");
         AdminNotices.send(
                 session, serverName.get(), "Killed " + targetNickname + " (" + reason + ")");
     }

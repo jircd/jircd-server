@@ -61,6 +61,30 @@ class DisconnectCleanupTest {
     }
 
     @Test
+    void anAnnouncementThatThrowsStillLetsTheCleanupReleaseTheSession() {
+        NicknameRegistry nicknames = new NicknameRegistry();
+        DisconnectCleanup cleanup =
+                new DisconnectCleanup(
+                        nicknames,
+                        new ChannelRegistry(),
+                        new WhowasHistory(() -> 100),
+                        new ExtensionRegistry());
+        ClientSession session = registeredSession();
+        nicknames.claim("erin", session);
+
+        boolean claimed =
+                cleanup.cleanup(
+                        session,
+                        "reason",
+                        () -> {
+                            throw new IllegalStateException("announce failed");
+                        });
+
+        assertThat(claimed).isTrue();
+        assertThat(nicknames.lookup("erin")).isEmpty();
+    }
+
+    @Test
     void firstCleanupCallClaimsTheClosingTransition() {
         DisconnectCleanup cleanup =
                 new DisconnectCleanup(

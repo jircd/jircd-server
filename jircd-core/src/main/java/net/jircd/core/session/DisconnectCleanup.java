@@ -15,10 +15,13 @@
  */
 package net.jircd.core.session;
 
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import net.jircd.core.extension.ExtensionRegistry;
 import net.jircd.protocol.Command;
 import net.jircd.protocol.Message;
+import net.jircd.protocol.MessageSerializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -143,8 +146,74 @@ public final class DisconnectCleanup {
         if (previous == ConnectionLifecycle.State.REGISTERED) {
             userStatistics.userLeft();
         }
-        announce.run();
+        try {
+            announce.run();
+        } catch (RuntimeException e) {
+            // CLOSING is claimed and the counters are adjusted, so the caller must still run the
+            // rest of the cleanup: a failed announcement must not strand the session.
+            LOG.warn("Announcement failed for connection {}", session.connectionId(), e);
+        }
         return true;
+    }
+
+    /**
+     * Disconnects {@code session} with a final {@code ERROR}: claims CLOSING, queues the {@code
+     * ERROR} (its reason cut to fit one wire line) as part of that claim, then runs the rest of the
+     * cleanup with {@code cleanupReason}. Once the client has read the {@code ERROR} it no longer
+     * counts (LUSERS, #151). The claim and the enqueue are one step for the writer's close, so a
+     * liveness thread that sees CLOSING waits for the {@code ERROR}. A session another trigger
+     * already claimed keeps that outcome and gets no second {@code ERROR}.
+     *
+     * @return whether this call claimed the session
+     */
+    public boolean disconnectWithError(
+            ClientSession session, String errorReason, String cleanupReason) {
+        // The session's own writer, closed by the cleanup below.
+        @SuppressWarnings("PMD.CloseResource")
+        SessionWriter writer = session.writer();
+        Runnable announce =
+                writer == null
+                        ? () -> {}
+                        : () ->
+                                writer.enqueueRaw(
+                                        new Message(
+                                                Map.of(),
+                                                null,
+                                                Command.ERROR,
+                                                "ERROR",
+                                                List.of(fitErrorReason(errorReason))));
+        boolean claimed =
+                writer == null
+                        ? claim(session, announce)
+                        : writer.holdingCloseUntilFinalLine(() -> claim(session, announce));
+        if (claimed) {
+            cleanupClaimed(session, cleanupReason);
+        }
+        return claimed;
+    }
+
+    /**
+     * Cuts {@code reason} on a code-point boundary so {@code ERROR :<reason>} fits a 512-byte
+     * command including CRLF. Counted with the trailing-parameter colon, so it fits either way.
+     */
+    static String fitErrorReason(String reason) {
+        int budget =
+                MessageSerializer.MAX_COMMAND_BYTES
+                        - MessageSerializer.commandBytes(
+                                new Message(Map.of(), null, Command.ERROR, "ERROR", List.of(" ")))
+                        + 1; // the placeholder's own byte
+        StringBuilder fitted = new StringBuilder();
+        int bytes = 0;
+        for (int cp : reason.codePoints().toArray()) {
+            String ch = Character.toString(cp);
+            int size = MessageSerializer.utf8Bytes(ch);
+            if (bytes + size > budget) {
+                break;
+            }
+            fitted.append(ch);
+            bytes += size;
+        }
+        return fitted.toString();
     }
 
     /**
@@ -164,13 +233,7 @@ public final class DisconnectCleanup {
                 && session.ident() != null
                 && session.realHostname() != null) {
             String prefix = PresentedIdentity.presentedForm(session, extensionRegistry);
-            Message quit =
-                    new Message(
-                            java.util.Map.of(),
-                            prefix,
-                            Command.QUIT,
-                            "QUIT",
-                            java.util.List.of(reason));
+            Message quit = new Message(Map.of(), prefix, Command.QUIT, "QUIT", List.of(reason));
             Recipients.deliver(neighbors, quit);
             extensionRegistry.committedEvents().quit(session, prefix, reason, neighbors);
             // One WHOWAS entry per disconnection, regardless of cause (QUIT, KILL, keep-alive
