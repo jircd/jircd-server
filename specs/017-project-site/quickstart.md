@@ -26,7 +26,7 @@ Expected: the lockfile guard, the build with link validation and the `/api/` lin
 
 ## 3. Prove the link check fails
 
-Add `[x](./does-not-exist.md)` to a guide such as `site/src/content/docs/user/connecting.md`, run `npm run build` from `site/`.
+Create a temporary page such as `site/src/content/docs/user/link-check-probe.md` containing `[x](./does-not-exist.md)`, run `npm run build` from `site/`, and then remove the temporary page.
 
 Expected: the build fails and names the file and the link. Revert the edit. Then point a guide or the home page at a missing Javadoc page (`/api/does/not/Exist.html`) and an existing page with a missing anchor, build, copy the Javadoc and run `node scripts/check-api-links.mjs`: it fails and names the link. Revert.
 
@@ -58,8 +58,8 @@ Expected: about 100 lines, the badges present, every link to the site or a guide
 
 ## 7. Workflow behaviour on a pull request (PR 2 and later)
 
-- Open a PR that edits a guide under `site/src/content/docs/{user,admin,dev}/` (or the home page at `site/src/content/docs/index.mdx`): the `build` job runs, `deploy` is skipped.
-- Edit `site/package-lock.json` so one `resolved` URL points at another host: `build` fails at the lockfile guard before `npm ci`. Revert.
+- Open a PR that edits a guide under `site/src/content/docs/{user,admin,developer}/` (or the home page at `site/src/content/docs/index.mdx`): the `build` job runs, `deploy` is skipped.
+- Edit `site/package-lock.json` so one package's `resolved` URL points at another host: `build` fails at the lockfile guard before `npm ci`. Revert. T052a repeats this proof through `workflow_dispatch` after merge.
 - `workflow_dispatch` is not offered until the workflow is on the default branch; that check is in scenario 8.
 
 ## 8. Cut-over and post-merge checks (maintainer, each step confirmed; right after PR 2 merges, before PR 3)

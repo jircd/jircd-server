@@ -25,7 +25,10 @@ function* htmlFiles(dir) {
 }
 
 const decodeEntities = (text) =>
-  text.replace(/&(amp|lt|gt|quot|#39|#x27);/g, (_, e) => ({ amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'", '#x27': "'" })[e]);
+  text
+    .replace(/&(amp|lt|gt|quot|#39|#x27);/g, (_, e) => ({ amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'", '#x27': "'" })[e])
+    .replace(/&#(\d+);/g, (_, value) => String.fromCodePoint(Number(value)))
+    .replace(/&#x([\da-f]+);/gi, (_, value) => String.fromCodePoint(Number.parseInt(value, 16)));
 
 function safeDecode(text) {
   try {
@@ -56,8 +59,21 @@ for (const page of htmlFiles(dist)) {
   const html = readFileSync(page, 'utf8');
   for (const match of html.matchAll(/<a\s[^>]*?\bhref\s*=\s*(?:"([^"]*)"|'([^']*)')/gi)) {
     let href = decodeEntities(match[1] ?? match[2]).trim();
-    if (href.startsWith(SITE_ORIGIN + '/')) href = href.slice(SITE_ORIGIN.length);
-    if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith('//')) continue; // external
+    if (/^https?:\/\//i.test(href) || href.startsWith('//')) {
+      let parsed;
+      try {
+        parsed = new URL(href, SITE_ORIGIN);
+      } catch {
+        continue;
+      }
+      if (parsed.origin !== SITE_ORIGIN) continue;
+      const authorityEnd = href.indexOf('//') + 2;
+      const pathStart = href.indexOf('/', authorityEnd);
+      const rawPath = pathStart === -1 ? '/' : href.slice(pathStart).split(/[?#]/)[0];
+      href = `${rawPath}${href.includes('#') ? `#${href.slice(href.indexOf('#') + 1)}` : ''}`;
+    } else if (/^[a-z][a-z0-9+.-]*:/i.test(href)) {
+      continue; // non-HTTP schemes are not site links
+    }
     const [beforeHash, ...hashParts] = href.split('#');
     const hash = hashParts.length > 0 ? safeDecode(hashParts.join('#')) : undefined;
     const pathPart = beforeHash.split('?')[0];

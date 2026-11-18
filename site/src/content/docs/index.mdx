@@ -72,6 +72,8 @@ docker run -d --read-only -p 6667:6667 -p 6697:6697 \
 Or build a standalone distribution (JDK 25):
 
 ```bash
+git clone https://github.com/jircd/jircd-server.git
+cd jircd-server
 ./gradlew :jircd-server:installDist
 cd jircd-server/build/install/jircd-server
 touch jircd.yaml

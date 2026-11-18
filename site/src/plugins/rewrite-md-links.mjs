@@ -30,7 +30,13 @@ export default function rewriteMdLinks() {
           `${relative(docsRoot, source)}: link "${node.url}" points to a missing guide (${relative(docsRoot, target)})`,
         );
       }
-      let route = relative(docsRoot, target).split(sep).join('/').replace(/\.mdx?$/i, '');
+      let route = relative(docsRoot, target)
+        .split(sep)
+        .join('/')
+        .replace(/\.mdx?$/i, '')
+        .split('/')
+        .map((segment) => segment.toLowerCase())
+        .join('/');
       if (route === 'index') route = '';
       else if (route.endsWith('/index')) route = route.slice(0, -'index'.length);
       node.url = `/${route}${route && !route.endsWith('/') ? '/' : ''}${suffix}`;
