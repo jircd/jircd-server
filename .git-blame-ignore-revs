@@ -7,3 +7,6 @@
 
 # Credit JIRCD Maintainers as the copyright holder (#149)
 f8121495be83dfa98bd4af0041bcc4d965cc6656
+
+# Reformat with google-java-format 2.0.0 (#155)
+ebf49d7466b6b6cce575e0ecbe1b25255a0e6cfe
