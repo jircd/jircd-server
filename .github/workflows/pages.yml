@@ -1,0 +1,98 @@
+name: Publish site
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - site/**
+      - jircd-core/src/main/java/**
+      - jircd-protocol/src/main/java/**
+      - build.gradle.kts
+      - settings.gradle.kts
+      - gradle/**
+      - gradle.properties
+      - jircd-core/build.gradle.kts
+      - jircd-protocol/build.gradle.kts
+      - .github/workflows/pages.yml
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up JDK 25
+        uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version: "25"
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+      - name: Generate extension API Javadoc
+        run: GRADLE_OPTS=-Dorg.gradle.daemon=false ./gradlew extensionApiJavadoc
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: site/.nvmrc
+      - name: Check npm lockfile
+        working-directory: site
+        run: node scripts/check-lockfile.mjs
+      - name: Install site dependencies
+        working-directory: site
+        run: npm ci --ignore-scripts
+      - name: Build site
+        working-directory: site
+        run: npm run build
+      - name: Add API reference
+        run: mkdir -p site/dist/api && cp -R build/docs/extension-api/. site/dist/api/
+      - name: Check API links
+        working-directory: site
+        run: node scripts/check-api-links.mjs
+      - name: Upload Pages artifact
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: site/dist
+
+  deploy:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    permissions:
+      pages: write
+      id-token: write
+    steps:
+      - name: Check run is still the main tip
+        id: freshness
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          RUN_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          main_sha=$(git ls-remote "https://github.com/${GITHUB_REPOSITORY}" refs/heads/main | cut -f1)
+          if [ -z "$main_sha" ]; then
+            echo "::error::Could not read the main tip from the remote"
+            exit 1
+          fi
+          if [ "$main_sha" = "$RUN_SHA" ]; then
+            echo "fresh=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "fresh=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Skipping deployment: main moved to ${main_sha} after this run started; that commit's own run deploys."
+          fi
+      - name: Deploy to GitHub Pages
+        id: deployment
+        if: steps.freshness.outputs.fresh == 'true'
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
