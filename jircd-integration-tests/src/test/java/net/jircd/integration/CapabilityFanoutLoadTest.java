@@ -610,6 +610,7 @@ class CapabilityFanoutLoadTest {
         List<RawIrcClient> clients = new ArrayList<>();
         try (TestServer server = TestServer.start(YAML)) {
             RawIrcClient sender = RawIrcClient.connectPlaintext(server.plaintextPort());
+            sender.answerServerPings();
             clients.add(sender);
             sender.send("CAP LS 302");
             sender.send("CAP REQ :message-tags server-time echo-message batch multi-prefix");
@@ -620,6 +621,7 @@ class CapabilityFanoutLoadTest {
             for (int i = 0; i < recipients; i++) {
                 int mix = i % MIXES.size();
                 RawIrcClient client = RawIrcClient.connectPlaintext(server.plaintextPort());
+                client.answerServerPings();
                 clients.add(client);
                 for (String line : MIXES.get(mix)) client.send(line);
                 client.send("CAP END");
