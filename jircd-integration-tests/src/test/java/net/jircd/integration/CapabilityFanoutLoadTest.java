@@ -131,6 +131,8 @@ class CapabilityFanoutLoadTest {
             maxConnections: 10000
             maxConnectionsPerIp: 10000
             sendqLimitBytes: 2097152
+            # Setup and group phases have unread windows; long keep-alive plus PONG handles longer runs.
+            keepAliveFrequencySeconds: 3600
             rateLimit:
               bucketSize: 1000000
               refillRatePerSecond: 1000000
