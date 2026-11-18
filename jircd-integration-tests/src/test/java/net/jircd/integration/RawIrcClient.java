@@ -180,8 +180,7 @@ public final class RawIrcClient implements AutoCloseable {
             return trailing.isEmpty() ? null : trailing;
         }
         int nextParameter = parameter.indexOf(' ');
-        String token = nextParameter < 0 ? parameter : parameter.substring(0, nextParameter);
-        return token;
+        return nextParameter < 0 ? parameter : parameter.substring(0, nextParameter);
     }
 
     /**
