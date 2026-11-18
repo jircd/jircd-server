@@ -10,8 +10,8 @@ Replace the 2010 GitHub Pages page at `jircd.org` with a documentation site buil
 
 - the guides are Markdown in `docs/` (readable on GitHub), loaded by the site project in `site/`;
 - the home page and the four sections (User, Administrator, Developer, API reference) share one navigation, search and theme;
-- the home page is `docs/index.mdx`, inside the same loaded collection;
-- the API reference is Javadoc for the extension API only (`net.jircd.core.extension`, `net.jircd.core.extension.capability`, `net.jircd.protocol`, plus only what link resolution needs), built by one new core-Gradle `Javadoc` task that is part of `./gradlew build`, and served at `/api/`;
+- the home page is `docs/index.mdx`, inside the same loaded collection; until the guides land it links only to pages that exist;
+- the API reference is Javadoc for the extension API only (`net.jircd.core.extension` and `net.jircd.core.extension.capability`, plus only the packages and types their public signatures use; internal protocol machinery is excluded), built by one new core-Gradle `Javadoc` task that is part of `./gradlew build`, and served at `/api/`;
 - a new workflow builds the site on pull requests (link check fails the PR) and deploys only from `main` (push or manual run) with the official Pages actions;
 - the README shrinks to a quick guide of about 100 lines.
 
@@ -85,6 +85,7 @@ site/                           # Astro Starlight project (PR2)
 ├── astro.config.mjs            # site URL, sidebar, plugins, markdown.processedDirs
 ├── src/content.config.ts       # docs collection: glob loader on ../docs (md, mdx) + docsSchema
 ├── src/plugins/…               # relative .md link rewrite (remark)
+├── scripts/                    # check-lockfile.mjs (registry-only lockfile), check-api-links.mjs (links into /api/)
 ├── src/content/docs/           # fallback location of the whole content tree if R2's proof fails (accepted)
 ├── src/assets/                 # logo
 └── public/CNAME                # jircd.org
@@ -103,12 +104,12 @@ README.md                       # rewritten to a quick guide (PR3)
 | PR | Content | Tasks | Gate |
 | --- | --- | --- | --- |
 | 1 | Spec documents (`specs/017-project-site/`), bot path filters for the lockfile; `part of #159` | T001–T004 | Docs and bot config only; `./gradlew build` green; claims check of the spec |
-| 2 | Site skeleton, Home page (`docs/index.mdx`), `pages.yml`, Dependabot entry, Javadoc task wired into `build`, `.gitignore`, Sonar exclusion of `site/**` only if the scan reports `site/**` files (T019); `part of #159` | T010–T023 | `./gradlew build`; docs job green on the PR; local Sonar run; cross-vendor review |
-| cut-over | Right after PR 2 merges: Pages source switch, `github-pages` environment restricted to `main`, domain and HTTPS check; `gh-pages` retired after a quiet period | T050–T053 (incl. T050a) | Each step maintainer-confirmed |
-| 3 | Guides in `docs/`, README rewrite, sidebar completion; `fixes #159` | T030–T046 | Claims check per page; docs job green; `./gradlew build`; cross-vendor review |
+| 2 | Site skeleton, Home page (`docs/index.mdx`, linking only to pages that exist), `pages.yml` (lockfile guard, `/api/` link check, deploy-only concurrency and tip-of-`main` check), `site/scripts/`, Dependabot entry, Javadoc task wired into `build`, `.gitignore`, Sonar exclusion of `site/**` only if the scan reports `site/**` files (T019); `part of #159` | T010–T023 (incl. T013a, T013b) | `./gradlew build`; docs job green on the PR; local Sonar run; cross-vendor review |
+| cut-over | Right after PR 2 merges: Pages source switch, `github-pages` environment restricted to `main`, domain and HTTPS check; `gh-pages` tagged `legacy-gh-pages` and retired after a quiet period; manual run from a non-`main` branch checked once the workflow is on `main` | T050–T053 (incl. T050a, T052a) | Each step maintainer-confirmed |
+| 3 | Guides in `docs/`, guide links on the Home page and sidebar sections, README rewrite; `fixes #159` | T030–T046 (incl. T045a) | Claims check per page; docs job green; `./gradlew build`; cross-vendor review |
 | after | Harvest of review findings | T054 | After the last merge |
 
-Each slice is sized for about 120,000 diff characters (Sourcery's limit is 150,000). The lockfile is the main PR2 risk: it stays in PR2 with the CodeRabbit path filter landed in PR1 and the Sourcery dashboard Path Filter set by the maintainer before PR2 opens; the untested assumption and the fallback split are in research R10. PR3 is the largest by prose; if the migrated guides exceed the budget, the Administrator Guide goes in its own PR (3b) and the User and Developer Guides plus the README stay in 3a.
+Each slice is sized for about 120,000 diff characters (Sourcery's limit is 150,000). The lockfile is the main PR2 risk: it stays in PR2 with the CodeRabbit path filter landed in PR1 and the Sourcery dashboard Path Filter set by the maintainer before PR2 opens; the untested assumption and the fallback split are in research R10. PR3 is the largest by prose; if the migrated guides exceed the budget, the Administrator Guide goes in its own PR (3b) and the User and Developer Guides stay in 3a. Each split PR adds the guide links and sidebar entries of its own pages (T045a); the README rewrite goes in the last split PR, and until then the README sections stay, so no content is dropped before its guide page has merged.
 
 ## Risks
 
@@ -117,10 +118,14 @@ Each slice is sized for about 120,000 diff characters (Sourcery's limit is 150,0
 | Starlight cannot load or fully process guides outside `site/` (research R2) | Proof task T012 before any guide is written; fallback moves the content directory only |
 | `package-lock.json` blows the diff budget (R10) | CodeRabbit path filter in PR1, Sourcery dashboard Path Filter set by the maintainer (T004); measure in T013; if Sourcery still counts it, split `package.json` and the lockfile into a PR before the skeleton |
 | Pages workflow fails on `main` between PR2 and the Pages source switch | Cut-over right after PR2 merges (T050), not after PR3 |
-| Manual dispatch from a non-main branch deploys | `deploy` requires `github.ref == 'refs/heads/main'`; checked in T020 |
+| Manual dispatch from a non-main branch deploys | `deploy` requires `github.ref == 'refs/heads/main'`; checked after the merge in T052a, because GitHub offers `workflow_dispatch` only once the workflow is on the default branch (T020 checks the `pull_request` behaviour) |
+| Lockfile excluded from the review bots hides a redirected dependency (R10) | Lockfile guard `check-lockfile.mjs` before `npm ci` (registry URLs only, integrity hashes enforced by `npm ci`); lockfile changes stay in the PR's file list (T013a) |
+| A queued older deploy overwrites newer content, or PR builds block publication | `concurrency` on the `deploy` job only; the deploy job skips when its commit is no longer the tip of `main` (R5, T017) |
+| Links into `/api/` break when Javadoc changes | Offline check over the assembled `site/dist` (R3, T013b) |
+| Rollback blocked by the `main`-only environment rule, or legacy page lost | Rollback removes the rule first; `legacy-gh-pages` tag pushed before the branch is deleted (R8, T053) |
 | Guides drift from the code | Claims check per page (T033, T040, T044); a short "last verified against" note is not added, because it rots; the check runs per PR |
-| Cut-over breaks `jircd.org` | Ordered steps, rollback to the branch source until `gh-pages` is deleted (R8) |
-| README content lost during the move | A section-by-section move table in T045; the check that each former section is reachable from a guide |
+| Cut-over breaks `jircd.org` | Ordered steps, rollback (environment rule, then source) while the branch exists, and from the `legacy-gh-pages` tag afterwards (R8) |
+| README content lost during the move | A section-by-section move table in T045; the check that each former section is reachable from a guide or the Home page |
 | Javadoc has unresolved references to non-published packages (R4) | List them in T016; add only the needed packages, in one place (a build property) |
 
 ## Complexity Tracking
