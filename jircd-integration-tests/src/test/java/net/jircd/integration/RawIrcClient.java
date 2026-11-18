@@ -27,6 +27,8 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.regex.Pattern;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
@@ -40,6 +42,9 @@ public final class RawIrcClient implements AutoCloseable {
     private final Socket socket;
     private final BufferedReader reader;
     private final OutputStream out;
+    private final Object writeLock = new Object();
+    private final AtomicInteger answeredServerPings = new AtomicInteger();
+    private volatile boolean answerServerPings;
 
     private RawIrcClient(Socket socket) throws IOException {
         this.socket = socket;
@@ -86,8 +91,19 @@ public final class RawIrcClient implements AutoCloseable {
     }
 
     public void send(String line) throws IOException {
-        out.write((line + "\r\n").getBytes(StandardCharsets.UTF_8));
-        out.flush();
+        synchronized (writeLock) {
+            out.write((line + "\r\n").getBytes(StandardCharsets.UTF_8));
+            out.flush();
+        }
+    }
+
+    /** Enables automatic replies to server PINGs while preserving those lines for the caller. */
+    void answerServerPings() {
+        answerServerPings = true;
+    }
+
+    int answeredServerPingCount() {
+        return answeredServerPings.get();
     }
 
     /**
@@ -96,9 +112,11 @@ public final class RawIrcClient implements AutoCloseable {
      * cannot represent malformed UTF-8 in the first place.
      */
     public void sendRawBytes(byte[] line) throws IOException {
-        out.write(line);
-        out.write("\r\n".getBytes(StandardCharsets.UTF_8));
-        out.flush();
+        synchronized (writeLock) {
+            out.write(line);
+            out.write("\r\n".getBytes(StandardCharsets.UTF_8));
+            out.flush();
+        }
     }
 
     /**
@@ -109,7 +127,7 @@ public final class RawIrcClient implements AutoCloseable {
     public boolean staysSilentFor(Duration duration) throws IOException {
         socket.setSoTimeout((int) duration.toMillis());
         try {
-            reader.readLine();
+            readWireLine();
             return false;
         } catch (java.net.SocketTimeoutException _) {
             return true;
@@ -119,7 +137,50 @@ public final class RawIrcClient implements AutoCloseable {
     }
 
     public String readLine() throws IOException {
-        return reader.readLine();
+        return readWireLine();
+    }
+
+    private String readWireLine() throws IOException {
+        String line = reader.readLine();
+        if (answerServerPings && line != null) {
+            String token = serverPingToken(line);
+            if (token != null) {
+                try {
+                    send("PONG :" + token);
+                    answeredServerPings.incrementAndGet();
+                } catch (IOException _) {
+                    // The line was already read; preserve it for callers even if the peer closed.
+                }
+            }
+        }
+        return line;
+    }
+
+    static String serverPingToken(String line) {
+        String message = line;
+        if (message.startsWith("@")) {
+            int tagsEnd = message.indexOf(' ');
+            if (tagsEnd < 0) return null;
+            message = message.substring(tagsEnd + 1).stripLeading();
+        }
+        if (message.startsWith(":")) {
+            int prefixEnd = message.indexOf(' ');
+            if (prefixEnd < 0) return null;
+            message = message.substring(prefixEnd + 1).stripLeading();
+        }
+
+        int commandEnd = message.indexOf(' ');
+        String command = commandEnd < 0 ? message : message.substring(0, commandEnd);
+        if (!command.equalsIgnoreCase("PING") || commandEnd < 0) return null;
+
+        String parameter = message.substring(commandEnd + 1).stripLeading();
+        if (parameter.isEmpty()) return null;
+        if (parameter.startsWith(":")) {
+            String trailing = parameter.substring(1);
+            return trailing.isEmpty() ? null : trailing;
+        }
+        int nextParameter = parameter.indexOf(' ');
+        return nextParameter < 0 ? parameter : parameter.substring(0, nextParameter);
     }
 
     /**
@@ -137,17 +198,16 @@ public final class RawIrcClient implements AutoCloseable {
         boolean isNumeric = prefix.chars().allMatch(Character::isDigit);
         boolean isUppercaseWord =
                 !prefix.isEmpty() && prefix.chars().allMatch(c -> Character.isUpperCase((char) c));
-        java.util.regex.Pattern wordBoundary =
+        Pattern wordBoundary =
                 isNumeric
-                        ? java.util.regex.Pattern.compile("(?<!\\d)" + prefix + "(?!\\d)")
+                        ? Pattern.compile("(?<!\\d)" + prefix + "(?!\\d)")
                         : isUppercaseWord
-                                ? java.util.regex.Pattern.compile(
-                                        "(?<![A-Za-z])" + prefix + "(?![A-Za-z])")
+                                ? Pattern.compile("(?<![A-Za-z])" + prefix + "(?![A-Za-z])")
                                 : null;
         Instant deadline = Instant.now().plus(timeout);
         socket.setSoTimeout(Math.max(1, (int) timeout.toMillis()));
         while (Instant.now().isBefore(deadline)) {
-            String line = reader.readLine();
+            String line = readWireLine();
             if (line == null) {
                 throw new IOException("Connection closed while waiting for: " + prefix);
             }
@@ -174,7 +234,7 @@ public final class RawIrcClient implements AutoCloseable {
         while (Instant.now().isBefore(deadline)) {
             long remainingMillis = Duration.between(Instant.now(), deadline).toMillis();
             socket.setSoTimeout((int) Math.max(1, remainingMillis));
-            String line = reader.readLine();
+            String line = readWireLine();
             if (line == null) {
                 throw new IOException("Connection closed while waiting for barrier PONG");
             }
@@ -191,7 +251,7 @@ public final class RawIrcClient implements AutoCloseable {
         socket.setSoTimeout(Math.max(1, (int) duration.toMillis()));
         try {
             String line;
-            while ((line = reader.readLine()) != null) {
+            while ((line = readWireLine()) != null) {
                 lines.add(line);
             }
         } catch (java.net.SocketTimeoutException expected) {
