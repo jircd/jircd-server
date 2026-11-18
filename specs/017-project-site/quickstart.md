@@ -1,6 +1,6 @@
 # Quickstart: Validating the Project Site
 
-Run from the repository root of a worktree. Prerequisites: JDK 25 (Gradle toolchain), Node 22.23.4 or newer (see `site/.nvmrc`), a browser. Contracts: [site-contract.md](contracts/site-contract.md).
+Run from the repository root of a worktree. Prerequisites: JDK 25 (Gradle toolchain), Node 22.23.4 or newer (see `site/.nvmrc`), a browser. The home page and guides are sourced from `site/src/content/docs/`; top-level `docs/README.md` points there. Page-to-page source links remain relative `.md` links for GitHub, and the site build rewrites them for the published URLs. Contracts: [site-contract.md](contracts/site-contract.md).
 
 ## 1. Build the API reference (PR2 onwards)
 
@@ -16,7 +16,7 @@ Expected: the task succeeds; the index lists only the packages named in the cont
 ## 2. Build and preview the site
 
 ```bash
-cd site && node scripts/check-lockfile.mjs && npm ci && npm run build
+cd site && node scripts/check-lockfile.mjs && npm ci --ignore-scripts && npm run build
 cp -R ../build/docs/extension-api dist/api
 node scripts/check-api-links.mjs
 npm run preview
@@ -26,7 +26,7 @@ Expected: the lockfile guard, the build with link validation and the `/api/` lin
 
 ## 3. Prove the link check fails
 
-Add `[x](./does-not-exist.md)` to a guide, run `npm run build`.
+Add `[x](./does-not-exist.md)` to a guide such as `site/src/content/docs/user/connecting.md`, run `npm run build` from `site/`.
 
 Expected: the build fails and names the file and the link. Revert the edit. Then point a guide or the home page at a missing Javadoc page (`/api/does/not/Exist.html`) and an existing page with a missing anchor, build, copy the Javadoc and run `node scripts/check-api-links.mjs`: it fails and names the link. Revert.
 
@@ -58,7 +58,7 @@ Expected: about 100 lines, the badges present, every link to the site or a guide
 
 ## 7. Workflow behaviour on a pull request (PR 2 and later)
 
-- Open a PR that edits a guide (or the home page): the `build` job runs, `deploy` is skipped.
+- Open a PR that edits a guide under `site/src/content/docs/{user,admin,dev}/` (or the home page at `site/src/content/docs/index.mdx`): the `build` job runs, `deploy` is skipped.
 - Edit `site/package-lock.json` so one `resolved` URL points at another host: `build` fails at the lockfile guard before `npm ci`. Revert.
 - `workflow_dispatch` is not offered until the workflow is on the default branch; that check is in scenario 8.
 

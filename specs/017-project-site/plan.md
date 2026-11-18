@@ -8,10 +8,10 @@
 
 Replace the 2010 GitHub Pages page at `jircd.org` with a documentation site built with Astro Starlight:
 
-- the guides are Markdown in `docs/` (readable on GitHub), loaded by the site project in `site/`;
+- the guides are Markdown in `site/src/content/docs/{user,admin,dev}/` and remain readable on GitHub; top-level `docs/README.md` points to the canonical content tree;
 - the home page and the four sections (User, Administrator, Developer, API reference) share one navigation, search and theme;
-- the home page is `docs/index.mdx`, inside the same loaded collection; until the guides land it links only to pages that exist;
-- the API reference is Javadoc for the extension API only (`net.jircd.core.extension` and `net.jircd.core.extension.capability`, plus only the packages and types their public signatures use; internal protocol machinery is excluded), built by one new core-Gradle `Javadoc` task that is part of `./gradlew build`, and served at `/api/`;
+- the home page is `site/src/content/docs/index.mdx`, inside the Starlight content collection; until the guides land it links only to pages that exist;
+- the API reference is Javadoc for the extension API only (`net.jircd.core.extension` and `net.jircd.core.extension.capability`, plus the project types named in the public or protected signatures of the published types, one level only; internal protocol machinery is not published), built by one new core-Gradle `Javadoc` task that is part of `./gradlew build`, and served at `/api/`;
 - a new workflow builds the site on pull requests (link check fails the PR) and deploys only from `main` (push or manual run) with the official Pages actions;
 - the README shrinks to a quick guide of about 100 lines.
 
@@ -75,18 +75,18 @@ specs/017-project-site/
 ### Source Code (repository root)
 
 ```text
-docs/                           # guides, Markdown with frontmatter; the home page is index.mdx (PR2)
-├── index.mdx                   # home page: Starlight splash, hero in frontmatter, MDX components
-├── user/                       # connecting, TLS, commands, capabilities, channel modes
-├── admin/                      # install, configuration reference, operations topics
-└── developer/                  # build and test, modules, capability provider (SPI)
+docs/README.md                  # pointer to the canonical content under site/src/content/docs/
 site/                           # Astro Starlight project (PR2)
 ├── package.json, package-lock.json, .nvmrc
-├── astro.config.mjs            # site URL, sidebar, plugins, markdown.processedDirs
-├── src/content.config.ts       # docs collection: glob loader on ../docs (md, mdx) + docsSchema
+├── astro.config.mjs            # site URL, sidebar and plugins
+├── src/content.config.ts       # docs collection: docsLoader() + docsSchema
 ├── src/plugins/…               # relative .md link rewrite (remark)
 ├── scripts/                    # check-lockfile.mjs (registry-only lockfile), check-api-links.mjs (links into /api/)
-├── src/content/docs/           # fallback location of the whole content tree if R2's proof fails (accepted)
+├── src/content/docs/           # canonical home page and guide sources
+│   ├── index.mdx               # home page: Starlight splash, hero in frontmatter, MDX components
+│   ├── user/                   # connecting, TLS, commands, capabilities, channel modes
+│   ├── admin/                  # install, configuration reference, operations topics
+│   └── developer/                  # build and test, modules, capability provider (SPI)
 ├── src/assets/                 # logo
 └── public/CNAME                # jircd.org
 build.gradle.kts                # + extensionApiJavadoc task, wired into build (PR2); sonar.exclusions for site/** only if the Sonar scan reports site/** files (T019)
@@ -97,16 +97,16 @@ README.md                       # rewritten to a quick guide (PR3)
 .gitignore                      # + site/node_modules, site/dist
 ```
 
-**Structure Decision**: guides outside `site/` for GitHub readability; the Astro project reads them through a content loader with a recorded fallback (research R2). No Java source layout changes.
+**Structure Decision**: the home page and guides live in `site/src/content/docs/`, the directory Starlight and its link validator index. The top-level `docs/README.md` points to that single source tree. Links between pages stay relative `.md` links for GitHub; the site remark plugin rewrites them for published pages. No Java source layout changes.
 
 ## Delivery Plan (stacked PRs)
 
 | PR | Content | Tasks | Gate |
 | --- | --- | --- | --- |
 | 1 | Spec documents (`specs/017-project-site/`), bot path filters for the lockfile; `part of #159` | T001–T004 | Docs and bot config only; `./gradlew build` green; claims check of the spec |
-| 2 | Site skeleton, Home page (`docs/index.mdx`, linking only to pages that exist), `pages.yml` (lockfile guard, `/api/` link check, deploy-only concurrency and tip-of-`main` check), `site/scripts/`, Dependabot entry, Javadoc task wired into `build`, `.gitignore`, Sonar exclusion of `site/**` only if the scan reports `site/**` files (T019); `part of #159` | T010–T023 (incl. T013a, T013b) | `./gradlew build`; docs job green on the PR; local Sonar run; cross-vendor review |
+| 2 | Site skeleton, Home page (`site/src/content/docs/index.mdx`, linking only to pages that exist), `pages.yml` (lockfile guard, `/api/` link check, deploy-only concurrency and tip-of-`main` check), `site/scripts/`, Dependabot entry, Javadoc task wired into `build`, `.gitignore`, Sonar exclusion of `site/**` only if the scan reports `site/**` files (T019); `part of #159` | T010–T023 (incl. T013a, T013b) | `./gradlew build`; docs job green on the PR; local Sonar run; cross-vendor review |
 | cut-over | Right after PR 2 merges: Pages source switch, `github-pages` environment restricted to `main`, domain and HTTPS check; `gh-pages` tagged `legacy-gh-pages` and retired after a quiet period; manual run from a non-`main` branch checked once the workflow is on `main` | T050–T053 (incl. T050a, T052a) | Each step maintainer-confirmed |
-| 3 | Guides in `docs/`, guide links on the Home page and sidebar sections, README rewrite; `fixes #159` | T030–T046 (incl. T045a) | Claims check per page; docs job green; `./gradlew build`; cross-vendor review |
+| 3 | Guides in `site/src/content/docs/{user,admin,dev}/`, guide links on the Home page and sidebar sections, README rewrite; `fixes #159` | T030–T046 (incl. T045a) | Claims check per page; docs job green; `./gradlew build`; cross-vendor review |
 | after | Harvest of review findings | T054 | After the last merge |
 
 Each slice is sized for about 120,000 diff characters (Sourcery's limit is 150,000). The lockfile is the main PR2 risk: it stays in PR2 with the CodeRabbit path filter landed in PR1 and the Sourcery dashboard Path Filter set by the maintainer before PR2 opens; the untested assumption and the fallback split are in research R10. PR3 is the largest by prose; if the migrated guides exceed the budget, the Administrator Guide goes in its own PR (3b) and the User and Developer Guides stay in 3a. Each split PR adds the guide links and sidebar entries of its own pages (T045a); the README rewrite goes in the last split PR, and until then the README sections stay, so no content is dropped before its guide page has merged.
@@ -115,7 +115,7 @@ Each slice is sized for about 120,000 diff characters (Sourcery's limit is 150,0
 
 | Risk | Mitigation |
 | --- | --- |
-| Starlight cannot load or fully process guides outside `site/` (research R2) | Proof task T012 before any guide is written; fallback moves the content directory only |
+| Starlight's link validator does not index guides outside its content directory (research R2) | Resolved by keeping the single canonical content tree in `site/src/content/docs/`; top-level `docs/README.md` points there |
 | `package-lock.json` blows the diff budget (R10) | CodeRabbit path filter in PR1, Sourcery dashboard Path Filter set by the maintainer (T004); measure in T013; if Sourcery still counts it, split `package.json` and the lockfile into a PR before the skeleton |
 | Pages workflow fails on `main` between PR2 and the Pages source switch | Cut-over right after PR2 merges (T050), not after PR3 |
 | Manual dispatch from a non-main branch deploys | `deploy` requires `github.ref == 'refs/heads/main'`; checked after the merge in T052a, because GitHub offers `workflow_dispatch` only once the workflow is on the default branch (T020 checks the `pull_request` behaviour) |

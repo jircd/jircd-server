@@ -127,7 +127,7 @@ A person who lands on the repository's page wants a short README: what the proje
 - **FR-004**: The site MUST have an Administrator Guide covering: installing by container or standalone build, the configuration reference, logging, reload and stop, OPER protection, connection limits, the registration timeout, the message of the day and admin contact, the listener backlog, generating administrator credentials, and the SendQ policy.
 - **FR-005**: The site MUST have a Developer Guide covering: build and test, the module layout, writing a capability provider (SPI), and a link to `CONTRIBUTING.md` for contributing.
 - **FR-006**: The site MUST publish an API reference at `/api/`, generated from the source, covering only the extension API (the types a capability provider or server extension author uses). Identifying exactly which packages form that API is part of planning.
-- **FR-007**: The guide sources MUST be Markdown files in a top-level `docs/` directory so they remain readable on GitHub, and MUST be the single copy of that content; the home page is the one exception in format (`docs/index.mdx`, MDX, in the same directory).
+- **FR-007**: The guide sources MUST be Markdown files under `site/src/content/docs/{user,admin,dev}/` so Starlight and its link validator index them and they remain readable on GitHub. This MUST be the single copy of that content; top-level `docs/README.md` points to it. The home page is the one exception in format (`site/src/content/docs/index.mdx`, MDX, in the same collection).
 - **FR-008**: The README MUST shrink to a quick guide of about 100 lines that keeps the badges and links to the site and the guides; content it gives up MUST move to a guide or to the Home page ("What is JIRCD?" and "Project status" go to the Home page), not disappear.
 - **FR-009**: Every factual claim in the guides (commands, capabilities, modes, configuration keys and defaults, behaviours) MUST be checked against the code and tests before the pull request that publishes it.
 - **FR-010**: Pull requests that change the site, the guides or the extension API sources MUST build the site and the API reference, check internal links including every link and anchor into the API reference, and reject a package lockfile that resolves any package outside the npm registry; a failure MUST fail the pull request and MUST NOT publish.
@@ -140,7 +140,7 @@ A person who lands on the repository's page wants a short README: what the proje
 
 ### Key Entities
 
-- **Guide page**: a Markdown document in `docs/` belonging to one section (User, Administrator, Developer), with a title and an order in its section's navigation.
+- **Guide page**: a Markdown document in `site/src/content/docs/user/`, `site/src/content/docs/admin/` or `site/src/content/docs/developer/`, belonging to one section (User, Administrator, Developer), with a title and an order in its section's navigation.
 - **Site**: the generated website: home page, the three guide sections, the API reference and shared navigation, search and theme.
 - **API reference**: generated documentation of the extension API packages, published under `/api/`.
 - **Publication**: a deployment of the site produced by the workflow, either automatic after a merge or started by hand.
@@ -167,7 +167,7 @@ A person who lands on the repository's page wants a short README: what the proje
 - Versioned documentation is not needed: the project is `0.1.0-SNAPSHOT` with no release yet.
 - Blog, translations and custom design beyond the theme, brand colour and logo are out of scope.
 - GitHub Pages remains the host, with the existing `jircd.org` custom domain.
-- Tracking issue: #159. The home page lives with the guides in `docs/`.
+- Tracking issue: #159. The home page lives with the guides in `site/src/content/docs/`; top-level `docs/README.md` points there.
 - The API reference covers the extension API only (`net.jircd.core.extension` and `net.jircd.core.extension.capability`, plus only the packages and types their public signatures use; internal protocol machinery is not published); the rest of the server's internals are not published as Javadoc.
 - `CONTRIBUTING.md`, `SECURITY.md` and the spec-kit documents under `specs/` stay where they are and are linked, not copied.
 - The README keeps its current badges.

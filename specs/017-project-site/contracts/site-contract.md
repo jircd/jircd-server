@@ -4,31 +4,31 @@ What the published site exposes, where each page's content comes from, and what 
 
 ## Page map
 
-Source paths are relative to the repository root. "README §" is the section of today's `README.md` the content migrates from (it keeps nothing but a link afterwards). The guide rows (everything but `/` and `/api/`) are published by PR 3; until then the Home page links only to pages that exist. Page names are proposals; the claims check (T033, T040, T044) settles exact content.
+Source paths are relative to the repository root. The canonical home page and guide content live under `site/src/content/docs/`; top-level `docs/README.md` points there. "README §" is the section of today's `README.md` the content migrates from (it keeps nothing but a link afterwards). The guide rows (everything but `/` and `/api/`) are published by PR 3; until then the Home page links only to pages that exist. Page names are proposals; the claims check (T033, T040, T044) settles exact content.
 
 | URL | Source | Migrates from | Audience |
 | --- | --- | --- | --- |
-| `/` | `docs/index.mdx` (Starlight splash; GitHub shows MDX as source, acceptable for one page) | README §What is JIRCD?, §Project status | all |
-| `/user/connecting/` | `docs/user/connecting.md` | new, from the sample configuration and `deploy/` | user |
-| `/user/tls/` | `docs/user/tls.md` | README §Getting started (TLS) | user |
-| `/user/commands/` | `docs/user/commands.md` | handler classes and README mentions | user |
-| `/user/capabilities/` | `docs/user/capabilities.md` | README §What is JIRCD? and the seven capability modules | user |
-| `/user/channel-modes/` | `docs/user/channel-modes.md` | the mode parser and channel handlers | user |
-| `/admin/install-container/` | `docs/admin/install-container.md` | README §Running in a container, §The native variant | admin |
-| `/admin/install-standalone/` | `docs/admin/install-standalone.md` | README §Running a standalone build | admin |
-| `/admin/configuration/` | `docs/admin/configuration.md` | README §Getting started and the configuration loader | admin |
-| `/admin/logging/` | `docs/admin/logging.md` | README §Logging | admin |
-| `/admin/reload-stop/` | `docs/admin/reload-stop.md` | README §Reloading and stopping | admin |
-| `/admin/oper-protection/` | `docs/admin/oper-protection.md` | README §OPER protection | admin |
-| `/admin/connection-limits/` | `docs/admin/connection-limits.md` | README §Connection limits, §Registration timeout | admin |
-| `/admin/motd-admin-contact/` | `docs/admin/motd-admin-contact.md` | README §Message of the day and admin contact | admin |
-| `/admin/listener-backlog/` | `docs/admin/listener-backlog.md` | README §Listener accept backlog | admin |
-| `/admin/admin-credentials/` | `docs/admin/admin-credentials.md` | README §Generating an administrator credential | admin |
-| `/admin/sendq/` | `docs/admin/sendq.md` | README §Outbound queue (SendQ) policy | admin |
-| `/developer/build-test/` | `docs/developer/build-test.md` | `AGENTS.md`, `CONTRIBUTING.md` | developer |
-| `/developer/modules/` | `docs/developer/modules.md` | `AGENTS.md` module list | developer |
-| `/developer/capability-provider/` | `docs/developer/capability-provider.md` | README §Writing a capability provider (SPI) | developer |
-| `/developer/contributing/` | `docs/developer/contributing.md` | link to `CONTRIBUTING.md`, `SECURITY.md` | developer |
+| `/` | `site/src/content/docs/index.mdx` (Starlight splash; GitHub shows MDX as source, acceptable for one page) | README §What is JIRCD?, §Project status | all |
+| `/user/connecting/` | `site/src/content/docs/user/connecting.md` | new, from the sample configuration and `deploy/` | user |
+| `/user/tls/` | `site/src/content/docs/user/tls.md` | README §Getting started (TLS) | user |
+| `/user/commands/` | `site/src/content/docs/user/commands.md` | handler classes and README mentions | user |
+| `/user/capabilities/` | `site/src/content/docs/user/capabilities.md` | README §What is JIRCD? and the seven capability modules | user |
+| `/user/channel-modes/` | `site/src/content/docs/user/channel-modes.md` | the mode parser and channel handlers | user |
+| `/admin/install-container/` | `site/src/content/docs/admin/install-container.md` | README §Running in a container, §The native variant | admin |
+| `/admin/install-standalone/` | `site/src/content/docs/admin/install-standalone.md` | README §Running a standalone build | admin |
+| `/admin/configuration/` | `site/src/content/docs/admin/configuration.md` | README §Getting started and the configuration loader | admin |
+| `/admin/logging/` | `site/src/content/docs/admin/logging.md` | README §Logging | admin |
+| `/admin/reload-stop/` | `site/src/content/docs/admin/reload-stop.md` | README §Reloading and stopping | admin |
+| `/admin/oper-protection/` | `site/src/content/docs/admin/oper-protection.md` | README §OPER protection | admin |
+| `/admin/connection-limits/` | `site/src/content/docs/admin/connection-limits.md` | README §Connection limits, §Registration timeout | admin |
+| `/admin/motd-admin-contact/` | `site/src/content/docs/admin/motd-admin-contact.md` | README §Message of the day and admin contact | admin |
+| `/admin/listener-backlog/` | `site/src/content/docs/admin/listener-backlog.md` | README §Listener accept backlog | admin |
+| `/admin/admin-credentials/` | `site/src/content/docs/admin/admin-credentials.md` | README §Generating an administrator credential | admin |
+| `/admin/sendq/` | `site/src/content/docs/admin/sendq.md` | README §Outbound queue (SendQ) policy | admin |
+| `/developer/build-test/` | `site/src/content/docs/developer/build-test.md` | `AGENTS.md`, `CONTRIBUTING.md` | developer |
+| `/developer/modules/` | `site/src/content/docs/developer/modules.md` | `AGENTS.md` module list | developer |
+| `/developer/capability-provider/` | `site/src/content/docs/developer/capability-provider.md` | README §Writing a capability provider (SPI) | developer |
+| `/developer/contributing/` | `site/src/content/docs/developer/contributing.md` | link to `CONTRIBUTING.md`, `SECURITY.md` | developer |
 | `/api/` | generated by `extensionApiJavadoc` | the Javadoc of the packages in research R4 | developer |
 
 README sections "What is JIRCD?" and "Project status" have their home on `/` (the capability list also feeds `/user/capabilities/`); every other former README section has exactly one guide page above. The migration table of the SPI section (the "Removed → Use instead" list for the unreleased API) moves with the capability-provider page; the *Status* paragraph and spec-validation paths stay out of the guides (internal history).
@@ -43,13 +43,15 @@ README sections "What is JIRCD?" and "Project status" have their home on `/` (th
 ## API reference
 
 - Published at `/api/`, output of `./gradlew extensionApiJavadoc` (directory `build/docs/extension-api`).
-- Scope (decided): the public extension API as it appears in signatures: `net.jircd.core.extension` and `net.jircd.core.extension.capability`, plus only the packages and types their public signatures use. Internal protocol machinery (for example `MessageParser`, `Utf8Validator`, `CapabilityNegotiationGrammar`) is not published and is removed with source excludes where it shares a package with a needed type. T016 determines and records the exact include and exclude lists here.
+- Scope (decided): the public extension API as it appears in signatures: `net.jircd.core.extension` and `net.jircd.core.extension.capability`, plus the project types named in the public or protected signatures of the published types, one level only. Internal protocol machinery (for example `MessageParser`, `Utf8Validator`, `CapabilityNegotiationGrammar`) stays out because it is not in the include list; there are no source excludes. T016 records the exact list.
+- Exact source includes (one property, `extensionApiSourcePatterns`, in `build.gradle.kts`): all Java sources under `net/jircd/core/extension/` (including its `capability/` subpackage), plus `net/jircd/core/capability/Capability.java`, `net/jircd/core/config/{ConfigurationException,ConfigurationLoader,ConfigurationReloader,ServerConfiguration}.java`, `net/jircd/core/session/{Channel,ChannelMode,ChannelRegistry,ClientSession,CommittedEvents,ConnectionLifecycle,Departure,DisconnectCleanup,GateAction,JoinResult,KickOutcome,LivenessMonitor,NicknameRegistry,OutboundMessage,RateLimitBucket,SessionWriter,UserMode,UserStatistics,WhowasHistory}.java`, `net/jircd/core/session/command/CommandHandler.java`, and `net/jircd/protocol/{Command,Message}.java`. The first group (extension packages, `Capability`, `ConfigurationReloader`, the eight original session types, `CommandHandler`, `Command`, `Message`) is what the extension API names directly; the other 14 types (`ServerConfiguration`, `ConfigurationException`, `ConfigurationLoader`, `SessionWriter`, `Channel`, `JoinResult`, `KickOutcome`, `Departure`, `GateAction`, `ConnectionLifecycle`, `LivenessMonitor`, `RateLimitBucket`, `UserStatistics`, `WhowasHistory`) were found with `javap -protected` over the compiled published types, because their public or protected signatures name them. The scan is one level: types referenced only by those added types are not published and render unlinked in the Javadoc (`ConnectionLimitPolicy`, `BanEntry`, `ChannelModeChange`, `MemberFacts`, `PreparedDelivery`, `TagRenderer`, `WhowasEntry`). `WireBytes` appears only in a package-private nested record, which Javadoc does not document. The compiled core and protocol outputs are on Javadoc's classpath to resolve implementation types used inside included source files without publishing those sources.
+- The task uses the Gradle core `Javadoc` type in `jircd-core`, with a root `extensionApiJavadoc` entry point, UTF-8, `-Xdoclint:all,-missing`, and output `build/docs/extension-api`. `check` depends on that root entry point. The scope is defined once in `build.gradle.kts` as `extensionApiSourcePatterns`.
 - Every internal link and anchor from the site into `/api/` is checked offline over the assembled `site/dist` by `site/scripts/check-api-links.mjs` (the Starlight link validator exempts `/api/`).
 - The task is part of `./gradlew build` (`check` depends on it): a Javadoc error fails CI and local builds.
 
 ## Home page contract
 
-- `docs/index.mdx`: hero, feature cards, description, status, quick start for the container and the standalone build.
+- `site/src/content/docs/index.mdx`: hero, feature cards, description, status, quick start for the container and the standalone build.
 - PR 2 links only to pages that exist then: `/api/`, the repository and README on GitHub, `CONTRIBUTING.md`. PR 3 (T045a) adds the guide links on the Home page and the User, Administrator and Developer sidebar sections, each in the PR that adds those pages.
 
 ## Workflow contract (`.github/workflows/pages.yml`)
@@ -57,17 +59,17 @@ README sections "What is JIRCD?" and "Project status" have their home on `/` (th
 | Event | Jobs | Publishes |
 | --- | --- | --- |
 | `pull_request` touching one of the paths below | `build` | no |
-| `push` to `main` touching one of the paths below | `build`, `deploy` | yes |
+| `push` to `main` (any commit, no path filter) | `build`, `deploy` | yes |
 | `workflow_dispatch` on `main` | `build`, `deploy` | yes |
 | `workflow_dispatch` on another branch | `build` | no (`deploy` skipped) |
 
-- Paths (one list for both triggers): `docs/**`, `site/**`, `jircd-core/src/main/java/**`, `jircd-protocol/src/main/java/**`, root `build.gradle.kts`, `settings.gradle.kts`, `gradle/libs.versions.toml` (if present), `jircd-core/build.gradle.kts`, `jircd-protocol/build.gradle.kts` and `.github/workflows/pages.yml`.
+- Paths (the `pull_request` trigger only): `site/**`, `jircd-core/src/main/java/**`, `jircd-protocol/src/main/java/**`, root `build.gradle.kts`, `settings.gradle.kts`, `gradle/**` (covers `gradle/libs.versions.toml`, the version catalog), `gradle.properties`, `jircd-core/build.gradle.kts`, `jircd-protocol/build.gradle.kts` and `.github/workflows/pages.yml`. The `push` trigger on `main` has no path filter: with a filter, a freshness skip (below) would leave the site stale whenever the newer main commit did not touch these paths, because that commit starts no run. Every main commit builds and the newest one deploys.
 - The `deploy` job carries `if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'`.
 - Permissions: `contents: read` by default; `pages: write` and `id-token: write` only on the deploy job.
 - Every action pinned by full commit SHA with the tag in a comment; Node version from `site/.nvmrc`.
 - A broken link, a Javadoc error or an Astro build error fails `build` and so the PR; `deploy` is skipped.
-- `concurrency` group `pages` on the `deploy` job only (no cancellation of a running deployment), so PR builds never enter the publication queue. Before deploying, the job checks that the run's commit is still the tip of `main` (`git ls-remote`) and otherwise skips with a notice.
-- Supply chain: before `npm ci` (never `npm install`), `site/scripts/check-lockfile.mjs` fails the build if any `resolved` URL in `site/package-lock.json` is not on `https://registry.npmjs.org/` or an `integrity` hash is missing. After the Javadoc is copied into `site/dist/api`, `site/scripts/check-api-links.mjs` fails the build on an unresolved link or anchor into `/api/`.
+- `concurrency` group `pages` on the `deploy` job only (no cancellation of a running deployment), so PR builds never enter the publication queue. Before deploying, the job checks that the run's commit is still the tip of `main` (`git ls-remote`) and otherwise skips with a `::notice::` (the newer commit's own run deploys). If `git ls-remote` fails or returns no `main` SHA the step fails with `::error::` (`set -euo pipefail`) instead of deploying or skipping silently.
+- Supply chain: before `npm ci --ignore-scripts` (never `npm install`; no dependency lifecycle script runs), `site/scripts/check-lockfile.mjs` fails the build if any `resolved` URL in `site/package-lock.json` does not parse with `new URL()` to protocol `https:`, hostname `registry.npmjs.org`, no username, password or port, and a raw path without `..` or encoded dot segments, or an `integrity` hash is missing. After the Javadoc is copied into `site/dist/api`, `site/scripts/check-api-links.mjs` fails the build on an unresolved link or anchor into `/api/`, on a traversal segment in an absolute `/api/` link, and on a target outside `dist/api` (containment is `file === apiDir || file.startsWith(apiDir + sep)`).
 - The manual run from a non-`main` branch can be checked only after the workflow is on the default branch (task T052a).
 
 ## Dependabot
