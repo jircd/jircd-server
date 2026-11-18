@@ -20,6 +20,7 @@ reviews:
     - "!gradle/verification-metadata.xml"
     - "!gradle/verification-keyring.keys"
     - "!gradle/wrapper/**"
+    - "!site/package-lock.json"
   path_instructions:
     - path: "**/*.java"
       instructions: >-
