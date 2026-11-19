@@ -17,7 +17,7 @@ try {
   console.error(`check-lockfile: cannot read ${lockPath}: ${error.message}`);
   process.exit(1);
 }
-if (lock.lockfileVersion < 2 || typeof lock.packages !== 'object' || lock.packages === null) {
+if (!(lock.lockfileVersion >= 2) || typeof lock.packages !== 'object' || lock.packages === null) {
   console.error('check-lockfile: expected a lockfileVersion 2 or 3 file with a "packages" map');
   process.exit(1);
 }
@@ -36,14 +36,20 @@ function resolvedProblem(resolved) {
   if (url.hostname !== REGISTRY_HOST) return `host is not ${REGISTRY_HOST}`;
   if (url.username !== '' || url.password !== '') return 'has credentials';
   if (url.port !== '') return 'has a port';
+  if (url.search !== '') return 'has a query string';
+  if (url.hash !== '') return 'has a fragment';
   // new URL() resolves dot segments, so inspect the raw path of the original string.
   const rawPath = resolved.slice(resolved.indexOf(url.host) + url.host.length).split(/[?#]/)[0];
   if (rawPath.replaceAll('\\', '/').split('/').some((segment) => /^(\.|%2e){1,2}$/i.test(segment))) return 'path has a dot segment';
   return undefined;
 }
 
+function pathPackageName(packagePath) {
+  return packagePath.split(/(?:^|\/)node_modules\//).at(-1);
+}
+
 function expectedTarballPath(packagePath, entry) {
-  const packageName = typeof entry.name === 'string' ? entry.name : packagePath.split(/(?:^|\/)node_modules\//).at(-1);
+  const packageName = pathPackageName(packagePath);
   if (typeof packageName !== 'string' || packageName === packagePath || typeof entry.version !== 'string') return undefined;
   const filename = packageName.startsWith('@') ? packageName.split('/').at(-1) : packageName;
   if (!filename) return undefined;
@@ -56,6 +62,10 @@ for (const [name, entry] of Object.entries(lock.packages)) {
   if (name === '') continue; // the root project
   if (entry.link === true) problems.push(`${name}: link entries are not allowed`);
   checked++;
+  const pathName = pathPackageName(name);
+  if (typeof entry.name === 'string' && entry.name !== pathName) {
+    problems.push(`${name}: entry name ${JSON.stringify(entry.name)} differs from path-derived package name ${JSON.stringify(pathName)} (aliases require an explicit allow-list)`);
+  }
   if (typeof entry.resolved !== 'string') {
     problems.push(`${name}: no "resolved" URL`);
   } else {

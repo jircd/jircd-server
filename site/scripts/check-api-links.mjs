@@ -7,6 +7,7 @@ import { dirname, join, posix, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const SITE_ORIGIN = 'https://jircd.org';
+// Only https://jircd.org is same-site (host matching is case-insensitive and the default port is normalized); www., a trailing dot, and http are other origins.
 const dist = resolve(process.argv[2] ?? join(dirname(fileURLToPath(import.meta.url)), '..', 'dist'));
 const apiDir = join(dist, 'api');
 
@@ -27,8 +28,18 @@ function* htmlFiles(dir) {
 const decodeEntities = (text) =>
   text
     .replace(/&(amp|lt|gt|quot|#39|#x27);/g, (_, e) => ({ amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'", '#x27': "'" })[e])
-    .replace(/&#(\d+);/g, (_, value) => String.fromCodePoint(Number(value)))
-    .replace(/&#x([\da-f]+);/gi, (_, value) => String.fromCodePoint(Number.parseInt(value, 16)));
+    .replace(/&#(\d+);/g, (match, value) => {
+      const codePoint = Number(value);
+      return Number.isInteger(codePoint) && codePoint > 0 && codePoint <= 0x10ffff
+        ? String.fromCodePoint(codePoint)
+        : match;
+    })
+    .replace(/&#x([\da-f]+);/gi, (match, value) => {
+      const codePoint = Number.parseInt(value, 16);
+      return Number.isInteger(codePoint) && codePoint > 0 && codePoint <= 0x10ffff
+        ? String.fromCodePoint(codePoint)
+        : match;
+    });
 
 function safeDecode(text) {
   try {
@@ -68,8 +79,11 @@ for (const page of htmlFiles(dist)) {
       }
       if (parsed.origin !== SITE_ORIGIN) continue;
       const authorityEnd = href.indexOf('//') + 2;
-      const pathStart = href.indexOf('/', authorityEnd);
-      const rawPath = pathStart === -1 ? '/' : href.slice(pathStart).split(/[?#]/)[0];
+      const authorityTail = href.slice(authorityEnd);
+      const pathStart = authorityTail.search(/[/?#]/);
+      const rawPath = pathStart === -1 || authorityTail[pathStart] !== '/'
+        ? '/'
+        : authorityTail.slice(pathStart).split(/[?#]/)[0];
       href = `${rawPath}${href.includes('#') ? `#${href.slice(href.indexOf('#') + 1)}` : ''}`;
     } else if (/^[a-z][a-z0-9+.-]*:/i.test(href)) {
       continue; // non-HTTP schemes are not site links

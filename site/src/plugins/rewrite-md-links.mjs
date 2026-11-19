@@ -25,6 +25,15 @@ export default function rewriteMdLinks() {
       if (!match) return;
       const [, path, suffix] = match;
       const target = resolve(dirname(source), path);
+      const targetSegments = relative(docsRoot, target).split(sep);
+      const lastSegment = targetSegments.length - 1;
+      targetSegments[lastSegment] = targetSegments[lastSegment].replace(/\.mdx?$/i, '');
+      const invalidSegment = targetSegments.find((segment) => !/^[A-Za-z0-9_-]+$/.test(segment));
+      if (invalidSegment) {
+        throw new Error(
+          `${relative(docsRoot, source)}: link "${node.url}" has target segment ${JSON.stringify(invalidSegment)}; guide filename segments must use only letters, numbers, underscores, and hyphens so Starlight's github-slugger preserves the route`,
+        );
+      }
       if (!target.startsWith(docsRoot + sep) || !existsSync(target)) {
         throw new Error(
           `${relative(docsRoot, source)}: link "${node.url}" points to a missing guide (${relative(docsRoot, target)})`,

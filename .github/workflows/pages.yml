@@ -63,6 +63,7 @@ jobs:
         with:
           path: site/dist
       - name: Check run is still the main tip
+        # Keep this freshness check identical to the deploy job's check below.
         id: freshness
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         env:
@@ -98,6 +99,7 @@ jobs:
       id-token: write # Provides the OIDC token required by deploy-pages.
     steps:
       - name: Check run is still the main tip
+        # Keep this freshness check identical to the build job's check above.
         id: freshness
         env:
           GITHUB_REPOSITORY: ${{ github.repository }}
