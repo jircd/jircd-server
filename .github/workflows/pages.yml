@@ -91,6 +91,7 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     concurrency:
       group: pages
+      queue: max
       cancel-in-progress: false
     permissions:
       pages: write # Publishes the Pages artifact.

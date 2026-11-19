@@ -26,7 +26,7 @@ Expected: the lockfile guard, the build with link validation and the `/api/` lin
 
 ## 3. Prove the link check fails
 
-Create a temporary page such as `site/src/content/docs/user/link-check-probe.md` containing `[x](./does-not-exist.md)`, run `npm run build` from `site/`, and then remove the temporary page.
+Create a temporary page such as `site/src/content/docs/user/link-check-probe.md` containing frontmatter with a `title` (required by Starlight), followed by `[x](./does-not-exist.md)`, run `npm run build` from `site/`, and then remove the temporary page.
 
 Expected: the build fails and names the file and the link. Revert the edit. Then point a guide or the home page at a missing Javadoc page (`/api/does/not/Exist.html`) and an existing page with a missing anchor, build, copy the Javadoc and run `node scripts/check-api-links.mjs`: it fails and names the link. Revert.
 
