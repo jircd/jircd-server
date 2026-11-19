@@ -79,7 +79,7 @@ for (const page of htmlFiles(dist)) {
       }
       if (parsed.origin !== SITE_ORIGIN) continue;
       const authorityEnd = href.indexOf('//') + 2;
-      const authorityTail = href.slice(authorityEnd);
+      const authorityTail = href.slice(authorityEnd).replace(/\\/g, '/');
       const pathStart = authorityTail.search(/[/?#]/);
       const rawPath = pathStart === -1 || authorityTail[pathStart] !== '/'
         ? '/'

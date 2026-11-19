@@ -28,6 +28,11 @@ export default function rewriteMdLinks() {
       const targetSegments = relative(docsRoot, target).split(sep);
       const lastSegment = targetSegments.length - 1;
       targetSegments[lastSegment] = targetSegments[lastSegment].replace(/\.mdx?$/i, '');
+      if (targetSegments[lastSegment].startsWith('_')) {
+        throw new Error(
+          `${relative(docsRoot, source)}: link "${node.url}" targets ${JSON.stringify(targetSegments[lastSegment])}; guide filenames must not start with an underscore because Starlight excludes those files`,
+        );
+      }
       const invalidSegment = targetSegments.find((segment) => !/^[A-Za-z0-9_-]+$/.test(segment));
       if (invalidSegment) {
         throw new Error(

@@ -37,7 +37,7 @@ README sections "What is JIRCD?" and "Project status" have their home on `/` (th
 
 - Every guide has frontmatter with `title`, `description` and `sidebar.order`; the sidebar of each section is generated from the files.
 - Links between guides are relative `.md` links (they work on GitHub); the build rewrites them to site URLs and fails if the target is missing.
-- Guide filename path segments (without the `.md` or `.mdx` extension) use only ASCII letters, numbers, underscores, and hyphens, so Starlight's `github-slugger` preserves the lowercased route.
+- Guide filename path segments (without the `.md` or `.mdx` extension) use only ASCII letters, numbers, underscores, and hyphens; the final filename segment must not start with an underscore because Starlight excludes such files. This lets `github-slugger` preserve the lowercased route for published guides.
 - Links to code, specs or configuration samples use absolute `https://github.com/jircd/jircd-server/blob/main/...` URLs.
 - A guide states what the code does today; it does not describe planned behaviour. Anything unimplemented found during migration becomes an issue, not prose.
 
