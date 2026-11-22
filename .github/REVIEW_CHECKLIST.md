@@ -64,6 +64,7 @@ Collected from #130–#134, the spec-016 stack. Most findings on spec PRs are ab
 
 - **Completed tasks and claims match what was built.** When a task is marked `[X]`, re-read its text against the code and tests: class and method names, file permissions, entry points, and whether a case is covered in-process or in a container. Coverage maps, checklists and research notes claim only what was tested or measured. Don't write "no side effect" without a measured result. [#131, #134]
 - **The spec documents agree with each other.** Spec, plan, tasks, data model and contracts state the same rule, range or label list in the same way, and an edge case matches the requirement it qualifies. [#131, #132]
+- **A stacked PR needs only what exists at its own level.** Every task's prerequisites exist in its own PR or one below it: no links to pages a later PR adds, and no check that can only run after the merge (for example `workflow_dispatch` before the workflow is on the default branch) (#160).
 - **The published configuration matches the applied one.** When applying a reload can fail partway (for example, a file appender that won't start), define a retry or a rollback, so that what `current()` publishes and what is live can't diverge. A later reload with identical settings must retry. [#131, #132]
 - **State changes arrive in order.** Listener callbacks for successive reloads run in publication order, or are serialised, so a slow listener can't apply an older configuration after a newer one. [#131]
 - **Lifecycle windows.** Name and handle the in-between states:
@@ -87,6 +88,7 @@ Collected from #130–#134, the spec-016 stack. Most findings on spec PRs are ab
   - A checkout in a job that never pushes sets `persist-credentials: false`. Each write permission has a comment saying why.
   - The release version reaches every build stage, and the OCI label version matches the app version. The default build target (a plain `docker build .`) is the published default image.
   - A reported metric measures what the spec defines. SC-005 start-up was first measured from a different start point.
+  - A path excluded from bot review (lockfiles, generated files) has a CI guard for what the bots no longer read. For the npm lockfile: every package resolves only from `https://registry.npmjs.org/`, has an integrity hash, and installs with `npm ci` (#160).
 
   [#131, #134, #139, #141]
 - **Tests prove what they claim.** A test that removes a resource first shows that something was written before the removal. Build test inputs before an `assertThatThrownBy` lambda (S5778). [#132]

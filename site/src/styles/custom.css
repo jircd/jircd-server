@@ -1,0 +1,18 @@
+/* Brand colour: blue. Accent/high pairs keep >= 4.5:1 against the page background in each scheme. */
+:root {
+  --sl-color-accent-low: #dbe7ff;
+  --sl-color-accent: #1d4ed8;
+  --sl-color-accent-high: #1e3a8a;
+}
+
+:root[data-theme='light'] {
+  --sl-color-accent-low: #dbe7ff;
+  --sl-color-accent: #1d4ed8;
+  --sl-color-accent-high: #1e3a8a;
+}
+
+:root[data-theme='dark'] {
+  --sl-color-accent-low: #1e3a8a;
+  --sl-color-accent: #3b82f6;
+  --sl-color-accent-high: #bfdbfe;
+}

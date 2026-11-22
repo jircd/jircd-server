@@ -1,0 +1,89 @@
+---
+title: JIRCD
+description: A modular IRCv3 chat server written in Java, designed to be extended without touching its core.
+template: splash
+hero:
+  tagline: A modular IRCv3 chat server, written in Java, designed to be extended without touching its core.
+  actions:
+    - text: Quick start
+      link: '#quick-start'
+      icon: right-arrow
+    - text: GitHub
+      link: https://github.com/jircd/jircd-server
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+<CardGrid stagger>
+  <Card title="Modular core" icon="puzzle">
+    Connection handling, channel moderation and capability negotiation are always present. Everything
+    else is an extension.
+  </Card>
+  <Card title="Runtime-toggleable extensions" icon="setting">
+    Capabilities, hostname cloaking and in-band administration load as separate modules that an
+    administrator enables or disables without a restart.
+  </Card>
+  <Card title="IRCv3 capabilities" icon="approve-check">
+    `message-tags`, `server-time`, `echo-message`, `away-notify`, `batch`, `multi-prefix` and
+    `userhost-in-names`.
+  </Card>
+  <Card title="Container-ready" icon="rocket">
+    Images for `linux/amd64` and `linux/arm64` are published to the GitHub Container Registry.
+  </Card>
+</CardGrid>
+
+## What is JIRCD?
+
+JIRCD is a standalone IRC server that speaks classic IRC (RFC 1459/2812) and a defined set of
+[IRCv3](https://ircv3.net/) capability extensions. Its defining goal is modularity with a clear
+boundary: core protocol behaviour is always present and never optional, while individual IRCv3
+capabilities, hostname cloaking and in-band server administration are independently loadable
+extensions. Authentication, accounts and server-to-server federation are deliberately out of scope for
+the first release.
+
+Developers can write their own capability provider against the
+[extension API reference](/api/).
+
+## Project status
+
+The six mandatory user stories of the initial release plan (connect and chat, capability
+negotiation, extension toggling, channel moderation, in-band administration and user lookup) are
+built and covered by integration tests. The latest release is the pre-release
+[v0.1.0-alpha](https://github.com/jircd/jircd-server/releases/tag/v0.1.0-alpha); `main` is a snapshot.
+
+It is built with a spec-driven workflow ([GitHub Spec Kit](https://github.com/github/spec-kit)): each
+feature is specified and planned before it is implemented. The specifications live in the
+[`specs/` directory](https://github.com/jircd/jircd-server/tree/main/specs) of the repository.
+
+## Quick start
+
+Run the container image. Put a `jircd.yaml` in `/srv/jircd` first, starting from the
+[sample configuration](https://github.com/jircd/jircd-server/blob/main/deploy/container/jircd.yaml)
+(see the [README](https://github.com/jircd/jircd-server#running-in-a-container)):
+
+```bash
+docker pull ghcr.io/jircd/jircd-server:jvm
+docker run -d --read-only -p 6667:6667 -p 6697:6697 \
+  -v /srv/jircd:/etc/jircd:ro --name jircd ghcr.io/jircd/jircd-server:jvm
+```
+
+Or build a standalone distribution (JDK 25):
+
+```bash
+git clone https://github.com/jircd/jircd-server.git
+cd jircd-server
+./gradlew :jircd-server:installDist
+cd jircd-server/build/install/jircd-server
+touch jircd.yaml
+bin/jircd-server
+```
+
+Then connect with any IRC client to port 6667 (plaintext).
+
+## More
+
+- [README on GitHub](https://github.com/jircd/jircd-server#readme), with the full configuration reference
+- [Contributing](https://github.com/jircd/jircd-server/blob/main/CONTRIBUTING.md)
+- [Extension API reference](/api/)

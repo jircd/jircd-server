@@ -1,6 +1,8 @@
 import com.github.spotbugs.snom.SpotBugsTask
 import org.gradle.api.tasks.SourceSetContainer
 import org.gradle.api.plugins.JavaPluginExtension
+import org.gradle.api.tasks.javadoc.Javadoc
+import org.gradle.external.javadoc.StandardJavadocDocletOptions
 import org.gradle.api.plugins.quality.PmdExtension
 import org.gradle.testing.jacoco.plugins.JacocoPluginExtension
 import org.gradle.testing.jacoco.plugins.JacocoTaskExtension
@@ -31,6 +33,74 @@ val coverageTargetPaths = coverageTargets.map { it.path }
 // jircd-integration-tests contributes execution data (it exercises the targets above over real
 // sockets) but has no `main` source of its own to measure.
 val executionDataSources = coverageTargets + project(":jircd-integration-tests")
+
+// The generated /api/ reference is intentionally limited to the extension SPI and the
+// project types exposed by its public signatures. Keep the complete source include/exclude
+// contract in one property so additions to the published surface are reviewable.
+val extensionApiSourcePatterns = listOf(
+    "net/jircd/core/extension/**/*.java",
+    "net/jircd/core/capability/Capability.java",
+    "net/jircd/core/config/ConfigurationException.java",
+    "net/jircd/core/config/ConfigurationLoader.java",
+    "net/jircd/core/config/ConfigurationReloader.java",
+    "net/jircd/core/config/ServerConfiguration.java",
+    "net/jircd/core/session/Channel.java",
+    "net/jircd/core/session/ChannelMode.java",
+    "net/jircd/core/session/ChannelRegistry.java",
+    "net/jircd/core/session/ClientSession.java",
+    "net/jircd/core/session/CommittedEvents.java",
+    "net/jircd/core/session/ConnectionLifecycle.java",
+    "net/jircd/core/session/Departure.java",
+    "net/jircd/core/session/DisconnectCleanup.java",
+    "net/jircd/core/session/GateAction.java",
+    "net/jircd/core/session/JoinResult.java",
+    "net/jircd/core/session/KickOutcome.java",
+    "net/jircd/core/session/LivenessMonitor.java",
+    "net/jircd/core/session/NicknameRegistry.java",
+    "net/jircd/core/session/OutboundMessage.java",
+    "net/jircd/core/session/RateLimitBucket.java",
+    "net/jircd/core/session/SessionWriter.java",
+    "net/jircd/core/session/UserMode.java",
+    "net/jircd/core/session/UserStatistics.java",
+    "net/jircd/core/session/WhowasHistory.java",
+    "net/jircd/core/session/command/CommandHandler.java",
+    "net/jircd/protocol/Command.java",
+    "net/jircd/protocol/Message.java",
+)
+
+project(":jircd-core") {
+    tasks.register<Javadoc>("extensionApiJavadoc") {
+        group = "documentation"
+        description = "Generates Javadoc for the public extension API."
+        val protocolSources = project(":jircd-protocol").fileTree("src/main/java") {
+            include(extensionApiSourcePatterns)
+        }
+        val coreSources = fileTree("src/main/java") {
+            include(extensionApiSourcePatterns)
+        }
+        source(protocolSources, coreSources)
+        val mainSourceSet = project.extensions.getByType<SourceSetContainer>().named("main")
+        val protocolMainSourceSet = project(":jircd-protocol")
+            .extensions
+            .getByType<SourceSetContainer>()
+            .named("main")
+        dependsOn(mainSourceSet.map { it.classesTaskName }, ":jircd-protocol:classes")
+        classpath = mainSourceSet.get().compileClasspath + mainSourceSet.get().output + protocolMainSourceSet.get().output
+        destinationDir = rootProject.layout.buildDirectory.dir("docs/extension-api").get().asFile
+        (options as StandardJavadocDocletOptions).apply {
+            encoding = "UTF-8"
+            addBooleanOption("Xdoclint:all,-missing", true)
+        }
+    }
+}
+
+// Keep a root entry point for local use and the Pages workflow. The Javadoc task itself belongs
+// to jircd-core so Gradle resolves that project's compile classpath under its own project lock.
+tasks.register("extensionApiJavadoc") {
+    group = "documentation"
+    description = "Generates Javadoc for the public extension API."
+    dependsOn(":jircd-core:extensionApiJavadoc")
+}
 
 subprojects {
     plugins.apply("java")
@@ -265,6 +335,7 @@ tasks.register<JacocoCoverageVerification>("testCodeCoverageVerification") {
 
 tasks.named("check") {
     dependsOn("testCodeCoverageVerification")
+    dependsOn("extensionApiJavadoc")
 }
 
 sonar {
