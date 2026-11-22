@@ -24,7 +24,7 @@ RUN --mount=type=cache,target=/root/.gradle \
 # ---------------------------------------------------------------------------------------------
 # jvm: the supported variant. Distroless Java 25 (Temurin) with no shell, running as nonroot.
 # ---------------------------------------------------------------------------------------------
-FROM gcr.io/distroless/java25-debian13:nonroot@sha256:1c4ced761d17961c900cba60c33c8c3c46edbdadaa9d5ef9806eb5a6824fd406 AS jvm
+FROM gcr.io/distroless/java25-debian13:nonroot@sha256:b0a31b9a063a6fb8132ec93da4cfd8515421ad35e40d7ac79fbebbaaae98227f AS jvm
 # OCI labels (contracts/container-contract.md). CI passes the build args; a local build leaves them
 # at "unknown". The variant-specific description is the only label that differs between variants.
 ARG IMAGE_SOURCE=unknown
