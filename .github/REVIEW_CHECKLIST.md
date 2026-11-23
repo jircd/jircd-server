@@ -89,6 +89,11 @@ Collected from #130–#134, the spec-016 stack. Most findings on spec PRs are ab
   - The release version reaches every build stage, and the OCI label version matches the app version. The default build target (a plain `docker build .`) is the published default image.
   - A reported metric measures what the spec defines. SC-005 start-up was first measured from a different start point.
   - A path excluded from bot review (lockfiles, generated files) has a CI guard for what the bots no longer read. For the npm lockfile: every package resolves only from `https://registry.npmjs.org/`, has an integrity hash, and installs with `npm ci` (#160).
+  - A lockfile guard binds each `resolved` URL to its path-derived package name and version, and rejects backslash or dot segments and `link:` entries. [#161]
+  - Deploy jobs in a queued concurrency group retain pending runs (`queue: max` or equivalent), and freshness checks skip stale runs before and after queueing. [#161]
+  - Link checkers classify URLs as browsers do: protocol-relative and same-origin absolute links, numeric character references and backslashes are normalized before path checks. [#161]
+  - License flags on build-only dependencies that are never shipped are assessed in context; record the reasoning and respond to each finding when declining them. [#161]
+  - Build-time Markdown rewrites follow the framework loader's slug and excluded-file rules, including underscore-prefixed files, and fail on a target the loader drops. [#161]
 
   [#131, #134, #139, #141]
 - **Tests prove what they claim.** A test that removes a resource first shows that something was written before the removal. Build test inputs before an `assertThatThrownBy` lambda (S5778). [#132]

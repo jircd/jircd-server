@@ -1,5 +1,5 @@
 ---
-title: JIRCD
+title: Home
 description: A modular IRCv3 chat server written in Java, designed to be extended without touching its core.
 template: splash
 hero:
@@ -7,6 +7,9 @@ hero:
   actions:
     - text: Quick start
       link: '#quick-start'
+      icon: right-arrow
+    - text: User guide
+      link: /user/connecting/
       icon: right-arrow
     - text: GitHub
       link: https://github.com/jircd/jircd-server
@@ -23,14 +26,14 @@ import { Card, CardGrid } from '@astrojs/starlight/components';
   </Card>
   <Card title="Runtime-toggleable extensions" icon="setting">
     Capabilities, hostname cloaking and in-band administration load as separate modules that an
-    administrator enables or disables without a restart.
+    administrator enables or disables without a restart. See the [Administrator Guide](/admin/configuration/).
   </Card>
   <Card title="IRCv3 capabilities" icon="approve-check">
     `message-tags`, `server-time`, `echo-message`, `away-notify`, `batch`, `multi-prefix` and
-    `userhost-in-names`.
+    `userhost-in-names`. Learn how to use them in the [User Guide](/user/capabilities/).
   </Card>
   <Card title="Container-ready" icon="rocket">
-    Images for `linux/amd64` and `linux/arm64` are published to the GitHub Container Registry.
+    Images for `linux/amd64` and `linux/arm64` are published to the GitHub Container Registry. See [container installation](/admin/install-container/).
   </Card>
 </CardGrid>
 
@@ -61,7 +64,7 @@ feature is specified and planned before it is implemented. The specifications li
 
 Run the container image. Put a `jircd.yaml` in `/srv/jircd` first, starting from the
 [sample configuration](https://github.com/jircd/jircd-server/blob/main/deploy/container/jircd.yaml)
-(see the [README](https://github.com/jircd/jircd-server#running-in-a-container)):
+(see [container installation](/admin/install-container/)):
 
 ```bash
 docker pull ghcr.io/jircd/jircd-server:jvm
@@ -80,10 +83,13 @@ touch jircd.yaml
 bin/jircd-server
 ```
 
-Then connect with any IRC client to port 6667 (plaintext).
+Then connect with any IRC client to port 6667 (plaintext). See [Connect to jircd](/user/connecting/)
+for client setup, or [TLS connections](/user/tls/) when the server has a TLS listener.
 
 ## More
 
-- [README on GitHub](https://github.com/jircd/jircd-server#readme), with the full configuration reference
+- [Administrator Guide](/admin/configuration/), including [connection limits](/admin/connection-limits/)
+- [Developer Guide](/developer/build-test/), including the [extension API](/developer/capability-provider/)
+- [README on GitHub](https://github.com/jircd/jircd-server#readme)
 - [Contributing](https://github.com/jircd/jircd-server/blob/main/CONTRIBUTING.md)
 - [Extension API reference](/api/)
