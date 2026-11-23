@@ -7,189 +7,23 @@
 [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=jircd_jircd-server&metric=coverage)](https://sonarcloud.io/summary/new_code?id=jircd_jircd-server)
 [![Duplicated Lines (%)](https://sonarcloud.io/api/project_badges/measure?project=jircd_jircd-server&metric=duplicated_lines_density)](https://sonarcloud.io/summary/new_code?id=jircd_jircd-server)
 
-A modular IRCv3 chat server, written in Java, designed to be extended
-without touching its core.
+A modular IRCv3 chat server, written in Java, designed to be extended without touching its core.
 
-> **Status: implemented.** All six mandatory user stories from the initial
-> release plan (connect/chat, capability negotiation, extension toggling,
-> channel moderation, in-band administration, and user lookup) are built
-> and covered by integration tests. See [Project status](#project-status)
-> below.
+JIRCD speaks classic IRC (RFC 1459/2812) and a defined set of IRCv3 capabilities. Core protocol
+behavior is always present; capabilities, hostname cloaking and in-band administration are
+independently loadable extensions. Authentication, accounts and server-to-server federation are
+outside the initial release scope.
 
-## What is JIRCD?
+The initial release's six mandatory user stories are implemented and covered by integration tests.
+The latest release is the pre-release [v0.1.0-alpha](https://github.com/jircd/jircd-server/releases/tag/v0.1.0-alpha);
+`main` is a snapshot. See the [project site](https://jircd.org/) for an overview and current guides.
 
-JIRCD is a standalone IRC server that speaks both classic IRC
-(RFC 1459/2812) and a defined set of [IRCv3](https://ircv3.net/) capability
-extensions. Its defining goal is **modularity with a clear boundary**:
-core protocol behavior (connection handling, channel moderation, capability
-negotiation) is always present and never optional, while enhancements —
-individual IRCv3 capabilities, hostname cloaking, in-band server
-administration — are independently loadable extensions an administrator can
-enable or disable at runtime, without a restart.
+## Quick start: container
 
-Planned for the first release:
-
-- Real-time connection registration, channel messaging, and moderation
-  (classic first-join-gets-operator model)
-- IRCv3 capability negotiation, with `message-tags`, `server-time`, and
-  `echo-message` as the initial capability set; `away-notify`, `batch`,
-  `multi-prefix`, and `userhost-in-names` are available too
-- Runtime-toggleable extensions, configurable via file or in-band IRC
-  administrative commands
-- Standard `nickname!ident@hostname` identity presentation, with an
-  optional hostname-cloaking extension
-
-Authentication/accounts and server-to-server federation are deliberately
-out of scope for the first release — see the spec for the reasoning.
-
-The outgoing command section (prefix, command, parameters, and CRLF) is limited
-to 512 UTF-8 bytes. IRCv3 tags use a separate budget and never consume those bytes.
-NAMES replies split between complete member tokens, including any negotiated
-status and identity decorations. Oversized PRIVMSG and NOTICE
-text is shortened at a Unicode character boundary after reserving room for
-the sender prefix and target. Other oversized messages are logged and dropped;
-subsequent messages continue to be delivered. Tags have a separate 8191-byte
-wire allowance, with up to 4094 escaped data bytes from each client/server
-origin. Tags are never truncated.
-
-`nicknameMaxLength` (default 9) bounds ASCII nicknames. `channelNameMaxLength`
-(default 50, including `#`) bounds both UTF-16 code units and UTF-8 bytes at
-JOIN and SAJOIN admission; ISUPPORT still advertises that value as `CHANNELLEN`.
-Multibyte names that previously fit only the character limit now receive
-`476 ERR_BADCHANMASK`; shorten the name or increase the configured limit within
-the reply budget. Existing nicknames and memberships survive a limit-lowering
-reload.
-
-Startup and reload reject unsafe combinations of the resolved server-name byte
-length `S`, nickname limit `N`, and channel byte limit `Cmax`: both
-`S + 2N + Cmax + 13 + P + I <= 512` (353) and
-`S + N + Cmax + 29 <= 512` (366) must hold. Installed `multi-prefix`
-reserves `P=2`; installed `userhost-in-names` reserves `I=U+H+2=92` bytes beyond
-the nickname with the bundled limits (`U=27` ident bytes, `H=63` display-host
-bytes). These reservations apply even to disabled installed providers. Validation names the
-keys, computed reply sizes, and available channel byte budget. Reduce the
-configured limits or use a shorter server name if validation rejects them;
-a failed reload keeps the previous settings. The existing WHO bound is stricter
-than this combined NAMES bound by `S+5` bytes, so adding this provider does not
-further restrict currently accepted configurations with the bundled providers.
-Replies that carry a nick!user@host are budgeted too, with a username of up to 27
-bytes and a presented host of up to 63 bytes (see the contract below); the widest
-is WHO's 352, `2S + 2N + Cmax + 27 + 63 + 22 <= 512`. A host an extension returns
-is truncated to 63 bytes. USERHOST entries split across several 302 lines, so
-the budget covers one entry (`S + 2N + 27 + 63 + 13`).
-NAMES never splits or truncates member identities. A grandfathered item that
-cannot fit is skipped with a WARN giving the channel, item bytes and singleton
-budget; fitting neighbors continue. An oversized fixed header is logged
-separately. The closing 366 is still attempted with fitted text; it is logged and
-skipped if its fixed fields exceed the 512-byte command section. See the
-[configuration contract](specs/001-ircv3-server/contracts/server-configuration.md)
-for the limits and reload behavior.
-
-## Project status
-
-This project is being built with a spec-driven workflow
-([GitHub Spec Kit](https://github.com/github/spec-kit)): every feature is
-fully specified and planned *before* implementation begins. The complete
-specification, clarifications, technical plan, data model, and API
-contracts for the initial server feature live under
-[`specs/001-ircv3-server/`](specs/001-ircv3-server/):
-
-- [`spec.md`](specs/001-ircv3-server/spec.md) — what the server must do, and why
-- [`plan.md`](specs/001-ircv3-server/plan.md) — the technical approach and domain model
-- [`research.md`](specs/001-ircv3-server/research.md) — key technical decisions and their rationale
-- [`data-model.md`](specs/001-ircv3-server/data-model.md) — entities and their relationships
-- [`contracts/`](specs/001-ircv3-server/contracts/) — the wire protocol and configuration contracts
-
-The project's governing principles (code quality, testing, UX consistency,
-performance) are recorded in the
-[constitution](.specify/memory/constitution.md).
-
-## Getting started
-
-Requires JDK 25.
-
-```bash
-./gradlew build                 # build + unit/integration tests + static analysis, all subprojects
-touch jircd-server/jircd.yaml   # a Server Configuration file must exist at this path; an empty
-                                 # file is valid and loads every default
-./gradlew :jircd-server:run     # starts the server on 6667 (plaintext); TLS needs a configured listener
-```
-
-Then connect with any IRC client, or a raw TCP tool for a quick check:
-
-```bash
-nc localhost 6667
-NICK alice
-USER alice 0 * :Alice
-JOIN #lobby
-PRIVMSG #lobby :hello
-```
-
-The empty config above enables no optional capabilities or extensions —
-only core protocol behavior (connecting, messaging, moderation, `WHOIS`/
-`WHO`). To turn on IRCv3 capabilities, hostname cloaking, or in-band
-administration (`OPER`, `REHASH`, etc.), see the full annotated schema in
-[`contracts/server-configuration.md`](specs/001-ircv3-server/contracts/server-configuration.md).
-For a guided, story-by-story walkthrough of every feature, see
-[`quickstart.md`](specs/001-ircv3-server/quickstart.md).
-
-### Logging
-
-Logs go to standard output by default. The optional top-level `logging` section of the
-configuration file adds a rotating log file or turns the console off, and reloads with `SIGHUP` or
-`REHASH` without a restart:
-
-```yaml
-logging:
-  console: true                    # optional; default true
-  file: /var/log/jircd/jircd.log   # optional; no default; absent = no log file
-```
-
-- With `file` set and `console` left on, lines go to both. `console: false` needs a `file`.
-- The file rotates daily and at 50 MB, keeping 30 days and 1 GB in total, gzip-compressed. The
-  line format and the INFO level are fixed.
-- The file's directory must exist and be writable. The path must not contain `%`, must not be a
-  filesystem root and must not be the configuration file. A relative path resolves against the
-  working directory.
-- A rejected `logging` section rejects the whole reload and keeps the previous configuration.
-  Switching files on a reload is not atomic: a few lines around the switch can be lost or
-  duplicated.
-- With `-Dlogback.configurationFile=<file>`, that file configures logging and the section is
-  neither applied nor validated.
-
-**Migration:** earlier builds always wrote `logs/jircd.log`. Add `logging: {file: logs/jircd.log}`
-to keep that file. See the [`logging` contract](specs/016-container-deployment/contracts/logging-config.md).
-
-### Reloading and stopping
-
-- `SIGHUP` (or an operator's `REHASH`) re-reads the configuration file. An invalid file is
-  rejected and the running configuration stays.
-- `SIGTERM` and `SIGINT` (`docker stop`, Ctrl-C) shut the server down gracefully: it stops
-  accepting connections, sends every connected client
-  `ERROR :Closing Link: <host> (Server shutting down)`, closes the connections and exits with
-  status 0. This takes at most 8 seconds, inside Docker's default 10-second stop window.
-- A client that stops reading, or whose connection has not yet created its session by the deadline,
-  is closed without the `ERROR`, and a warning says how many. A client already disconnecting for
-  another reason (`QUIT`, end of stream, `KILL`, timeout) keeps that outcome.
-- A listener that fails to close during shutdown is logged, not retried: the process exits right
-  after.
-
-### Running in a container
-
-Images are published to the GitHub Container Registry as `ghcr.io/jircd/jircd-server`, in two
-variants. The JVM variant is the supported one (linux/amd64 and linux/arm64). The native variant is
-experimental (linux/amd64 only, see [The native variant](#the-native-variant)):
-
-| Tag | Points at |
-|---|---|
-| `jvm`, `latest` | the latest `main` build of the JVM variant that passed CI (both move together) |
-| `jvm-sha-<7 hex>` | the JVM build of that `main` commit; never moves |
-| `X.Y.Z-jvm`, `X.Y.Z` | JVM image of release `vX.Y.Z`; never moves |
-| `native` | the latest `main` build of the native variant that passed CI |
-| `native-sha-<7 hex>` | the native build of that `main` commit; never moves |
-| `X.Y.Z-native` | native image of release `vX.Y.Z`; never moves |
-
-`latest` is always the JVM variant. `jvm`, `latest` and `native` can stay on an older build: a commit skips moving them when a newer commit is already on `main`, so if that newer commit then fails CI, the tags stay put until a later `main` build passes. A release's native image is published only if its own smoke test passes, independently of the JVM image.
+Images are published to GitHub Container Registry as `ghcr.io/jircd/jircd-server`. The `jvm` image
+supports `linux/amd64` and `linux/arm64`; `latest` points to the JVM image. Start with the
+[sample configuration](https://github.com/jircd/jircd-server/blob/main/deploy/container/jircd.yaml)
+and put it, certificates and keys in `/srv/jircd`:
 
 ```bash
 docker pull ghcr.io/jircd/jircd-server:jvm
@@ -197,404 +31,61 @@ docker run -d --read-only -p 6667:6667 -p 6697:6697 \
   -v /srv/jircd:/etc/jircd:ro --name jircd ghcr.io/jircd/jircd-server:jvm
 ```
 
-To build the image yourself from a clean checkout, only a container runtime is needed. A plain
-`docker build .` without `--target` builds the same JVM image:
+The default configuration listens on port 6667 without TLS. Port 6697 is available only when you
+configure a TLS listener. The container runs as uid/gid 65532; mounted configuration and key files
+must be readable by that user. See [container installation](https://jircd.org/admin/install-container/)
+for image tags, permissions, native images, Compose and logging.
 
-```bash
-docker build --target jvm -t jircd:jvm .
-docker run -d --read-only -p 6667:6667 -p 6697:6697 \
-  -v /srv/jircd:/etc/jircd:ro --name jircd jircd:jvm
-```
+## Quick start: standalone
 
-`--target native` builds the native variant instead (`docker build --target native -t jircd:native .`). It compiles on your machine's architecture and needs several GB of memory and a few minutes.
-
-- The configuration is read from `/etc/jircd/jircd.yaml`; pass another path as the container
-  command to change that. Start from [`deploy/container/jircd.yaml`](deploy/container/jircd.yaml)
-  and keep your copy, certificates and keys in your own directory (here `/srv/jircd`), not in the
-  repository.
-- The server is PID 1 and runs as uid/gid 65532. Mounted files must be readable by that user (a
-  private key: mode 640, group 65532), and the directory and all its ancestors traversable by it.
-- Ports 6667 (plaintext) and 6697 (TLS) are declared; the configured listeners decide what is
-  bound, so publish what you configured.
-- Nothing is written to the container's filesystem by default, so `--read-only` works. Logs go to
-  standard output (`docker logs jircd`). For a log file, mount a volume writable by uid 65532 and
-  set `logging.file` ([Logging](#logging)), for example
-  `mkdir -p /srv/jircd-logs && sudo chown 65532:65532 /srv/jircd-logs`, then
-  `-v /srv/jircd-logs:/var/log/jircd` with `file: /var/log/jircd/jircd.log`. A new Docker named
-  volume there is root-owned, so the server refuses to start. The working directory `/opt/jircd`
-  is read-only, so a relative `logging.file` or other relative path in the configuration cannot be
-  written there: use absolute paths.
-- Reload with `docker kill -s HUP jircd`; stop with `docker stop jircd` (see
-  [Reloading and stopping](#reloading-and-stopping)). A missing or unreadable configuration exits
-  with status 1 and a `Refusing to start:` line. On Docker Desktop, wait a few seconds after saving
-  the configuration before sending HUP: its bind mounts can show the old file, or none, just after
-  a change.
-- OPER passwords must not cross the plaintext listener: the sample sets `operRequireTls: true`,
-  so enable a TLS listener before using OPER.
-
-A minimal Compose file for the same setup (optional; the `docker run` above is enough):
-
-```yaml
-services:
-  jircd:
-    image: ghcr.io/jircd/jircd-server:jvm
-    container_name: jircd   # so `docker kill -s HUP jircd` above finds it
-    read_only: true
-    ports: ["6667:6667", "6697:6697"]   # 6697 answers only once a TLS listener is configured
-    volumes: ["/srv/jircd:/etc/jircd:ro"]
-    stop_grace_period: 10s   # the default; the server drains within 8 s
-```
-
-#### The native variant
-
-`ghcr.io/jircd/jircd-server:native` runs the same server as a GraalVM native executable on
-distroless `base`, with the same configuration file, ports, user, signals and exit statuses as the
-JVM image: the container test suite runs unchanged against both. It starts in tens of milliseconds
-and uses much less memory when idle. It is **experimental**:
-
-- **Extensions are fixed at build time.** The nine built-in capabilities and extensions are
-  compiled in and configured with `capabilities` and `server-extensions` as usual, but you cannot
-  add or swap extension jars afterwards. Use the JVM image for that.
-- **Serial garbage collector.** The executable uses GraalVM's default Serial GC and a heap that
-  GraalVM sizes itself. Latency and throughput can differ from the JVM image under heavy load; CI
-  records both side by side in the weekly load-test summary.
-- **linux/amd64 only** for the published image. Build it yourself for another architecture.
-- A native build or smoke-test failure fails CI, but a performance shortfall does not.
-
-### OPER protection
-
-Failed `OPER` attempts are counted per source across reconnects and usernames.
-IPv4 uses /32; IPv6 uses `ipv6ConnectionLimitPrefix` (default /64), with mapped
-IPv4 addresses normalized. After the threshold, `OPER` is refused without
-checking credentials and the connection is closed, even for a correct password.
-A successful `OPER` before lockout clears that source's failures.
-
-```yaml
-operFailureThreshold: 5  # integer 1–20
-operLockoutSeconds: 300  # integer 1–86400, fixed window from the first failure
-operRequireTls: false   # set true to reject plaintext OPER with 491 ERR_NOOPERHOST
-```
-
-These settings reload on `REHASH`/`SIGHUP`. New window durations apply to new
-windows; existing deadlines remain unchanged. Expired entries are reclaimed on
-subsequent OPER attempts. Tracking is capped at 10,000 sources; while full,
-new sources use per-session failure counting: credentials are still checked and
-failure at the threshold disconnects that session. Existing source lockouts remain
-intact. Source addresses come from the accepted socket; if unavailable, OPER uses
-a per-connection key. Restarting the server clears this in-memory state.
-
-### Connection limits
-
-```yaml
-maxConnections: 10000       # positive integer; total across plaintext and TLS listeners
-maxConnectionsPerIp: 20     # positive integer; total per client bucket across all listeners
-ipv6ConnectionLimitPrefix: 64  # 1-128; 128 counts each IPv6 address separately
-connectionLimitOverrides: []   # optional list; defaults to no overrides
-```
-
-IPv4 clients count per /32; IPv6 clients share a bucket for the configured prefix
-(default /64). IPv4-mapped IPv6 clients (`::ffff:a.b.c.d`) normalize to IPv4 before
-bucketing and override matching.
-
-Overrides replace `maxConnectionsPerIp` for clients whose address matches a CIDR;
-the most specific matching prefix wins, regardless of list order. Counts remain
-per client bucket, **not per override range**. Matching uses the client's address,
-even when the CIDR is more specific than the counting prefix. For example:
-
-```yaml
-connectionLimitOverrides:
-  - cidr: 203.0.113.0/24
-    maxConnectionsPerIp: 200
-  - cidr: 203.0.113.128/25
-    maxConnectionsPerIp: 50    # wins over /24 for this half of the subnet
-  - cidr: "2001:db8:1234::/48"
-    maxConnectionsPerIp: 1000000  # practical per-bucket exemption; global limit still applies
-```
-
-CIDRs must use IP literals with **zero host bits**: use `203.0.113.0/24`, not
-`203.0.113.1/24`. IPv4 prefixes range from 0-32 and IPv6 prefixes from 0-128.
-Scoped/bracketed addresses and duplicate ranges (including equivalent IPv6 spellings)
-are rejected. Mapped IPv6 CIDRs with /96-/128 normalize to IPv4 /0-/32, so they
-cannot duplicate an equivalent IPv4 range. Each override requires a positive integer
-`maxConnectionsPerIp`; a large value provides an exemption without a separate list.
-
-Both limits count registered and unregistered connections. Connections exceeding either
-limit receive `ERROR :Too many connections` and close; rejections are logged as
-`security-event=connection-limit` with the source IP, exceeded setting, `bucket`, and
-`limitApplied` (the threshold of the exceeded setting). Rejection
-I/O runs on virtual threads with a one-second deadline and a shared cap of 64
-in-flight rejections across all listeners. When that cap is full, new rejected sockets
-close immediately without an error write or individual log entry. Dropped rejections
-are counted and logged as `security-event=connection-limit-suppressed count=N`, at
-most once per second. Logging runs off the accept thread. Peers that cannot finish the TLS handshake
-or receive the error within the deadline are closed.
-Counts are released when connection teardown completes. `REHASH`/`SIGHUP` applies
-new limits, overrides, and IPv6 grouping to subsequent accepts without disconnecting
-existing clients. Each connection releases its original bucket when it ends, even if
-the prefix has changed. Old and new buckets coexist during that transition; existing
-connections are not moved into the new buckets. Lowering a limit below a bucket's
-current usage blocks new connections to that bucket until usage falls below it. Raise the
-per-IP limit for deployments with many clients behind one NAT and for localhost load tests.
-
-### Registration timeout
-
-```yaml
-registrationTimeoutSeconds: 60   # positive integer, 1-3600
-```
-
-A connection that has not completed registration within this many seconds of being
-accepted receives `ERROR :Registration timeout` and is closed. Registration means
-`NICK` and `USER` plus, if the client started capability negotiation, `CAP END`: a
-client parked after `CAP LS` counts as unregistered. Answering `PING`s does not extend
-the deadline. A registered client is never affected. A reload applies to connections
-accepted afterwards only.
-
-### Message of the day and admin contact
-
-```yaml
-motdPath: /etc/jircd/motd.txt   # optional; UTF-8 text, at most 64 KiB
-adminName: Jane Admin           # optional ADMIN lines
-adminLocation: Example Org, Earth
-adminEmail: jane@example.org
-```
-
-With `motdPath` set to a readable file, clients get it (`375`/`372`/`376`) when they
-register and on `MOTD`; otherwise they get `422`, and an unusable file is logged as a
-warning. Only the first 200 lines are served. Edits to the file are picked up without a reload; `REHASH`/`SIGHUP` applies a
-changed `motdPath`. `ADMIN` answers from the three admin settings (`-` for an unset one),
-or `423` when none is set.
-
-### Listener accept backlog
-
-Each plaintext or TLS listener accepts an optional positive integer `backlog`,
-defaulting to `1024` (also used by the zero-config listener):
-
-```yaml
-listeners:
-  - port: 6667
-    tls: false
-    backlog: 1024
-```
-
-The effective accept queue limit is `min(backlog, OS somaxconn)`; the OS may
-silently cap the request. A larger queue helps absorb bursts while connections
-wait to be accepted. Listener settings, including `backlog`, `port`, and
-`bindAddress`, are validated on `REHASH`/`SIGHUP` but require a server restart
-to take effect because reload does not rebind the listening sockets.
-
-Check the OS limit before raising it. For example, to raise a lower limit to
-1024 on macOS:
-
-```bash
-sysctl kern.ipc.somaxconn
-sudo sysctl -w kern.ipc.somaxconn=1024
-```
-
-On Linux:
-
-```bash
-sysctl net.core.somaxconn
-sudo sysctl -w net.core.somaxconn=1024
-```
-
-These commands change the running system; use your OS's sysctl configuration
-mechanism to persist the value across reboots. Set the OS limit before starting
-jircd. See the [Linux kernel socket limit documentation](https://docs.kernel.org/networking/ip-sysctl.html#somaxconn-integer).
-
-### Generating an administrator credential
-
-`administratorCredentials` entries (see the config schema link above) store a
-bcrypt or Argon2id password hash — never a plaintext password. Generate one
-with `jshell` against the jars already bundled in a standalone build:
+Building and running require JDK 25. From a checkout:
 
 ```bash
 ./gradlew :jircd-server:installDist
-cd jircd-server/build/install/jircd-server
-jshell --class-path "lib/*"
-```
-
-```java
-jshell> com.password4j.Password.hash("your-password-here").withArgon2().getResult()
-$1 ==> "$argon2id$v=19$m=15360,t=2,p=1$..."
-
-jshell> com.password4j.Password.hash("your-password-here").withBcrypt().getResult()
-$2 ==> "$2b$10$..."
-
-jshell> /exit
-```
-
-Paste the printed value into that credential's `hashedPassword` field. Only
-the `$argon2id$` Argon2 variant is accepted — `$argon2i$`/`$argon2d$` hashes
-are rejected at startup, not silently ignored.
-
-### Running a standalone build
-
-`./gradlew :jircd-server:run` is for development only — it stays attached
-to Gradle. For a standalone install (no Gradle needed to run it), build a
-distribution instead:
-
-```bash
-./gradlew :jircd-server:installDist
-```
-
-This produces `jircd-server/build/install/jircd-server/`, containing a
-`bin/jircd-server` (and `.bat`) launcher plus every runtime dependency —
-including the bundled capability/extension jars, which are discovered via
-`ServiceLoader` at startup — in `lib/`. Run it from that directory (it
-looks for `jircd.yaml` in the working directory, same as `:run`):
-
-```bash
 cd jircd-server/build/install/jircd-server
 touch jircd.yaml
 bin/jircd-server
 ```
 
-To produce a distributable archive instead (e.g. for attaching to a
-release), use `distZip` or `distTar`, which land in
-`jircd-server/build/distributions/`. See
-[Releases](https://github.com/jircd/jircd-server/releases) for prebuilt
-archives — pushing a `vX.Y.Z` tag builds and publishes these automatically
-(see [`.github/workflows/release.yml`](.github/workflows/release.yml)).
+The standalone distribution includes runtime dependencies; Gradle is not needed to run it. The
+empty configuration uses defaults and listens on port 6667 without TLS. To develop with Gradle,
+use `./gradlew :jircd-server:run` (it needs `jircd-server/jircd.yaml`; an empty file is valid). See [standalone installation](https://jircd.org/admin/install-standalone/)
+for archives and releases.
 
-### Writing a capability provider (SPI)
+## Connect
 
-A capability module (`jircd-capabilities/*`) is a `CapabilityExtension` that owns its behaviour
-through typed registrations instead of core branching on its name. Override
-`CapabilityExtension.register(CapabilityRegistrar)` to stage hooks; nothing is visible until the
-whole descriptor validates and is published, and a failed enable leaves nothing published. Core
-keeps CAP negotiation and the generic mechanisms (authorized delivery, committed events, reply
-layouts and budgets, whole-frame queue admission); all seven bundled capabilities own their
-behaviour, so removing a module from the classpath removes its offer and its behaviour together.
+In an IRC client, connect to the server address on port 6667 and choose a nickname. For a local
+server, use `localhost`. A simple plaintext check with `nc` is:
 
-| Registration | Purpose | Used by |
-| --- | --- | --- |
-| `onOutboundTags(keys, maxBytes, hook)` | Owned server tags for recipients that negotiated the capability; pure in the immutable message, validated against the declared escaped-byte bound | `server-time` (`time`), `message-tags` (`msgid`) |
-| `onInboundTags` | Selects the client-only (`+`) tags to forward and provider-scoped request context; a recipient that negotiated the owner sees the forwarded tags | `message-tags` |
-| `onRecipients` | Asks for a `SENDER_COPY` role for the sender of a permitted `PRIVMSG`/`NOTICE`/`TAGMSG`; core merges roles so a recipient gets the message once | `echo-message` |
-| `onEvent(kind, hook)` | Reacts to a committed `AWAY_CHANGED`, `JOINED`, `PARTED`, `KICKED`, `QUIT` or `NICK_CHANGED` with delivery intents for peers drawn from the event's audience; recipients are narrowed to those that negotiated the capability | `away-notify` |
-| `onMemberStatus`, `onNamesIdentity`, `onReplyField` | Bounded decorations of schema-declared reply slots (the status of a NAMES token or channel WHO entry, the NAMES identity) | `multi-prefix` (status), `userhost-in-names` (identity) |
-| `onOutputGroup(prerequisites, hook)` | Framing of a finite group; the group is validated and queued whole, or sent plain when the owner or a prerequisite was not negotiated | `batch` |
-| `command` | Provider-owned command, part of the published snapshot rather than core's command table, so it appears, disappears or moves to another provider exactly when the snapshot does; it can never replace a command core or a server extension handles, and is answered as unknown while no published provider owns it | `message-tags` (`TAGMSG`) |
+```text
+NICK alice
+USER alice 0 * :Alice
+JOIN #lobby
+PRIVMSG #lobby :hello
+```
 
-Hook results are untrusted. An exception, a `null` or an out-of-bounds result is dropped whole and
-replaced by the documented default; committed core state and other providers are unaffected. The
-provider is then withdrawn as `FAILED`, with every provider that requires it, through the same
-publication a disable uses (one `CAP DEL`), and stopped off the faulting thread without waiting
-for callbacks still in flight. It stays `FAILED` until an administrator asks for it again: `EXTENSION ENABLE`, or a `REHASH`/`SIGHUP`
-whose `capabilities` entry for that provider changed. A reload that changes anything else leaves it
-`FAILED`. The log
-gets one warning per failure (provider id, hook kind, category; no exception text or client
-content), and repeats are throttled per provider. Valid tags that only overflow one origin
-together drop the later contribution without failing anyone. Hooks must be pure, nonblocking and thread-safe. Core
-applies the owner's enabled state and the declared negotiation prerequisites, so a hook never reads
-a session's capability set.
+For TLS, ask the server administrator for the TLS address and port, then enable TLS in the client.
+See [Connect to jircd](https://jircd.org/user/connecting/) and [TLS connections](https://jircd.org/user/tls/).
 
-Planned capabilities map onto these seams without capability-name branches in core; each still
-needs its own domain work:
+## Guides
 
-| Future capability | Seam | Still to build |
-| --- | --- | --- |
-| `account-notify` | an `ACCOUNT_CHANGED` committed event to interested peers | account state and the real event at its commit point |
-| `userhost-in-names` | the NAMES identity slot, composing with the status slot | the `!ident@host` bound and privacy policy |
-| `chathistory` | a provider-owned command and finite groups with batch prerequisites | storage, queries, paging and the history batch type |
-| `labeled-response` | inbound tags, request context, delivery roles and groups | the label wire rules |
-
-Core publishes committed events (`CommittedEvents`) after the state change and with no registry or
-channel monitor held; a kind nobody listens for costs nothing, and a faulty listener never undoes
-the transition. Client messages go through `MessageDelivery`, which owns target resolution, the
-send gates, the envelope (one id and send time for every recipient) and role selection.
-
-**Runtime enable and disable.** `EXTENSION`, `REHASH` and `SIGHUP` share one lifecycle. Under the
-capability runtime's administrative mutex, a disable publishes the new snapshot and removes the
-withdrawn name, together with any hard dependents', from every connected session in one step; then
-`CAP DEL` goes to every client that sent `CAP LS 302` or negotiated `cap-notify`. An enable sends
-`CAP NEW` but restores no one's negotiation. Core advertises `cap-notify` in `CAP LS` even with no
-provider installed. Work prepared before a change may still be delivered after the `DEL`; anything
-prepared after it sees the new state. A batch group picks framed or plain at admission, against the
-current state, so a queued group always keeps its close. Provider `start`/`stop` run outside the
-mutex and must tolerate overlapping callbacks from captured work.
-
-**Status.** Feature 014 is complete: runtime FAILED withdrawal and its diagnostics, and the
-dedicated fan-out and lifecycle load measurements
-(`specs/014-capability-plugin-spi/validation/pr-102/`), landed with #102.
-
-**Migrating code that used the earlier API.** `0.1.0-SNAPSHOT` is unreleased, so these changes
-carry no version bump until the first release.
-
-| Removed | Use instead |
-| --- | --- |
-| `CapabilityExtension.contributeTags` | `CapabilityRegistrar.onOutboundTags` |
-| `CapabilityExtension.includeSenderInFanOut` | `CapabilityRegistrar.onRecipients` returning `DeliveryRole.SENDER_COPY` |
-| `Channel.memberListing(boolean)`, `Channel.statusPrefixes(member, boolean)` | `Channel.memberFacts()` / `heldStatuses(member)` for unformatted facts; `MemberReplies` renders them for a requester. `memberListing()` is the highest-status form |
-| `JoinResult.memberListing()` | `JoinResult.members()` (unformatted `MemberFacts`) |
-| `JoinCommandHandler.sendNamesReply(requester, channel, server)` and `sendNamesLine(requester, channel, server)` | The overloads that take the `ExtensionRegistry` first. `sendNamesReply(requester, channel, server, List<String> tokens)` still sends tokens you rendered |
-| `SessionWriter.enqueueBatch` | `SessionWriter.enqueueGroup`; framing comes from the owning provider |
-| `MessageCommandHandler.resolveRecipients`, `deliveryTargets`, `includeSenderInFanOut` | `MessageDelivery.authorize` and `deliver` |
-| `TagmsgCommandHandler` in core | Owned by the `message-tags` module |
-| `ReplyBudgetCatalog.legacyCompatible()` | `ReplyBudgetCatalog.empty()` plus the providers' own declared bounds |
-| Mutating `ClientSession.negotiatedCapabilities()` | It is now an immutable snapshot; replace the whole set with `replaceNegotiatedCapabilities` |
-| `CapabilityNegotiator.isAcceptable`, `apply` | `CapabilityNegotiator.candidate` (validates without changing anything) and `request` (validates and applies under the administrative mutex) |
-| `CapabilityNegotiationGrammar.ls`, `list` | `lsReplies`, `listReplies` (with 302 continuation lines); `notifications` for `CAP NEW`/`DEL` |
-| A capability provider's command looked up in core's command table (`CommandRegistrar`) | `ExtensionRegistry.capabilityCommand(Command)`; dispatch consults it after core's table. `HookDispatcher.guardedCommand(registration, live, refused)` is gone; the one-argument form wraps faults |
-| `CapabilityRuntime.withdraw` returning a snapshot; `ExtensionRegistry.disable` refusing while a dependent is enabled | `withdraw` returns the withdrawn provider ids; disabling a prerequisite withdraws its hard dependents in the same step |
-| `FaultReporter.logging()` | The registry's own reporter, which withdraws a faulting provider as `FAILED` and logs under the `FaultReporter` logger name. `new ExtensionRegistry(Executor)` chooses where those withdrawals run (tests pass `Runnable::run`); a custom `HookDispatcher` still takes any `FaultReporter` |
-| `ExtensionRegistry.DesiredState` with six components | A seventh, `changedCapabilities`: the entries that differ from the configuration last applied, the only ones that may retry a `FAILED` provider. The six-argument constructor remains and counts every listed entry as changed |
-| A dropped tag contribution that only overflowed the aggregate, reported as `FaultCategory.INVALID_RESULT` | Reported as `FaultCategory.COMPOSITION_LIMIT`, which `providerFault()` says is no provider's fault |
-
-Reply decorations are budgeted by generic layouts (`ReplyLayout`) rather than a per-capability
-width: startup, `REHASH` and runtime enable reserve every installed provider's declared slot bytes
-with the same arithmetic. `multi-prefix` declares the two operator and voice symbols of
-`PREFIX=(ov)@+`; a server without it reserves only core's one-byte highest status.
-`userhost-in-names` contributes `U+H+2` identity bytes independently, so the
-combined token may be `@+nick!ident@displayHost`. Its hook uses only the already
-permitted display host, including the cloak, never a protected real hostname.
-Enable it under `capabilities: {userhost-in-names: enabled}` (omitted means
-disabled). It applies to targeted/bare NAMES and automatic JOIN/SAJOIN listings
-only after client negotiation, before or after registration. WHO and ordinary
-clients keep their existing behavior. Disabling prunes negotiation through the
-normal lifecycle; re-enabling requires a fresh CAP REQ.
-
-### Outbound queue (SendQ) policy
-
-Each connection has a bounded outbound queue, measured in bytes of queued wire data (escaped
-tags and the trailing CRLF included). A client that does not read fast enough to stay under the
-limit is disconnected instead of letting the queue grow.
-
-| Setting | Value |
-| --- | --- |
-| Key | `sendqLimitBytes` in `jircd.yaml` |
-| Unit | bytes |
-| Default | 524288 (512 KiB) |
-| Minimum | 16384 (16 KiB) |
-| Ceiling | 2097152 (2 MiB) |
-
-When the limit is exceeded, the client is sent exactly
-`ERROR :Closing Link: <host> (SendQ exceeded)` (delivery is best effort if the client is not
-reading), other users see `QUIT :SendQ exceeded`, and the log records
-`connection-event=sendq-overflow ... limitBytes=<n> queuedBytes=<n> overflowTotal=<n>` followed by
-`connection-event=disconnected ... reason=SendQ exceeded`. `overflowTotal` counts overflows since
-the process started.
-
-A configuration reload applies a new `sendqLimitBytes` to new connections only; existing
-connections keep the limit they were accepted with.
-
-Worst-case queued wire data is `connections x limit`: 10,000 connections x 512 KiB = 5 GiB at the
-default, and 10,000 x 2 MiB = 20 GiB at the ceiling. The limit budgets wire bytes only. JVM object
-headers, queue nodes, per-message objects and caches add further heap on top of that figure, so
-size the heap with headroom. Raise the limit only if legitimate clients are being cut off, for
-example during large channel JOIN bursts, and re-check the worst-case figure for your connection
-count first.
+- [User Guide](https://jircd.org/user/connecting/): [commands](https://jircd.org/user/commands/),
+  [capabilities](https://jircd.org/user/capabilities/), and [channel modes](https://jircd.org/user/channel-modes/)
+- [Administrator Guide](https://jircd.org/admin/configuration/): [container](https://jircd.org/admin/install-container/),
+  [standalone](https://jircd.org/admin/install-standalone/), [logging](https://jircd.org/admin/logging/),
+  [reload and stop](https://jircd.org/admin/reload-stop/), [OPER protection](https://jircd.org/admin/oper-protection/),
+  [connection limits](https://jircd.org/admin/connection-limits/), [MOTD and admin contact](https://jircd.org/admin/motd-admin-contact/),
+  [listener backlog](https://jircd.org/admin/listener-backlog/), [administrator credentials](https://jircd.org/admin/admin-credentials/),
+  and [SendQ](https://jircd.org/admin/sendq/)
+- [Developer Guide](https://jircd.org/developer/build-test/): [modules](https://jircd.org/developer/modules/),
+  [capability providers](https://jircd.org/developer/capability-provider/), and [contributing](https://jircd.org/developer/contributing/)
+- [Extension API reference](https://jircd.org/api/)
 
 ## Contributing
 
-Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for the
-workflow and expectations. Please also review our
-[Code of Conduct](CODE_OF_CONDUCT.md).
-
-## Security
-
-See [SECURITY.md](SECURITY.md) for how to report a vulnerability.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the spec-driven workflow and [Code of Conduct](CODE_OF_CONDUCT.md).
+Report security issues privately using the instructions in [SECURITY.md](SECURITY.md).
 
 ## License
 
-Apache License 2.0 — see [LICENSE](LICENSE).
+Apache License 2.0; see [LICENSE](LICENSE).

@@ -429,7 +429,7 @@ administratorCredentials:
   including the zero-config plaintext listener. Zero, negative, non-integer,
   and out-of-range values fail validation with `listeners[index].backlog` in
   the error. Both plaintext and TLS binds request this capacity. The effective
-  limit is `min(backlog, OS somaxconn)`. See the [README tuning instructions](../../../README.md#listener-accept-backlog)
+  limit is `min(backlog, OS somaxconn)`. See the [listener backlog guide](https://jircd.org/admin/listener-backlog/)
   for checking and raising `kern.ipc.somaxconn` on macOS or `net.core.somaxconn`
   on Linux. Listener settings are validated and published on reload, but the
   application's existing sockets are not rebound: changing `backlog`, `port`,
