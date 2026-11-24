@@ -22,13 +22,26 @@ Images are published to the GitHub Container Registry as `ghcr.io/jircd/jircd-se
 
 ## Start it
 
-Put a configuration file named `jircd.yaml` in a directory of your own (here `/srv/jircd`). Start from the [sample configuration](https://github.com/jircd/jircd-server/blob/main/deploy/container/jircd.yaml). Keep your copy, certificates and keys outside the repository.
+Ensure Docker Engine is running before pulling or starting the image.
+
+Create `/srv/jircd` and download the sample as a raw YAML file. Edit `serverName` to a hostname that identifies your server, then keep the configuration, certificates and keys outside the repository:
+
+```bash
+sudo mkdir -p /srv/jircd
+sudo curl -fsSLo /srv/jircd/jircd.yaml https://raw.githubusercontent.com/jircd/jircd-server/main/deploy/container/jircd.yaml
+sudoedit /srv/jircd/jircd.yaml
+```
+
+The sample sets `serverName: irc.example.org`; replace it with your server's hostname.
 
 ```bash
 docker pull ghcr.io/jircd/jircd-server:jvm
 docker run -d --read-only -p 6667:6667 -p 6697:6697 \
   -v /srv/jircd:/etc/jircd:ro --name jircd ghcr.io/jircd/jircd-server:jvm
+docker logs --tail 50 jircd
 ```
+
+The logs should include `jircd started as <serverName>` and a listener-started line. To check a plaintext listener, run `printf 'NICK alice\r\nUSER alice 0 * :Alice\r\n' | nc -w 2 localhost 6667`; a running server replies with a `001` welcome. Logs go to standard output and are available with `docker logs jircd`.
 
 ## Build the image yourself
 
@@ -49,7 +62,7 @@ docker run -d --read-only -p 6667:6667 -p 6697:6697 \
 - **Ports.** 6667 (plaintext) and 6697 (TLS) are declared. The configured listeners decide what is bound, so publish what you configured. Port 6697 answers only once a TLS listener is configured.
 - **Read-only root.** Nothing is written to the container's filesystem by default, so `--read-only` works. The working directory `/opt/jircd` is read-only: use absolute paths for every path in the configuration.
 - **Logs.** They go to standard output (`docker logs jircd`). For a log file, mount a volume writable by uid 65532 and set `logging.file`, as in [Logging](logging.md): `mkdir -p /srv/jircd-logs && sudo chown 65532:65532 /srv/jircd-logs`, then `-v /srv/jircd-logs:/var/log/jircd` with `file: /var/log/jircd/jircd.log`. A new Docker named volume is root-owned, so the server refuses to start with it.
-- **Reload and stop.** Reload with `docker kill -s HUP jircd`; stop with `docker stop jircd` (see [Reload and stop](reload-stop.md)). A missing or unreadable configuration exits with status 1 and a `Refusing to start:` line. On Docker Desktop, wait a few seconds after saving the configuration before sending HUP: bind mounts can show the old file, or none, just after a change.
+- **Reload and stop.** After editing the mounted file, reload with `docker kill -s HUP jircd` and confirm with `docker logs --tail 50 jircd` (a clean reload logs `Configuration reloaded via SIGHUP`). Stop with `docker stop jircd` (see [Reload and stop](reload-stop.md)). A missing or unreadable configuration exits with status 1 and a `Refusing to start:` line. On Docker Desktop, wait a few seconds after saving the configuration before sending HUP: bind mounts can show the old file, or none, just after a change.
 - **OPER.** Passwords must not cross the plaintext listener. The sample sets `operRequireTls: true`, so enable a TLS listener before using `OPER` ([OPER protection](oper-protection.md)).
 
 ## Compose

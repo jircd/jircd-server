@@ -28,13 +28,19 @@ jshell --class-path "lib/*"
 ```
 
 ```java
-jshell> com.password4j.Password.hash("your-password-here").withArgon2().getResult()
+jshell> char[] password = System.console().readPassword("Password to hash: ");
+jshell> String argon2Hash = com.password4j.Password.hash(new String(password)).withArgon2().getResult();
+jshell> String bcryptHash = com.password4j.Password.hash(new String(password)).withBcrypt().getResult();
+jshell> java.util.Arrays.fill(password, '\0');
+jshell> argon2Hash
 $1 ==> "$argon2id$v=19$m=15360,t=2,p=1$..."
-jshell> com.password4j.Password.hash("your-password-here").withBcrypt().getResult()
+jshell> bcryptHash
 $2 ==> "$2b$10$..."
 jshell> /exit
 ```
 
-Paste the printed value into that credential's `hashedPassword` field. Only the `$argon2id$` Argon2 variant is accepted: `$argon2i$` and `$argon2d$` hashes are rejected at startup, not silently ignored.
+`readPassword` prompts without echoing the password or adding it to JShell's command history. Run this in an interactive terminal where `System.console()` is available. Paste either printed value into that credential's `hashedPassword` field. Verification uses Password4j's default parameters, so only hashes generated with the defaults shown here verify: the default Argon2id parameters or bcrypt cost 10. ([#175](https://github.com/jircd/jircd-server/issues/175)) Only the `$argon2id$` Argon2 variant is accepted: `$argon2i$` and `$argon2d$` hashes are rejected at startup, not silently ignored.
+
+Password4j may print WARN lines about missing `psw4j.properties`; they are harmless for these default hash calls.
 
 Also read [OPER protection](oper-protection.md): it explains the lockout and the `operRequireTls` setting.

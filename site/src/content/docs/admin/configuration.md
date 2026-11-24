@@ -92,7 +92,7 @@ An id under the wrong section is an error. A reload enables and disables provide
 | --- | --- | --- | --- | --- |
 | `administratorCredentials` | list of `username` and `hashedPassword` | none | applies | [Admin credentials](admin-credentials.md) |
 | `operFailureThreshold` | integer 1–20 | 5 | applies | [OPER protection](oper-protection.md) |
-| `operLockoutSeconds` | integer 1–86400 | 300 | applies | [OPER protection](oper-protection.md) |
+| `operLockoutSeconds` | integer 1–86400 | 300 | applies to new failure windows; existing windows keep their original deadline | [OPER protection](oper-protection.md) |
 | `operRequireTls` | boolean | `false` | applies | [OPER protection](oper-protection.md) |
 
 ## Connection limits and timeouts
@@ -123,7 +123,7 @@ logging:
   file: /var/log/jircd/jircd.log
 ```
 
-`console` defaults to `true`; `file` has no default. See [Logging](logging.md). The section applies on reload.
+`console` defaults to `true`; `file` has no default. See [Logging](logging.md). The section applies on reload. When `-Dlogback.configurationFile` is set, that file controls logging and the YAML `logging` section is neither applied nor validated.
 
 ## Value errors
 

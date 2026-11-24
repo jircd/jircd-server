@@ -19,7 +19,7 @@ logging:
 | `file` | path | none | Also write them to this file. |
 
 - With `file` set and `console` left on, lines go to both. `console: false` needs a `file`; without one the configuration is rejected, because the server would produce no output.
-- The file rotates daily and at 50 MB, keeping 30 days and 1 GB in total, gzip-compressed. The line format and the INFO level are fixed.
+- The file rotates daily and at 50 MB, retaining up to 30 days and 1 GB in total, gzip-compressed. The size cap can shorten retention below 30 days. The line format and the INFO level are fixed.
 - The file's directory must exist and be writable. The path must not contain `%`, must not be a filesystem root and must not be the configuration file. A relative path resolves against the working directory.
 - Any other key inside `logging` is rejected.
 - A rejected `logging` section rejects the whole reload and keeps the previous configuration. Switching files on a reload is not atomic: a few lines around the switch can be lost or duplicated.

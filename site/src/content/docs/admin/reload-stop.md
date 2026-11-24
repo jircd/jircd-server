@@ -14,7 +14,7 @@ sidebar:
 | Listeners (port, bind address, TLS, backlog) | Validated, not rebound. Restart to apply. |
 | `serverName` | Restart to apply. |
 | Per-connection limits (`sendqLimitBytes`, rate limit, keep-alive, registration timeout, connection limits) | Apply to connections accepted afterwards. |
-| Everything else | Applies at once. |
+| Everything else | Applies at once. If a validated new log file cannot be opened during reload, the previous logging destinations stay active while the new configuration is published. |
 
 [Configuration](configuration.md) gives the behaviour per key. In a container, send the signal with `docker kill -s HUP jircd`.
 

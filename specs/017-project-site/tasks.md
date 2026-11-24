@@ -76,7 +76,7 @@ Guide sources are under `site/src/content/docs/{user,admin,developer}/`; the hom
 - [X] T037 [P] [US3] Write `site/src/content/docs/admin/logging.md`, `site/src/content/docs/admin/reload-stop.md`, `site/src/content/docs/admin/oper-protection.md` and `site/src/content/docs/admin/connection-limits.md` (including the registration timeout) from the matching README sections. Done.
 - [X] T038 [P] [US3] Write `site/src/content/docs/admin/motd-admin-contact.md`, `site/src/content/docs/admin/listener-backlog.md`, `site/src/content/docs/admin/admin-credentials.md` and `site/src/content/docs/admin/sendq.md` from the matching README sections. Done.
 - [X] T039 [US3] Set the Administrator sidebar order and add cross-links among the admin pages and from the User Guide. Done; generated sidebar follows `sidebar.order`, and User Guide pages link to relevant admin pages.
-- [X] T040 [US3] Claims check of the Administrator Guide: every key, default, command-line step and behaviour traced to code or a test; follow the guide from an empty machine through the container and the standalone route (quickstart scenario 5); attach the claims list to the PR description. Done; `.claims-admin.md`.
+- [X] T040 [US3] Claims check of the Administrator Guide: every key, default, command-line step and behaviour traced to code or a test; follow the guide from an empty machine through the container and the standalone route (quickstart scenario 5); attach the claims list to the PR description. Scenario 5 run for real on both routes (container `ghcr.io/jircd/jircd-server:jvm`; standalone `installDist`): all steps passed; guide gaps fixed in the #169 round 1. See `.scenario5-report.md` and `.claims-admin.md`.
 
 ### US4: Developer Guide (P3)
 
