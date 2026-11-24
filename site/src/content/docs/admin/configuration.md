@@ -61,7 +61,7 @@ With no `listeners` (absent or empty) the server opens one plaintext listener on
 | `tls` | boolean | `false` | Whether the listener speaks TLS. |
 | `bindAddress` | IPv4 or IPv6 literal | all local addresses | A host name is rejected. |
 | `backlog` | positive integer | 1024 | Accept queue size; see [Listener accept backlog](listener-backlog.md). |
-| `certPath`, `keyPath` | strings | none | PEM certificate (a single X.509 certificate; only the first is loaded, so intermediates are not sent) and PEM private key. Both or neither. |
+| `certPath`, `keyPath` | strings | none | PEM certificate (a single X.509 certificate; only the first is loaded, so intermediates are not sent) and unencrypted PKCS#8 PEM private key. Both or neither. |
 | `keystorePath`, `keystorePassword` | strings | none | A PKCS12 keystore and its password; the password is required with the path. |
 
 A `tls: true` listener needs exactly one certificate source: the `certPath`/`keyPath` pair or `keystorePath`. Both, or neither, is an error. The certificate is loaded when the configuration is read, so a bad certificate stops startup and rejects a reload. On a `tls: false` listener the certificate keys are ignored.

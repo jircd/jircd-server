@@ -45,7 +45,7 @@ For a one-command check that prints the welcome reply, run `printf 'NICK alice\r
 
 The empty configuration enables no optional capabilities or extensions, only core protocol behaviour. To turn on capabilities, hostname cloaking or in-band administration (`OPER`, `REHASH`), see [Configuration](configuration.md).
 
-Reload the configuration with `kill -HUP "$(cat jircd.pid)"` and confirm `Configuration reloaded via SIGHUP` appears in `jircd.log`. Stop with `kill -TERM "$(cat jircd.pid)"` (or Ctrl-C if running in the foreground); see [Reload and stop](reload-stop.md).
+Reload the configuration with `kill -HUP "$(cat jircd.pid)"`. Check the new `jircd.log` entry for that signal: a clean reload logs `Configuration reloaded via SIGHUP`; a rejected reload logs `SIGHUP reload failed, running configuration left untouched`. Stop with `kill -TERM "$(cat jircd.pid)"` (or Ctrl-C if running in the foreground); see [Reload and stop](reload-stop.md).
 
 ## Archives
 
