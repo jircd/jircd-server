@@ -7,7 +7,7 @@ sidebar:
 
 ## Reload
 
-`SIGHUP` (or an operator's `REHASH`) re-reads the configuration file. An invalid file is rejected and the running configuration stays. A valid reload applies as a whole; if one capability or extension fails to start, the rest of the reload still applies and the failure is reported (as a `NOTICE` to the operator, and in the log for `SIGHUP`).
+`SIGHUP` (or an operator's `REHASH`) re-reads the configuration file. An invalid file is rejected and the running configuration stays. If a capability or extension fails to apply, the new configuration still applies but that extension change does not; `REHASH` reports the failure as a `NOTICE`, while `SIGHUP` logs a `WARN` such as `Configuration reloaded via SIGHUP, but could not apply <extension>: <reason>`. Fix the extension problem and reload again.
 
 | What | On reload |
 | --- | --- |
