@@ -57,12 +57,20 @@ for archives and releases.
 In an IRC client, connect to the server address on port 6667 and choose a nickname. For a local
 server, use `localhost`. A simple plaintext check with `nc` is:
 
+```bash
+nc localhost 6667
+```
+
+Once connected, type these IRC lines:
+
 ```text
 NICK alice
 USER alice 0 * :Alice
 JOIN #lobby
 PRIVMSG #lobby :hello
 ```
+
+The server replies with a `001` welcome after registration.
 
 For TLS, ask the server administrator for the TLS address and port, then enable TLS in the client.
 See [Connect to jircd](https://jircd.org/user/connecting/) and [TLS connections](https://jircd.org/user/tls/).
