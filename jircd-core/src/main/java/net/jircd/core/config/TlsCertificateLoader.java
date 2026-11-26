@@ -20,14 +20,18 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.GeneralSecurityException;
+import java.security.InvalidKeyException;
 import java.security.KeyFactory;
 import java.security.KeyStore;
 import java.security.PrivateKey;
+import java.security.Signature;
+import java.security.SignatureException;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateFactory;
 import java.security.spec.InvalidKeySpecException;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.util.Base64;
+import java.util.Collection;
 
 /**
  * Loads a {@link ServerConfiguration.Listener}'s explicitly configured certificate — a PEM
@@ -88,17 +92,58 @@ public final class TlsCertificateLoader {
      */
     private static KeyStore buildPemKeyStore(String certPath, String keyPath)
             throws GeneralSecurityException, IOException {
-        Certificate certificate;
+        Collection<? extends Certificate> certificates;
         try (InputStream in = Files.newInputStream(Path.of(certPath))) {
-            certificate = CertificateFactory.getInstance("X.509").generateCertificate(in);
+            certificates = CertificateFactory.getInstance("X.509").generateCertificates(in);
         }
+        if (certificates.isEmpty()) {
+            throw new GeneralSecurityException(
+                    "PEM certificate file at " + certPath + " contains no certificate");
+        }
+        // File order is kept, no path building: the file must list the leaf first, then its
+        // intermediates (certbot's fullchain.pem layout).
+        Certificate[] chain = certificates.toArray(new Certificate[0]);
         PrivateKey privateKey = readPemPrivateKey(Path.of(keyPath));
+        requireKeyMatchesLeaf(privateKey, chain[0], certPath);
 
         KeyStore keyStore = KeyStore.getInstance("PKCS12");
         keyStore.load(null, null);
-        keyStore.setKeyEntry(
-                "jircd", privateKey, PEM_KEY_PASSWORD, new Certificate[] {certificate});
+        keyStore.setKeyEntry("jircd", privateKey, PEM_KEY_PASSWORD, chain);
         return keyStore;
+    }
+
+    /**
+     * Rejects a key that cannot sign for the first (leaf) certificate, by signing a probe with the
+     * key and verifying it with the certificate's public key. Without this a file that lists a CA
+     * before the leaf would load and then fail every handshake.
+     */
+    private static void requireKeyMatchesLeaf(
+            PrivateKey privateKey, Certificate leaf, String certPath)
+            throws GeneralSecurityException {
+        String algorithm =
+                "EC".equals(privateKey.getAlgorithm()) ? "SHA256withECDSA" : "SHA256withRSA";
+        byte[] probe = {1, 2, 3, 4};
+        String mismatch =
+                "PEM private key does not match the first certificate in "
+                        + certPath
+                        + " — the file must list the server certificate first, then its"
+                        + " intermediates";
+        // NoSuchAlgorithmException and other setup failures propagate with their own message;
+        // only the outcomes of an incompatible key/certificate pair count as a mismatch.
+        Signature signer = Signature.getInstance(algorithm);
+        Signature verifier = Signature.getInstance(algorithm);
+        try {
+            signer.initSign(privateKey);
+            signer.update(probe);
+            byte[] signature = signer.sign();
+            verifier.initVerify(leaf.getPublicKey());
+            verifier.update(probe);
+            if (!verifier.verify(signature)) {
+                throw new GeneralSecurityException(mismatch);
+            }
+        } catch (InvalidKeyException | SignatureException e) {
+            throw new GeneralSecurityException(mismatch, e);
+        }
     }
 
     /**

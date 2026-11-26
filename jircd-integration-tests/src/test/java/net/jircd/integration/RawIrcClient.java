@@ -86,6 +86,16 @@ public final class RawIrcClient implements AutoCloseable {
         return java.util.HexFormat.of().formatHex(hash);
     }
 
+    /**
+     * The certificate chain the server presented in this connection's TLS handshake, leaf first.
+     */
+    public java.security.cert.Certificate[] peerCertificateChain() throws Exception {
+        // Borrowed reference to this instance's own still-open socket, closed by close().
+        @SuppressWarnings("PMD.CloseResource")
+        var sslSocket = (javax.net.ssl.SSLSocket) socket;
+        return sslSocket.getSession().getPeerCertificates();
+    }
+
     public int localPort() {
         return socket.getLocalPort();
     }
