@@ -78,6 +78,8 @@ PRs get reviewed by SonarCloud (quality gate plus non-gating issues, all of whic
   - lifecycle windows
   - tests that pass while the code is wrong
   - docs claims
+  - documented commands that must not leak secrets
+  - operator docs that state limits and required steps
 - Check the claims, which is where most CodeRabbit findings on spec PRs land:
   - every `tasks.md` task marked `[X]`;
   - every claim the PR makes in `specs/` (coverage map, contracts, checklists, research notes).

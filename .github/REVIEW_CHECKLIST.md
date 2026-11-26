@@ -50,6 +50,7 @@ Check the diff for each of these before opening the PR.
 - **Rejected requests change nothing.** A rejected MODE, CAP REQ, PASS or OPER leaves state exactly as it was, and the client gets the documented error. [#61, #79, #82, #87]
 - **Counters and accounting.** Counts stay right across nickname changes, unregistered connections, failed setup and peaks (LUSERS), and byte counts stay right across dequeues and overflow (SendQ). [#63, #84]
 - **Security.** Secrets never reach logs, error messages or reports, including nested YAML values and extension settings. Lockout trackers stay safe when full, when verification is slow and when operators share a name. [#37, #70, #82]
+- **Documented commands don't leak secrets.** A command in the docs that takes a password or key neither echoes it nor stores it in shell or REPL history (for example, JShell `readPassword` plus `/set feedback concise`). [#169]
 - **Dependency verification.** Key servers are disabled, so a new or updated dependency that isn't trusted yet fails `./gradlew build` locally. A signed dependency needs its key in `gradle/verification-keyring.keys`; an unsigned artifact, or one signed by a key under `<ignored-keys>`, needs a checksum entry instead. Both are added as AGENTS.md describes, not with a full `--write-verification-metadata` run. [#139, #140, #143]
 - **Determinism.** Output does not depend on the JVM's locale or time zone (number formatting, date formatting). [#87]
 - **Persistence of changes.** A reloaded value survives restart where the contract says it should, and cached file content notices edits. [#67, #87]
@@ -57,6 +58,7 @@ Check the diff for each of these before opening the PR.
 - **Tests that can pass while the code is wrong.** Assert content (exact params, fitted text, log lines, final state), not just reply codes or the absence of an exception. Make concurrency tests prove that the overlap happened. Don't reuse a consumed stream. Drive the real handler, not a shortcut. Check that a test fails without the fix. [#52, #59, #65, #81, #82, #87, #92, #94]
 - **Test reliability.** Tests have bounded waits and always clean up (no hang on a failed latch, no leaked connection). They don't depend on platform-specific exception messages, and ordinary tests don't run with load tests. [#39, #41, #59, #90, #141]
 - **Docs and contracts.** Update `specs/` contracts, README and Javadoc in the same PR, and keep them consistent with each other and with the code. Claims match the implementation: an O(n·m) algorithm is not "linear time". Run examples use the tag the preceding pull or build creates, not another one. [#62, #67, #79, #80, #82, #83, #84, #91, #139]
+  - **Operator docs state the limits, not just the happy path.** Name accepted formats and key types, what a rejected or partial reload keeps, retention and size caps, and every step an operator must type. [#161, #169, #170]
 
 ## What CodeRabbit keeps finding
 
