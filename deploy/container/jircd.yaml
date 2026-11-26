@@ -4,8 +4,8 @@
 #
 #   docker run --read-only -p 6667:6667 -v /srv/jircd:/etc/jircd:ro jircd:jvm
 #
-# (jircd:jvm is the image built locally with `docker build --target jvm -t jircd:jvm .`; no
-# registry image is published yet.)
+# (jircd:jvm is the image built locally with `docker build --target jvm -t jircd:jvm .`; published
+# images are available as ghcr.io/jircd/jircd-server:jvm.)
 #
 # Keep your configuration, certificates and private keys in that directory, never in the
 # repository: this folder is excluded from the image build context, and a key committed here would

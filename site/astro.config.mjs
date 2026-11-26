@@ -18,7 +18,12 @@ export default defineConfig({
       logo: { light: './src/assets/logo.svg', dark: './src/assets/logo-dark.svg', alt: 'JIRCD' },
       social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/jircd/jircd-server' }],
       customCss: ['./src/styles/custom.css'],
-      sidebar: [{ label: 'API reference', link: '/api/', attrs: { target: '_blank' } }],
+      sidebar: [
+        { label: 'User Guide', items: [{ autogenerate: { directory: 'user' } }] },
+        { label: 'Administrator Guide', items: [{ autogenerate: { directory: 'admin' } }] },
+        { label: 'Developer Guide', items: [{ autogenerate: { directory: 'developer' } }] },
+        { label: 'API reference', link: '/api/', attrs: { target: '_blank' } },
+      ],
       plugins: [
         starlightLinksValidator({
           // The Javadoc is copied into dist/api after this build; scripts/check-api-links.mjs checks those links.
