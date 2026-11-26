@@ -14,7 +14,7 @@
 # build: compiles the server distribution once, on the build machine's own platform. Jars are
 # platform-independent, so a multi-arch image never runs Gradle under emulation.
 # ---------------------------------------------------------------------------------------------
-FROM --platform=$BUILDPLATFORM eclipse-temurin:25-jdk@sha256:83f4a7fc27df94dcc7b8de04d14cbbba8da14406f921e966969c3b09000aa507 AS build
+FROM --platform=$BUILDPLATFORM eclipse-temurin:25-jdk@sha256:ce2ef9d2d67a68de5e196d4de9d743327c44a10b57fe02ec39f572c652cacfd3 AS build
 WORKDIR /src
 COPY . .
 ARG JIRCD_VERSION=
@@ -24,7 +24,7 @@ RUN --mount=type=cache,target=/root/.gradle \
 # ---------------------------------------------------------------------------------------------
 # jvm: the supported variant. Distroless Java 25 (Temurin) with no shell, running as nonroot.
 # ---------------------------------------------------------------------------------------------
-FROM gcr.io/distroless/java25-debian13:nonroot@sha256:b0a31b9a063a6fb8132ec93da4cfd8515421ad35e40d7ac79fbebbaaae98227f AS jvm
+FROM gcr.io/distroless/java25-debian13:nonroot@sha256:4618e7a1a1f5177222985347e1ffd503076f6be5837b89c8fd02800bd8551bde AS jvm
 # OCI labels (contracts/container-contract.md). CI passes the build args; a local build leaves them
 # at "unknown". The variant-specific description is the only label that differs between variants.
 ARG IMAGE_SOURCE=unknown
@@ -62,7 +62,7 @@ RUN --mount=type=cache,target=/root/.gradle \
 # native: the experimental variant. The executable links glibc dynamically, so it runs on
 # distroless base (glibc, CA certificates, tzdata; no shell), as nonroot.
 # ---------------------------------------------------------------------------------------------
-FROM gcr.io/distroless/base-debian13:nonroot@sha256:a08d9054afbaf1af9b90fd02cdc7b32236319b5376d374505a41548d42b0c5db AS native
+FROM gcr.io/distroless/base-debian13:nonroot@sha256:7088bf1cdc94a65af4e0d5ad94518ed489a372dec1ece38ff4411c6c15fb5864 AS native
 ARG IMAGE_SOURCE=unknown
 ARG IMAGE_REVISION=unknown
 ARG IMAGE_VERSION=unknown
