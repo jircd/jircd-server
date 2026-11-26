@@ -2,9 +2,8 @@
 
 ## Supported Versions
 
-JIRCD is currently pre-implementation (see [README.md](README.md) —
-specification and planning are complete, but no release has shipped yet).
-Once releases begin, supported versions will be listed here.
+JIRCD is in pre-release. Supported versions will be listed here once stable
+releases begin. See the [project site](https://jircd.org/) for current project status.
 
 | Version | Supported |
 | ------- | --------- |
