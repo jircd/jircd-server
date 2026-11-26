@@ -74,16 +74,20 @@ final class TestPki {
             keyStore.load(in, STORE_PASSWORD.toCharArray());
         }
         byte[] der = keyStore.getKey("leaf", STORE_PASSWORD.toCharArray()).getEncoded();
-        String keyPem =
-                "-----BEGIN PRIVATE KEY-----\n"
-                        + Base64.getMimeEncoder(64, "\n".getBytes(StandardCharsets.US_ASCII))
-                                .encodeToString(der)
-                        + "\n-----END PRIVATE KEY-----\n";
+        String keyPem = pkcs8Pem(der);
         return new TestPki(
                 Files.readString(rootCert),
                 Files.readString(interCert),
                 Files.readString(leafCert),
                 keyPem);
+    }
+
+    /** Encodes a PKCS#8 DER private key as PEM. */
+    static String pkcs8Pem(byte[] der) {
+        return "-----BEGIN PRIVATE KEY-----\n"
+                + Base64.getMimeEncoder(64, "\n".getBytes(StandardCharsets.US_ASCII))
+                        .encodeToString(der)
+                + "\n-----END PRIVATE KEY-----\n";
     }
 
     private static void genKeyPair(Path store, String alias, String dn, String ext)

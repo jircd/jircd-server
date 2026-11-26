@@ -255,7 +255,8 @@ administratorCredentials:
   defeat PKCS12's own password-based encryption of the key entry), so a `keystorePath` with no
   `keystorePassword` is rejected the same way. Whichever form is present is actually loaded and
   parsed at this same startup pass — an unreadable file, invalid PEM, a key that doesn't match
-  the certificate (the first one in a `certPath` chain; every certificate in the file is
+  the certificate (the first one in a `certPath` chain, or a PKCS12 key entry's own first
+  certificate; the check covers both forms; every certificate in the file is
   served in file order, so the file must list the server certificate first, then its
   intermediates, as certbot's `fullchain.pem` does), a wrong keystore password, or a passphrase-encrypted/legacy-PKCS#1 PEM key
   (both rejected with a specific message naming the problem) all fail startup immediately, never

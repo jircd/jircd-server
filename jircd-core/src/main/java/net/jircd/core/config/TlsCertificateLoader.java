@@ -21,6 +21,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.GeneralSecurityException;
 import java.security.InvalidKeyException;
+import java.security.Key;
 import java.security.KeyFactory;
 import java.security.KeyStore;
 import java.security.PrivateKey;
@@ -32,6 +33,7 @@ import java.security.spec.InvalidKeySpecException;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.util.Base64;
 import java.util.Collection;
+import java.util.Collections;
 
 /**
  * Loads a {@link ServerConfiguration.Listener}'s explicitly configured certificate — a PEM
@@ -83,6 +85,22 @@ public final class TlsCertificateLoader {
         try (InputStream in = Files.newInputStream(Path.of(path))) {
             keyStore.load(in, password);
         }
+        boolean hasKeyEntry = false;
+        for (String alias : Collections.list(keyStore.aliases())) {
+            if (!keyStore.isKeyEntry(alias)) {
+                continue;
+            }
+            hasKeyEntry = true;
+            Key key = keyStore.getKey(alias, password);
+            Certificate[] chain = keyStore.getCertificateChain(alias);
+            if (key instanceof PrivateKey privateKey && chain != null && chain.length > 0) {
+                requireKeyMatchesLeaf(privateKey, chain[0], path, "");
+            }
+        }
+        if (!hasKeyEntry) {
+            throw new GeneralSecurityException(
+                    "PKCS12 keystore at " + path + " has no private key entry");
+        }
         return keyStore;
     }
 
@@ -104,7 +122,11 @@ public final class TlsCertificateLoader {
         // intermediates (certbot's fullchain.pem layout).
         Certificate[] chain = certificates.toArray(new Certificate[0]);
         PrivateKey privateKey = readPemPrivateKey(Path.of(keyPath));
-        requireKeyMatchesLeaf(privateKey, chain[0], certPath);
+        requireKeyMatchesLeaf(
+                privateKey,
+                chain[0],
+                certPath,
+                " — the file must list the server certificate first, then its intermediates");
 
         KeyStore keyStore = KeyStore.getInstance("PKCS12");
         keyStore.load(null, null);
@@ -113,21 +135,17 @@ public final class TlsCertificateLoader {
     }
 
     /**
-     * Rejects a key that cannot sign for the first (leaf) certificate, by signing a probe with the
-     * key and verifying it with the certificate's public key. Without this a file that lists a CA
-     * before the leaf would load and then fail every handshake.
+     * Rejects a key (PEM or PKCS12 entry) that cannot sign for the first (leaf) certificate, by
+     * signing a probe with the key and verifying it with the certificate's public key. Without this
+     * a file that lists a CA before the leaf would load and then fail every handshake.
      */
     private static void requireKeyMatchesLeaf(
-            PrivateKey privateKey, Certificate leaf, String certPath)
+            PrivateKey privateKey, Certificate leaf, String file, String hint)
             throws GeneralSecurityException {
         String algorithm =
                 "EC".equals(privateKey.getAlgorithm()) ? "SHA256withECDSA" : "SHA256withRSA";
         byte[] probe = {1, 2, 3, 4};
-        String mismatch =
-                "PEM private key does not match the first certificate in "
-                        + certPath
-                        + " — the file must list the server certificate first, then its"
-                        + " intermediates";
+        String mismatch = "private key does not match the first certificate in " + file + hint;
         // NoSuchAlgorithmException and other setup failures propagate with their own message;
         // only the outcomes of an incompatible key/certificate pair count as a mismatch.
         Signature signer = Signature.getInstance(algorithm);

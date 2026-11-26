@@ -116,18 +116,7 @@ class TlsCertificateChainTest {
         var generator = java.security.KeyPairGenerator.getInstance("RSA");
         generator.initialize(2048);
         byte[] der = generator.generateKeyPair().getPrivate().getEncoded();
-        Path rsaKey =
-                Files.writeString(
-                        dir.resolve("rsa-key.pem"),
-                        "-----BEGIN PRIVATE KEY-----\n"
-                                + java.util.Base64.getMimeEncoder(
-                                                64,
-                                                "\n"
-                                                        .getBytes(
-                                                                java.nio.charset.StandardCharsets
-                                                                        .US_ASCII))
-                                        .encodeToString(der)
-                                + "\n-----END PRIVATE KEY-----\n");
+        Path rsaKey = Files.writeString(dir.resolve("rsa-key.pem"), TestPki.pkcs8Pem(der));
         Path chain = chainFile("rsa-mismatch.pem", pki.leafPem, pki.intermediatePem);
         var listener =
                 new net.jircd.core.config.ServerConfiguration.Listener(
@@ -158,6 +147,80 @@ class TlsCertificateChainTest {
         assertThatThrownBy(() -> TestServer.start(yaml(empty)))
                 .isInstanceOf(ConfigurationException.class)
                 .hasMessageContaining("contains no certificate");
+    }
+
+    private static Path pkcs12(String name, java.security.PrivateKey key, String... certPems)
+            throws Exception {
+        var factory = java.security.cert.CertificateFactory.getInstance("X.509");
+        var chain = new java.security.cert.Certificate[certPems.length];
+        for (int i = 0; i < certPems.length; i++) {
+            chain[i] =
+                    factory.generateCertificate(
+                            new java.io.ByteArrayInputStream(
+                                    certPems[i].getBytes(
+                                            java.nio.charset.StandardCharsets.US_ASCII)));
+        }
+        KeyStore store = KeyStore.getInstance("PKCS12");
+        store.load(null, null);
+        if (key != null) {
+            // setKeyEntry does not check that the key belongs to the chain's first certificate.
+            store.setKeyEntry("jircd", key, "changeit".toCharArray(), chain);
+        } else {
+            store.setCertificateEntry("jircd", chain[0]);
+        }
+        Path file = dir.resolve(name);
+        try (var out = Files.newOutputStream(file)) {
+            store.store(out, "changeit".toCharArray());
+        }
+        return file;
+    }
+
+    private static net.jircd.core.config.ServerConfiguration.Listener keystoreListener(Path file) {
+        return new net.jircd.core.config.ServerConfiguration.Listener(
+                0,
+                true,
+                java.net.InetAddress.getLoopbackAddress(),
+                null,
+                null,
+                file.toString(),
+                "changeit",
+                50);
+    }
+
+    private static java.security.PrivateKey leafKey() throws Exception {
+        String base64 =
+                pki.leafKeyPem
+                        .replaceAll("-----(BEGIN|END) PRIVATE KEY-----", "")
+                        .replaceAll("\\s", "");
+        return java.security.KeyFactory.getInstance("EC")
+                .generatePrivate(
+                        new java.security.spec.PKCS8EncodedKeySpec(
+                                java.util.Base64.getDecoder().decode(base64)));
+    }
+
+    @Test
+    void aPkcs12KeyThatDoesNotMatchItsCertificateIsRejected() throws Exception {
+        var other = java.security.KeyPairGenerator.getInstance("EC");
+        other.initialize(256);
+        Path file = pkcs12("mismatch.p12", other.generateKeyPair().getPrivate(), pki.leafPem);
+        assertThatThrownBy(() -> TlsCertificateLoader.load(keystoreListener(file)))
+                .hasMessageContaining("does not match the first certificate")
+                .hasMessageContaining("mismatch.p12");
+    }
+
+    @Test
+    void aValidPkcs12KeystoreStillLoads() throws Exception {
+        Path file = pkcs12("valid.p12", leafKey(), pki.leafPem, pki.intermediatePem);
+        KeyStore loaded = TlsCertificateLoader.load(keystoreListener(file));
+        assertThat(loaded.getCertificateChain("jircd")).hasSize(2);
+    }
+
+    @Test
+    void aPkcs12KeystoreWithNoKeyEntryIsRejected() throws Exception {
+        Path file = pkcs12("no-key.p12", null, pki.leafPem);
+        assertThatThrownBy(() -> TlsCertificateLoader.load(keystoreListener(file)))
+                .hasMessageContaining("no private key entry")
+                .hasMessageContaining("no-key.p12");
     }
 
     private static net.jircd.core.config.ServerConfiguration.Listener listener(Path certFile) {
