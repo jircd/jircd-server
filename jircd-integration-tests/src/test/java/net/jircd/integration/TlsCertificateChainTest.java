@@ -26,12 +26,14 @@ import net.jircd.core.config.ConfigurationException;
 import net.jircd.core.config.TlsCertificateLoader;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
  * #167: a PEM {@code certPath} holding a chain (leaf first, then intermediates) presents the whole
  * chain, not only its first certificate.
  */
+@Timeout(60)
 class TlsCertificateChainTest {
 
     @TempDir static Path dir;
@@ -221,6 +223,69 @@ class TlsCertificateChainTest {
         assertThatThrownBy(() -> TlsCertificateLoader.load(keystoreListener(file)))
                 .hasMessageContaining("no private key entry")
                 .hasMessageContaining("no-key.p12");
+    }
+
+    @Test
+    void aMatchingEd25519Pkcs12KeystoreStillLoads() throws Exception {
+        var id = TestPki.generateEd25519(dir, "ed-valid");
+        Path file = pkcs12("ed-valid-ks.p12", id.key(), id.certPem());
+        KeyStore loaded = TlsCertificateLoader.load(keystoreListener(file));
+        assertThat(loaded.getCertificateChain("jircd")).hasSize(1);
+    }
+
+    @Test
+    void anEd25519KeyForAnotherEd25519CertificateIsRejected() throws Exception {
+        var a = TestPki.generateEd25519(dir, "ed-a");
+        var b = TestPki.generateEd25519(dir, "ed-b");
+        Path file = pkcs12("ed-mismatch.p12", a.key(), b.certPem());
+        assertThatThrownBy(() -> TlsCertificateLoader.load(keystoreListener(file)))
+                .hasMessageContaining("does not match the first certificate")
+                .hasMessageContaining("ed-mismatch.p12");
+    }
+
+    @Test
+    void aKeystoreHoldingOnlyASecretKeyIsRejected() throws Exception {
+        Path file = dir.resolve("secret-only.p12");
+        KeyStore store = KeyStore.getInstance("PKCS12");
+        store.load(null, null);
+        store.setEntry(
+                "secret",
+                new KeyStore.SecretKeyEntry(
+                        new javax.crypto.spec.SecretKeySpec(new byte[16], "AES")),
+                new KeyStore.PasswordProtection("changeit".toCharArray()));
+        try (var out = Files.newOutputStream(file)) {
+            store.store(out, "changeit".toCharArray());
+        }
+        assertThatThrownBy(() -> TlsCertificateLoader.load(keystoreListener(file)))
+                .hasMessageContaining("has no private key entry")
+                .hasMessageContaining("secret-only.p12");
+    }
+
+    @Test
+    void aSecretKeyEntryNextToAPrivateKeyEntryStillLoads() throws Exception {
+        Path file = dir.resolve("mixed.p12");
+        KeyStore store = KeyStore.getInstance("PKCS12");
+        store.load(null, null);
+        var factory = java.security.cert.CertificateFactory.getInstance("X.509");
+        var leaf =
+                factory.generateCertificate(
+                        new java.io.ByteArrayInputStream(
+                                pki.leafPem.getBytes(java.nio.charset.StandardCharsets.US_ASCII)));
+        store.setKeyEntry(
+                "jircd",
+                leafKey(),
+                "changeit".toCharArray(),
+                new java.security.cert.Certificate[] {leaf});
+        store.setEntry(
+                "secret",
+                new KeyStore.SecretKeyEntry(
+                        new javax.crypto.spec.SecretKeySpec(new byte[16], "AES")),
+                new KeyStore.PasswordProtection("changeit".toCharArray()));
+        try (var out = Files.newOutputStream(file)) {
+            store.store(out, "changeit".toCharArray());
+        }
+        assertThat(TlsCertificateLoader.load(keystoreListener(file)).getCertificateChain("jircd"))
+                .hasSize(1);
     }
 
     private static net.jircd.core.config.ServerConfiguration.Listener listener(Path certFile) {

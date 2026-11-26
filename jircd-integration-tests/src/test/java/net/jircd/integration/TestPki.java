@@ -82,6 +82,47 @@ final class TestPki {
                 keyPem);
     }
 
+    /** A self-signed Ed25519 key and certificate made with keytool. */
+    record Ed25519Identity(java.security.PrivateKey key, String certPem) {}
+
+    static Ed25519Identity generateEd25519(Path dir, String name) throws Exception {
+        Path store = dir.resolve(name + ".p12");
+        Path cert = dir.resolve(name + ".pem");
+        keytool(
+                "-genkeypair",
+                "-alias",
+                "ed",
+                "-keyalg",
+                "Ed25519",
+                "-dname",
+                "CN=localhost",
+                "-validity",
+                "3",
+                "-keystore",
+                store.toString(),
+                "-storetype",
+                "PKCS12",
+                "-storepass",
+                STORE_PASSWORD);
+        keytool(
+                "-exportcert",
+                "-rfc",
+                "-alias",
+                "ed",
+                "-keystore",
+                store.toString(),
+                "-storepass",
+                STORE_PASSWORD,
+                "-file",
+                cert.toString());
+        KeyStore keyStore = KeyStore.getInstance("PKCS12");
+        try (InputStream in = Files.newInputStream(store)) {
+            keyStore.load(in, STORE_PASSWORD.toCharArray());
+        }
+        var key = (java.security.PrivateKey) keyStore.getKey("ed", STORE_PASSWORD.toCharArray());
+        return new Ed25519Identity(key, Files.readString(cert));
+    }
+
     /** Encodes a PKCS#8 DER private key as PEM. */
     static String pkcs8Pem(byte[] der) {
         return "-----BEGIN PRIVATE KEY-----\n"

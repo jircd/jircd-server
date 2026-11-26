@@ -87,7 +87,7 @@ public final class TlsCertificateLoader {
         }
         boolean hasKeyEntry = false;
         for (String alias : Collections.list(keyStore.aliases())) {
-            if (!keyStore.isKeyEntry(alias)) {
+            if (!keyStore.entryInstanceOf(alias, KeyStore.PrivateKeyEntry.class)) {
                 continue;
             }
             hasKeyEntry = true;
@@ -134,6 +134,15 @@ public final class TlsCertificateLoader {
         return keyStore;
     }
 
+    private static String probeAlgorithm(PrivateKey privateKey) {
+        return switch (privateKey.getAlgorithm()) {
+            case "EC" -> "SHA256withECDSA";
+            case "RSA" -> "SHA256withRSA";
+            case "EdDSA", "Ed25519", "Ed448" -> "EdDSA";
+            default -> null;
+        };
+    }
+
     /**
      * Rejects a key (PEM or PKCS12 entry) that cannot sign for the first (leaf) certificate, by
      * signing a probe with the key and verifying it with the certificate's public key. Without this
@@ -142,8 +151,11 @@ public final class TlsCertificateLoader {
     private static void requireKeyMatchesLeaf(
             PrivateKey privateKey, Certificate leaf, String file, String hint)
             throws GeneralSecurityException {
-        String algorithm =
-                "EC".equals(privateKey.getAlgorithm()) ? "SHA256withECDSA" : "SHA256withRSA";
+        String algorithm = probeAlgorithm(privateKey);
+        if (algorithm == null) {
+            // A key type we cannot probe generically (e.g. RSASSA-PSS) is not checked, as before.
+            return;
+        }
         byte[] probe = {1, 2, 3, 4};
         String mismatch = "private key does not match the first certificate in " + file + hint;
         // NoSuchAlgorithmException and other setup failures propagate with their own message;
