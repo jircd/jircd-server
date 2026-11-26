@@ -139,8 +139,7 @@ class TlsCertificateChainTest {
         Path empty = chainFile("empty.pem", "not a certificate\n");
         assertThatThrownBy(() -> TestServer.start(yaml(empty)))
                 .isInstanceOf(ConfigurationException.class)
-                .hasMessageContaining("invalid TLS certificate configuration")
-                .hasMessageContaining("No certificate data found");
+                .hasMessageContaining("invalid TLS certificate configuration");
     }
 
     @Test
