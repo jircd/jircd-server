@@ -63,6 +63,8 @@ public final class RawIrcClient implements AutoCloseable {
         socket.setReceiveBufferSize(bytes);
     }
 
+    private static final int HANDSHAKE_TIMEOUT_MILLIS = 10_000;
+
     public static RawIrcClient connectTls(int port) throws Exception {
         SSLContext context = SSLContext.getInstance("TLS");
         context.init(null, new TrustManager[] {new TrustAllTrustManager()}, null);
@@ -84,6 +86,22 @@ public final class RawIrcClient implements AutoCloseable {
         var digest = java.security.MessageDigest.getInstance("SHA-256");
         byte[] hash = digest.digest(certificate.getEncoded());
         return java.util.HexFormat.of().formatHex(hash);
+    }
+
+    /**
+     * The certificate chain the server presented in this connection's TLS handshake, leaf first.
+     */
+    public java.security.cert.Certificate[] peerCertificateChain() throws Exception {
+        // Borrowed reference to this instance's own still-open socket, closed by close().
+        @SuppressWarnings("PMD.CloseResource")
+        var sslSocket = (javax.net.ssl.SSLSocket) socket;
+        // getSession() runs the handshake; bound it so a stalled server fails the test.
+        sslSocket.setSoTimeout(HANDSHAKE_TIMEOUT_MILLIS);
+        try {
+            return sslSocket.getSession().getPeerCertificates();
+        } finally {
+            sslSocket.setSoTimeout(0);
+        }
     }
 
     public int localPort() {
