@@ -153,13 +153,13 @@ public final class TlsCertificateLoader {
             throws GeneralSecurityException {
         String algorithm = probeAlgorithm(privateKey);
         if (algorithm == null) {
-            // A key type we cannot probe generically (e.g. RSASSA-PSS) is not checked, as before.
+            // A key type we cannot probe generically (e.g. RSASSA-PSS) is not checked.
             return;
         }
         byte[] probe = {1, 2, 3, 4};
         String mismatch = "private key does not match the first certificate in " + file + hint;
-        // NoSuchAlgorithmException and other setup failures propagate with their own message;
-        // only the outcomes of an incompatible key/certificate pair count as a mismatch.
+        // A missing algorithm or another setup failure propagates with its own message. Only
+        // the outcomes of an incompatible key and certificate count as a mismatch.
         Signature signer = Signature.getInstance(algorithm);
         Signature verifier = Signature.getInstance(algorithm);
         try {
